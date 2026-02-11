@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/write-cloudinary-config.js && vite",
+    "build": "node scripts/write-cloudinary-config.js && tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx"
   },

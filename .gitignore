@@ -6,6 +6,9 @@ node_modules/
 .env.local
 .env.*.local
 
+# Generated from .env at dev/build
+surf-client/public/cloudinary-config.js
+
 # Build / output
 dist/
 .next/

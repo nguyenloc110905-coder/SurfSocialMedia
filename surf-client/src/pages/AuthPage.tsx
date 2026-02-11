@@ -181,6 +181,7 @@ export default function AuthPage() {
               <form onSubmit={handleLoginSubmit} className="flex flex-col gap-3">
                 <input
                   type="email"
+                  autoComplete="username"
                   placeholder="Email hoặc số điện thoại"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
@@ -189,6 +190,7 @@ export default function AuthPage() {
                 />
                 <input
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Mật khẩu"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
@@ -248,6 +250,7 @@ export default function AuthPage() {
                 />
                 <input
                   type="email"
+                  autoComplete="email"
                   placeholder="Email"
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
@@ -256,6 +259,7 @@ export default function AuthPage() {
                 />
                 <input
                   type="password"
+                  autoComplete="new-password"
                   placeholder="Mật khẩu (ít nhất 6 ký tự)"
                   value={regPassword}
                   onChange={(e) => setRegPassword(e.target.value)}

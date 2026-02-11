@@ -40,4 +40,10 @@ export function subscribeAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
+export async function updateUserProfile(updates: { displayName?: string; photoURL?: string }) {
+  const u = auth.currentUser;
+  if (!u) throw new Error('Chưa đăng nhập');
+  await updateProfile(u, updates);
+}
+
 export type { User };
