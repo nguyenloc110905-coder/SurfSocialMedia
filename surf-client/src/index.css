@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f8fafc;
+  color: rgb(31 41 55);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Landing: logo thả từ trên, CTA kéo từ dưới (theo viewport) */
+@keyframes landing-logo-drop {
+  from {
+    transform: translateY(-100vh);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes landing-cta-slide-up {
+  from {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.landing-logo-drop {
+  animation: landing-logo-drop 0.75s ease-out forwards;
+}
+
+.landing-cta-slide-up {
+  animation: landing-cta-slide-up 0.75s ease-out forwards;
+}
