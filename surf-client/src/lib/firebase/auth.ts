@@ -2,6 +2,9 @@ import {
   getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  sendPasswordResetEmail as fbSendPasswordResetEmail,
   signOut as fbSignOut,
   onAuthStateChanged,
   updateProfile,
@@ -19,6 +22,14 @@ export async function signUp(email: string, password: string, displayName?: stri
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   if (displayName && cred.user) await updateProfile(cred.user, { displayName });
   return cred;
+}
+
+export async function signInWithGoogle() {
+  return signInWithPopup(auth, new GoogleAuthProvider());
+}
+
+export function sendPasswordResetEmail(email: string) {
+  return fbSendPasswordResetEmail(auth, email);
 }
 
 export function signOut() {
