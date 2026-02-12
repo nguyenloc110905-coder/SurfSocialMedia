@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
@@ -21,6 +21,7 @@ export default function Header() {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>('main');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -199,9 +200,16 @@ export default function Header() {
                 </div>
               </div>
 
-              {/* Panel 1: Cài đặt và quyền riêng tư */}
-              <div className="w-80 flex-shrink-0">
-                <SettingsPrivacy onBack={() => setPanel('main')} />
+              {/* Panel 1: Cài đặt và quyền riêng tư — nhấp "Cài đặt" mở trang full /feed/settings */}
+              <div className="flex-shrink-0">
+                <SettingsPrivacy
+                  onBack={() => setPanel('main')}
+                  onOpenSettingsPage={() => {
+                    setOpen(false);
+                    setPanel('main');
+                    navigate('/feed/settings');
+                  }}
+                />
               </div>
 
               {/* Panel 2: Trợ giúp và hỗ trợ */}
