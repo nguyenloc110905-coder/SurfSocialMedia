@@ -49,6 +49,60 @@ Trong dev, Vite proxy `/api` sang `http://localhost:4000`, nên gọi API từ c
 
 Trong `surf-client` tạo `.env` (xem `surf-client/.env.example`) và điền biến `VITE_FIREBASE_*` từ Firebase Console để dùng đăng nhập/đăng ký.
 
+### 4.1. Test trước khi push (tránh build fail trên Render)
+
+Trước khi **push** lên GitHub (để Render deploy API), nên chạy **build giống Render** trên máy để bắt lỗi TypeScript sớm:
+
+```bash
+cd surf-server
+npm install --include=dev
+npm run build
+```
+
+- Nếu `npm run build` **thành công** (không báo lỗi đỏ) → an tâm push, Render sẽ build được.
+- Nếu **báo lỗi** (vd `error TS2339`, `error TS2769`) → sửa code trong `surf-server` cho đến khi `npm run build` pass rồi hãy push.
+
+**Frontend:** Trước khi `firebase deploy`, chạy trong `surf-client`:
+
+```bash
+cd surf-client
+npm run build
+```
+
+Nếu build client báo lỗi thì sửa trong `surf-client` trước khi deploy.
+
+### 4.2. Test chức năng local (xem có chạy đúng ý không)
+
+Build pass chỉ đảm bảo **code biên dịch được**, không đảm bảo **tính năng chạy đúng**. Để kiểm tra chức năng trước khi push/deploy:
+
+**Bước 1 – Chạy API và frontend cùng lúc**
+
+- **Terminal 1:** `cd surf-server` → `npm run dev` (API tại http://localhost:4000)
+- **Terminal 2:** `cd surf-client` → `npm run dev` (Web tại http://localhost:5173)
+- Trong `surf-client` **không** đặt `VITE_API_URL` (hoặc để trống) để request đi qua proxy tới API local.
+
+**Bước 2 – Dùng app trên trình duyệt**
+
+- Mở **http://localhost:5173**
+- Đăng nhập (Email hoặc Google). Sau khi đăng nhập, gọi API sẽ tự tạo user trong Firestore (ensureUser).
+
+**Bước 3 – Thử từng tính năng liên quan**
+
+| Tính năng | Cách test nhanh |
+|-----------|------------------|
+| **Gợi ý kết bạn** | Vào **Bạn bè** → **Gợi ý**. Nếu có user khác (đã từng đăng nhập) thì thấy trong danh sách. |
+| **Tìm bạn theo tên** | Ở trang Bạn bè, gõ tên vào ô **Tìm bạn bè theo tên** → xem có ra **Kết quả tìm kiếm** và nút **Thêm bạn bè**. |
+| **Gửi lời mời** | Bấm **Thêm bạn bè** với một user (từ Gợi ý hoặc tìm kiếm) → không báo lỗi, user đó biến mất khỏi kết quả tìm kiếm. |
+| **Chấp nhận lời mời** | Cần **2 tài khoản**: đăng nhập tài khoản A, gửi lời mời cho B. Mở **cửa sổ ẩn danh** (hoặc browser khác), đăng nhập tài khoản B → **Bạn bè** → **Lời mời kết bạn** → **Xác nhận**. Quay lại A → **Tất cả bạn bè** thấy B. |
+
+**Bước 4 – Xử lý nếu lỗi**
+
+- Mở **DevTools** (F12) → tab **Network**: xem request `/api/...` trả về 200 hay 4xx/5xx, response body là gì.
+- Tab **Console**: xem có lỗi JavaScript không.
+- Nếu API lỗi: xem log trong terminal chạy `surf-server`.
+
+Khi test local ổn (đăng nhập, gợi ý, tìm tên, gửi/chấp nhận lời mời đều đúng) → hãy **push** (API) và **firebase deploy** (client).
+
 ### 5. Chia sẻ link cho bất kỳ ai — đăng ký và kết bạn (không cần cùng WiFi)
 
 Để **ai có link cũng có thể đăng ký và kết bạn**, không bắt buộc cùng mạng Wi‑Fi, dùng một trong hai cách:

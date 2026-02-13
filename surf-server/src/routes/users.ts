@@ -16,15 +16,16 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
     const usersRef = getDb().collection('users');
     const snap = await usersRef.get();
     const lower = q.toLowerCase();
+    type UserDoc = { id: string; displayName?: string; photoURL?: string };
     const users = snap.docs
       .filter((d) => d.id !== uid)
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((u) => ((u.displayName as string) ?? '').toLowerCase().includes(lower))
+      .map((d) => ({ id: d.id, ...d.data() } as UserDoc))
+      .filter((u) => (u.displayName ?? '').toLowerCase().includes(lower))
       .slice(0, 20)
       .map((u) => ({
         id: u.id,
-        name: (u.displayName as string) ?? 'Unknown',
-        avatarUrl: u.photoURL as string | undefined,
+        name: u.displayName ?? 'Unknown',
+        avatarUrl: u.photoURL,
       }));
     res.json({ users });
   } catch (e) {
