@@ -37,6 +37,8 @@ export default function Friends() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<FriendItem[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const section = pathname === '/feed/friends'
     ? 'home'
@@ -78,6 +80,24 @@ export default function Friends() {
     loadFriends();
   }, [loadFriends]);
 
+  // Tìm bạn theo tên
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      setSearchLoading(true);
+      api
+        .get<{ users: FriendItem[] }>(`/api/users/search?q=${encodeURIComponent(q)}`)
+        .then((r) => setSearchResults(r?.users ?? []))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearchLoading(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   const handleAccept = async (requestId: string) => {
     setActioningId(requestId);
     setError('');
@@ -110,6 +130,7 @@ export default function Friends() {
     try {
       await api.post('/api/friends/requests', { toUid });
       await loadFriends();
+      setSearchResults((prev) => prev.filter((u) => u.id !== toUid));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không gửi lời mời được.');
     } finally {
@@ -154,12 +175,41 @@ export default function Friends() {
         </svg>
         <input
           type="search"
-          placeholder="Tìm bạn bè"
+          placeholder="Tìm bạn bè theo tên"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-surf-primary/40 focus:border-surf-primary/50 dark:focus:ring-surf-secondary/40 transition-shadow"
         />
       </div>
+
+      {/* Kết quả tìm kiếm theo tên */}
+      {searchQuery.trim() && (
+        <section className="mb-6">
+          <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3">Kết quả tìm kiếm</h2>
+          {searchLoading ? (
+            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm py-4">
+              <span className="inline-block w-5 h-5 border-2 border-surf-primary dark:border-surf-secondary border-t-transparent rounded-full animate-spin" />
+              Đang tìm…
+            </div>
+          ) : searchResults.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Không tìm thấy ai. Thử tên khác hoặc xem Gợi ý bên dưới.</p>
+          ) : (
+            <ul className="space-y-2">
+              {searchResults.map((s) => (
+                <li key={s.id}>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600">
+                    <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                      {s.avatarUrl ? <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" /> : <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">{s.name.charAt(0).toUpperCase()}</span>}
+                    </Link>
+                    <Link to={`/feed/profile/${s.id}`} className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate">{s.name}</Link>
+                    <button type="button" disabled={actioningId === s.id} onClick={() => handleAddFriend(s.id)} className="flex-shrink-0 py-2 px-3 rounded-lg bg-surf-primary dark:bg-surf-secondary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">Thêm bạn bè</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* Trang chủ bạn bè */}
       {section === 'home' && (

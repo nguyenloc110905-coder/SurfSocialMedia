@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { requireAuth, ensureUser } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import usersRoutes from './routes/users.js';
 import postsRoutes from './routes/posts.js';
@@ -15,6 +16,9 @@ const corsOrigin = frontendUrls.length > 1 ? frontendUrls : frontendUrl;
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json());
+
+// Mọi request /api đều cần đăng nhập; ensureUser tạo doc user nếu chưa có (để xuất hiện trong Gợi ý kết bạn)
+app.use('/api', requireAuth, ensureUser);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);

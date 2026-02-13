@@ -41,9 +41,9 @@ const DEFAULT_AUDIENCE_OPTIONS: { value: DefaultAudience; title: string; desc: s
 ];
 
 /** Các mục trong modal Xem lại lựa chọn — Surf */
-const REVIEW_ITEMS: { title: string; getValue: (audience: 'public' | 'friends') => string; icon: 'person' | 'comment' | 'globe' | 'people' | 'search' }[] = [
-  { title: 'Ai có thể xem bài đăng, Tin 24h và Surf Clips?', getValue: (a) => a === 'public' ? 'Công khai' : 'Bạn bè', icon: 'person' },
-  { title: 'Ai có thể bình luận bài đăng công khai?', getValue: (a) => a === 'public' ? 'Công khai' : 'Bạn bè', icon: 'comment' },
+const REVIEW_ITEMS: { title: string; getValue: (audience: 'public' | 'friends' | 'custom') => string; icon: 'person' | 'comment' | 'globe' | 'people' | 'search' }[] = [
+  { title: 'Ai có thể xem bài đăng, Tin 24h và Surf Clips?', getValue: (a) => a === 'public' ? 'Công khai' : a === 'friends' ? 'Bạn bè' : 'Tùy chỉnh', icon: 'person' },
+  { title: 'Ai có thể bình luận bài đăng công khai?', getValue: (a) => a === 'public' ? 'Công khai' : a === 'friends' ? 'Bạn bè' : 'Tùy chỉnh', icon: 'comment' },
   { title: 'Thông tin công khai trên trang cá nhân', getValue: () => 'Công khai', icon: 'globe' },
   { title: 'Ai có thể xem danh sách theo dõi?', getValue: () => 'Chỉ mình tôi', icon: 'people' },
   { title: 'Tìm kiếm liên kết đến trang Surf?', getValue: () => 'Bật', icon: 'search' },

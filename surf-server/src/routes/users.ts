@@ -4,6 +4,34 @@ import { getDb } from '../config/firebase-admin.js';
 
 const router = Router();
 
+/** GET /api/users/search?q=... — tìm user theo tên (để kết bạn) */
+router.get('/search', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!q) {
+      res.json({ users: [] });
+      return;
+    }
+    const usersRef = getDb().collection('users');
+    const snap = await usersRef.get();
+    const lower = q.toLowerCase();
+    const users = snap.docs
+      .filter((d) => d.id !== uid)
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((u) => ((u.displayName as string) ?? '').toLowerCase().includes(lower))
+      .slice(0, 20)
+      .map((u) => ({
+        id: u.id,
+        name: (u.displayName as string) ?? 'Unknown',
+        avatarUrl: u.photoURL as string | undefined,
+      }));
+    res.json({ users });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.get('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const usersRef = getDb().collection('users');
