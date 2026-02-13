@@ -8,7 +8,7 @@ import feedRoutes from './routes/feed.js';
 import friendsRoutes from './routes/friends.js';
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = Number(process.env.PORT) || 4000;
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 const frontendUrls = frontendUrl.split(',').map((u) => u.trim()).filter(Boolean);
 const corsOrigin = frontendUrls.length > 1 ? frontendUrls : frontendUrl;
