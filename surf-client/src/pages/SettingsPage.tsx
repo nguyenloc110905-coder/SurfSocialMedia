@@ -1,6 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { SETTINGS_DETAIL_SECTIONS, MOST_ACCESSED, SettingsIcon } from '@/lib/settings-data.tsx';
+
+/** Chuẩn hóa chuỗi để so khớp tìm kiếm (bỏ dấu, chữ thường) */
+function normalizeSearch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+}
+
+/** Kiểm tra text có chứa query (đã chuẩn hóa) */
+function matchesQuery(text: string, queryNorm: string): boolean {
+  if (!queryNorm) return true;
+  return normalizeSearch(text).includes(queryNorm);
+}
+
+/** Map nhãn mục cài đặt sang detail key (nếu có panel) */
+function getDetailKeyForLabel(label: string): 'privacy-checkup' | 'default-audience' | null {
+  if (label === 'Kiểm tra quyền riêng tư') return 'privacy-checkup';
+  if (label === 'Đối tượng xem mặc định') return 'default-audience';
+  return null;
+}
 
 /** Chủ đề Kiểm tra quyền riêng tư — thiết kế Surf */
 const PRIVACY_CHECKUP_TOPICS = [
@@ -60,6 +81,50 @@ export default function SettingsPage() {
   );
   const [editingSettingKey, setEditingSettingKey] = useState<string | null>(null);
   const [searchEngineLink, setSearchEngineLink] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  /** Danh sách gợi ý: section + item, từ nhỏ đến lớn */
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim();
+    const qNorm = normalizeSearch(q);
+    if (!qNorm) return [];
+
+    const out: { type: 'section' | 'item'; sectionTitle: string; label?: string; icon?: string }[] = [];
+    for (const section of SETTINGS_DETAIL_SECTIONS) {
+      const sectionMatch = matchesQuery(section.title, qNorm) || (section.subtitle && matchesQuery(section.subtitle, qNorm));
+      if (sectionMatch) {
+        out.push({ type: 'section', sectionTitle: section.title });
+      }
+      for (const item of section.items) {
+        if (matchesQuery(item.label, qNorm)) {
+          out.push({ type: 'item', sectionTitle: section.title, label: item.label, icon: item.icon });
+        }
+      }
+    }
+    return out.slice(0, 25);
+  }, [searchQuery]);
+
+  /** Click ngoài dropdown đóng gợi ý */
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleSelectSuggestion = (entry: { type: 'section' | 'item'; sectionTitle: string; label?: string }) => {
+    if (entry.type === 'item' && entry.label) {
+      const key = getDetailKeyForLabel(entry.label);
+      if (key) setSelectedDetail(key);
+    }
+    setSearchQuery('');
+    setSearchFocused(false);
+  };
 
   useEffect(() => {
     if (!showReviewModal && !showCustomSettingsModal) return;
@@ -105,26 +170,64 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="flex-1 flex min-h-0 flex-col lg:flex-row">
-        {/* Sidebar — viền trái màu Surf */}
-        <aside className="w-80 lg:w-96 flex-shrink-0 border-r border-slate-200/80 dark:border-slate-700/80 flex flex-col overflow-hidden border-l-4 border-l-surf-primary bg-white dark:bg-surf-card/50">
-          <div className="pt-5 pr-4 pb-4 pl-4 border-b border-slate-200/80 dark:border-slate-700/80">
+      <div className="flex-1 flex min-h-0 flex-col lg:flex-row overflow-hidden">
+        {/* Sidebar — danh sách cài đặt cuộn độc lập, phần phải không cuộn theo */}
+        <aside className="w-80 lg:w-96 flex-shrink-0 border-r border-slate-200/80 dark:border-slate-700/80 flex flex-col min-h-0 overflow-hidden border-l-4 border-l-surf-primary bg-white dark:bg-surf-card/50">
+          <div className="flex-shrink-0 pt-5 pr-4 pb-4 pl-4 border-b border-slate-200/80 dark:border-slate-700/80">
             <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">
               Cài đặt
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Quản lý tài khoản và quyền riêng tư</p>
-            <div className="relative">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
+            <div className="relative" ref={searchContainerRef}>
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
               </svg>
               <input
                 type="text"
                 placeholder="Tìm kiếm cài đặt"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
                 className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border-0 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-surf-primary/40 focus:ring-offset-0 transition-shadow"
               />
+              {/* Danh sách gợi ý khi gõ */}
+              {searchFocused && searchQuery.trim().length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-surf-card shadow-lg scrollbar-hide">
+                  {searchSuggestions.length === 0 ? (
+                    <p className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">Không tìm thấy cài đặt phù hợp</p>
+                  ) : (
+                    <ul className="py-1">
+                      {searchSuggestions.map((entry, i) => (
+                        <li key={entry.type === 'section' ? entry.sectionTitle : `${entry.sectionTitle}-${entry.label}-${i}`}>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectSuggestion(entry)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surf-primary/10 dark:hover:bg-surf-primary/20 transition-colors"
+                          >
+                            {/* Mục lớn (section) chỉ gợi ý text, không icon */}
+                            {entry.type === 'item' && entry.icon && (
+                              <span className="flex-shrink-0 [&_svg]:w-5 [&_svg]:h-5 [&_svg]:!text-surf-primary dark:[&_svg]:!text-surf-secondary">
+                                <SettingsIcon name={entry.icon} />
+                              </span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">
+                                {entry.type === 'section' ? entry.sectionTitle : entry.label}
+                              </span>
+                              {entry.type === 'item' && (
+                                <span className="block text-xs text-slate-500 dark:text-slate-400">{entry.sectionTitle}</span>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-          <nav className="flex-1 overflow-y-auto py-3 px-2">
+          <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide py-3 px-2">
             {SETTINGS_DETAIL_SECTIONS.map((section) => (
               <div key={section.title} className="mb-6">
                 <h2 className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-surf-primary dark:text-surf-secondary mb-1">
@@ -173,8 +276,8 @@ export default function SettingsPage() {
           </nav>
         </aside>
 
-        {/* Nội dung chính — panel mặc định hoặc Kiểm tra quyền riêng tư */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-900/30">
+        {/* Nội dung bên phải — cố định, không cuộn; chỉ danh sách trái được cuộn */}
+        <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-900/30">
           {selectedDetail === 'privacy-checkup' ? (
             /* Panel Kiểm tra quyền riêng tư — thiết kế Surf */
             <div className="max-w-3xl">

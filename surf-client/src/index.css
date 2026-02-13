@@ -30,6 +30,35 @@ body {
   display: none;
 }
 
+/* Thanh cuộn chỉ hiện khi hover — dùng cho danh sách cài đặt bên trái */
+.scrollbar-hover {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scrollbar-hover:hover {
+  scrollbar-color: rgb(148 163 184 / 0.6) transparent;
+}
+.scrollbar-hover::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-hover::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-hover::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+.scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.5);
+}
+.dark .scrollbar-hover:hover {
+  scrollbar-color: rgb(100 116 139 / 0.6) transparent;
+}
+.dark .scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background: rgb(100 116 139 / 0.5);
+}
+
 /* Thẻ lật đăng nhập / đăng ký */
 .auth-flip-container {
   perspective: 1000px;

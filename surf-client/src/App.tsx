@@ -11,6 +11,7 @@ import ShortVideo from './pages/ShortVideo';
 import Friends from './pages/Friends';
 import Groups from './pages/Groups';
 import SettingsPage from './pages/SettingsPage';
+import MarketPage from './pages/MarketPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="short-video" element={<ShortVideo />} />
           <Route path="friends" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
+          <Route path="market" element={<MarketPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
