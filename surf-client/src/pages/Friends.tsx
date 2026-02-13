@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 
 type FriendItem = { id: string; name: string; avatarUrl?: string; mutualCount?: number };
 type RequestItem = { id: string; fromUid: string; name: string; avatarUrl?: string };
@@ -30,6 +32,7 @@ function EmptyState({
 /** Trang Bạn bè — nội dung cột giữa theo mục đã chọn ở cột trái */
 export default function Friends() {
   const { pathname } = useLocation();
+  const user = useAuthStore((s) => s.user);
   const [searchQuery, setSearchQuery] = useState('');
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [requests, setRequests] = useState<RequestItem[]>([]);
@@ -39,6 +42,8 @@ export default function Friends() {
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<FriendItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [friendsSearchQuery, setFriendsSearchQuery] = useState('');
 
   const section = pathname === '/feed/friends'
     ? 'home'
@@ -57,6 +62,11 @@ export default function Friends() {
   const loadFriends = useCallback(async () => {
     setError('');
     try {
+      console.log('📋 Đang tải danh sách bạn bè...');
+      
+      // Đợi thêm một chút để đảm bảo auth sẵn sàng
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       const [friendsRes, requestsRes, suggestionsRes] = await Promise.all([
         api.get<{ friends: FriendItem[] }>('/api/friends'),
         api.get<{ requests: Array<{ id: string; fromUid: string; name: string; avatarUrl?: string }> }>('/api/friends/requests'),
@@ -65,7 +75,9 @@ export default function Friends() {
       setFriends(friendsRes?.friends ?? []);
       setRequests(requestsRes?.requests ?? []);
       setSuggestions(suggestionsRes?.suggestions ?? []);
+      console.log(`✅ Tải xong: ${friendsRes?.friends?.length ?? 0} bạn, ${requestsRes?.requests?.length ?? 0} lời mời, ${suggestionsRes?.suggestions?.length ?? 0} gợi ý`);
     } catch (e) {
+      console.error('❌ Lỗi tải bạn bè:', e);
       setError(e instanceof Error ? e.message : 'Không tải được danh sách bạn bè.');
       setFriends([]);
       setRequests([]);
@@ -76,14 +88,45 @@ export default function Friends() {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      setFriends([]);
+      setRequests([]);
+      setSuggestions([]);
+      return;
+    }
     setLoading(true);
     loadFriends();
-  }, [loadFriends]);
+  }, [user, loadFriends]);
 
-  // Tìm bạn theo tên
+  // Listen Socket.io events cho real-time friend requests
+  useEffect(() => {
+    if (!user) return;
+
+    const socket = getSocket();
+
+    const handleFriendRequest = (request: RequestItem) => {
+      console.log('🔔 Nhận lời mời kết bạn mới:', request.name);
+      setRequests((prev) => {
+        // Kiểm tra không trùng
+        if (prev.some((r) => r.id === request.id)) {
+          return prev;
+        }
+        return [request, ...prev];
+      });
+    };
+
+    socket.on('friendRequestReceived', handleFriendRequest);
+
+    return () => {
+      socket.off('friendRequestReceived', handleFriendRequest);
+    };
+  }, [user, pathname]);
+
+  // Tìm bạn theo tên (chỉ khi đã đăng nhập)
   useEffect(() => {
     const q = searchQuery.trim();
-    if (!q) {
+    if (!user || !q) {
       setSearchResults([]);
       return;
     }
@@ -96,7 +139,7 @@ export default function Friends() {
         .finally(() => setSearchLoading(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [searchQuery]);
+  }, [user, searchQuery]);
 
   const handleAccept = async (requestId: string) => {
     setActioningId(requestId);
@@ -129,8 +172,10 @@ export default function Friends() {
     setError('');
     try {
       await api.post('/api/friends/requests', { toUid });
-      await loadFriends();
-      setSearchResults((prev) => prev.filter((u) => u.id !== toUid));
+      // Thêm vào danh sách đã gửi lời mời
+      setSentRequests((prev) => new Set([...prev, toUid]));
+      // KHÔNG gọi loadFriends() và KHÔNG xóa khỏi searchResults
+      // Để người dùng vẫn hiển thị với button "Đã gửi lời mời"
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không gửi lời mời được.');
     } finally {
@@ -169,56 +214,124 @@ export default function Friends() {
         </div>
       )}
 
-      <div className="relative mb-6">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-        </svg>
-        <input
-          type="search"
-          placeholder="Tìm bạn bè theo tên"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-surf-primary/40 focus:border-surf-primary/50 dark:focus:ring-surf-secondary/40 transition-shadow"
-        />
-      </div>
-
-      {/* Kết quả tìm kiếm theo tên */}
-      {searchQuery.trim() && (
-        <section className="mb-6">
-          <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3">Kết quả tìm kiếm</h2>
-          {searchLoading ? (
-            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm py-4">
-              <span className="inline-block w-5 h-5 border-2 border-surf-primary dark:border-surf-secondary border-t-transparent rounded-full animate-spin" />
-              Đang tìm…
-            </div>
-          ) : searchResults.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Không tìm thấy ai. Thử tên khác hoặc xem Gợi ý bên dưới.</p>
-          ) : (
-            <ul className="space-y-2">
-              {searchResults.map((s) => (
-                <li key={s.id}>
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600">
-                    <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
-                      {s.avatarUrl ? <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" /> : <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">{s.name.charAt(0).toUpperCase()}</span>}
-                    </Link>
-                    <Link to={`/feed/profile/${s.id}`} className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate">{s.name}</Link>
-                    <button type="button" disabled={actioningId === s.id} onClick={() => handleAddFriend(s.id)} className="flex-shrink-0 py-2 px-3 rounded-lg bg-surf-primary dark:bg-surf-secondary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">Thêm bạn bè</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {/* Trang chủ bạn bè */}
+      {/* Trang chủ bạn bè - Tìm kiếm tất cả users */}
       {section === 'home' && (
         <section>
-          <EmptyState
-            iconPath="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-            title="Chào mừng đến Bạn bè"
-            description="Dùng menu bên trái để xem lời mời, gợi ý, danh sách bạn bè và hơn thế."
-          />
+          <div className="relative mb-6">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+            </svg>
+            <input
+              type="search"
+              placeholder="Tìm kiếm người dùng..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-surf-primary/40 focus:border-surf-primary/50 dark:focus:ring-surf-secondary/40 transition-shadow"
+            />
+          </div>
+
+          {searchQuery.trim() ? (
+            <>
+              <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3">Kết quả tìm kiếm</h2>
+              {searchLoading ? (
+                <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm py-4">
+                  <span className="inline-block w-5 h-5 border-2 border-surf-primary dark:border-surf-secondary border-t-transparent rounded-full animate-spin" />
+                  Đang tìm…
+                </div>
+              ) : searchResults.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400 py-4">Không tìm thấy người dùng nào.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {searchResults.map((s) => {
+                    const isFriend = friends.some(f => f.id === s.id);
+                    const hasSentRequest = sentRequests.has(s.id);
+                    const hasReceivedRequest = requests.some(r => r.fromUid === s.id);
+                    
+                    return (
+                      <li key={s.id}>
+                        <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600">
+                          <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                            {s.avatarUrl ? (
+                              <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                {s.name.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </Link>
+                          <Link to={`/feed/profile/${s.id}`} className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate">
+                            {s.name}
+                          </Link>
+                          {isFriend ? (
+                            <div className="flex gap-2 flex-shrink-0">
+                              <span className="py-2 px-3 rounded-lg bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 text-green-700 dark:text-green-300 text-sm font-medium flex items-center gap-1.5">
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                                </svg>
+                                <span>Bạn bè</span>
+                              </span>
+                              <Link
+                                to="/feed/waves"
+                                className="py-2 px-3 rounded-lg bg-gradient-to-r from-surf-primary to-blue-500 dark:from-surf-secondary dark:to-purple-500 text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+                              >
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+                                </svg>
+                                <span>Nhắn tin</span>
+                              </Link>
+                            </div>
+                          ) : hasReceivedRequest ? (
+                            <button
+                              type="button"
+                              className="flex-shrink-0 py-2 px-3 rounded-lg bg-gradient-to-r from-surf-primary to-blue-500 dark:from-surf-secondary dark:to-purple-500 text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+                            >
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                              </svg>
+                              <span>Chấp nhận</span>
+                            </button>
+                          ) : (
+                            <button 
+                              type="button" 
+                              disabled={actioningId === s.id || hasSentRequest} 
+                              onClick={() => handleAddFriend(s.id)} 
+                              className={`flex-shrink-0 py-2 px-3 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 flex items-center gap-1.5 ${
+                                hasSentRequest 
+                                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400' 
+                                  : 'bg-gradient-to-r from-surf-primary to-blue-500 dark:from-surf-secondary dark:to-purple-500 text-white hover:opacity-90'
+                              }`}
+                            >
+                              {hasSentRequest ? (
+                                <>
+                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                                  </svg>
+                                  <span>Đã gửi</span>
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                  </svg>
+                                  <span>Thêm bạn</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          ) : (
+            <EmptyState
+              iconPath="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+              title="Chào mừng đến Bạn bè"
+              description="Dùng thanh tìm kiếm để tìm bạn bè, hoặc dùng menu bên trái để xem lời mời và gợi ý."
+            />
+          )}
         </section>
       )}
 
@@ -247,8 +360,18 @@ export default function Friends() {
                       {r.name}
                     </Link>
                     <div className="flex gap-2 flex-shrink-0">
-                      <button type="button" disabled={actioningId === r.id} onClick={() => handleAccept(r.id)} className="py-2 px-3 rounded-lg bg-surf-primary dark:bg-surf-secondary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">Xác nhận</button>
-                      <button type="button" disabled={actioningId === r.id} onClick={() => handleReject(r.id)} className="py-2 px-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50">Xóa</button>
+                      <button type="button" disabled={actioningId === r.id} onClick={() => handleAccept(r.id)} className="py-2 px-3 rounded-lg bg-gradient-to-r from-surf-primary to-blue-500 dark:from-surf-secondary dark:to-purple-500 text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1.5">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                        </svg>
+                        <span>Chấp nhận</span>
+                      </button>
+                      <button type="button" disabled={actioningId === r.id} onClick={() => handleReject(r.id)} className="py-2 px-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 flex items-center gap-1.5">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+                        </svg>
+                        <span>Từ chối</span>
+                      </button>
                     </div>
                   </div>
                 </li>
@@ -264,8 +387,8 @@ export default function Friends() {
           {suggestions.length === 0 ? (
             <EmptyState
               iconPath="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-              title="Chưa có gợi ý"
-              description="Gợi ý kết bạn sẽ xuất hiện khi bạn có thêm bạn bè."
+              title="Chưa có ai để gợi ý"
+              description="Những người chưa kết bạn với bạn sẽ hiện ở đây. Để có người: nhờ ai đó mở app và đăng nhập rồi tải lại, hoặc dùng tài khoản thứ 2 (cửa sổ ẩn danh). Có thể tìm theo tên ở ô phía trên."
             />
           ) : (
             <ul className="space-y-2">
@@ -279,7 +402,32 @@ export default function Friends() {
                       <Link to={`/feed/profile/${s.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate block">{s.name}</Link>
                       {s.mutualCount != null && s.mutualCount > 0 && <p className="text-xs text-slate-500 dark:text-slate-400">{s.mutualCount} bạn chung</p>}
                     </div>
-                    <button type="button" disabled={actioningId === s.id} onClick={() => handleAddFriend(s.id)} className="flex-shrink-0 py-2 px-3 rounded-lg bg-surf-primary dark:bg-surf-secondary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">Thêm bạn bè</button>
+                    <button 
+                      type="button" 
+                      disabled={actioningId === s.id || sentRequests.has(s.id)} 
+                      onClick={() => handleAddFriend(s.id)} 
+                      className={`flex-shrink-0 py-2 px-3 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 flex items-center gap-1.5 ${
+                        sentRequests.has(s.id) 
+                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400' 
+                          : 'bg-gradient-to-r from-surf-primary to-blue-500 dark:from-surf-secondary dark:to-purple-500 text-white hover:opacity-90'
+                      }`}
+                    >
+                      {sentRequests.has(s.id) ? (
+                        <>
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                          </svg>
+                          <span>Đã gửi</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
+                          <span>Thêm bạn</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </li>
               ))}
@@ -291,6 +439,20 @@ export default function Friends() {
       {/* Tất cả bạn bè */}
       {section === 'all' && (
         <section>
+          {/* Thanh tìm kiếm chỉ tìm trong bạn bè */}
+          <div className="relative mb-6">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+            </svg>
+            <input
+              type="search"
+              placeholder="Tìm trong danh sách bạn bè..."
+              value={friendsSearchQuery}
+              onChange={(e) => setFriendsSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-surf-primary/40 focus:border-surf-primary/50 dark:focus:ring-surf-secondary/40 transition-shadow"
+            />
+          </div>
+
           {friends.length === 0 ? (
             <EmptyState
               iconPath="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
@@ -298,22 +460,61 @@ export default function Friends() {
               description="Tìm kiếm hoặc chấp nhận lời mời để kết nối."
             />
           ) : (
-            <ul className="space-y-2">
-              {friends.map((f) => (
-                <li key={f.id}>
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600 hover:border-surf-primary/30 dark:hover:border-surf-secondary/30 transition-colors">
-                    <Link to={`/feed/profile/${f.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
-                      {f.avatarUrl ? <img src={f.avatarUrl} alt="" className="w-full h-full object-cover" /> : <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">{f.name.charAt(0).toUpperCase()}</span>}
-                    </Link>
-                    <div className="min-w-0 flex-1">
-                      <Link to={`/feed/profile/${f.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate block">{f.name}</Link>
-                      {f.mutualCount != null && f.mutualCount > 0 && <p className="text-xs text-slate-500 dark:text-slate-400">{f.mutualCount} bạn chung</p>}
-                    </div>
-                    <Link to="/feed/waves" className="flex-shrink-0 py-2 px-3 rounded-lg bg-surf-primary/10 dark:bg-surf-secondary/15 text-surf-primary dark:text-surf-secondary text-sm font-medium hover:bg-surf-primary/20 dark:hover:bg-surf-secondary/25 transition-colors">Nhắn tin</Link>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              {(() => {
+                // Filter bạn bè theo query
+                const filteredFriends = friendsSearchQuery.trim()
+                  ? friends.filter((f) =>
+                      f.name.toLowerCase().includes(friendsSearchQuery.toLowerCase())
+                    )
+                  : friends;
+
+                if (filteredFriends.length === 0) {
+                  return (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 py-4 text-center">
+                      Không tìm thấy bạn bè nào với tên "{friendsSearchQuery}".
+                    </p>
+                  );
+                }
+
+                return (
+                  <ul className="space-y-2">
+                    {filteredFriends.map((f) => (
+                      <li key={f.id}>
+                        <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600 hover:border-surf-primary/30 dark:hover:border-surf-secondary/30 transition-colors">
+                          <Link to={`/feed/profile/${f.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                            {f.avatarUrl ? (
+                              <img src={f.avatarUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                {f.name.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </Link>
+                          <div className="min-w-0 flex-1">
+                            <Link to={`/feed/profile/${f.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate block">
+                              {f.name}
+                            </Link>
+                            {f.mutualCount != null && f.mutualCount > 0 && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{f.mutualCount} bạn chung</p>
+                            )}
+                          </div>
+                          <Link
+                            to="/feed/waves"
+                            className="flex-shrink-0 py-2 px-3 rounded-lg bg-gradient-to-r from-surf-primary to-blue-500 dark:from-surf-secondary dark:to-purple-500 text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+                            </svg>
+                            <span>Nhắn tin</span>
+                          </Link>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+            </>
           )}
         </section>
       )}

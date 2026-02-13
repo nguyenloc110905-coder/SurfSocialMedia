@@ -95,6 +95,8 @@ Build pass chỉ đảm bảo **code biên dịch được**, không đảm bả
 | **Gửi lời mời** | Bấm **Thêm bạn bè** với một user (từ Gợi ý hoặc tìm kiếm) → không báo lỗi, user đó biến mất khỏi kết quả tìm kiếm. |
 | **Chấp nhận lời mời** | Cần **2 tài khoản**: đăng nhập tài khoản A, gửi lời mời cho B. Mở **cửa sổ ẩn danh** (hoặc browser khác), đăng nhập tài khoản B → **Bạn bè** → **Lời mời kết bạn** → **Xác nhận**. Quay lại A → **Tất cả bạn bè** thấy B. |
 
+**Cách có người trong Gợi ý nhanh (chỉ để test):** Trong `surf-server` chạy `npm run seed:test-users` (một lần). Script tạo 2 user test trong Firestore (User Test 1, User Test 2). Tải lại trang **Bạn bè** → **Gợi ý** sẽ thấy 2 người này và có thể bấm **Thêm bạn bè** để test gửi lời mời. (User test không đăng nhập được nên không test được bên “chấp nhận lời mời”.)
+
 **Bước 4 – Xử lý nếu lỗi**
 
 - Mở **DevTools** (F12) → tab **Network**: xem request `/api/...` trả về 200 hay 4xx/5xx, response body là gì.

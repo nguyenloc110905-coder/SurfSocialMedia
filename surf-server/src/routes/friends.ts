@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { io } from '../index.js';
 
 const router = Router();
 const db = () => getDb();
@@ -103,6 +104,19 @@ router.post('/requests', requireAuth, async (req: AuthRequest, res) => {
       status: 'pending',
       createdAt: new Date(),
     });
+    
+    // Emit Socket.io event để người nhận cập nhật real-time
+    const fromUser = await db().collection('users').doc(fromUid).get();
+    const fromData = fromUser.data();
+    const requestData = {
+      id: ref.id,
+      fromUid,
+      name: fromData?.displayName ?? 'Unknown',
+      avatarUrl: fromData?.photoURL,
+    };
+    console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
+    io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
+    
     res.status(201).json({ id: ref.id, toUid, status: 'pending' });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

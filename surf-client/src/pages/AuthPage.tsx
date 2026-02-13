@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { signIn, signInWithGoogle, signUp } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
+import { syncUserProfile } from '@/lib/api';
 
 const ERRORS: Record<string, string> = {
   'auth/invalid-email': 'Email không hợp lệ.',
@@ -90,7 +91,19 @@ export default function AuthPage() {
     setError('');
     setLoading(true);
     try {
-      await signIn(loginEmail.trim(), loginPassword);
+      const result = await signIn(loginEmail.trim(), loginPassword);
+      console.log('👤 Signed in:', result.user.email);
+      
+      // Đợi token sẵn sàng trước khi navigate
+      const token = await result.user.getIdToken();
+      console.log('🔑 Token ready, length:', token.length);
+      
+      // Đợi thêm để đảm bảo auth.currentUser được cập nhật đầy đủ
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Sync profile ngay sau khi có token
+      await syncUserProfile();
+      
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
@@ -118,7 +131,19 @@ export default function AuthPage() {
     }
     setLoading(true);
     try {
-      await signUp(regEmail.trim(), regPassword, regName.trim());
+      const result = await signUp(regEmail.trim(), regPassword, regName.trim());
+      console.log('👤 Registered:', result.user.email);
+      
+      // Đợi token sẵn sàng trước khi navigate
+      const token = await result.user.getIdToken();
+      console.log('🔑 Token ready, length:', token.length);
+      
+      // Đợi thêm để đảm bảo auth.currentUser được cập nhật đầy đủ
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Sync profile ngay sau khi có token
+      await syncUserProfile();
+      
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
@@ -132,7 +157,19 @@ export default function AuthPage() {
     setError('');
     setLoading(true);
     try {
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      console.log('👤 Google signed in:', result.user.email);
+      
+      // Đợi token sẵn sàng trước khi navigate
+      const token = await result.user.getIdToken();
+      console.log('🔑 Token ready, length:', token.length);
+      
+      // Đợi thêm để đảm bảo auth.currentUser được cập nhật đầy đủ
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Sync profile ngay sau khi có token
+      await syncUserProfile();
+      
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';

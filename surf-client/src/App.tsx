@@ -42,12 +42,40 @@ function ThemeInit() {
 
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+  
+  // Đợi auth loading xong trước khi redirect
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-surf-dark">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-surf-primary dark:border-surf-secondary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Đang tải...</p>
+        </div>
+      </div>
+    );
+  }
+  
   if (!user) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
 function HomeOrRedirect() {
   const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+  
+  // Đợi auth loading xong trước khi redirect
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-surf-dark">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-surf-primary dark:border-surf-secondary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Đang tải...</p>
+        </div>
+      </div>
+    );
+  }
+  
   if (user) return <Navigate to="/feed" replace />;
   return <AuthPage />;
 }
