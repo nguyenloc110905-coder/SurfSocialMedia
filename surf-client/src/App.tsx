@@ -12,6 +12,7 @@ import Friends from './pages/Friends';
 import Groups from './pages/Groups';
 import SettingsPage from './pages/SettingsPage';
 import MarketPage from './pages/MarketPage';
+import PlaceholderPage from './pages/PlaceholderPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -73,8 +74,20 @@ export default function App() {
           <Route path="profile/:uid" element={<Profile />} />
           <Route path="short-video" element={<ShortVideo />} />
           <Route path="friends" element={<Friends />} />
+          <Route path="friends/requests" element={<Friends />} />
+          <Route path="friends/suggestions" element={<Friends />} />
+          <Route path="friends/all" element={<Friends />} />
+          <Route path="friends/birthdays" element={<Friends />} />
+          <Route path="friends/history" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
           <Route path="market" element={<MarketPage />} />
+          <Route path="saved" element={<PlaceholderPage title="Đã lưu" description="Bài viết và nội dung bạn đã lưu." />} />
+          <Route path="events" element={<PlaceholderPage title="Sự kiện" description="Sự kiện sắp diễn ra và đã tham gia." />} />
+          <Route path="pages" element={<PlaceholderPage title="Trang" description="Trang bạn quản lý và theo dõi." />} />
+          <Route path="waves" element={<PlaceholderPage title="Waves" description="Nhắn tin nhanh — công cụ trò chuyện của Surf." />} />
+          <Route path="explore" element={<PlaceholderPage title="Khám phá" description="Khám phá nội dung và chủ đề phù hợp với bạn." />} />
+          <Route path="moments" element={<PlaceholderPage title="Moments" description="Khoảnh khắc 24h từ bạn bè và cộng đồng — tương tự Story." />} />
+          <Route path="live" element={<PlaceholderPage title="Surf Live" description="Phát trực tiếp và xem live." />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

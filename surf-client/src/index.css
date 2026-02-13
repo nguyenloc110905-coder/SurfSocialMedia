@@ -59,6 +59,21 @@ body {
   background: rgb(100 116 139 / 0.5);
 }
 
+/* Cột trái trang chính: animation đổ xuống khi vào trang */
+@keyframes main-left-nav-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.main-left-nav-item {
+  animation: main-left-nav-item-in 0.35s ease-out forwards;
+}
+
 /* Thẻ lật đăng nhập / đăng ký */
 .auth-flip-container {
   perspective: 1000px;

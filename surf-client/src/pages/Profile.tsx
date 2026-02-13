@@ -6,6 +6,7 @@ import { uploadProfileImage } from '@/lib/firebase/storage';
 import { updateUserProfile } from '@/lib/firebase/auth';
 import { resizeAvatar, resizeCover } from '@/lib/utils/image';
 import Modal from '@/components/ui/Modal';
+import { api } from '@/lib/api';
 
 const TABS: { id: string; label: string; hasArrow?: boolean }[] = [
   { id: 'posts', label: 'Bài viết' },
@@ -60,6 +61,8 @@ export default function Profile() {
   const highlightPhotos = profile?.highlightPhotos ?? [];
   const [posts] = useState<{ id: string; time: string; text: string; hasImage?: boolean }[]>([]);
   const friendCount: number | null = null;
+  const [addFriendLoading, setAddFriendLoading] = useState(false);
+  const [addFriendSent, setAddFriendSent] = useState(false);
 
   useEffect(() => {
     if (!uid) return;
@@ -380,6 +383,34 @@ export default function Profile() {
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                 </svg>
+              </button>
+            </div>
+          )}
+          {!isOwnProfile && uid && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                disabled={addFriendLoading || addFriendSent}
+                onClick={async () => {
+                  setAddFriendLoading(true);
+                  try {
+                    await api.post('/api/friends/requests', { toUid: uid });
+                    setAddFriendSent(true);
+                  } catch {
+                    setAddFriendSent(false);
+                  } finally {
+                    setAddFriendLoading(false);
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-xl bg-surf-primary text-white text-sm font-semibold hover:bg-surf-primary/90 dark:hover:bg-surf-primary/80 transition-colors disabled:opacity-60"
+              >
+                {addFriendLoading ? (
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : addFriendSent ? (
+                  'Đã gửi lời mời'
+                ) : (
+                  'Thêm bạn bè'
+                )}
               </button>
             </div>
           )}

@@ -17,7 +17,9 @@ const CENTER_NAV = [
   { to: '/feed/market', title: 'Surf Market', path: 'M4 6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h4V6zm8 0V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2h8z' },
 ] as const;
 
-export default function Header() {
+type HeaderProps = { hideCenterNav?: boolean };
+
+export default function Header({ hideCenterNav = false }: HeaderProps) {
   const user = useAuthStore((s) => s.user);
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -48,12 +50,12 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 safe-area-header flex items-center justify-between h-12 sm:h-14 px-3 sm:px-6 lg:px-8 gap-2 sm:gap-4 relative">
-      {/* Trái: logo + tìm kiếm */}
-      <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0 max-w-[50%]">
+      {/* Trái: logo + tìm kiếm — khi có cột trái (hideCenterNav) giới hạn bằng chiều rộng cột */}
+      <div className={`flex items-center gap-2 sm:gap-4 flex-1 min-w-0 ${hideCenterNav ? 'max-w-[25%]' : 'max-w-[50%]'}`}>
         <Link to="/feed" className="flex-shrink-0">
           <img src="/DashboardLogo.png" alt="Surf" className="h-7 sm:h-9 w-auto object-contain dark:invert dark:brightness-90" />
         </Link>
-        <div className="hidden sm:flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1.5 flex-1 min-w-[80px] max-w-[260px] sm:max-w-[300px] lg:max-w-[340px]">
+        <div className={`hidden sm:flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1.5 flex-1 min-w-[80px] ${hideCenterNav ? 'max-w-[140px] md:max-w-[160px] lg:max-w-[200px]' : 'max-w-[260px] sm:max-w-[300px] lg:max-w-[340px]'}`}>
           <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
           </svg>
@@ -66,7 +68,8 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Giữa: nav chỉ icon - căn giữa tuyệt đối trên desktop */}
+      {/* Giữa: nav chỉ icon — ẩn trên desktop khi dùng cột trái (layout 25-50-25) */}
+      {!hideCenterNav && (
       <nav className="hidden md:flex absolute left-1/2 top-0 bottom-0 -translate-x-1/2 items-center justify-center gap-2 pointer-events-none">
         <div className="flex items-center gap-8 sm:gap-12 lg:gap-16 pointer-events-auto">
           {CENTER_NAV.map(({ to, title, path }) => (
@@ -93,6 +96,7 @@ export default function Header() {
           ))}
         </div>
       </nav>
+      )}
 
       {/* Phải: grid, tin nhắn, thông báo, avatar */}
       <div className="flex items-center justify-end gap-2 sm:gap-3 lg:gap-5 flex-shrink-0 min-w-0" ref={menuRef}>
