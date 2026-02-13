@@ -11,29 +11,49 @@ function initFirebaseAdmin() {
   if (admin.apps.length > 0) {
     _auth = admin.auth();
     _db = admin.firestore();
+    console.log('✅ Firebase Admin already initialized');
     return;
   }
 
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   const keyPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
 
-  if (json) {
-    const credentials = JSON.parse(json);
-    admin.initializeApp({ credential: admin.credential.cert(credentials) });
+  try {
+    if (json) {
+      console.log('🔑 Initializing Firebase Admin from FIREBASE_SERVICE_ACCOUNT_JSON...');
+      const credentials = JSON.parse(json);
+      admin.initializeApp({ credential: admin.credential.cert(credentials) });
+      _auth = admin.auth();
+      _db = admin.firestore();
+      console.log('✅ Firebase Admin initialized successfully (from env var)');
+      return;
+    }
+
+    if (keyPath) {
+      console.log('🔑 Initializing Firebase Admin from FIREBASE_SERVICE_ACCOUNT_PATH...');
+      const resolved = path.isAbsolute(keyPath) ? keyPath : path.resolve(process.cwd(), keyPath);
+      admin.initializeApp({ credential: admin.credential.cert(resolved) });
+      _auth = admin.auth();
+      _db = admin.firestore();
+      console.log('✅ Firebase Admin initialized successfully (from file path)');
+      return;
+    }
+
+    // Fallback: Try default serviceAccountKey.json
+    const defaultPath = path.resolve(__dirname, '../../serviceAccountKey.json');
+    console.log('🔑 Trying default path:', defaultPath);
+    admin.initializeApp({ credential: admin.credential.cert(defaultPath) });
     _auth = admin.auth();
     _db = admin.firestore();
-    return;
+    console.log('✅ Firebase Admin initialized successfully (from default path)');
+  } catch (error) {
+    console.error('❌ CRITICAL: Failed to initialize Firebase Admin SDK!');
+    console.error('Error:', error);
+    console.error('\n💡 Please set one of these environment variables:');
+    console.error('   - FIREBASE_SERVICE_ACCOUNT_JSON (minified JSON string)');
+    console.error('   - FIREBASE_SERVICE_ACCOUNT_PATH (path to serviceAccountKey.json)');
+    throw new Error('Firebase Admin SDK initialization failed. Server cannot start without valid credentials.');
   }
-
-  if (keyPath) {
-    const resolved = path.isAbsolute(keyPath) ? keyPath : path.resolve(process.cwd(), keyPath);
-    admin.initializeApp({ credential: admin.credential.cert(resolved) });
-    _auth = admin.auth();
-    _db = admin.firestore();
-    return;
-  }
-
-  // Chưa cấu hình Firebase → server vẫn chạy, API sẽ báo lỗi khi gọi
 }
 
 function ensureInit() {
