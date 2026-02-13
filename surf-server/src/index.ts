@@ -13,9 +13,27 @@ import friendsRoutes from './routes/friends.js';
 const app = express();
 const httpServer = createServer(app);
 const PORT = Number(process.env.PORT) || 4000;
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173,http://localhost:5174';
-const frontendUrls = frontendUrl.split(',').map((u) => u.trim()).filter(Boolean);
-const corsOrigin = frontendUrls.length > 1 ? frontendUrls : frontendUrls[0] ?? 'http://localhost:5173';
+
+// Allowed CORS origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://surf-7ce71.web.app',
+  'https://surf-7ce71.firebaseapp.com'
+];
+
+// Add additional origins from environment variable if provided
+const frontendUrl = process.env.FRONTEND_URL;
+if (frontendUrl) {
+  const envUrls = frontendUrl.split(',').map((u) => u.trim()).filter(Boolean);
+  envUrls.forEach(url => {
+    if (!allowedOrigins.includes(url)) {
+      allowedOrigins.push(url);
+    }
+  });
+}
+
+const corsOrigin = allowedOrigins;
 
 // Setup Socket.io
 export const io = new Server(httpServer, {
