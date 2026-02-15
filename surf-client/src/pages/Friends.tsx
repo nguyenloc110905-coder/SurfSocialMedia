@@ -250,12 +250,21 @@ export default function Friends() {
                     return (
                       <li key={s.id}>
                         <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600">
-                          <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                          <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full overflow-hidden">
                             {s.avatarUrl ? (
                               <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
-                              <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
-                                {s.name.charAt(0).toUpperCase()}
+                              <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
+                                <span className="text-sm font-bold text-white">
+                                  {(() => {
+                                    const name = s.name || 'S';
+                                    const words = name.split(' ');
+                                    if (words.length >= 2) {
+                                      return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+                                    }
+                                    return name.substring(0, 1).toUpperCase();
+                                  })()}
+                                </span>
                               </span>
                             )}
                           </Link>
@@ -349,11 +358,22 @@ export default function Friends() {
               {requests.map((r) => (
                 <li key={r.id}>
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600">
-                    <Link to={`/feed/profile/${r.fromUid}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                    <Link to={`/feed/profile/${r.fromUid}`} className="flex-shrink-0 w-11 h-11 rounded-full overflow-hidden">
                       {r.avatarUrl ? (
                         <img src={r.avatarUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">{r.name.charAt(0).toUpperCase()}</span>
+                        <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
+                          <span className="text-sm font-bold text-white">
+                            {(() => {
+                              const name = r.name || 'S';
+                              const words = name.split(' ');
+                              if (words.length >= 2) {
+                                return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+                              }
+                              return name.substring(0, 1).toUpperCase();
+                            })()}
+                          </span>
+                        </span>
                       )}
                     </Link>
                     <Link to={`/feed/profile/${r.fromUid}`} className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate">
@@ -395,8 +415,23 @@ export default function Friends() {
               {suggestions.map((s) => (
                 <li key={s.id}>
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600 hover:border-surf-primary/30 dark:hover:border-surf-secondary/30 transition-colors">
-                    <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
-                      {s.avatarUrl ? <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" /> : <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">{s.name.charAt(0).toUpperCase()}</span>}
+                    <Link to={`/feed/profile/${s.id}`} className="flex-shrink-0 w-11 h-11 rounded-full overflow-hidden">
+                      {s.avatarUrl ? (
+                        <img src={s.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
+                          <span className="text-sm font-bold text-white">
+                            {(() => {
+                              const name = s.name || 'S';
+                              const words = name.split(' ');
+                              if (words.length >= 2) {
+                                return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+                              }
+                              return name.substring(0, 1).toUpperCase();
+                            })()}
+                          </span>
+                        </span>
+                      )}
                     </Link>
                     <div className="min-w-0 flex-1">
                       <Link to={`/feed/profile/${s.id}`} className="font-medium text-slate-800 dark:text-slate-100 hover:text-surf-primary dark:hover:text-surf-secondary truncate block">{s.name}</Link>
@@ -482,12 +517,21 @@ export default function Friends() {
                     {filteredFriends.map((f) => (
                       <li key={f.id}>
                         <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600 hover:border-surf-primary/30 dark:hover:border-surf-secondary/30 transition-colors">
-                          <Link to={`/feed/profile/${f.id}`} className="flex-shrink-0 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                          <Link to={`/feed/profile/${f.id}`} className="flex-shrink-0 w-11 h-11 rounded-full overflow-hidden">
                             {f.avatarUrl ? (
                               <img src={f.avatarUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
-                              <span className="w-full h-full flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
-                                {f.name.charAt(0).toUpperCase()}
+                              <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
+                                <span className="text-sm font-bold text-white">
+                                  {(() => {
+                                    const name = f.name || 'S';
+                                    const words = name.split(' ');
+                                    if (words.length >= 2) {
+                                      return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+                                    }
+                                    return name.substring(0, 1).toUpperCase();
+                                  })()}
+                                </span>
                               </span>
                             )}
                           </Link>

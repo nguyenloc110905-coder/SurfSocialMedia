@@ -42,7 +42,7 @@ export default function MainRightSidebar({
   chatGroups = [],
 }: MainRightSidebarProps) {
   return (
-    <aside className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide bg-white/60 dark:bg-gray-900/60 p-4">
+    <aside className="hidden lg:flex flex-col min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide p-4">
       {/* 1. Quảng cáo — gọi mềm hơn */}
       <Section title="Được tài trợ" empty={ads.length === 0} emptyMessage="Chưa có nội dung.">
         <ul className="space-y-2">
@@ -81,12 +81,21 @@ export default function MainRightSidebar({
                   to={`/feed/profile/${friend.id}`}
                   className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
                 >
-                  <span className="relative flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
+                  <span className="relative flex-shrink-0 w-8 h-8 rounded-full overflow-hidden">
                     {friend.avatarUrl ? (
                       <img src={friend.avatarUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="w-full h-full flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300">
-                        {friend.name.charAt(0).toUpperCase()}
+                      <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
+                        <span className="text-xs font-bold text-white">
+                          {(() => {
+                            const name = friend.name || 'S';
+                            const words = name.split(' ');
+                            if (words.length >= 2) {
+                              return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+                            }
+                            return name.substring(0, 1).toUpperCase();
+                          })()}
+                        </span>
                       </span>
                     )}
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-gray-800" title="Đang hoạt động" />

@@ -9,11 +9,21 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const db = getDb();
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
-    const { content, mediaUrls = [], parentId } = req.body;
-    if (!content?.trim()) {
-      res.status(400).json({ error: 'Content is required' });
+    const { 
+      content, 
+      mediaUrls = [], 
+      parentId,
+      feeling,
+      location,
+      taggedFriends = [],
+      privacy = 'public'
+    } = req.body;
+    
+    if (!content?.trim() && mediaUrls.length === 0) {
+      res.status(400).json({ error: 'Content or media is required' });
       return;
     }
+    
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
     const docRef = postsRef.doc();
@@ -21,8 +31,12 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       authorId: req.uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
       authorPhotoURL: user?.photoURL ?? null,
-      content: content.trim(),
+      content: content?.trim() || '',
       mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : [],
+      feeling: feeling || null,
+      location: location || null,
+      taggedFriends: Array.isArray(taggedFriends) ? taggedFriends : [],
+      privacy: privacy || 'public',
       parentId: parentId || null,
       createdAt: new Date(),
       updatedAt: new Date(),

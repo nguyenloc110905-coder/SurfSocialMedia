@@ -34,7 +34,7 @@ export default function MainLeftNav({ shortcuts = [] }: MainLeftNavProps) {
   const list = shortcuts.slice(0, SHORTCUTS_MAX);
 
   return (
-    <aside className="hidden md:flex flex-col w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide bg-white/80 dark:bg-gray-900/80">
+    <aside className="hidden md:flex flex-col w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
       <nav className="p-3 space-y-1" aria-label="Điều hướng chính">
         {MAIN_NAV_ITEMS.map(({ to, title, path }, i) => (
           <NavLink

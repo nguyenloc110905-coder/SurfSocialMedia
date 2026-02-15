@@ -9,6 +9,7 @@ import usersRoutes from './routes/users.js';
 import postsRoutes from './routes/posts.js';
 import feedRoutes from './routes/feed.js';
 import friendsRoutes from './routes/friends.js';
+import commentsRoutes from './routes/comments.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -60,7 +61,8 @@ io.on('connection', (socket) => {
 });
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Mọi request /api đều cần đăng nhập; ensureUser tạo doc user nếu chưa có (để xuất hiện trong Gợi ý kết bạn)
 app.use('/api', requireAuth, ensureUser);
@@ -70,6 +72,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/posts', postsRoutes);
 app.use('/api/feed', feedRoutes);
 app.use('/api/friends', friendsRoutes);
+app.use('/api/comments', commentsRoutes);
 
 app.get('/health', (_, res) => res.json({ ok: true }));
 

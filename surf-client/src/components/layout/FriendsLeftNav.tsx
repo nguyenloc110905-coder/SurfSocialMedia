@@ -14,7 +14,7 @@ export default function FriendsLeftNav() {
   const navigate = useNavigate();
 
   return (
-    <aside className="hidden md:flex flex-col w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide bg-white/80 dark:bg-gray-900/80">
+    <aside className="hidden md:flex flex-col w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
       <div className="flex-shrink-0 p-3 space-y-1 border-b border-gray-100 dark:border-gray-700/80">
         <button
           type="button"

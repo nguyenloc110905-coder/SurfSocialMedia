@@ -136,3 +136,212 @@ body {
 .landing-cta-slide-up {
   animation: landing-cta-slide-up 0.75s ease-out forwards;
 }
+
+/* Wave animations for CreatePost background */
+@keyframes wave-slow {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+  }
+  25% {
+    transform: translateX(-5px) translateY(-2px);
+  }
+  50% {
+    transform: translateX(0) translateY(-4px);
+  }
+  75% {
+    transform: translateX(5px) translateY(-2px);
+  }
+}
+
+@keyframes wave-medium {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+  }
+  33% {
+    transform: translateX(8px) translateY(-3px);
+  }
+  66% {
+    transform: translateX(-8px) translateY(-3px);
+  }
+}
+
+@keyframes wave-fast {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+  }
+  50% {
+    transform: translateX(-10px) translateY(-5px);
+  }
+}
+
+.animate-wave-slow {
+  animation: wave-slow 8s ease-in-out infinite;
+}
+
+.animate-wave-medium {
+  animation: wave-medium 5s ease-in-out infinite;
+}
+
+.animate-wave-fast {
+  animation: wave-fast 3s ease-in-out infinite;
+}
+
+/* Smooth slide down animation for CreatePost */
+@keyframes smooth-slide-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-32px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-smooth-slide-down {
+  animation: smooth-slide-down 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Smooth fade in with delay for sub-elements */
+@keyframes smooth-fade-in-delayed {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-smooth-fade-in-delayed {
+  animation: smooth-fade-in-delayed 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+  opacity: 0;
+}
+
+/* Stagger animations for different delays */
+@keyframes smooth-fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-1 {
+  animation: smooth-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-2 {
+  animation: smooth-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-3 {
+  animation: smooth-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-header {
+  animation: smooth-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+  opacity: 0;
+}
+
+/* Reaction picker emoji animations */
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0) translateY(10px);
+  }
+  50% {
+    transform: scale(1.1) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Backdrop fade in animation */
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Post card scale in animation (for comment focus) */
+@keyframes scaleIn {
+  0% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Post card scale out animation (for comment close) */
+@keyframes scaleOut {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+
+/* Custom scrollbar for comments section */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(6 182 212 / 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, rgb(6 182 212 / 0.4), rgb(59 130 246 / 0.4));
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, rgb(6 182 212 / 0.6), rgb(59 130 246 / 0.6));
+}
+
+.dark .custom-scrollbar {
+  scrollbar-color: rgb(6 182 212 / 0.2) transparent;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, rgb(6 182 212 / 0.3), rgb(59 130 246 / 0.3));
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, rgb(6 182 212 / 0.5), rgb(59 130 246 / 0.5));
+}

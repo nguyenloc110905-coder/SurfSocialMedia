@@ -118,14 +118,16 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-surf-primary/10 text-surf-primary font-semibold text-xs hover:bg-surf-primary/20 dark:hover:bg-surf-primary/30 transition-colors flex-shrink-0"
+          className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden hover:ring-2 hover:ring-cyan-400 dark:hover:ring-cyan-500 transition-all flex-shrink-0"
           aria-expanded={open}
           aria-haspopup="true"
         >
           {user?.photoURL ? (
             <img src={user.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
           ) : (
-            <span>{initial}</span>
+            <div className="w-full h-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+              <span className="text-white font-bold text-xs sm:text-sm">{initial}</span>
+            </div>
           )}
         </button>
 
@@ -142,7 +144,9 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                   {user?.photoURL ? (
                     <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full object-cover" />
                   ) : (
-                    <span className="w-10 h-10 rounded-full bg-surf-primary/10 text-surf-primary font-semibold text-sm flex items-center justify-center">{initial}</span>
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                      <span className="text-white font-bold text-sm">{initial}</span>
+                    </div>
                   )}
                   <span className="font-medium text-gray-900 dark:text-gray-100">{displayName}</span>
                 </Link>

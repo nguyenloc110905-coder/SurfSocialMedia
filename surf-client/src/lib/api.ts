@@ -73,12 +73,17 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 
 	if (!res.ok) {
 		let message = res.statusText;
+		const contentType = res.headers.get('content-type');
 		try {
-			const data = (await res.json()) as { error?: string; message?: string };
-			message = data.error || data.message || message;
-		} catch {
-			const text = await res.text();
-			if (text) message = text;
+			if (contentType?.includes('application/json')) {
+				const data = (await res.json()) as { error?: string; message?: string };
+				message = data.error || data.message || message;
+			} else {
+				const text = await res.text();
+				if (text) message = text;
+			}
+		} catch (e) {
+			console.error('Failed to parse error response:', e);
 		}
 		console.error(`❌ API ${options.method} ${path} failed: ${res.status} ${message}`);
 		throw new Error(message || 'Request failed');

@@ -40,10 +40,10 @@ export default function Layout() {
       >
         {useThreeColumn ? (
           <>
-            <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[25%_1fr] lg:grid-cols-[25%_50%_25%] gap-2 md:gap-3 overflow-hidden">
+            <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[25%_1fr] lg:grid-cols-[22%_56%_22%] gap-1 md:gap-2 overflow-hidden">
               {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
               <div className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
-                <div className="flex-1 w-full max-w-2xl mx-auto px-4 py-4 sm:py-6">
+                <div className="flex-1 w-full">
                   <Outlet />
                 </div>
               </div>
