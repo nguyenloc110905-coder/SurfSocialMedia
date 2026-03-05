@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { FieldValue } from 'firebase-admin/firestore';
 import { io } from '../index.js';
 
 const router = Router();
@@ -104,6 +105,10 @@ router.post('/requests', requireAuth, async (req: AuthRequest, res) => {
       status: 'pending',
       createdAt: new Date(),
     });
+
+    // Auto-follow người được gửi lời mời (gửi lời mời = quan tâm người đó)
+    await db().collection('follows').doc(fromUid)
+      .set({ followingIds: FieldValue.arrayUnion(toUid) }, { merge: true });
     
     // Emit Socket.io event để người nhận cập nhật real-time
     const fromUser = await db().collection('users').doc(fromUid).get();
@@ -165,6 +170,33 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/** GET /api/friends/sent — lời mời đã gửi (còn pending) */
+router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const snap = await db()
+      .collection('friend_requests')
+      .where('fromUid', '==', uid)
+      .where('status', '==', 'pending')
+      .get();
+    if (snap.empty) { res.json({ sent: [] }); return; }
+    const toIds = snap.docs.map((d) => d.data().toUid as string);
+    const usersSnap = await db().collection('users').get();
+    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, d.data()]));
+    const sent = snap.docs.map((d) => {
+      const data = d.data();
+      const u = usersMap.get(data.toUid);
+      return {
+        id: d.id,
+        toUid: data.toUid,
+        name: (u?.displayName as string) ?? 'Unknown',
+        avatarUrl: u?.photoURL as string | undefined,
+      };
+    });
+    res.json({ sent });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
 /** GET /api/friends/suggestions — gợi ý (user chưa là bạn, chưa có request pending) */
 router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -191,6 +223,57 @@ router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
         };
       });
     res.json({ suggestions });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** GET /api/friends/status/:uid — kiểm tra trạng thái quan hệ bạn bè với user khác */
+router.get('/status/:uid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const me = req.uid!;
+    const other = req.params.uid;
+
+    if (me === other) {
+      res.json({ status: 'self' });
+      return;
+    }
+
+    // Check if already friends
+    const friendDoc = await db().collection('friends').doc(me).get();
+    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+    if (friendIds.includes(other)) {
+      res.json({ status: 'friends' });
+      return;
+    }
+
+    // Check if I sent a request
+    const sentSnap = await db()
+      .collection('friend_requests')
+      .where('fromUid', '==', me)
+      .where('toUid', '==', other)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get();
+    if (!sentSnap.empty) {
+      res.json({ status: 'request_sent', requestId: sentSnap.docs[0].id });
+      return;
+    }
+
+    // Check if they sent me a request
+    const receivedSnap = await db()
+      .collection('friend_requests')
+      .where('fromUid', '==', other)
+      .where('toUid', '==', me)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get();
+    if (!receivedSnap.empty) {
+      res.json({ status: 'request_received', requestId: receivedSnap.docs[0].id });
+      return;
+    }
+
+    res.json({ status: 'stranger' });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

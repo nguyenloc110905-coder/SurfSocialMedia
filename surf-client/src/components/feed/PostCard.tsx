@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -17,6 +18,7 @@ interface Comment {
 interface PostCardProps {
   post: {
     id: string;
+    authorId?: string;
     authorDisplayName: string;
     authorPhotoURL: string | null;
     content: string;
@@ -35,6 +37,8 @@ interface PostCardProps {
 
 export default function PostCard({ post, currentUserId }: PostCardProps) {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const goToProfile = (uid?: string) => uid && navigate(`/feed/profile/${uid}`);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const [isLiked, setIsLiked] = useState(currentUserId ? post.likedBy?.includes(currentUserId) : false);
@@ -51,6 +55,14 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
   const [isClosing, setIsClosing] = useState(false);
+
+  // Auto-refresh time display every 30s (vừa xong → X phút trước, etc.)
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTimeTick(t => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Handle closing with animation
   const handleCloseComments = () => {
     setIsClosing(true);
@@ -231,8 +243,14 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
       // Handle different timestamp formats
       let date: Date;
       if (timestamp?.toDate && typeof timestamp.toDate === 'function') {
-        // Firestore Timestamp
+        // Firestore Timestamp object (client SDK)
         date = timestamp.toDate();
+      } else if (timestamp?._seconds !== undefined) {
+        // Serialized Firestore Timestamp { _seconds, _nanoseconds }
+        date = new Date(timestamp._seconds * 1000);
+      } else if (timestamp?.seconds !== undefined) {
+        // Serialized Firestore Timestamp { seconds, nanoseconds }
+        date = new Date(timestamp.seconds * 1000);
       } else if (typeof timestamp === 'string' || typeof timestamp === 'number') {
         // ISO string or milliseconds
         date = new Date(timestamp);
@@ -273,21 +291,16 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
         return `${diffInDays} ngày trước`;
       }
       
-      // Dưới 4 tuần - hiển thị tuần
-      const diffInWeeks = Math.floor(diffInDays / 7);
-      if (diffInWeeks < 4) {
-        return `${diffInWeeks} tuần trước`;
+      // Từ 7 ngày trở lên - hiển thị ngày tháng năm cụ thể
+      const day = date.getDate();
+      const month = date.getMonth() + 1;
+      const year = date.getFullYear();
+      const currentYear = now.getFullYear();
+      // Nếu cùng năm thì bỏ năm, khác năm thì hiện đủ
+      if (year === currentYear) {
+        return `${day} tháng ${month}`;
       }
-      
-      // Dưới 12 tháng - hiển thị tháng
-      const diffInMonths = Math.floor(diffInDays / 30);
-      if (diffInMonths < 12) {
-        return `${diffInMonths} tháng trước`;
-      }
-      
-      // Trên 1 năm - hiển thị năm
-      const diffInYears = Math.floor(diffInDays / 365);
-      return `${diffInYears} năm trước`;
+      return `${day} tháng ${month}, ${year}`;
     } catch (error) {
       console.error('Error formatting time:', error, timestamp);
       return 'vừa xong';
@@ -388,7 +401,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
         
         {/* Author Header */}
         <div className="flex items-start gap-3 mb-4">
-          <div className="relative group/avatar">
+          <div className="relative group/avatar" onClick={() => goToProfile(post.authorId)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && goToProfile(post.authorId)}>
             <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full blur-md opacity-0 group-hover/avatar:opacity-50 transition-opacity duration-300"></div>
             {post.authorPhotoURL ? (
               <img 
@@ -414,7 +427,10 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
           
           <div className="flex-1 min-w-0">
             <div className="text-sm leading-relaxed mb-1">
-              <h3 className="inline font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors">
+              <h3
+                className="inline font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
+                onClick={() => goToProfile(post.authorId)}
+              >
                 {post.authorDisplayName}
               </h3>
               {post.feeling && (
@@ -427,7 +443,10 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   {' '}cùng với{' '}
                   {post.taggedFriends.map((friend, idx) => (
                     <span key={friend.uid}>
-                      <span className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer">
+                      <span
+                        className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                        onClick={() => goToProfile(friend.uid)}
+                      >
                         {friend.displayName}
                       </span>
                       {idx < post.taggedFriends!.length - 1 && ', '}
@@ -529,7 +548,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
         )}
 
         {/* Stats Bar with Wave Accent - Only show if there are interactions */}
-        {((likeCount && likeCount > 0) || (post.replyCount && post.replyCount > 0)) && (
+        {(likeCount > 0 || (post.replyCount ?? 0) > 0) && (
           <div className="relative flex items-center justify-between py-3 mb-3">
             <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-300 dark:via-slate-700 to-transparent"></div>
             
@@ -709,10 +728,14 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                       <img
                         src={comment.authorPhotoURL}
                         alt={comment.authorDisplayName}
-                        className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                        className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => goToProfile(comment.authorId)}
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                      <div
+                        className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => goToProfile(comment.authorId)}
+                      >
                         <span className="text-xs font-bold text-white">
                           {(() => {
                             const name = comment.authorDisplayName || 'U';
@@ -729,7 +752,10 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     {/* Comment Content */}
                     <div className="flex-1 min-w-0">
                       <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2">
-                        <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                        <div
+                          className="font-semibold text-sm text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
+                          onClick={() => goToProfile(comment.authorId)}
+                        >
                           {comment.authorDisplayName}
                         </div>
                         <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
