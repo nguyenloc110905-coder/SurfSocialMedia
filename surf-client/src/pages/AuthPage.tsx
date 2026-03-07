@@ -18,7 +18,6 @@ const ERRORS: Record<string, string> = {
   'auth/cancelled-popup-request': 'Đã có yêu cầu đăng nhập khác.',
 };
 
-/** Mật khẩu: ≥6 ký tự, 1 hoa, 1 số, 1 ký tự đặc biệt, khác tên và email. */
 function validatePassword(password: string, name: string, email: string): string | null {
   if (password.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự.';
   if (!/[A-Z]/.test(password)) return 'Mật khẩu cần ít nhất 1 chữ cái viết hoa.';
@@ -64,7 +63,28 @@ const PHONE_COUNTRY = [
 ] as const;
 
 const inputClass =
-  'w-full px-4 py-2.5 rounded-lg bg-[#E8F0FE] dark:bg-gray-800 border border-transparent dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-surf-primary focus:border-transparent';
+  'w-full px-4 py-2.5 rounded-xl bg-white/70 dark:bg-white/10 border border-white/30 dark:border-white/20 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent backdrop-blur-sm transition-all';
+
+/* Bubbles rendered as background */
+const BUBBLES = [
+  { className: 'auth-bubble-1', size: 180, top: '5%', left: '8%', bg: 'radial-gradient(circle at 30% 30%, rgba(14,165,233,0.35), rgba(6,182,212,0.10))' },
+  { className: 'auth-bubble-2', size: 120, top: '60%', left: '75%', bg: 'radial-gradient(circle at 30% 30%, rgba(6,182,212,0.30), rgba(14,165,233,0.08))' },
+  { className: 'auth-bubble-3', size: 90, top: '25%', left: '85%', bg: 'radial-gradient(circle at 30% 30%, rgba(56,189,248,0.30), rgba(14,165,233,0.06))' },
+  { className: 'auth-bubble-4', size: 200, top: '70%', left: '5%', bg: 'radial-gradient(circle at 30% 30%, rgba(14,165,233,0.25), rgba(6,182,212,0.08))' },
+  { className: 'auth-bubble-5', size: 70, top: '10%', left: '50%', bg: 'radial-gradient(circle at 30% 30%, rgba(6,182,212,0.35), rgba(56,189,248,0.10))' },
+  { className: 'auth-bubble-6', size: 140, top: '45%', left: '30%', bg: 'radial-gradient(circle at 30% 30%, rgba(56,189,248,0.20), rgba(14,165,233,0.06))' },
+  { className: 'auth-bubble-7', size: 60, top: '80%', left: '55%', bg: 'radial-gradient(circle at 30% 30%, rgba(14,165,233,0.40), rgba(6,182,212,0.10))' },
+  { className: 'auth-bubble-8', size: 100, top: '35%', left: '65%', bg: 'radial-gradient(circle at 30% 30%, rgba(6,182,212,0.25), rgba(56,189,248,0.08))' },
+];
+
+const GoogleIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24">
+    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+  </svg>
+);
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -92,18 +112,10 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const result = await signIn(loginEmail.trim(), loginPassword);
-      console.log('👤 Signed in:', result.user.email);
-      
-      // Đợi token sẵn sàng trước khi navigate
       const token = await result.user.getIdToken();
       console.log('🔑 Token ready, length:', token.length);
-      
-      // Đợi thêm để đảm bảo auth.currentUser được cập nhật đầy đủ
       await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Sync profile ngay sau khi có token
       await syncUserProfile();
-      
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
@@ -116,34 +128,17 @@ export default function AuthPage() {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!regName.trim()) {
-      setError('Vui lòng nhập tên hiển thị.');
-      return;
-    }
-    if (!regEmail.trim()) {
-      setError('Vui lòng nhập email.');
-      return;
-    }
+    if (!regName.trim()) { setError('Vui lòng nhập tên hiển thị.'); return; }
+    if (!regEmail.trim()) { setError('Vui lòng nhập email.'); return; }
     const pwdError = validatePassword(regPassword, regName.trim(), regEmail.trim());
-    if (pwdError) {
-      setError(pwdError);
-      return;
-    }
+    if (pwdError) { setError(pwdError); return; }
     setLoading(true);
     try {
       const result = await signUp(regEmail.trim(), regPassword, regName.trim());
-      console.log('👤 Registered:', result.user.email);
-      
-      // Đợi token sẵn sàng trước khi navigate
       const token = await result.user.getIdToken();
       console.log('🔑 Token ready, length:', token.length);
-      
-      // Đợi thêm để đảm bảo auth.currentUser được cập nhật đầy đủ
       await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Sync profile ngay sau khi có token
       await syncUserProfile();
-      
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
@@ -158,18 +153,10 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
-      console.log('👤 Google signed in:', result.user.email);
-      
-      // Đợi token sẵn sàng trước khi navigate
       const token = await result.user.getIdToken();
       console.log('🔑 Token ready, length:', token.length);
-      
-      // Đợi thêm để đảm bảo auth.currentUser được cập nhật đầy đủ
       await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Sync profile ngay sau khi có token
       await syncUserProfile();
-      
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
@@ -179,43 +166,49 @@ export default function AuthPage() {
     }
   }
 
-  const goRegister = () => {
-    setError('');
-    setIsFlipped(true);
-    navigate('/register', { replace: true });
-  };
-  const goLogin = () => {
-    setError('');
-    setIsFlipped(false);
-    navigate('/login', { replace: true });
-  };
+  const goRegister = () => { setError(''); setIsFlipped(true); navigate('/register', { replace: true }); };
+  const goLogin = () => { setError(''); setIsFlipped(false); navigate('/login', { replace: true }); };
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-surf-dark flex flex-col md:flex-row items-center justify-center md:justify-center md:gap-12 lg:gap-16 md:px-12 lg:px-20 py-8 gap-8">
-      {/* Cột trái: Logo + slogan - nhích lên phía 12h */}
-      <div className="landing-logo-drop flex flex-1 flex-col justify-center items-center w-full md:max-w-xl pt-12 md:pt-0 md:pb-32">
-        <div className="flex flex-col items-center text-center">
-          <Link to="/" className="inline-block mb-5 md:mb-6">
-            <img
-              src="/SurfLogo.png"
-              alt="Surf"
-              className="h-40 sm:h-48 md:h-52 lg:h-60 w-auto object-contain"
-            />
+    <div className="relative min-h-screen overflow-hidden flex items-center justify-center bg-gradient-to-br from-sky-100 via-cyan-50 to-blue-100 dark:from-slate-900 dark:via-cyan-950 dark:to-slate-900">
+      {/* Floating glossy bubbles background */}
+      {BUBBLES.map((b, i) => (
+        <div
+          key={i}
+          className={`auth-bubble ${b.className}`}
+          style={{
+            width: b.size,
+            height: b.size,
+            top: b.top,
+            left: b.left,
+            background: b.bg,
+            boxShadow: `inset -8px -8px 20px rgba(255,255,255,0.25), inset 4px 4px 12px rgba(255,255,255,0.15), 0 8px 32px rgba(14,165,233,0.10)`,
+          }}
+        />
+      ))}
+
+      {/* Card container – burst from center, md: logo bên trái + card bên phải */}
+      <div className="auth-card-burst relative z-10 w-full max-w-4xl mx-4 flex flex-col md:flex-row items-center md:gap-12 lg:gap-16">
+        {/* Logo – ẩn trên mobile, hiện ngang trên md+ */}
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center">
+          <Link to="/">
+            <img src="/SurfLogo.png" alt="Surf" className="h-80 lg:h-96 w-auto object-contain drop-shadow-lg" />
           </Link>
-          <p className="text-gray-800 dark:text-gray-200 text-base sm:text-lg md:text-xl lg:text-2xl leading-relaxed max-w-sm md:max-w-md">
-            Surf giúp bạn kết nối và chia sẻ với mọi người trong cuộc sống của bạn.
+          <p className="text-gray-600 dark:text-gray-300 text-base lg:text-lg text-center mt-4 max-w-xs">
+            Surf giúp bạn kết nối và chia sẻ với mọi người trong cuộc sống.
           </p>
         </div>
-      </div>
 
-      {/* Cột phải: Thẻ lật */}
-      <div className="landing-cta-slide-up w-full max-w-md">
-        <div className="auth-flip-container w-full">
+        {/* Flip card */}
+        <div className="auth-flip-container w-full max-w-md">
           <div className={`auth-flip-inner ${isFlipped ? 'flipped' : ''}`}>
-            {/* Mặt trước: Đăng nhập */}
-            <div className="auth-flip-face bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl rounded-xl p-6 flex flex-col">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Đăng nhập</h2>
-              <form onSubmit={handleLoginSubmit} className="flex flex-col gap-3">
+            {/* ====== FRONT: Đăng nhập ====== */}
+            <div className="auth-flip-face rounded-2xl p-6 md:p-8 flex flex-col bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-white/40 dark:border-white/10 shadow-[0_8px_40px_rgba(14,165,233,0.15)]">
+              <h2 className="text-2xl font-bold text-center bg-gradient-to-r from-surf-primary to-surf-secondary bg-clip-text text-transparent mb-5">
+                Đăng nhập
+              </h2>
+
+              <form onSubmit={handleLoginSubmit} className="flex flex-col gap-3.5">
                 <input
                   type="email"
                   autoComplete="username"
@@ -237,47 +230,55 @@ export default function AuthPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-2.5 rounded-lg font-semibold bg-surf-primary text-white hover:bg-surf-primary/90 transition-colors disabled:opacity-50"
+                  className="w-full py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-surf-primary to-surf-secondary hover:shadow-lg hover:shadow-cyan-500/25 transition-all disabled:opacity-50"
                 >
-                  Đăng nhập
+                  {loading ? 'Đang xử lý...' : 'Đăng nhập'}
                 </button>
-                <Link to="/forgot-password" className="text-center text-sm text-surf-primary hover:underline">
-                  Quên mật khẩu?
-                </Link>
               </form>
-              <button
-                type="button"
-                onClick={goRegister}
-                className="w-full mt-4 py-2.5 rounded-lg font-semibold border-2 border-green-500 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-              >
-                Tạo tài khoản mới
-              </button>
+
+              <Link to="/forgot-password" className="text-center text-sm text-surf-primary hover:underline mt-3">
+                Quên mật khẩu?
+              </Link>
+
               <div className="flex items-center gap-3 my-4">
-                <span className="flex-1 h-px bg-gray-200 dark:bg-gray-600" />
-                <span className="text-sm text-gray-500">hoặc</span>
-                <span className="flex-1 h-px bg-gray-200 dark:bg-gray-600" />
+                <span className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
+                <span className="text-xs text-gray-400 uppercase tracking-wider">hoặc</span>
+                <span className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
               </div>
+
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 hover:shadow-md transition-all disabled:opacity-50 text-gray-700 dark:text-gray-200 font-medium"
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
+                <GoogleIcon />
                 Đăng nhập với Google
               </button>
-              {error && <p className="text-red-600 dark:text-red-400 text-sm mt-2">{error}</p>}
+
+              {error && !isFlipped && (
+                <p className="text-red-500 dark:text-red-400 text-sm mt-3 text-center">{error}</p>
+              )}
+
+              <div className="mt-5 pt-4 border-t border-gray-200/50 dark:border-gray-600/30 text-center">
+                <span className="text-sm text-gray-500 dark:text-gray-400">Chưa có tài khoản? </span>
+                <button
+                  type="button"
+                  onClick={goRegister}
+                  className="text-sm font-semibold text-surf-primary hover:text-cyan-600 dark:hover:text-cyan-300 hover:underline transition-colors"
+                >
+                  Đăng ký ngay
+                </button>
+              </div>
             </div>
 
-            {/* Mặt sau: Đăng ký */}
-            <div className="auth-flip-face back bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl rounded-xl p-6 flex flex-col">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Đăng ký</h2>
-              <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3">
+            {/* ====== BACK: Đăng ký ====== */}
+            <div className="auth-flip-face back rounded-2xl p-6 md:p-8 flex flex-col bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-white/40 dark:border-white/10 shadow-[0_8px_40px_rgba(14,165,233,0.15)]">
+              <h2 className="text-2xl font-bold text-center bg-gradient-to-r from-surf-primary to-surf-secondary bg-clip-text text-transparent mb-5">
+                Tạo tài khoản
+              </h2>
+
+              <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3.5">
                 <input
                   type="text"
                   placeholder="Tên hiển thị"
@@ -307,7 +308,7 @@ export default function AuthPage() {
                   <select
                     value={regPhoneCountry}
                     onChange={(e) => setRegPhoneCountry(e.target.value)}
-                    className="w-28 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-surf-primary"
+                    className="w-28 px-3 py-2.5 rounded-xl bg-white/70 dark:bg-white/10 border border-white/30 dark:border-white/20 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-400 backdrop-blur-sm"
                   >
                     {PHONE_COUNTRY.map(({ code, label }) => (
                       <option key={code} value={code}>{label}</option>
@@ -324,38 +325,42 @@ export default function AuthPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-2.5 rounded-lg font-semibold bg-surf-primary text-white hover:bg-surf-primary/90 transition-colors disabled:opacity-50"
+                  className="w-full py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-surf-primary to-surf-secondary hover:shadow-lg hover:shadow-cyan-500/25 transition-all disabled:opacity-50"
                 >
-                  Đăng ký
+                  {loading ? 'Đang xử lý...' : 'Đăng ký'}
                 </button>
               </form>
-              <button
-                type="button"
-                onClick={goLogin}
-                className="w-full mt-4 py-2.5 rounded-lg font-semibold border-2 border-green-500 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-              >
-                Đã có tài khoản? Đăng nhập
-              </button>
+
               <div className="flex items-center gap-3 my-4">
-                <span className="flex-1 h-px bg-gray-200 dark:bg-gray-600" />
-                <span className="text-sm text-gray-500">hoặc</span>
-                <span className="flex-1 h-px bg-gray-200 dark:bg-gray-600" />
+                <span className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
+                <span className="text-xs text-gray-400 uppercase tracking-wider">hoặc</span>
+                <span className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
               </div>
+
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 hover:shadow-md transition-all disabled:opacity-50 text-gray-700 dark:text-gray-200 font-medium"
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
+                <GoogleIcon />
                 Đăng ký với Google
               </button>
-              {error && <p className="text-red-600 dark:text-red-400 text-sm mt-2">{error}</p>}
+
+              {error && isFlipped && (
+                <p className="text-red-500 dark:text-red-400 text-sm mt-3 text-center">{error}</p>
+              )}
+
+              <div className="mt-5 pt-4 border-t border-gray-200/50 dark:border-gray-600/30 text-center">
+                <span className="text-sm text-gray-500 dark:text-gray-400">Đã có tài khoản? </span>
+                <button
+                  type="button"
+                  onClick={goLogin}
+                  className="text-sm font-semibold text-surf-primary hover:text-cyan-600 dark:hover:text-cyan-300 hover:underline transition-colors"
+                >
+                  Đăng nhập
+                </button>
+              </div>
             </div>
           </div>
         </div>
