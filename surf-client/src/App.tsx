@@ -10,7 +10,7 @@ import Profile from './pages/Profile';
 import ShortVideo from './pages/ShortVideo';
 import Friends from './pages/Friends';
 import Groups from './pages/Groups';
-import SettingsPage from './pages/SettingsPage';
+import SettingsPage from './pages/settings/SettingsPage';
 import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 
