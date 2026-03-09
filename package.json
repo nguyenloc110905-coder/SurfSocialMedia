@@ -1,0 +1,25 @@
+{
+  "name": "surf-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "lint:client": "cd surf-client && npm run lint",
+    "lint:server": "cd surf-server && npm run lint",
+    "lint": "npm run lint:client && npm run lint:server",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0"
+  },
+  "lint-staged": {
+    "surf-client/src/**/*.{ts,tsx}": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ],
+    "surf-server/src/**/*.ts": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ]
+  }
+}
