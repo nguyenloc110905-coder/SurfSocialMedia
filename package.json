@@ -9,8 +9,10 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "eslint": "^10.0.3",
     "husky": "^9.1.7",
-    "lint-staged": "^15.5.0"
+    "lint-staged": "^15.5.0",
+    "prettier": "^3.8.1"
   },
   "lint-staged": {
     "surf-client/src/**/*.{ts,tsx}": [
