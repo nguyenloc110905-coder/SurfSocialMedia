@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useThemeStore } from './stores/themeStore';
 import Layout from './components/layout/Layout';
@@ -26,7 +26,10 @@ function ThemeInit() {
     });
     useThemeStore.persist.rehydrate();
     useThemeStore.getState().applyTheme();
-    if (typeof window === 'undefined') return () => { unsub(); };
+    if (typeof window === 'undefined')
+      return () => {
+        unsub();
+      };
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const listener = () => {
       if (useThemeStore.getState().theme === 'system') useThemeStore.getState().applyTheme();
@@ -43,7 +46,8 @@ function ThemeInit() {
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
-  
+  const location = useLocation();
+
   // Đợi auth loading xong trước khi redirect
   if (loading) {
     return (
@@ -55,15 +59,18 @@ function Protected({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  
-  if (!user) return <Navigate to="/" replace />;
+
+  // Lưu URL gốc vào state để sau khi login có thể redirect về đúng trang
+  if (!user) return <Navigate to="/" replace state={{ from: location }} />;
   return <>{children}</>;
 }
 
 function HomeOrRedirect() {
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
-  
+  const location = useLocation();
+  const from = (location.state as { from?: Location })?.from?.pathname ?? '/feed';
+
   // Đợi auth loading xong trước khi redirect
   if (loading) {
     return (
@@ -75,8 +82,9 @@ function HomeOrRedirect() {
       </div>
     );
   }
-  
-  if (user) return <Navigate to="/feed" replace />;
+
+  // Sau khi login, redirect về trang user muốn vào ban đầu
+  if (user) return <Navigate to={from} replace />;
   return <AuthPage />;
 }
 
@@ -109,13 +117,55 @@ export default function App() {
           <Route path="friends/history" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
           <Route path="market" element={<MarketPage />} />
-          <Route path="saved" element={<PlaceholderPage title="Đã lưu" description="Bài viết và nội dung bạn đã lưu." />} />
-          <Route path="events" element={<PlaceholderPage title="Sự kiện" description="Sự kiện sắp diễn ra và đã tham gia." />} />
-          <Route path="pages" element={<PlaceholderPage title="Trang" description="Trang bạn quản lý và theo dõi." />} />
-          <Route path="waves" element={<PlaceholderPage title="Waves" description="Nhắn tin nhanh — công cụ trò chuyện của Surf." />} />
-          <Route path="explore" element={<PlaceholderPage title="Khám phá" description="Khám phá nội dung và chủ đề phù hợp với bạn." />} />
-          <Route path="moments" element={<PlaceholderPage title="Moments" description="Khoảnh khắc 24h từ bạn bè và cộng đồng — tương tự Story." />} />
-          <Route path="live" element={<PlaceholderPage title="Surf Live" description="Phát trực tiếp và xem live." />} />
+          <Route
+            path="saved"
+            element={
+              <PlaceholderPage title="Đã lưu" description="Bài viết và nội dung bạn đã lưu." />
+            }
+          />
+          <Route
+            path="events"
+            element={
+              <PlaceholderPage title="Sự kiện" description="Sự kiện sắp diễn ra và đã tham gia." />
+            }
+          />
+          <Route
+            path="pages"
+            element={<PlaceholderPage title="Trang" description="Trang bạn quản lý và theo dõi." />}
+          />
+          <Route
+            path="waves"
+            element={
+              <PlaceholderPage
+                title="Waves"
+                description="Nhắn tin nhanh — công cụ trò chuyện của Surf."
+              />
+            }
+          />
+          <Route
+            path="explore"
+            element={
+              <PlaceholderPage
+                title="Khám phá"
+                description="Khám phá nội dung và chủ đề phù hợp với bạn."
+              />
+            }
+          />
+          <Route
+            path="moments"
+            element={
+              <PlaceholderPage
+                title="Moments"
+                description="Khoảnh khắc 24h từ bạn bè và cộng đồng — tương tự Story."
+              />
+            }
+          />
+          <Route
+            path="live"
+            element={
+              <PlaceholderPage title="Surf Live" description="Phát trực tiếp và xem live." />
+            }
+          />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
