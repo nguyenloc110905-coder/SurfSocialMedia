@@ -20,14 +20,17 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://surf-7ce71.web.app',
-  'https://surf-7ce71.firebaseapp.com'
+  'https://surf-7ce71.firebaseapp.com',
 ];
 
 // Add additional origins from environment variable if provided
 const frontendUrl = process.env.FRONTEND_URL;
 if (frontendUrl) {
-  const envUrls = frontendUrl.split(',').map((u) => u.trim()).filter(Boolean);
-  envUrls.forEach(url => {
+  const envUrls = frontendUrl
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
+  envUrls.forEach((url) => {
     if (!allowedOrigins.includes(url)) {
       allowedOrigins.push(url);
     }
@@ -46,7 +49,7 @@ export const io = new Server(httpServer, {
 
 io.on('connection', (socket) => {
   console.log('🔌 Client connected:', socket.id);
-  
+
   // Join room theo userId để nhận notifications riêng
   socket.on('join', (userId: string) => {
     socket.join(`user:${userId}`);
@@ -54,7 +57,7 @@ io.on('connection', (socket) => {
     const roomSize = room ? room.size : 0;
     console.log(`👤 User ${userId} joined their room (${roomSize} clients in room)`);
   });
-  
+
   socket.on('disconnect', () => {
     console.log('🔌 Client disconnected:', socket.id);
   });
@@ -63,6 +66,16 @@ io.on('connection', (socket) => {
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Health check — trước app.use('/api', requireAuth) để không cần auth
+app.get('/api/health', (_, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    env: process.env.NODE_ENV ?? 'development',
+  });
+});
 
 // Mọi request /api đều cần đăng nhập; ensureUser tạo doc user nếu chưa có (để xuất hiện trong Gợi ý kết bạn)
 app.use('/api', requireAuth, ensureUser);
@@ -74,9 +87,8 @@ app.use('/api/feed', feedRoutes);
 app.use('/api/friends', friendsRoutes);
 app.use('/api/comments', commentsRoutes);
 
-app.get('/health', (_, res) => res.json({ ok: true }));
-
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);
   console.log(`🔌 Socket.io ready`);
+  console.log(`🏥 Health check: http://0.0.0.0:${PORT}/api/health`);
 });
