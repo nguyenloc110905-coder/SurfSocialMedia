@@ -15,20 +15,46 @@ export const useAuthStore = create<AuthState>(() => ({
 }));
 
 let hasInitialSync = false;
+let tokenRefreshInterval: ReturnType<typeof setInterval> | null = null;
+
+// Refresh token mỗi 55 phút để luôn có token tươi trước khi hết hạn (60 phút)
+function startTokenRefresh(user: import('firebase/auth').User) {
+  if (tokenRefreshInterval) clearInterval(tokenRefreshInterval);
+  tokenRefreshInterval = setInterval(
+    async () => {
+      try {
+        await user.getIdToken(true);
+        console.log('🔄 Token refreshed proactively');
+      } catch (err) {
+        console.warn('Token refresh failed:', err);
+      }
+    },
+    55 * 60 * 1000
+  );
+}
+
+function stopTokenRefresh() {
+  if (tokenRefreshInterval) {
+    clearInterval(tokenRefreshInterval);
+    tokenRefreshInterval = null;
+  }
+}
 
 // Đồng bộ user từ Firebase vào store
 subscribeAuth((user) => {
   console.log('🔐 Auth state changed:', user?.email ?? 'null');
   const wasLoading = useAuthStore.getState().loading;
   useAuthStore.setState({ user, loading: false });
-  
+
   // Connect/disconnect Socket.io
   if (user) {
     connectSocket(user.uid);
+    startTokenRefresh(user);
   } else {
     disconnectSocket();
+    stopTokenRefresh();
   }
-  
+
   // Chỉ auto-sync lần đầu khi app load và phát hiện user đã đăng nhập
   // (không sync khi đăng nhập mới vì AuthPage đã xử lý)
   if (user && wasLoading && !hasInitialSync) {
