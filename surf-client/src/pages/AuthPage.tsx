@@ -476,7 +476,7 @@ export default function AuthPage() {
                         className="w-28 px-2 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] text-white/80 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 text-sm"
                       >
                         {PHONE_COUNTRIES.map(({ iso, code }) => (
-                          <option key={iso} value={iso}>{iso} ({code})</option>
+                          <option key={iso} value={iso} className="bg-slate-800 text-white">{iso} ({code})</option>
                         ))}
                       </select>
                       <input
