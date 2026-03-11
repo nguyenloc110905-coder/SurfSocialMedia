@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { signIn, signInWithGoogle, signUp, setAuthPersistence } from '@/lib/firebase/auth';
-import { syncUserProfile } from '@/lib/api';
+import { syncUserProfile, api } from '@/lib/api';
 import { PHONE_COUNTRIES } from '@/lib/phone-countries';
 
 declare global {
@@ -147,7 +147,7 @@ export default function AuthPage() {
   const isRegister = location.pathname === '/register';
   const [isFlipped, setIsFlipped] = useState(isRegister);
 
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState(() => localStorage.getItem('surf_last_email') || '');
   const [loginPassword, setLoginPassword] = useState('');
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
@@ -168,9 +168,8 @@ export default function AuthPage() {
   const captchaWidgetId = useRef<number | null>(null);
   const loginFormRef = useRef<HTMLFormElement>(null);
 
-  // Xóa sạch form khi component mount (đăng xuất quay lại)
+  // Reset form đăng ký & mật khẩu khi component mount (giữ email đăng nhập gần nhất)
   useEffect(() => {
-    setLoginEmail('');
     setLoginPassword('');
     setRegEmail('');
     setRegPassword('');
@@ -259,11 +258,11 @@ export default function AuthPage() {
       console.log('🔑 Token ready, length:', token.length);
       await new Promise((resolve) => setTimeout(resolve, 800));
       await syncUserProfile();
-      // Xóa thông tin form nếu không ghi nhớ
-      if (!rememberMe) {
-        setLoginEmail('');
-        setLoginPassword('');
-      }
+      // Gửi email thông báo đăng nhập (không chặn UI)
+      api.post('/api/auth/notify-login').catch(() => {});
+      // Luôn lưu email tài khoản đăng nhập gần nhất
+      localStorage.setItem('surf_last_email', loginEmail.trim());
+      setLoginPassword('');
       setShowCaptchaModal(false);
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
@@ -285,8 +284,10 @@ export default function AuthPage() {
       console.log('🔑 Token ready, length:', token.length);
       await new Promise((resolve) => setTimeout(resolve, 800));
       await syncUserProfile();
+      // Gửi email chào mừng đăng ký (không chặn UI)
+      api.post('/api/auth/notify-register').catch(() => {});
       setShowCaptchaModal(false);
-      navigate('/feed', { replace: true });
+      navigate('/onboarding', { replace: true });
     } catch (err: unknown) {
       const code =
         err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
@@ -305,6 +306,8 @@ export default function AuthPage() {
       console.log('\ud83d\udd11 Token ready, length:', token.length);
       await new Promise((resolve) => setTimeout(resolve, 800));
       await syncUserProfile();
+      // Gửi email thông báo đăng nhập Google (không chặn UI)
+      api.post('/api/auth/notify-login').catch(() => {});
       setShowCaptchaModal(false);
       navigate('/feed', { replace: true });
     } catch (err: unknown) {

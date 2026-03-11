@@ -13,6 +13,7 @@ import Groups from './pages/Groups';
 import SettingsPage from './pages/settings/SettingsPage';
 import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import Onboarding from './pages/Onboarding';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -98,6 +99,14 @@ export default function App() {
         <Route path="/register" element={<AuthPage />} />
         {/* / là trang xuất phát = form đăng nhập; /login, /register dùng chung AuthPage */}
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route
+          path="/onboarding"
+          element={
+            <Protected>
+              <Onboarding />
+            </Protected>
+          }
+        />
         <Route
           path="/feed"
           element={
