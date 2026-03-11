@@ -10,6 +10,7 @@ import postsRoutes from './routes/posts.js';
 import feedRoutes from './routes/feed.js';
 import friendsRoutes from './routes/friends.js';
 import commentsRoutes from './routes/comments.js';
+import notificationsRoutes from './routes/notifications.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -86,6 +87,7 @@ app.use('/api/posts', postsRoutes);
 app.use('/api/feed', feedRoutes);
 app.use('/api/friends', friendsRoutes);
 app.use('/api/comments', commentsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);

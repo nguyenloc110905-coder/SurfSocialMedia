@@ -4,6 +4,38 @@ import { getDb } from '../config/firebase-admin.js';
 
 const router = Router();
 
+/**
+ * EdgeRank: tính điểm ưu tiên cho bài viết trên feed.
+ * Score = tierBonus + affinityScore + recencyScore
+ */
+function computeEdgeRank(
+  post: any,
+  uid: string,
+  affinityScores: Record<string, number>,
+  friendTiers: Record<string, string>,
+  friendIds: string[],
+  now: number,
+): number {
+  const authorId = post.authorId as string;
+  // Bài của mình luôn hiện bình thường (no boost)
+  if (authorId === uid) {
+    const ts = post.createdAt?.toMillis?.() ?? post.createdAt?._seconds * 1000 ?? now;
+    return ts; // chỉ sort theo thời gian
+  }
+  let score = 0;
+  // Tier bonus: priority = +50000000, restricted = -50000000
+  const tier = friendTiers[authorId];
+  if (tier === 'priority') score += 50_000_000;
+  else if (tier === 'restricted') score -= 50_000_000;
+  // Affinity bonus: mỗi điểm tương tác = +1000000
+  const affinity = affinityScores[authorId] ?? 0;
+  score += affinity * 1_000_000;
+  // Recency: timestamp in millis
+  const ts = post.createdAt?.toMillis?.() ?? post.createdAt?._seconds * 1000 ?? now;
+  score += ts;
+  return score;
+}
+
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -11,13 +43,17 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 20, 50);
     const lastId = req.query.lastId as string | undefined;
 
-    // Lấy danh sách bạn bè + đang theo dõi
-    const [friendDoc, followDoc] = await Promise.all([
+    // Lấy danh sách bạn bè + đang theo dõi + affinity scores + friend tiers
+    const [friendDoc, followDoc, affinityDoc, tierDoc] = await Promise.all([
       getDb().collection('friends').doc(uid).get(),
       getDb().collection('follows').doc(uid).get(),
+      getDb().collection('affinity').doc(uid).get(),
+      getDb().collection('friend_tiers').doc(uid).get(),
     ]);
     const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
     const followingIds: string[] = followDoc.exists ? (followDoc.data()?.followingIds ?? []) : [];
+    const affinityScores: Record<string, number> = affinityDoc.exists ? (affinityDoc.data()?.scores ?? {}) : {};
+    const friendTiers: Record<string, string> = tierDoc.exists ? (tierDoc.data()?.tiers ?? {}) : {};
 
     // Tập hợp người quen (bản thân + bạn + đang follow)
     const visibleAuthors = new Set([uid, ...friendIds, ...followingIds]);
@@ -42,8 +78,19 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       const privacy = p.privacy ?? 'public';
       if (authorId === uid) return true;
       if (!visibleAuthors.has(authorId)) return false;
+      // Restricted friends: chỉ hiện bài public
+      if (friendTiers[authorId] === 'restricted') return privacy === 'public';
       if (friendIds.includes(authorId)) return privacy === 'public' || privacy === 'friends';
       return privacy === 'public'; // chỉ follow
+    });
+
+    // ── EdgeRank sorting ─────────────────────────────────────────────────
+    // Score = tierBonus + affinityScore + recencyScore
+    const now = Date.now();
+    personalizedPosts.sort((a: any, b: any) => {
+      const scoreA = computeEdgeRank(a, uid, affinityScores, friendTiers, friendIds, now);
+      const scoreB = computeEdgeRank(b, uid, affinityScores, friendTiers, friendIds, now);
+      return scoreB - scoreA;
     });
 
     // ── Bổ sung "Khám phá" khi feed cá nhân thiếu ────────────────────────

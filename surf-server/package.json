@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "lint": "eslint src --max-warnings=0",
     "lint:fix": "eslint src --fix",
-    "seed:test-users": "tsx scripts/seed-test-users.ts"
+    "seed:test-users": "tsx scripts/seed-test-users.ts",
+    "seed:friend-test": "tsx scripts/seed-friend-test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

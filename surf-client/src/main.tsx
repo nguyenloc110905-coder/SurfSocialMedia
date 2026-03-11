@@ -5,6 +5,7 @@ import { getAnalyticsSafe } from './lib/firebase/config';
 import App from './App';
 import './index.css';
 import './stores/nicknameStore'; // Initialize nickname auto-sync
+import './stores/notificationStore'; // Initialize notification auto-sync
 
 getAnalyticsSafe(); // Khởi tạo Firebase Analytics (chỉ chạy trên browser)
 

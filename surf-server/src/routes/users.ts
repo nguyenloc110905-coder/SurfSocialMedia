@@ -31,12 +31,27 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
     const snap = await getDb().collection('users').get();
     const lower = q.toLowerCase();
     type UserDoc = { id: string; displayName?: string; photoURL?: string };
-    const users = snap.docs
+    const matched = snap.docs
       .filter((d) => d.id !== uid)
       .map((d) => ({ id: d.id, ...d.data() } as UserDoc))
       .filter((u) => (u.displayName ?? '').toLowerCase().includes(lower))
-      .slice(0, 20)
-      .map((u) => ({ id: u.id, name: u.displayName ?? 'Unknown', avatarUrl: u.photoURL }));
+      .slice(0, 20);
+
+    // Compute mutual friend count for each result
+    const myFriendDoc = await getDb().collection('friends').doc(uid).get();
+    const myFriendIds = new Set<string>(myFriendDoc.exists ? (myFriendDoc.data()?.friendIds ?? []) : []);
+    const matchedIds = matched.map((u) => u.id);
+    const friendDocs = matchedIds.length > 0
+      ? await getDb().getAll(...matchedIds.map((id) => getDb().collection('friends').doc(id)))
+      : [];
+    const theirFriendsMap = new Map<string, string[]>();
+    friendDocs.forEach((d) => { if (d.exists) theirFriendsMap.set(d.id, d.data()?.friendIds ?? []); });
+
+    const users = matched.map((u) => {
+      const theirFriends = theirFriendsMap.get(u.id) ?? [];
+      const mutualCount = theirFriends.filter((id: string) => myFriendIds.has(id)).length;
+      return { id: u.id, name: u.displayName ?? 'Unknown', avatarUrl: u.photoURL, mutualCount };
+    });
     res.json({ users });
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
 });

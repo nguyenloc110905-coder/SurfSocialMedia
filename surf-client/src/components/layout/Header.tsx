@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { useNotificationStore, type Notification } from '@/stores/notificationStore';
 import type { ThemeMode } from '@/stores/themeStore';
 import SettingsPrivacy from './SettingsPrivacy';
 import HelpSupport from './HelpSupport';
@@ -27,13 +28,20 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>('main');
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const notifications = useNotificationStore((s) => s.notifications);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const markRead = useNotificationStore((s) => s.markRead);
 
   const viewIndex = { main: 0, settings: 1, help: 2, display: 3 }[panel];
 
   useEffect(() => {
     setOpen(false);
     setPanel('main');
+    setNotifOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -45,8 +53,30 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
     return () => document.removeEventListener('mousedown', onOutside);
   }, [open]);
 
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    };
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [notifOpen]);
+
   const displayName = user?.displayName?.trim() || 'Người dùng';
   const initial = displayName.charAt(0).toUpperCase();
+
+  const timeAgo = (ts: number) => {
+    const diff = Date.now() - ts;
+    const s = Math.floor(diff / 1000);
+    if (s < 60) return 'Vừa xong';
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m} phút trước`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} giờ trước`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d} ngày trước`;
+    return `${Math.floor(d / 7)} tuần trước`;
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 safe-area-header flex items-center justify-between h-12 sm:h-14 px-3 sm:px-6 lg:px-8 gap-2 sm:gap-4 relative">
@@ -110,11 +140,72 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
             <path fillRule="evenodd" d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 2.98.97 4.29L2 22l5.71-.97C9.02 21.64 10.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18c-1.58 0-3.05-.5-4.25-1.35l-.98-.63-2.1.29.29-2.08-.65-1.01C5.5 16.05 5 14.58 5 13c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7z" clipRule="evenodd" />
           </svg>
         </button>
-        <button type="button" className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors" title="Thông báo">
-          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
-            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
-          </svg>
-        </button>
+        {/* Notification bell */}
+        <div className="relative hidden sm:block" ref={notifRef}>
+          <button
+            type="button"
+            onClick={() => setNotifOpen((o) => !o)}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
+            title="Thông báo"
+          >
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-h-[70vh] rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden z-40 flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                <span className="font-bold text-gray-900 dark:text-gray-100 text-base">Thông báo</span>
+                {unreadCount > 0 && (
+                  <button type="button" onClick={markAllRead} className="text-xs text-surf-primary hover:underline font-medium">
+                    Đánh dấu tất cả đã đọc
+                  </button>
+                )}
+              </div>
+              <div className="overflow-y-auto flex-1">
+                {notifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-gray-400 dark:text-gray-500">
+                    <svg viewBox="0 0 24 24" className="w-10 h-10 mb-2" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" /></svg>
+                    <span className="text-sm">Chưa có thông báo</span>
+                  </div>
+                ) : (
+                  notifications.map((n) => {
+                    const ago = timeAgo(n.createdAt);
+                    return (
+                      <button
+                        key={n.id}
+                        type="button"
+                        onClick={() => { if (!n.read) markRead(n.id); setNotifOpen(false); }}
+                        className={`w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors ${!n.read ? 'bg-cyan-50/60 dark:bg-cyan-900/20' : ''}`}
+                      >
+                        {n.fromPhoto ? (
+                          <img src={n.fromPhoto} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                            <span className="text-white font-bold text-sm">{(n.fromName || '?').charAt(0).toUpperCase()}</span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2">
+                            <span className="font-semibold">{n.fromName}</span>{' '}{n.message}
+                          </p>
+                          <span className={`text-xs mt-0.5 block ${!n.read ? 'text-surf-primary font-semibold' : 'text-gray-400 dark:text-gray-500'}`}>{ago}</span>
+                        </div>
+                        {!n.read && <span className="mt-3 w-2.5 h-2.5 rounded-full bg-surf-primary flex-shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}

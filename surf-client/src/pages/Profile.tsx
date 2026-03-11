@@ -163,6 +163,19 @@ export default function Profile() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
 
+  // Friend tier state
+  type FriendTier = 'priority' | 'normal' | 'restricted';
+  const [friendTier, setFriendTier] = useState<FriendTier>('normal');
+  const [tierDropdownOpen, setTierDropdownOpen] = useState(false);
+  const [tierLoading, setTierLoading] = useState(false);
+  const tierRef = useRef<HTMLDivElement>(null);
+
+  // Mutual friends state
+  interface MutualFriend { id: string; name: string; avatarUrl?: string }
+  const [mutualFriends, setMutualFriends] = useState<MutualFriend[]>([]);
+  const [mutualCount, setMutualCount] = useState(0);
+  const [mutualLoading, setMutualLoading] = useState(false);
+
   // Load profile
   useEffect(() => {
     if (!uid) return;
@@ -322,6 +335,53 @@ export default function Profile() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [uid, isOwnProfile]);
+
+  // Load mutual friends
+  useEffect(() => {
+    if (!uid || isOwnProfile) return;
+    let cancelled = false;
+    setMutualLoading(true);
+    api.get<{ mutualFriends: MutualFriend[]; count: number }>(`/api/friends/mutual/${uid}`)
+      .then((data) => {
+        if (!cancelled) {
+          setMutualFriends(data.mutualFriends ?? []);
+          setMutualCount(data.count ?? 0);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setMutualLoading(false); });
+    return () => { cancelled = true; };
+  }, [uid, isOwnProfile]);
+
+  // Load friend tier (chỉ khi đã là bạn)
+  useEffect(() => {
+    if (!uid || isOwnProfile || friendStatus !== 'friends') return;
+    let cancelled = false;
+    api.get<{ tier: string }>(`/api/friends/tier/${uid}`)
+      .then((data) => { if (!cancelled) setFriendTier((data.tier as FriendTier) ?? 'normal'); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [uid, isOwnProfile, friendStatus]);
+
+  // Close tier dropdown on click outside
+  useEffect(() => {
+    if (!tierDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (tierRef.current && !tierRef.current.contains(e.target as Node)) setTierDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [tierDropdownOpen]);
+
+  const handleSetTier = async (tier: FriendTier) => {
+    if (!uid) return;
+    setTierLoading(true);
+    try {
+      await api.put(`/api/friends/tier/${uid}`, { tier });
+      setFriendTier(tier);
+    } catch { /* ignore */ }
+    finally { setTierLoading(false); setTierDropdownOpen(false); }
+  };
 
   const refreshProfile = () => uid && getProfile(uid).then(setProfile);
 
@@ -699,9 +759,9 @@ export default function Profile() {
       )}
 
       {/* ═══ HERO PROFILE CARD ═══ */}
-      <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 overflow-hidden shadow-sm">
+      <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 shadow-sm">
         {/* Top accent stripe — animated shimmer */}
-        <div className="h-1 surf-stripe" />
+        <div className="h-1 surf-stripe rounded-t-3xl" />
 
         {/* ── Cover Photo ── */}
         <div className="relative h-52 sm:h-72 overflow-hidden group/cover">
@@ -749,7 +809,7 @@ export default function Profile() {
         {/* ── Profile Info — centered layout ── */}
         <div
           className={[
-            'flex flex-col items-center px-4 sm:px-8 pb-0',
+            'relative z-20 flex flex-col items-center px-4 sm:px-8 pb-0',
             heroVisible ? 'surf-hero-in' : 'opacity-0',
           ].join(' ')}
         >
@@ -835,7 +895,7 @@ export default function Profile() {
           </div>
 
           {/* Action buttons */}
-          <div className="mt-5 mb-5 flex items-center justify-center gap-2 flex-wrap">
+          <div className="mt-5 mb-5 flex items-center justify-center gap-2 flex-wrap relative z-20">
             {/* ── OWN PROFILE ── */}
             {isOwnProfile && (
               <>
@@ -919,14 +979,56 @@ export default function Profile() {
                   </>
                 )}
                 {friendStatus === 'friends' && (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 h-10 px-6 rounded-2xl bg-surf-primary/10 dark:bg-surf-primary/20 text-surf-primary text-sm font-bold hover:bg-surf-primary/20 dark:hover:bg-surf-primary/30 transition-colors"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-                    Bạn bè
-                    <svg className="w-3.5 h-3.5 opacity-60" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
-                  </button>
+                  <div className="relative" ref={tierRef}>
+                    <button
+                      type="button"
+                      onClick={() => setTierDropdownOpen((o) => !o)}
+                      className={[
+                        'inline-flex items-center gap-2 h-10 px-6 rounded-2xl text-sm font-bold transition-colors',
+                        friendTier === 'priority'
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                          : friendTier === 'restricted'
+                            ? 'bg-red-100 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40'
+                            : 'bg-surf-primary/10 dark:bg-surf-primary/20 text-surf-primary hover:bg-surf-primary/20 dark:hover:bg-surf-primary/30',
+                      ].join(' ')}
+                    >
+                      {friendTier === 'priority' && <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>}
+                      {friendTier === 'normal' && <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>}
+                      {friendTier === 'restricted' && <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>}
+                      {friendTier === 'priority' ? 'Ưu tiên' : friendTier === 'restricted' ? 'Hạn chế' : 'Bạn bè'}
+                      <svg className="w-3.5 h-3.5 opacity-60" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+                    </button>
+                    {tierDropdownOpen && (
+                      <div className="absolute left-0 top-full mt-2 w-56 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xl z-50 py-1 ring-1 ring-black/5 dark:ring-white/5" style={{ isolation: 'isolate' }}>
+                        <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Trạng thái bạn bè</p>
+                        {([
+                          { value: 'priority' as FriendTier, label: 'Ưu tiên', desc: 'Nhận thông báo khi bạn này hoạt động', icon: '⭐', color: 'text-amber-500' },
+                          { value: 'normal' as FriendTier, label: 'Bình thường', desc: 'Mặc định, hiện bài viết bình thường', icon: '👤', color: 'text-gray-600 dark:text-gray-400' },
+                          { value: 'restricted' as FriendTier, label: 'Hạn chế', desc: 'Ít hiện bài, chỉ thấy bài public', icon: '🔒', color: 'text-red-500' },
+                        ]).map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            disabled={tierLoading}
+                            onClick={() => handleSetTier(opt.value)}
+                            className={[
+                              'w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50',
+                              friendTier === opt.value ? 'bg-gray-100 dark:bg-gray-700' : '',
+                            ].join(' ')}
+                          >
+                            <span className="text-lg flex-shrink-0 mt-0.5">{opt.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-semibold ${opt.color}`}>{opt.label}</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{opt.desc}</p>
+                            </div>
+                            {friendTier === opt.value && (
+                              <svg className="w-4 h-4 text-surf-primary flex-shrink-0 mt-1" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {friendStatus !== 'loading' && (
                   <button
@@ -975,7 +1077,7 @@ export default function Profile() {
         </div>
 
         {/* Tab navigation — underline style */}
-        <nav className="border-t border-gray-100 dark:border-gray-800/80" aria-label="Hồ sơ">
+        <nav className="relative z-10 border-t border-gray-100 dark:border-gray-800/80 rounded-b-3xl overflow-hidden" aria-label="Hồ sơ">
           <div className="flex overflow-x-auto scrollbar-hide px-2 sm:px-6">
             {TABS.map((tab) => (
               <button
@@ -1193,9 +1295,56 @@ export default function Profile() {
           {/* TAB: Friends - Bạn bè */}
           {activeTab === 'friends' && (
             <div className="space-y-4">
+              {/* Mutual friends section (only when viewing another person's profile) */}
+              {!isOwnProfile && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                      Bạn chung {mutualCount > 0 && `(${mutualCount})`}
+                    </h2>
+                  </div>
+                  {mutualLoading ? (
+                    <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-6 text-center shadow-sm">
+                      <div className="inline-block w-6 h-6 border-2 border-surf-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">Đang tải bạn chung...</p>
+                    </div>
+                  ) : mutualFriends.length === 0 ? (
+                    <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-6 text-center shadow-sm">
+                      <svg className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <p className="text-gray-400 dark:text-gray-500 text-sm">Không có bạn chung với {displayName}</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {mutualFriends.map((mf, idx) => (
+                        <div
+                          key={mf.id}
+                          className="surf-card-hover surf-hero-in rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 overflow-hidden cursor-pointer group shadow-sm"
+                          style={{ animationDelay: `${idx * 0.06}s` }}
+                          onClick={() => navigate(`/feed/profile/${mf.id}`)}
+                        >
+                          <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 flex items-center justify-center overflow-hidden">
+                            {mf.avatarUrl ? (
+                              <img src={mf.avatarUrl} alt={resolve(mf.id, mf.name)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            ) : (
+                              <div className="text-4xl font-bold text-surf-primary">{resolve(mf.id, mf.name).charAt(0).toUpperCase()}</div>
+                            )}
+                          </div>
+                          <div className="p-3">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{resolve(mf.id, mf.name)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* All friends */}
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  Bạn bè {friends.length > 0 && `(${friends.length})`}
+                  {isOwnProfile ? 'Bạn bè' : 'Tất cả bạn bè'} {friends.length > 0 && `(${friends.length})`}
                 </h2>
               </div>
 

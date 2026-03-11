@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
+import { io } from '../index.js';
 
 const router = Router();
 
@@ -82,6 +83,39 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     await postsRef.doc(req.params.postId).update({
       replyCount: FieldValue.increment(1),
     });
+
+    // EdgeRank: update affinity + notification for post author
+    const postData = postDoc.data();
+    const postAuthor = postData?.authorId as string | undefined;
+    if (postAuthor && postAuthor !== req.uid) {
+      // Increase affinity score (commenting is worth more than liking)
+      await db.collection('affinity').doc(req.uid!).set(
+        { scores: { [postAuthor]: FieldValue.increment(3) } },
+        { merge: true },
+      );
+      // Check friendship + tier for notification
+      const friendDoc = await db.collection('friends').doc(postAuthor).get();
+      const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+      if (friendIds.includes(req.uid!)) {
+        const tierDoc = await db.collection('friend_tiers').doc(postAuthor).get();
+        const tiers: Record<string, string> = tierDoc.exists ? (tierDoc.data()?.tiers ?? {}) : {};
+        if (tiers[req.uid!] === 'priority') {
+          const notifData = {
+            toUid: postAuthor,
+            fromUid: req.uid,
+            fromName: user?.displayName ?? 'Người dùng',
+            fromPhoto: user?.photoURL ?? null,
+            type: 'comment_post',
+            postId: req.params.postId,
+            message: `đã bình luận bài viết của bạn`,
+            read: false,
+            createdAt: new Date(),
+          };
+          await db.collection('notifications').add(notifData);
+          io.to(`user:${postAuthor}`).emit('notification', notifData);
+        }
+      }
+    }
     
     const responseData = { 
       id: commentRef.id, 
