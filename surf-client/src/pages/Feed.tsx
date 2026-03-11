@@ -89,12 +89,16 @@ export default function Feed() {
     loadPosts();
   }, []);
 
+  const handlePostCreated = (newPost: Record<string, unknown>) => {
+    setPosts((prev) => [newPost as unknown as Post, ...prev]);
+  };
+
   // Vị trí đầu tiên của bài "Khám phá" để hiện divider
   const firstDiscoverIndex = posts.findIndex((p) => p._discover);
 
   return (
     <div className="w-full mx-auto pt-2 sm:pt-4 pb-6 px-2 sm:px-3">
-      <CreatePost />
+      <CreatePost onPostCreated={handlePostCreated} />
       <MomentsBar />
 
       {loading && (

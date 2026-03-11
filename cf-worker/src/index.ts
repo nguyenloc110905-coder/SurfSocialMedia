@@ -77,7 +77,7 @@ export default {
 
     // Cache key = original URL + transform params
     const cacheKey = new Request(imageUrl + url.search, request);
-    const cache = caches.default;
+    const cache = await caches.open('images');
 
     // Check cache first
     let response = await cache.match(cacheKey);
