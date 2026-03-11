@@ -306,16 +306,16 @@ export default function Onboarding() {
                 <label className={LABEL}>Ngày sinh</label>
                 <div className="flex gap-2">
                   <select value={birthdayMonth} onChange={(e) => setBirthdayMonth(e.target.value)} className={`${SELECT} flex-1`}>
-                    <option value="">Tháng</option>
-                    {months.map((m) => <option key={m} value={m}>Tháng {m}</option>)}
+                    <option value="" className="bg-slate-800 text-white">Tháng</option>
+                    {months.map((m) => <option key={m} value={m} className="bg-slate-800 text-white">Tháng {m}</option>)}
                   </select>
                   <select value={birthdayDay} onChange={(e) => setBirthdayDay(e.target.value)} className={`${SELECT} flex-1`}>
-                    <option value="">Ngày</option>
-                    {days.map((d) => <option key={d} value={d}>{d}</option>)}
+                    <option value="" className="bg-slate-800 text-white">Ngày</option>
+                    {days.map((d) => <option key={d} value={d} className="bg-slate-800 text-white">{d}</option>)}
                   </select>
                   <select value={birthdayYear} onChange={(e) => setBirthdayYear(e.target.value)} className={`${SELECT} flex-1`}>
-                    <option value="">Năm</option>
-                    {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                    <option value="" className="bg-slate-800 text-white">Năm</option>
+                    {years.map((y) => <option key={y} value={y} className="bg-slate-800 text-white">{y}</option>)}
                   </select>
                 </div>
               </div>
@@ -367,8 +367,8 @@ export default function Onboarding() {
               <div>
                 <label className={LABEL}>Tình trạng mối quan hệ</label>
                 <select value={relationship} onChange={(e) => setRelationship(e.target.value)} className={`${SELECT} w-full`}>
-                  <option value="">-- Chọn --</option>
-                  {RELATIONSHIP_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  <option value="" className="bg-slate-800 text-white">-- Chọn --</option>
+                  {RELATIONSHIP_OPTIONS.map((r) => <option key={r} value={r} className="bg-slate-800 text-white">{r}</option>)}
                 </select>
               </div>
             </div>
