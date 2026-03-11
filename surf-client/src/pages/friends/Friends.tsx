@@ -1,8 +1,10 @@
 ﻿import { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useNicknameStore } from '@/stores/nicknameStore';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import FriendsLeftNav from '@/components/layout/FriendsLeftNav';
 
 type FriendItem  = { id: string; name: string; avatarUrl?: string; mutualCount?: number };
 type RequestItem = { id: string; fromUid: string; name: string; avatarUrl?: string };
@@ -77,6 +79,9 @@ function GradBtn({
 export default function Friends() {
   const { pathname } = useLocation();
   const user = useAuthStore((s) => s.user);
+  const resolve = useNicknameStore((s) => s.resolve);
+  const nicknameStoreSet = useNicknameStore((s) => s.set);
+  const nicknameStoreRemove = useNicknameStore((s) => s.remove);
 
   const [friends,     setFriends]     = useState<FriendItem[]>([]);
   const [requests,    setRequests]    = useState<RequestItem[]>([]);
@@ -97,12 +102,18 @@ export default function Friends() {
   // Sub-tab inside requests section
   const [reqTab, setReqTab] = useState<'received' | 'sent'>('received');
 
+  // Nicknames
+  const [nicknames, setNicknames]       = useState<Record<string, string>>({});
+  const [nicknameEdit, setNicknameEdit] = useState<{ uid: string; value: string } | null>(null);
+  const [nickSearchQ, setNickSearchQ]   = useState('');
+  const [nickSaving, setNickSaving]     = useState(false);
+
   const section = pathname === '/feed/friends'   ? 'home'
     : pathname.endsWith('/requests')             ? 'requests'
     : pathname.endsWith('/suggestions')          ? 'suggestions'
     : pathname.endsWith('/all')                  ? 'all'
     : pathname.endsWith('/birthdays')            ? 'birthdays'
-    : pathname.endsWith('/history')              ? 'history'
+    : pathname.endsWith('/nicknames')             ? 'nicknames'
     : 'home';
 
   /* -- Load data ----------------------------------------------------------- */
@@ -110,16 +121,18 @@ export default function Friends() {
     if (!user) { setLoading(false); return; }
     setError('');
     try {
-      const [fRes, rRes, sRes, sugRes] = await Promise.all([
+      const [fRes, rRes, sRes, sugRes, nickRes] = await Promise.all([
         api.get<{ friends: FriendItem[] }>('/api/friends'),
         api.get<{ requests: RequestItem[] }>('/api/friends/requests'),
         api.get<{ sent: SentItem[] }>('/api/friends/sent'),
         api.get<{ suggestions: FriendItem[] }>('/api/friends/suggestions'),
+        api.get<{ nicknames: Record<string, string> }>('/api/friends/nicknames'),
       ]);
       setFriends(fRes?.friends ?? []);
       setRequests(rRes?.requests ?? []);
       setSent(sRes?.sent ?? []);
       setSuggestions(sugRes?.suggestions ?? []);
+      setNicknames(nickRes?.nicknames ?? {});
       const m = new Map<string, string>();
       (sRes?.sent ?? []).forEach((s) => m.set(s.toUid, s.id));
       setSentMap(m);
@@ -197,6 +210,37 @@ export default function Friends() {
     finally { setActioningId(null); }
   };
 
+  /* -- Nickname actions ----------------------------------------------------- */
+  const handleSaveNickname = async () => {
+    if (!nicknameEdit) return;
+    const { uid, value } = nicknameEdit;
+    const trimmed = value.trim();
+    setNickSaving(true);
+    try {
+      if (trimmed) {
+        await api.put(`/api/friends/nicknames/${uid}`, { nickname: trimmed });
+        setNicknames((prev) => ({ ...prev, [uid]: trimmed }));
+        nicknameStoreSet(uid, trimmed);
+      } else {
+        await api.delete(`/api/friends/nicknames/${uid}`);
+        setNicknames((prev) => { const n = { ...prev }; delete n[uid]; return n; });
+        nicknameStoreRemove(uid);
+      }
+      setNicknameEdit(null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Lỗi lưu biệt danh.'); }
+    finally { setNickSaving(false); }
+  };
+
+  const handleDeleteNickname = async (uid: string) => {
+    setNickSaving(true);
+    try {
+      await api.delete(`/api/friends/nicknames/${uid}`);
+      setNicknames((prev) => { const n = { ...prev }; delete n[uid]; return n; });
+      nicknameStoreRemove(uid);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Lỗi xóa biệt danh.'); }
+    finally { setNickSaving(false); }
+  };
+
   /* -- Relationship helpers ------------------------------------------------ */
   const isFriend   = (uid: string) => friends.some((f) => f.id === uid);
   const hasSent    = (uid: string) => sentMap.has(uid);
@@ -236,96 +280,94 @@ export default function Friends() {
     );
   }
 
-  /* -- Section title map --------------------------------------------------- */
-  const titles: Record<string, string> = {
-    home: 'Tìm kiếm', requests: 'Lời mời kết bạn', suggestions: 'Gợi ý',
-    all: 'Tất cả bạn bè', birthdays: 'Sinh nhật', history: 'Lịch sử',
-  };
-
   /* -- Render -------------------------------------------------------------- */
   return (
-    <div className="py-4 max-w-2xl mx-auto px-1">
+    <div className="px-4 py-5 space-y-5">
 
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-surf-primary to-surf-secondary flex items-center justify-center shadow-lg shadow-surf-primary/25">
-          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-          </svg>
+      {/* Top bar: Title + horizontal tab navigation */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Bạn bè</h1>
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surf-primary/10 text-surf-primary font-semibold">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3z" /></svg>
+              {friends.length}
+            </span>
+            {requests.length > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500 font-semibold">
+                {requests.length} mới
+              </span>
+            )}
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{titles[section]}</h1>
-          {section === 'requests' && (
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {requests.length > 0 ? `${requests.length} lời mời nhận được` : 'Không có lời mời mới'}
-              {sent.length > 0 ? ` · ${sent.length} đã gửi` : ''}
-            </p>
-          )}
-        </div>
+
+        {/* Horizontal tab bar */}
+        <FriendsLeftNav />
       </div>
 
+      {/* Error */}
       {error && (
-        <div className="mb-4 px-4 py-3 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm border border-red-200/50 dark:border-red-800/50">
+        <div className="px-4 py-3 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm border border-red-200/50 dark:border-red-800/50">
           {error}
         </div>
       )}
 
+      {/* Loading */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <span className="w-8 h-8 border-2 border-surf-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <>
-          {/* HOME: Search */}
+        <div className="space-y-4">
+
+          {/* ── HOME: Search ────────────────────────────────────────── */}
           {section === 'home' && (
-            <div>
-              <div className="relative mb-5">
-                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+            <div className="space-y-4">
+              <div className="relative">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
                 </svg>
                 <input
                   type="search"
                   placeholder="Tìm kiếm người dùng trên Surf..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white dark:bg-gray-900/70 border border-gray-200/60 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/30 focus:border-surf-primary/50 transition-all shadow-sm"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200/60 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/30 focus:border-surf-primary/50 transition-all text-sm"
                 />
               </div>
 
               {searchQuery.trim() ? (
-                <>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3 px-1">
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-1">
                     Kết quả · {searchResults.length}
                   </p>
                   {searchLoading ? (
                     <div className="flex justify-center py-10"><Spinner /></div>
                   ) : searchResults.length === 0 ? (
                     <EmptyState
-                      icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg>}
+                      icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg>}
                       title="Không tìm thấy"
                       desc="Thử tìm với tên khác."
                     />
                   ) : (
-                    <ul className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {searchResults.map((s) => (
-                        <li key={s.id}>
-                          <Card>
-                            <Link to={`/feed/profile/${s.id}`}><Avatar url={s.avatarUrl} name={s.name} /></Link>
-                            <div className="flex-1 min-w-0">
-                              <Link to={`/feed/profile/${s.id}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{s.name}</Link>
-                              {isFriend(s.id) && <p className="text-xs text-emerald-500">Bạn bè của bạn</p>}
-                              {hasSent(s.id) && !isFriend(s.id) && <p className="text-xs text-surf-primary dark:text-surf-secondary">Đang chờ xác nhận</p>}
-                            </div>
-                            <AddFriendBtn uid={s.id} name={s.name} avatarUrl={s.avatarUrl} />
-                          </Card>
-                        </li>
+                        <Card key={s.id}>
+                          <Link to={`/feed/profile/${s.id}`}><Avatar url={s.avatarUrl} name={resolve(s.id, s.name)} /></Link>
+                          <div className="flex-1 min-w-0">
+                            <Link to={`/feed/profile/${s.id}`} className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{resolve(s.id, s.name)}</Link>
+                            {isFriend(s.id) && <p className="text-xs text-emerald-500">Bạn bè</p>}
+                            {hasSent(s.id) && !isFriend(s.id) && <p className="text-xs text-surf-primary dark:text-surf-secondary">Đang chờ</p>}
+                          </div>
+                          <AddFriendBtn uid={s.id} name={resolve(s.id, s.name)} avatarUrl={s.avatarUrl} />
+                        </Card>
                       ))}
-                    </ul>
+                    </div>
                   )}
-                </>
+                </div>
               ) : (
                 <EmptyState
-                  icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg>}
+                  icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg>}
                   title="Tìm bạn trên Surf"
                   desc="Nhập tên để tìm người dùng, gửi lời mời kết bạn hoặc theo dõi nhau."
                 />
@@ -333,18 +375,18 @@ export default function Friends() {
             </div>
           )}
 
-          {/* REQUESTS */}
+          {/* ── REQUESTS ────────────────────────────────────────────── */}
           {section === 'requests' && (
-            <div>
+            <div className="space-y-4">
               {/* Sub-tabs */}
-              <div className="flex gap-1 p-1 rounded-2xl bg-gray-100 dark:bg-gray-800/60 mb-5">
+              <div className="flex gap-1 p-1 rounded-xl bg-gray-100 dark:bg-gray-800/60">
                 {(['received', 'sent'] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => setReqTab(tab)}
                     className={[
-                      'flex-1 py-2 rounded-xl text-sm font-semibold transition-all',
+                      'flex-1 py-2 rounded-lg text-sm font-semibold transition-all',
                       reqTab === tab
                         ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm'
                         : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
@@ -366,29 +408,26 @@ export default function Friends() {
                     desc="Khi ai đó gửi lời mời, sẽ hiện ở đây."
                   />
                 ) : (
-                  <ul className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {requests.map((r) => (
-                      <li key={r.id}>
-                        <Card>
-                          <Link to={`/feed/profile/${r.fromUid}`}><Avatar url={r.avatarUrl} name={r.name} /></Link>
-                          <div className="flex-1 min-w-0">
-                            <Link to={`/feed/profile/${r.fromUid}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{r.name}</Link>
-                            <p className="text-xs text-gray-400 dark:text-gray-500">Muốn kết bạn với bạn</p>
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <GradBtn variant="primary" disabled={actioningId === r.id} onClick={() => handleAccept(r.id)}>
-                              {actioningId === r.id ? <Spinner /> : <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>}
-                              Xác nhận
-                            </GradBtn>
-                            <GradBtn variant="ghost" disabled={actioningId === r.id} onClick={() => handleReject(r.id)}>
-                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" /></svg>
-                              Từ chối
-                            </GradBtn>
-                          </div>
-                        </Card>
-                      </li>
+                      <Card key={r.id}>
+                        <Link to={`/feed/profile/${r.fromUid}`}><Avatar url={r.avatarUrl} name={resolve(r.fromUid, r.name)} /></Link>
+                        <div className="flex-1 min-w-0">
+                          <Link to={`/feed/profile/${r.fromUid}`} className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{resolve(r.fromUid, r.name)}</Link>
+                          <p className="text-xs text-gray-400 dark:text-gray-500">Muốn kết bạn</p>
+                        </div>
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          <GradBtn variant="primary" disabled={actioningId === r.id} onClick={() => handleAccept(r.id)}>
+                            {actioningId === r.id ? <Spinner /> : null}
+                            Nhận
+                          </GradBtn>
+                          <GradBtn variant="ghost" disabled={actioningId === r.id} onClick={() => handleReject(r.id)}>
+                            Xoá
+                          </GradBtn>
+                        </div>
+                      </Card>
                     ))}
-                  </ul>
+                  </div>
                 )
               )}
 
@@ -401,29 +440,27 @@ export default function Friends() {
                     desc="Lời mời bạn đã gửi và chưa được chấp nhận sẽ hiển thị ở đây."
                   />
                 ) : (
-                  <ul className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {sent.map((s) => (
-                      <li key={s.id}>
-                        <Card>
-                          <Link to={`/feed/profile/${s.toUid}`}><Avatar url={s.avatarUrl} name={s.name} /></Link>
-                          <div className="flex-1 min-w-0">
-                            <Link to={`/feed/profile/${s.toUid}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{s.name}</Link>
-                            <p className="text-xs text-gray-400 dark:text-gray-500">Đang chờ xác nhận</p>
-                          </div>
-                          <GradBtn variant="ghost" disabled={actioningId === s.id} onClick={() => handleCancelSent(s.id, s.toUid)}>
-                            {actioningId === s.id ? <Spinner /> : null}
-                            Hủy lời mời
-                          </GradBtn>
-                        </Card>
-                      </li>
+                      <Card key={s.id}>
+                        <Link to={`/feed/profile/${s.toUid}`}><Avatar url={s.avatarUrl} name={resolve(s.toUid, s.name)} /></Link>
+                        <div className="flex-1 min-w-0">
+                          <Link to={`/feed/profile/${s.toUid}`} className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{resolve(s.toUid, s.name)}</Link>
+                          <p className="text-xs text-gray-400 dark:text-gray-500">Đang chờ xác nhận</p>
+                        </div>
+                        <GradBtn variant="ghost" disabled={actioningId === s.id} onClick={() => handleCancelSent(s.id, s.toUid)}>
+                          {actioningId === s.id ? <Spinner /> : null}
+                          Hủy
+                        </GradBtn>
+                      </Card>
                     ))}
-                  </ul>
+                  </div>
                 )
               )}
             </div>
           )}
 
-          {/* SUGGESTIONS */}
+          {/* ── SUGGESTIONS ─────────────────────────────────────────── */}
           {section === 'suggestions' && (
             suggestions.length === 0 ? (
               <EmptyState
@@ -432,38 +469,36 @@ export default function Friends() {
                 desc="Những người chưa kết bạn sẽ hiện ở đây."
               />
             ) : (
-              <ul className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {suggestions.map((s) => (
-                  <li key={s.id}>
-                    <Card>
-                      <Link to={`/feed/profile/${s.id}`}><Avatar url={s.avatarUrl} name={s.name} /></Link>
-                      <div className="flex-1 min-w-0">
-                        <Link to={`/feed/profile/${s.id}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{s.name}</Link>
-                        {s.mutualCount != null && s.mutualCount > 0 && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500">{s.mutualCount} bạn chung</p>
-                        )}
-                      </div>
-                      <AddFriendBtn uid={s.id} name={s.name} avatarUrl={s.avatarUrl} />
-                    </Card>
-                  </li>
+                  <div key={s.id} className="bg-white dark:bg-gray-900/70 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl p-4 flex flex-col items-center gap-3 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 text-center">
+                    <Link to={`/feed/profile/${s.id}`}><Avatar url={s.avatarUrl} name={resolve(s.id, s.name)} size="lg" /></Link>
+                    <div className="min-w-0 w-full">
+                      <Link to={`/feed/profile/${s.id}`} className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{resolve(s.id, s.name)}</Link>
+                      {s.mutualCount != null && s.mutualCount > 0 && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{s.mutualCount} bạn chung</p>
+                      )}
+                    </div>
+                    <AddFriendBtn uid={s.id} name={resolve(s.id, s.name)} avatarUrl={s.avatarUrl} />
+                  </div>
                 ))}
-              </ul>
+              </div>
             )
           )}
 
-          {/* ALL FRIENDS */}
+          {/* ── ALL FRIENDS ─────────────────────────────────────────── */}
           {section === 'all' && (
-            <div>
-              <div className="relative mb-5">
-                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+            <div className="space-y-4">
+              <div className="relative">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
                 </svg>
                 <input
                   type="search"
                   placeholder="Tìm trong danh sách bạn bè..."
                   value={friendsSearchQ}
                   onChange={(e) => setFriendsSearchQ(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white dark:bg-gray-900/70 border border-gray-200/60 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/30 transition-all shadow-sm"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200/60 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/30 transition-all text-sm"
                 />
               </div>
               {friends.length === 0 ? (
@@ -474,35 +509,33 @@ export default function Friends() {
                 />
               ) : (() => {
                 const q = friendsSearchQ.trim().toLowerCase();
-                const filtered = q ? friends.filter((f) => f.name.toLowerCase().includes(q)) : friends;
+                const filtered = q ? friends.filter((f) => f.name.toLowerCase().includes(q) || resolve(f.id, f.name).toLowerCase().includes(q)) : friends;
                 return filtered.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">Không tìm thấy &ldquo;{friendsSearchQ}&rdquo;</p>
                 ) : (
-                  <ul className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {filtered.map((f) => (
-                      <li key={f.id}>
-                        <Card>
-                          <Link to={`/feed/profile/${f.id}`}><Avatar url={f.avatarUrl} name={f.name} /></Link>
-                          <div className="flex-1 min-w-0">
-                            <Link to={`/feed/profile/${f.id}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{f.name}</Link>
-                            {f.mutualCount != null && f.mutualCount > 0 && (
-                              <p className="text-xs text-gray-400 dark:text-gray-500">{f.mutualCount} bạn chung</p>
-                            )}
-                          </div>
-                          <Link to="/feed/waves" className="inline-flex items-center gap-1.5 px-4 h-9 rounded-2xl text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" /></svg>
-                            Nhắn tin
-                          </Link>
-                        </Card>
-                      </li>
+                      <Card key={f.id}>
+                        <Link to={`/feed/profile/${f.id}`}><Avatar url={f.avatarUrl} name={resolve(f.id, f.name)} /></Link>
+                        <div className="flex-1 min-w-0">
+                          <Link to={`/feed/profile/${f.id}`} className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{resolve(f.id, f.name)}</Link>
+                          {f.mutualCount != null && f.mutualCount > 0 && (
+                            <p className="text-xs text-gray-400 dark:text-gray-500">{f.mutualCount} bạn chung</p>
+                          )}
+                        </div>
+                        <Link to="/feed/waves" className="inline-flex items-center gap-1.5 px-3 h-8 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" /></svg>
+                          Nhắn tin
+                        </Link>
+                      </Card>
                     ))}
-                  </ul>
+                  </div>
                 );
               })()}
             </div>
           )}
 
-          {/* BIRTHDAYS */}
+          {/* ── BIRTHDAYS ───────────────────────────────────────────── */}
           {section === 'birthdays' && (
             <EmptyState
               icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M12 6c1.11 0 2-.9 2-2 0-.38-.1-.73-.29-1.03L12 0l-1.71 2.97c-.19.3-.29.65-.29 1.03 0 1.1.9 2 2 2zm4.6 9.99l-1.07-1.07-1.08 1.07c-1.3 1.3-3.58 1.31-4.89 0l-1.07-1.07-1.09 1.07C6.75 16.64 5.88 17 4.96 17c-.73 0-1.4-.23-1.96-.61V21c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-4.61c-.56.38-1.23.61-1.96.61-.92 0-1.79-.36-2.44-1.01zM18 9H6c-1.66 0-3 1.34-3 3v.68c0 1.01.54 1.95 1.43 2.45.49.28 1.06.37 1.57.23.51-.13.99-.45 1.35-.94.36.49.84.81 1.35.94.5.14 1.07.04 1.57-.23.49-.27.87-.67 1.14-1.15.27.48.65.88 1.14 1.15.5.27 1.07.37 1.57.23.51-.13.99-.45 1.35-.94.36.49.84.81 1.35.94.51.14 1.08.05 1.57-.22C20.46 14.63 21 13.69 21 12.68V12c0-1.66-1.34-3-3-3z" /></svg>}
@@ -511,15 +544,147 @@ export default function Friends() {
             />
           )}
 
-          {/* HISTORY */}
-          {section === 'history' && (
-            <EmptyState
-              icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12V6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" /></svg>}
-              title="Lịch sử tương tác"
-              desc="Theo dõi hoạt động kết bạn và theo dõi của bạn tại đây."
-            />
+          {/* ── NICKNAMES ───────────────────────────────────────────── */}
+          {section === 'nicknames' && (
+            <div className="space-y-4">
+              {/* Search friends to set nickname */}
+              <div className="relative">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+                </svg>
+                <input
+                  type="search"
+                  placeholder="Tìm bạn bè để đặt biệt danh..."
+                  value={nickSearchQ}
+                  onChange={(e) => setNickSearchQ(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200/60 dark:border-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/30 transition-all text-sm"
+                />
+              </div>
+
+              {/* Existing nicknames */}
+              {Object.keys(nicknames).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-1">
+                    Biệt danh đã đặt · {Object.keys(nicknames).length}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Object.entries(nicknames).map(([fUid, nick]) => {
+                      const friend = friends.find((f) => f.id === fUid);
+                      if (!friend) return null;
+                      const isEditing = nicknameEdit?.uid === fUid;
+                      return (
+                        <div key={fUid} className="bg-white dark:bg-gray-900/70 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl p-3 flex items-center gap-3 hover:shadow-sm transition-all">
+                          <Link to={`/feed/profile/${fUid}`}><Avatar url={friend.avatarUrl} name={resolve(fUid, friend.name)} size="sm" /></Link>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{resolve(fUid, friend.name)}</p>
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <input
+                                  autoFocus
+                                  value={nicknameEdit.value}
+                                  onChange={(e) => setNicknameEdit({ uid: fUid, value: e.target.value })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNickname(); if (e.key === 'Escape') setNicknameEdit(null); }}
+                                  maxLength={50}
+                                  className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-surf-primary/40"
+                                  placeholder="Nhập biệt danh..."
+                                />
+                                <button type="button" onClick={handleSaveNickname} disabled={nickSaving} className="p-1 rounded-lg text-surf-primary hover:bg-surf-primary/10 disabled:opacity-50">
+                                  {nickSaving ? <Spinner /> : <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>}
+                                </button>
+                                <button type="button" onClick={() => setNicknameEdit(null)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" /></svg>
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-surf-primary dark:text-surf-secondary truncate">
+                                Biệt danh: <span className="font-medium">{nick}</span>
+                              </p>
+                            )}
+                          </div>
+                          {!isEditing && (
+                            <div className="flex gap-1 flex-shrink-0">
+                              <button type="button" onClick={() => setNicknameEdit({ uid: fUid, value: nick })} className="p-1.5 rounded-lg text-gray-400 hover:text-surf-primary hover:bg-surf-primary/10 transition-colors" title="Sửa">
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
+                              </button>
+                              <button type="button" onClick={() => handleDeleteNickname(fUid)} disabled={nickSaving} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50" title="Xóa">
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Friends list to pick from */}
+              {(() => {
+                const q = nickSearchQ.trim().toLowerCase();
+                const filtered = q ? friends.filter((f) => f.name.toLowerCase().includes(q) || resolve(f.id, f.name).toLowerCase().includes(q)) : friends;
+                const available = filtered.filter((f) => !nicknames[f.id]);
+                if (friends.length === 0) return (
+                  <EmptyState
+                    icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>}
+                    title="Chưa có bạn bè"
+                    desc="Hãy kết bạn trước để đặt biệt danh cho họ."
+                  />
+                );
+                if (available.length === 0 && !q) return null;
+                if (available.length === 0 && q) return (
+                  <p className="text-sm text-gray-500 text-center py-6">Không tìm thấy &ldquo;{nickSearchQ}&rdquo;</p>
+                );
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-1">
+                      {q ? 'Kết quả tìm kiếm' : 'Chọn bạn bè'} · {available.length}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {available.map((f) => {
+                        const isEditing = nicknameEdit?.uid === f.id;
+                        return (
+                          <div key={f.id} className="bg-white dark:bg-gray-900/70 border border-gray-200/60 dark:border-gray-700/50 rounded-2xl p-3 flex items-center gap-3 hover:shadow-sm transition-all">
+                            <Link to={`/feed/profile/${f.id}`}><Avatar url={f.avatarUrl} name={resolve(f.id, f.name)} size="sm" /></Link>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{resolve(f.id, f.name)}</p>
+                              {isEditing ? (
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <input
+                                    autoFocus
+                                    value={nicknameEdit.value}
+                                    onChange={(e) => setNicknameEdit({ uid: f.id, value: e.target.value })}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNickname(); if (e.key === 'Escape') setNicknameEdit(null); }}
+                                    maxLength={50}
+                                    className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-surf-primary/40"
+                                    placeholder="Nhập biệt danh..."
+                                  />
+                                  <button type="button" onClick={handleSaveNickname} disabled={nickSaving} className="p-1 rounded-lg text-surf-primary hover:bg-surf-primary/10 disabled:opacity-50">
+                                    {nickSaving ? <Spinner /> : <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>}
+                                  </button>
+                                  <button type="button" onClick={() => setNicknameEdit(null)} className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" /></svg>
+                                  </button>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-400 dark:text-gray-500">Chưa có biệt danh</p>
+                              )}
+                            </div>
+                            {!isEditing && (
+                              <button type="button" onClick={() => setNicknameEdit({ uid: f.id, value: '' })} className="inline-flex items-center gap-1 px-3 h-8 rounded-xl text-xs font-semibold bg-surf-primary/10 text-surf-primary hover:bg-surf-primary/20 transition-colors">
+                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
+                                Đặt
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );

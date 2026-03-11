@@ -3,7 +3,6 @@ import Header from './Header';
 import BottomNav from './BottomNav';
 import MainLeftNav from './MainLeftNav';
 import MainRightSidebar from './MainRightSidebar';
-import FriendsLeftNav from './FriendsLeftNav';
 
 const MAIN_PATHS = [
   '/feed', '/feed/short-video', '/feed/friends', '/feed/groups', '/feed/market',
@@ -13,16 +12,11 @@ const MAIN_PATHS = [
 function isMainPage(pathname: string): boolean {
   return MAIN_PATHS.some((p) => pathname === p) || pathname.startsWith('/feed/friends/');
 }
-function isFriendsSection(pathname: string): boolean {
-  return pathname === '/feed/friends' || pathname.startsWith('/feed/friends/');
-}
-
 export default function Layout() {
   const location = useLocation();
   const isProfile = location.pathname.startsWith('/feed/profile/');
   const isSettings = location.pathname === '/feed/settings';
   const useThreeColumn = isMainPage(location.pathname);
-  const showFriendsLeftNav = isFriendsSection(location.pathname);
 
   return (
     <div className={`bg-surf-light dark:bg-surf-dark flex flex-col ${isSettings || useThreeColumn ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
@@ -39,17 +33,15 @@ export default function Layout() {
         }
       >
         {useThreeColumn ? (
-          <>
-            <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[25%_1fr] lg:grid-cols-[22%_56%_22%] gap-1 md:gap-2 overflow-hidden">
-              {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
-              <div className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
-                <div className="flex-1 w-full">
-                  <Outlet />
-                </div>
+          <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[25%_1fr] lg:grid-cols-[22%_56%_22%] gap-1 md:gap-2 overflow-hidden">
+            <MainLeftNav />
+            <div className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
+              <div className="flex-1 w-full">
+                <Outlet />
               </div>
-              <MainRightSidebar />
             </div>
-          </>
+            <MainRightSidebar />
+          </div>
         ) : (
           <Outlet />
         )}

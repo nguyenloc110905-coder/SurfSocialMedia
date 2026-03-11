@@ -114,7 +114,7 @@ export default function App() {
           <Route path="friends/suggestions" element={<Friends />} />
           <Route path="friends/all" element={<Friends />} />
           <Route path="friends/birthdays" element={<Friends />} />
-          <Route path="friends/history" element={<Friends />} />
+          <Route path="friends/nicknames" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
           <Route path="market" element={<MarketPage />} />
           <Route

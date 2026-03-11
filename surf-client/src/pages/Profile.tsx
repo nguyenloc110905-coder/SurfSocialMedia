@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useNicknameStore } from '@/stores/nicknameStore';
 import { getProfile, updateProfileFields, type UserProfile, type AboutDetail } from '@/lib/firebase/profile';
 import { uploadProfileImage } from '@/lib/firebase/storage';
 import { updateUserProfile } from '@/lib/firebase/auth';
@@ -80,9 +81,11 @@ export default function Profile() {
   const highlightInputRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = user?.uid === uid;
-  const displayName = isOwnProfile
+  const resolve = useNicknameStore((s) => s.resolve);
+  const rawDisplayName = isOwnProfile
     ? (user?.displayName?.trim() || profile?.displayName || 'Người dùng')
     : (profile?.displayName || 'Người dùng');
+  const displayName = isOwnProfile ? rawDisplayName : resolve(uid ?? '', rawDisplayName);
   const initial = displayName.charAt(0).toUpperCase();
   // Lấy username từ đúng email của người sở hữu profile
   const profileEmail = isOwnProfile ? user?.email : profile?.email;
@@ -1232,13 +1235,13 @@ export default function Profile() {
                     >
                       <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 flex items-center justify-center overflow-hidden">
                         {friend.photoURL ? (
-                          <img src={friend.photoURL} alt={friend.displayName} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <img src={friend.photoURL} alt={resolve(friend.id, friend.displayName)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         ) : (
-                          <div className="text-4xl font-bold text-surf-primary">{friend.displayName.charAt(0).toUpperCase()}</div>
+                          <div className="text-4xl font-bold text-surf-primary">{resolve(friend.id, friend.displayName).charAt(0).toUpperCase()}</div>
                         )}
                       </div>
                       <div className="p-3">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{friend.displayName}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{resolve(friend.id, friend.displayName)}</p>
                       </div>
                     </div>
                   ))}

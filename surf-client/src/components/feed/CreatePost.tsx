@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import { useNicknameStore } from '../../stores/nicknameStore';
 import { api } from '../../lib/api';
 import TagFriendsModal from './TagFriendsModal';
 
@@ -17,6 +18,7 @@ interface TaggedFriend {
 
 export default function CreatePost() {
   const { user } = useAuthStore();
+  const resolve = useNicknameStore((s) => s.resolve);
   const [content, setContent] = useState('');
   const [privacy, setPrivacy] = useState<'public' | 'friends' | 'only-me' | 'custom'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -365,7 +367,7 @@ export default function CreatePost() {
                         onClick={() => removeTaggedFriend(friend.uid)}
                         className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline"
                       >
-                        {friend.displayName}
+                        {resolve(friend.uid, friend.displayName)}
                       </button>
                       {idx < taggedFriends.length - 1 && ', '}
                     </span>

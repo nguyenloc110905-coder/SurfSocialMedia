@@ -301,4 +301,69 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/* ======================================================================== */
+/*  NICKNAMES — biệt danh cá nhân, chỉ user tự thấy                       */
+/*  Firestore: nicknames/{uid}  → { entries: { [friendUid]: string } }      */
+/* ======================================================================== */
+
+/** GET /api/friends/nicknames — lấy tất cả biệt danh của mình */
+router.get('/nicknames', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const doc = await db().collection('nicknames').doc(uid).get();
+    const entries: Record<string, string> = doc.exists ? (doc.data()?.entries ?? {}) : {};
+    res.json({ nicknames: entries });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** PUT /api/friends/nicknames/:friendUid — đặt / cập nhật biệt danh cho 1 bạn */
+router.put('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const { friendUid } = req.params;
+    const { nickname } = req.body as { nickname?: string };
+    if (!nickname || typeof nickname !== 'string' || nickname.trim().length === 0) {
+      res.status(400).json({ error: 'nickname is required' });
+      return;
+    }
+    if (nickname.trim().length > 50) {
+      res.status(400).json({ error: 'nickname too long (max 50)' });
+      return;
+    }
+    // Verify they are friends
+    const friendDoc = await db().collection('friends').doc(uid).get();
+    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+    if (!friendIds.includes(friendUid)) {
+      res.status(400).json({ error: 'Not friends with this user' });
+      return;
+    }
+    await db().collection('nicknames').doc(uid).set(
+      { entries: { [friendUid]: nickname.trim() } },
+      { merge: true },
+    );
+    res.json({ friendUid, nickname: nickname.trim() });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** DELETE /api/friends/nicknames/:friendUid — xóa biệt danh */
+router.delete('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const { friendUid } = req.params;
+    const ref = db().collection('nicknames').doc(uid);
+    const doc = await ref.get();
+    if (!doc.exists) { res.status(204).send(); return; }
+    const entries = { ...(doc.data()?.entries ?? {}) } as Record<string, string>;
+    delete entries[friendUid];
+    await ref.set({ entries }, { merge: false });
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 export default router;

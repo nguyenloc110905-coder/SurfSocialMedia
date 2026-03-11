@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
+import { useNicknameStore } from '../../stores/nicknameStore';
 
 interface Friend {
   uid: string;
@@ -23,6 +24,7 @@ export default function TagFriendsModal({
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const resolve = useNicknameStore((s) => s.resolve);
 
   useEffect(() => {
     if (isOpen) {
@@ -119,14 +121,14 @@ export default function TagFriendsModal({
                   {friend.photoURL ? (
                     <img
                       src={friend.photoURL}
-                      alt={friend.displayName || 'Friend'}
+                      alt={resolve(friend.uid, friend.displayName) || 'Friend'}
                       className="w-10 h-10 rounded-full ring-2 ring-gray-200 dark:ring-slate-700 object-cover"
                     />
                   ) : (
                     <div className="w-10 h-10 rounded-full ring-2 ring-gray-200 dark:ring-slate-700 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
                       <span className="text-sm font-bold text-white">
                         {(() => {
-                          const name = friend.displayName || 'S';
+                          const name = resolve(friend.uid, friend.displayName) || 'S';
                           const words = name.split(' ');
                           if (words.length >= 2) {
                             return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -138,7 +140,7 @@ export default function TagFriendsModal({
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                      {friend.displayName || 'Unknown'}
+                      {resolve(friend.uid, friend.displayName) || 'Unknown'}
                     </p>
                   </div>
                 </label>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+import { useNicknameStore } from '../../stores/nicknameStore';
 
 interface Comment {
   id: string;
@@ -37,6 +38,7 @@ interface PostCardProps {
 
 export default function PostCard({ post, currentUserId }: PostCardProps) {
   const { user } = useAuthStore();
+  const resolve = useNicknameStore((s) => s.resolve);
   const navigate = useNavigate();
   const goToProfile = (uid?: string) => uid && navigate(`/feed/profile/${uid}`);
   const commentInputRef = useRef<HTMLInputElement>(null);
@@ -413,7 +415,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
               <div className="relative w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg cursor-pointer hover:scale-105 transition-transform bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
                 <span className="text-lg font-bold text-white drop-shadow-md">
                   {(() => {
-                    const name = post.authorDisplayName || 'U';
+                    const name = resolve(post.authorId ?? '', post.authorDisplayName) || 'U';
                     const words = name.split(' ');
                     if (words.length >= 2) {
                       return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -431,7 +433,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                 className="inline font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
                 onClick={() => goToProfile(post.authorId)}
               >
-                {post.authorDisplayName}
+                {resolve(post.authorId ?? '', post.authorDisplayName)}
               </h3>
               {post.feeling && (
                 <span className="text-gray-600 dark:text-gray-400">
@@ -447,7 +449,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                         className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
                         onClick={() => goToProfile(friend.uid)}
                       >
-                        {friend.displayName}
+                        {resolve(friend.uid, friend.displayName)}
                       </span>
                       {idx < post.taggedFriends!.length - 1 && ', '}
                     </span>
@@ -738,7 +740,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                       >
                         <span className="text-xs font-bold text-white">
                           {(() => {
-                            const name = comment.authorDisplayName || 'U';
+                            const name = resolve(comment.authorId, comment.authorDisplayName) || 'U';
                             const words = name.split(' ');
                             if (words.length >= 2) {
                               return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -756,7 +758,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                           className="font-semibold text-sm text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
                           onClick={() => goToProfile(comment.authorId)}
                         >
-                          {comment.authorDisplayName}
+                          {resolve(comment.authorId, comment.authorDisplayName)}
                         </div>
                         <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
                           {comment.content}
