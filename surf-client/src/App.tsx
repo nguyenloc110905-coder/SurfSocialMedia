@@ -8,7 +8,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import Feed from './pages/Feed';
 import Profile from './pages/Profile';
 import ShortVideo from './pages/ShortVideo';
-import Friends from './pages/Friends';
+import Friends from './pages/friends/Friends';
 import Groups from './pages/Groups';
 import SettingsPage from './pages/settings/SettingsPage';
 import MarketPage from './pages/MarketPage';
