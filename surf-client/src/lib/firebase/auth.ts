@@ -8,31 +8,50 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   updateProfile,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  fetchSignInMethodsForEmail,
   User,
 } from 'firebase/auth';
 import { app } from './config';
 
 export const auth = getAuth(app);
 
+export async function setAuthPersistence(rememberMe: boolean) {
+  await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+}
+
 export async function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);
 }
 
 export async function signUp(email: string, password: string, displayName?: string) {
+  // Kiểm tra email đã được dùng bởi tài khoản khác (VD: Google) chưa
+  const methods = await fetchSignInMethodsForEmail(auth, email);
+  if (methods.length > 0) {
+    const error: any = new Error('Email này đã được sử dụng.');
+    error.code = 'auth/email-already-in-use';
+    throw error;
+  }
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   if (displayName && cred.user) await updateProfile(cred.user, { displayName });
   return cred;
 }
 
 export async function signInWithGoogle() {
-  return signInWithPopup(auth, new GoogleAuthProvider());
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  return signInWithPopup(auth, provider);
 }
 
 export function sendPasswordResetEmail(email: string) {
   return fbSendPasswordResetEmail(auth, email);
 }
 
-export function signOut() {
+export async function signOut() {
+  // Chuyển sang session persistence để xóa token đã lưu trong localStorage
+  await setPersistence(auth, browserSessionPersistence);
   return fbSignOut(auth);
 }
 

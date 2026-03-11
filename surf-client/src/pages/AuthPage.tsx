@@ -1,21 +1,40 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { signIn, signInWithGoogle, signUp } from '@/lib/firebase/auth';
+import { signIn, signInWithGoogle, signUp, setAuthPersistence } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { syncUserProfile } from '@/lib/api';
+import { PHONE_COUNTRIES, type PhoneCountry } from '@/lib/phone-countries';
+
+declare global {
+  interface Window {
+    grecaptcha: {
+      render: (container: HTMLElement, params: { sitekey: string; callback: (token: string) => void; 'expired-callback': () => void; theme?: string }) => number;
+      reset: (widgetId: number) => void;
+      getResponse: (widgetId: number) => string;
+      ready: (cb: () => void) => void;
+    };
+  }
+}
+
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string;
 
 const ERRORS: Record<string, string> = {
   'auth/invalid-email': 'Email không hợp lệ.',
   'auth/user-disabled': 'Tài khoản đã bị vô hiệu hóa.',
-  'auth/user-not-found': 'Không tìm thấy tài khoản.',
-  'auth/wrong-password': 'Mật khẩu không đúng.',
+  'auth/user-not-found': 'Tài khoản không tồn tại. Vui lòng kiểm tra lại email.',
+  'auth/wrong-password': 'Mật khẩu không đúng. Vui lòng thử lại.',
+  'auth/invalid-credential': 'Email hoặc mật khẩu không đúng.',
+  'auth/invalid-login-credentials': 'Email hoặc mật khẩu không đúng.',
+  'auth/too-many-requests': 'Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau.',
   'auth/email-already-in-use': 'Email này đã được sử dụng.',
   'auth/weak-password': 'Mật khẩu quá yếu.',
   'auth/operation-not-allowed': 'Phương thức đăng nhập chưa được bật.',
-  'auth/network-request-failed': 'Lỗi mạng. Kiểm tra kết nối.',
+  'auth/network-request-failed': 'Lỗi kết nối mạng. Vui lòng kiểm tra internet.',
+  'auth/internal-error': 'Lỗi máy chủ. Vui lòng thử lại sau.',
   'auth/popup-closed-by-user': 'Bạn đã đóng cửa sổ đăng nhập.',
   'auth/popup-blocked': 'Popup bị chặn. Cho phép popup cho trang này.',
   'auth/cancelled-popup-request': 'Đã có yêu cầu đăng nhập khác.',
+  'auth/account-exists-with-different-credential': 'Email đã liên kết với phương thức đăng nhập khác.',
 };
 
 function validatePassword(password: string, name: string, email: string): string | null {
@@ -27,40 +46,6 @@ function validatePassword(password: string, name: string, email: string): string
   if (email && password.toLowerCase() === email.toLowerCase()) return 'Mật khẩu không được trùng với email.';
   return null;
 }
-
-const PHONE_COUNTRY = [
-  { code: '+84', label: 'VN +84' },
-  { code: '+1', label: 'US/CA +1' },
-  { code: '+44', label: 'UK +44' },
-  { code: '+81', label: 'JP +81' },
-  { code: '+82', label: 'KR +82' },
-  { code: '+86', label: 'CN +86' },
-  { code: '+65', label: 'SG +65' },
-  { code: '+66', label: 'TH +66' },
-  { code: '+60', label: 'MY +60' },
-  { code: '+62', label: 'ID +62' },
-  { code: '+63', label: 'PH +63' },
-  { code: '+64', label: 'NZ +64' },
-  { code: '+61', label: 'AU +61' },
-  { code: '+91', label: 'IN +91' },
-  { code: '+33', label: 'FR +33' },
-  { code: '+49', label: 'DE +49' },
-  { code: '+39', label: 'IT +39' },
-  { code: '+34', label: 'ES +34' },
-  { code: '+31', label: 'NL +31' },
-  { code: '+7', label: 'RU/KZ +7' },
-  { code: '+90', label: 'TR +90' },
-  { code: '+55', label: 'BR +55' },
-  { code: '+52', label: 'MX +52' },
-  { code: '+54', label: 'AR +54' },
-  { code: '+56', label: 'CL +56' },
-  { code: '+57', label: 'CO +57' },
-  { code: '+51', label: 'PE +51' },
-  { code: '+971', label: 'AE +971' },
-  { code: '+966', label: 'SA +966' },
-  { code: '+20', label: 'EG +20' },
-  { code: '+27', label: 'ZA +27' },
-] as const;
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-xl bg-white/70 dark:bg-white/10 border border-white/30 dark:border-white/20 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent backdrop-blur-sm transition-all';
@@ -97,32 +82,171 @@ export default function AuthPage() {
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regPhoneCountry, setRegPhoneCountry] = useState('+84');
+  const [regPhoneCountry, setRegPhoneCountry] = useState('VN');
   const [regPhone, setRegPhone] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showLoginPwd, setShowLoginPwd] = useState(false);
+  const [showRegPwd, setShowRegPwd] = useState(false);
+  const [showRegConfirmPwd, setShowRegConfirmPwd] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [showCaptchaModal, setShowCaptchaModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'login' | 'register' | 'google' | null>(null);
+  const captchaModalRef = useRef<HTMLDivElement>(null);
+  const captchaWidgetId = useRef<number | null>(null);
+  const loginFormRef = useRef<HTMLFormElement>(null);
+
+  // Xóa sạch form khi component mount (đăng xuất quay lại)
+  useEffect(() => {
+    setLoginEmail('');
+    setLoginPassword('');
+    setRegEmail('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+    setRegName('');
+    setRegPhone('');
+    setError('');
+    // Force reset native form để trình duyệt không autofill
+    loginFormRef.current?.reset();
+  }, []);
 
   useEffect(() => {
     setIsFlipped(isRegister);
   }, [isRegister]);
 
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  // Render reCAPTCHA widget inside modal when it opens
+  useEffect(() => {
+    if (!showCaptchaModal || !RECAPTCHA_SITE_KEY) return;
+    captchaWidgetId.current = null;
+    const tryRender = () => {
+      if (!captchaModalRef.current || !window.grecaptcha) return false;
+      try {
+        captchaWidgetId.current = window.grecaptcha.render(captchaModalRef.current, {
+          sitekey: RECAPTCHA_SITE_KEY,
+          callback: (token: string) => setCaptchaToken(token),
+          'expired-callback': () => setCaptchaToken(''),
+          theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+        });
+        return true;
+      } catch { return false; }
+    };
+    const timer = setTimeout(() => {
+      if (!tryRender()) {
+        const interval = setInterval(() => {
+          if (tryRender()) clearInterval(interval);
+        }, 200);
+        setTimeout(() => clearInterval(interval), 10000);
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [showCaptchaModal]);
+
+  const openCaptchaModal = (action: 'login' | 'register' | 'google') => {
+    setCaptchaToken('');
+    setPendingAction(action);
+    setShowCaptchaModal(true);
+  };
+
+  const closeCaptchaModal = () => {
+    setShowCaptchaModal(false);
+    setPendingAction(null);
+    setCaptchaToken('');
+  };
+
+  const executeLogin = async () => {
     setLoading(true);
     try {
+      await setAuthPersistence(rememberMe);
       const result = await signIn(loginEmail.trim(), loginPassword);
       const token = await result.user.getIdToken();
       console.log('🔑 Token ready, length:', token.length);
       await new Promise(resolve => setTimeout(resolve, 800));
       await syncUserProfile();
+      // Xóa thông tin form nếu không ghi nhớ
+      if (!rememberMe) {
+        setLoginEmail('');
+        setLoginPassword('');
+      }
+      setShowCaptchaModal(false);
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng nhập thất bại.');
+      console.error('❌ Login error code:', code, err);
+      setError(ERRORS[code] || 'Đăng nhập thất bại. Vui lòng kiểm tra email và mật khẩu.');
+      closeCaptchaModal();
     } finally {
       setLoading(false);
     }
+  };
+
+  const executeRegister = async () => {
+    setLoading(true);
+    try {
+      const result = await signUp(regEmail.trim(), regPassword, regName.trim());
+      const token = await result.user.getIdToken();
+      console.log('🔑 Token ready, length:', token.length);
+      await new Promise(resolve => setTimeout(resolve, 800));
+      await syncUserProfile();
+      setShowCaptchaModal(false);
+      navigate('/feed', { replace: true });
+    } catch (err: unknown) {
+      const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+      setError(ERRORS[code] || 'Đăng ký thất bại.');
+      closeCaptchaModal();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const executeGooglePost = async () => {
+    setLoading(true);
+    try {
+      const result = await signInWithGoogle();
+      const token = await result.user.getIdToken();
+      console.log('\ud83d\udd11 Token ready, length:', token.length);
+      await new Promise(resolve => setTimeout(resolve, 800));
+      await syncUserProfile();
+      setShowCaptchaModal(false);
+      navigate('/feed', { replace: true });
+    } catch (err: unknown) {
+      const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+      // Popup đóng / hủy / 2FA thoát giữa chừng → bỏ qua, không hiện lỗi
+      if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request' ||
+        code === 'auth/popup-blocked' ||
+        code === 'auth/user-cancelled' ||
+        code === 'auth/multi-factor-auth-required'
+      ) {
+        closeCaptchaModal();
+        setLoading(false);
+        return;
+      }
+      setError(ERRORS[code] || '\u0110\u0103ng nh\u1eadp Google th\u1ea5t b\u1ea1i.');
+      closeCaptchaModal();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-execute pending action after CAPTCHA is verified
+  useEffect(() => {
+    if (!captchaToken || !pendingAction) return;
+    if (pendingAction === 'login') executeLogin();
+    else if (pendingAction === 'register') executeRegister();
+    else if (pendingAction === 'google') executeGooglePost();
+  }, [captchaToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (RECAPTCHA_SITE_KEY && !captchaToken) {
+      openCaptchaModal('login');
+      return;
+    }
+    await executeLogin();
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -132,38 +256,21 @@ export default function AuthPage() {
     if (!regEmail.trim()) { setError('Vui lòng nhập email.'); return; }
     const pwdError = validatePassword(regPassword, regName.trim(), regEmail.trim());
     if (pwdError) { setError(pwdError); return; }
-    setLoading(true);
-    try {
-      const result = await signUp(regEmail.trim(), regPassword, regName.trim());
-      const token = await result.user.getIdToken();
-      console.log('🔑 Token ready, length:', token.length);
-      await new Promise(resolve => setTimeout(resolve, 800));
-      await syncUserProfile();
-      navigate('/feed', { replace: true });
-    } catch (err: unknown) {
-      const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng ký thất bại.');
-    } finally {
-      setLoading(false);
+    if (regPassword !== regConfirmPassword) { setError('Mật khẩu nhập lại không khớp.'); return; }
+    if (RECAPTCHA_SITE_KEY && !captchaToken) {
+      openCaptchaModal('register');
+      return;
     }
+    await executeRegister();
   };
 
   async function handleGoogleSignIn() {
     setError('');
-    setLoading(true);
-    try {
-      const result = await signInWithGoogle();
-      const token = await result.user.getIdToken();
-      console.log('🔑 Token ready, length:', token.length);
-      await new Promise(resolve => setTimeout(resolve, 800));
-      await syncUserProfile();
-      navigate('/feed', { replace: true });
-    } catch (err: unknown) {
-      const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng nhập Google thất bại.');
-    } finally {
-      setLoading(false);
+    if (RECAPTCHA_SITE_KEY && !captchaToken) {
+      openCaptchaModal('google');
+      return;
     }
+    await executeGooglePost();
   }
 
   const goRegister = () => { setError(''); setIsFlipped(true); navigate('/register', { replace: true }); };
@@ -208,25 +315,55 @@ export default function AuthPage() {
                 Đăng nhập
               </h2>
 
-              <form onSubmit={handleLoginSubmit} className="flex flex-col gap-3.5">
+              <form ref={loginFormRef} onSubmit={handleLoginSubmit} autoComplete={rememberMe ? 'on' : 'off'} className="flex flex-col gap-3.5">
                 <input
                   type="email"
-                  autoComplete="username"
-                  placeholder="Email hoặc số điện thoại"
+                  name="login-email"
+                  autoComplete={rememberMe ? 'username' : 'one-time-code'}
+                  placeholder="Email đăng nhập"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   className={inputClass}
                   required
                 />
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="Mật khẩu"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className={inputClass}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showLoginPwd ? 'text' : 'password'}
+                    name="login-password"
+                    autoComplete={rememberMe ? 'current-password' : 'new-password'}
+                    placeholder="Mật khẩu"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className={`${inputClass} pr-11`}
+                    required
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onMouseDown={() => setShowLoginPwd(true)}
+                    onMouseUp={() => setShowLoginPwd(false)}
+                    onMouseLeave={() => setShowLoginPwd(false)}
+                    onTouchStart={() => setShowLoginPwd(true)}
+                    onTouchEnd={() => setShowLoginPwd(false)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors select-none"
+                  >
+                    {showLoginPwd ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9.27-3.11-11-7.5a11.7 11.7 0 013.168-4.477M6.343 6.343A9.97 9.97 0 0112 5c5 0 9.27 3.11 11 7.5a11.7 11.7 0 01-4.168 4.477M6.343 6.343L3 3m3.343 3.343l2.829 2.829m4.486 4.486l2.829 2.829M6.343 6.343l11.314 11.314M14.121 14.121A3 3 0 009.879 9.879" /></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    )}
+                  </button>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-cyan-500 focus:ring-cyan-400 accent-cyan-500"
+                  />
+                  <span className="text-sm text-gray-600 dark:text-gray-300">Ghi nhớ đăng nhập</span>
+                </label>
+
                 <button
                   type="submit"
                   disabled={loading}
@@ -257,7 +394,12 @@ export default function AuthPage() {
               </button>
 
               {error && !isFlipped && (
-                <p className="text-red-500 dark:text-red-400 text-sm mt-3 text-center">{error}</p>
+                <div className="flex items-center gap-2 mt-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 animate-[shake_0.3s_ease-in-out]">
+                  <svg className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-red-600 dark:text-red-400 text-sm font-medium">{error}</p>
+                </div>
               )}
 
               <div className="mt-5 pt-4 border-t border-gray-200/50 dark:border-gray-600/30 text-center">
@@ -295,28 +437,73 @@ export default function AuthPage() {
                   className={inputClass}
                   required
                 />
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="Mật khẩu (ít nhất 6 ký tự)"
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  className={inputClass}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showRegPwd ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder="Mật khẩu (ít nhất 6 ký tự)"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    className={`${inputClass} pr-11`}
+                    required
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onMouseDown={() => setShowRegPwd(true)}
+                    onMouseUp={() => setShowRegPwd(false)}
+                    onMouseLeave={() => setShowRegPwd(false)}
+                    onTouchStart={() => setShowRegPwd(true)}
+                    onTouchEnd={() => setShowRegPwd(false)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors select-none"
+                  >
+                    {showRegPwd ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9.27-3.11-11-7.5a11.7 11.7 0 013.168-4.477M6.343 6.343A9.97 9.97 0 0112 5c5 0 9.27 3.11 11 7.5a11.7 11.7 0 01-4.168 4.477M6.343 6.343L3 3m3.343 3.343l2.829 2.829m4.486 4.486l2.829 2.829M6.343 6.343l11.314 11.314M14.121 14.121A3 3 0 009.879 9.879" /></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    )}
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showRegConfirmPwd ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder="Nhập lại mật khẩu"
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    className={`${inputClass} pr-11`}
+                    required
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onMouseDown={() => setShowRegConfirmPwd(true)}
+                    onMouseUp={() => setShowRegConfirmPwd(false)}
+                    onMouseLeave={() => setShowRegConfirmPwd(false)}
+                    onTouchStart={() => setShowRegConfirmPwd(true)}
+                    onTouchEnd={() => setShowRegConfirmPwd(false)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors select-none"
+                  >
+                    {showRegConfirmPwd ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9.27-3.11-11-7.5a11.7 11.7 0 013.168-4.477M6.343 6.343A9.97 9.97 0 0112 5c5 0 9.27 3.11 11 7.5a11.7 11.7 0 01-4.168 4.477M6.343 6.343L3 3m3.343 3.343l2.829 2.829m4.486 4.486l2.829 2.829M6.343 6.343l11.314 11.314M14.121 14.121A3 3 0 009.879 9.879" /></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    )}
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <select
                     value={regPhoneCountry}
                     onChange={(e) => setRegPhoneCountry(e.target.value)}
-                    className="w-28 px-3 py-2.5 rounded-xl bg-white/70 dark:bg-white/10 border border-white/30 dark:border-white/20 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-400 backdrop-blur-sm"
+                    className="w-40 px-2 py-2.5 rounded-xl bg-white/70 dark:bg-white/10 border border-white/30 dark:border-white/20 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-400 backdrop-blur-sm text-sm"
                   >
-                    {PHONE_COUNTRY.map(({ code, label }) => (
-                      <option key={code} value={code}>{label}</option>
+                    {PHONE_COUNTRIES.map(({ iso, name, code }) => (
+                      <option key={iso} value={iso}>{iso} ({code}) {name}</option>
                     ))}
                   </select>
                   <input
                     type="tel"
-                    placeholder="Số điện thoại"
+                    placeholder={`${PHONE_COUNTRIES.find(c => c.iso === regPhoneCountry)?.code || '+84'} Số điện thoại`}
                     value={regPhone}
                     onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
                     className={`${inputClass} flex-1`}
@@ -331,13 +518,13 @@ export default function AuthPage() {
                 </button>
               </form>
 
-              <div className="flex items-center gap-3 my-4">
+              {/* <div className="flex items-center gap-3 my-4">
                 <span className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
                 <span className="text-xs text-gray-400 uppercase tracking-wider">hoặc</span>
                 <span className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
-              </div>
+              </div> */}
 
-              <button
+              {/* <button
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
@@ -345,10 +532,15 @@ export default function AuthPage() {
               >
                 <GoogleIcon />
                 Đăng ký với Google
-              </button>
+              </button> */}
 
               {error && isFlipped && (
-                <p className="text-red-500 dark:text-red-400 text-sm mt-3 text-center">{error}</p>
+                <div className="flex items-center gap-2 mt-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 animate-[shake_0.3s_ease-in-out]">
+                  <svg className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-red-600 dark:text-red-400 text-sm font-medium">{error}</p>
+                </div>
               )}
 
               <div className="mt-5 pt-4 border-t border-gray-200/50 dark:border-gray-600/30 text-center">
@@ -365,6 +557,28 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
+
+      {/* CAPTCHA verification modal */}
+      {showCaptchaModal && RECAPTCHA_SITE_KEY && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={closeCaptchaModal}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col items-center gap-4 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
+              <svg className="w-5 h-5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <span className="font-medium">Xác nhận bạn không phải robot</span>
+            </div>
+            <div ref={captchaModalRef} />
+            <button
+              type="button"
+              onClick={closeCaptchaModal}
+              className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              Hủy
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
