@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 const router = Router();
 
@@ -27,27 +27,57 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-    if (!q) { res.json({ users: [] }); return; }
+    if (!q) {
+      res.json({ users: [] });
+      return;
+    }
     const snap = await getDb().collection('users').get();
     const lower = q.toLowerCase();
     type UserDoc = { id: string; displayName?: string; photoURL?: string };
-    const users = snap.docs
+    const matched = snap.docs
       .filter((d) => d.id !== uid)
-      .map((d) => ({ id: d.id, ...d.data() } as UserDoc))
+      .map((d) => ({ id: d.id, ...d.data() }) as UserDoc)
       .filter((u) => (u.displayName ?? '').toLowerCase().includes(lower))
-      .slice(0, 20)
-      .map((u) => ({ id: u.id, name: u.displayName ?? 'Unknown', avatarUrl: u.photoURL }));
+      .slice(0, 20);
+
+    // Compute mutual friend count for each result
+    const myFriendDoc = await getDb().collection('friends').doc(uid).get();
+    const myFriendIds = new Set<string>(
+      myFriendDoc.exists ? (myFriendDoc.data()?.friendIds ?? []) : []
+    );
+    const matchedIds = matched.map((u) => u.id);
+    const friendDocs =
+      matchedIds.length > 0
+        ? await getDb().getAll(...matchedIds.map((id) => getDb().collection('friends').doc(id)))
+        : [];
+    const theirFriendsMap = new Map<string, string[]>();
+    friendDocs.forEach((d) => {
+      if (d.exists) theirFriendsMap.set(d.id, d.data()?.friendIds ?? []);
+    });
+
+    const users = matched.map((u) => {
+      const theirFriends = theirFriendsMap.get(u.id) ?? [];
+      const mutualCount = theirFriends.filter((id: string) => myFriendIds.has(id)).length;
+      return { id: u.id, name: u.displayName ?? 'Unknown', avatarUrl: u.photoURL, mutualCount };
+    });
     res.json({ users });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** GET /api/users/me */
 router.get('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const doc = await getDb().collection('users').doc(req.uid!).get();
-    if (!doc.exists) { res.status(404).json({ error: 'Profile not found' }); return; }
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Profile not found' });
+      return;
+    }
     res.json({ id: doc.id, ...doc.data() });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** PUT /api/users/me */
@@ -61,12 +91,18 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (photoURL !== undefined) data.photoURL = photoURL;
     const doc = await ref.get();
     if (!doc.exists) {
-      data.uid = req.uid; data.email = email ?? ''; data.createdAt = new Date();
+      data.uid = req.uid;
+      data.email = email ?? '';
+      data.createdAt = new Date();
       await ref.set(data);
-    } else { await ref.update(data); }
+    } else {
+      await ref.update(data);
+    }
     const updated = await ref.get();
     res.json({ id: updated.id, ...updated.data() });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 // ─── Follow routes ───────────────────────────────────────────────────────────
@@ -76,17 +112,25 @@ router.get('/:uid/follow-status', requireAuth, async (req: AuthRequest, res) => 
   try {
     const viewerUid = req.uid!;
     const targetUid = req.params.uid;
-    if (viewerUid === targetUid) { res.json({ isFollowing: false, isSelf: true }); return; }
+    if (viewerUid === targetUid) {
+      res.json({ isFollowing: false, isSelf: true });
+      return;
+    }
     const { isFriend, isFollowing } = await getRelationship(viewerUid, targetUid);
     // Đếm followers của target
-    const followersSnap = await getDb().collection('follows')
-      .where('followingIds', 'array-contains', targetUid).get();
+    const followersSnap = await getDb()
+      .collection('follows')
+      .where('followingIds', 'array-contains', targetUid)
+      .get();
     // Đếm following của target
     const targetFollowDoc = await getDb().collection('follows').doc(targetUid).get();
     const followingCount: number = targetFollowDoc.exists
-      ? (targetFollowDoc.data()?.followingIds ?? []).length : 0;
+      ? (targetFollowDoc.data()?.followingIds ?? []).length
+      : 0;
     res.json({ isFollowing, isFriend, followerCount: followersSnap.size, followingCount });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** POST /api/users/:uid/follow */
@@ -94,11 +138,18 @@ router.post('/:uid/follow', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
     const targetUid = req.params.uid;
-    if (viewerUid === targetUid) { res.status(400).json({ error: 'Cannot follow yourself' }); return; }
-    await getDb().collection('follows').doc(viewerUid)
+    if (viewerUid === targetUid) {
+      res.status(400).json({ error: 'Cannot follow yourself' });
+      return;
+    }
+    await getDb()
+      .collection('follows')
+      .doc(viewerUid)
       .set({ followingIds: FieldValue.arrayUnion(targetUid) }, { merge: true });
     res.json({ success: true, isFollowing: true });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** POST /api/users/:uid/unfollow */
@@ -106,10 +157,14 @@ router.post('/:uid/unfollow', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
     const targetUid = req.params.uid;
-    await getDb().collection('follows').doc(viewerUid)
+    await getDb()
+      .collection('follows')
+      .doc(viewerUid)
       .set({ followingIds: FieldValue.arrayRemove(targetUid) }, { merge: true });
     res.json({ success: true, isFollowing: false });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 // ─── Sub-collection routes (phải đặt trước /:uid GET) ──────────────────────
@@ -121,18 +176,19 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
     const targetUid = req.params.uid;
     const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
-    const snap = await getDb().collection('posts')
+    const snap = await getDb()
+      .collection('posts')
       .where('authorId', '==', targetUid)
       .where('parentId', '==', null)
       .orderBy('createdAt', 'desc')
       .limit(limitNum)
       .get();
 
-    let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+    let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Record<string, unknown>);
 
     if (viewerUid !== targetUid) {
       const { isFriend } = await getRelationship(viewerUid, targetUid);
-      posts = posts.filter((p: any) => {
+      posts = posts.filter((p: Record<string, unknown>) => {
         const privacy = p.privacy ?? 'public';
         if (privacy === 'only-me') return false;
         if (privacy === 'friends') return isFriend;
@@ -141,7 +197,9 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
     }
 
     res.json({ posts });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** GET /api/users/:uid/friends */
@@ -149,7 +207,10 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
   try {
     const friendDoc = await getDb().collection('friends').doc(req.params.uid).get();
     const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    if (friendIds.length === 0) { res.json({ friends: [] }); return; }
+    if (friendIds.length === 0) {
+      res.json({ friends: [] });
+      return;
+    }
     const usersSnap = await getDb().collection('users').get();
     const usersMap = new Map(usersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
     const friends = friendIds
@@ -161,19 +222,22 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
         photoURL: (u as { photoURL?: string }).photoURL,
       }));
     res.json({ friends });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** GET /api/users/:uid/photos */
 router.get('/:uid/photos', requireAuth, async (req, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 100, 500);
-    const snap = await getDb().collection('posts')
+    const snap = await getDb()
+      .collection('posts')
       .where('authorId', '==', req.params.uid)
       .orderBy('createdAt', 'desc')
       .limit(limitNum)
       .get();
-    const photos: Array<{ url: string; postId: string; createdAt: any }> = [];
+    const photos: Array<{ url: string; postId: string; createdAt: Timestamp }> = [];
     snap.docs.forEach((doc) => {
       const data = doc.data();
       if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
@@ -183,17 +247,23 @@ router.get('/:uid/photos', requireAuth, async (req, res) => {
       }
     });
     res.json({ photos });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 /** GET /api/users/:uid — profile bất kỳ (phải đặt SAU tất cả sub-routes) */
 router.get('/:uid', requireAuth, async (req, res) => {
   try {
     const doc = await getDb().collection('users').doc(req.params.uid).get();
-    if (!doc.exists) { res.status(404).json({ error: 'User not found' }); return; }
+    if (!doc.exists) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
     res.json({ id: doc.id, ...doc.data() });
-  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 export default router;
-

@@ -3,6 +3,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   FacebookAuthProvider,
   sendPasswordResetEmail as fbSendPasswordResetEmail,
@@ -48,7 +50,11 @@ export async function signInWithGoogle() {
 
 export async function signInWithFacebook() {
   const provider = new FacebookAuthProvider();
-  return signInWithPopup(auth, provider);
+  return signInWithRedirect(auth, provider);
+}
+
+export function getFacebookRedirectResult() {
+  return getRedirectResult(auth);
 }
 
 export function sendPasswordResetEmail(email: string) {

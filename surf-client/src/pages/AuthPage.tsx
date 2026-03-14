@@ -4,6 +4,7 @@ import {
   signIn,
   signInWithGoogle,
   signInWithFacebook,
+  getFacebookRedirectResult,
   signUp,
   setAuthPersistence,
 } from '@/lib/firebase/auth';
@@ -401,35 +402,35 @@ export default function AuthPage() {
   const executeFacebookPost = async () => {
     setLoading(true);
     try {
-      const result = await signInWithFacebook();
-      await result.user.getIdToken();
-      await new Promise((r) => setTimeout(r, 800));
-      await syncUserProfile();
-      api.post('/api/auth/notify-login').catch(() => {});
-      setShowCaptchaModal(false);
-      navigate('/feed', { replace: true });
+      await signInWithFacebook(); // triggers redirect, page will reload
     } catch (err: unknown) {
       const code =
         err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      if (
-        [
-          'auth/popup-closed-by-user',
-          'auth/cancelled-popup-request',
-          'auth/popup-blocked',
-          'auth/user-cancelled',
-          'auth/multi-factor-auth-required',
-        ].includes(code)
-      ) {
-        closeCaptchaModal();
-        setLoading(false);
-        return;
-      }
       setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
       closeCaptchaModal();
-    } finally {
       setLoading(false);
     }
   };
+
+  // Handle Facebook redirect result when page loads after redirect
+  useEffect(() => {
+    getFacebookRedirectResult()
+      .then(async (result) => {
+        if (!result) return;
+        setLoading(true);
+        await result.user.getIdToken();
+        await new Promise((r) => setTimeout(r, 800));
+        await syncUserProfile();
+        api.post('/api/auth/notify-login').catch(() => {});
+        navigate('/feed', { replace: true });
+      })
+      .catch((err: unknown) => {
+        const code =
+          err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+        if (code) setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
+      })
+      .finally(() => setLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!captchaToken || !pendingAction) return;
