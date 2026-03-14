@@ -4,6 +4,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  FacebookAuthProvider,
   sendPasswordResetEmail as fbSendPasswordResetEmail,
   signOut as fbSignOut,
   onAuthStateChanged,
@@ -30,7 +31,7 @@ export async function signUp(email: string, password: string, displayName?: stri
   // Kiểm tra email đã được dùng bởi tài khoản khác (VD: Google) chưa
   const methods = await fetchSignInMethodsForEmail(auth, email);
   if (methods.length > 0) {
-    const error: any = new Error('Email này đã được sử dụng.');
+    const error = new Error('Email này đã được sử dụng.') as Error & { code: string };
     error.code = 'auth/email-already-in-use';
     throw error;
   }
@@ -42,6 +43,11 @@ export async function signUp(email: string, password: string, displayName?: stri
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
+  return signInWithPopup(auth, provider);
+}
+
+export async function signInWithFacebook() {
+  const provider = new FacebookAuthProvider();
   return signInWithPopup(auth, provider);
 }
 
