@@ -53,16 +53,16 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const goToProfile = (uid?: string) => uid && navigate(`/feed/profile/${uid}`);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
-  const [isLiked, setIsLiked] = useState(
-    currentUserId ? post.likedBy?.includes(currentUserId) : false
-  );
+  const initialLiked = currentUserId ? (post.likedBy?.includes(currentUserId) ?? false) : false;
+  const [isLiked, setIsLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
   const [showComments, setShowComments] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
-  const [selectedReaction, setSelectedReaction] = useState<string | null>(null);
+  const [selectedReaction, setSelectedReaction] = useState<string | null>(initialLiked ? '❤️' : null);
+  const [commentCount, setCommentCount] = useState(post.replyCount || 0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
@@ -111,6 +111,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
       const response = await api.get<{ comments: Comment[] }>(`/api/comments/${post.id}`);
       console.log(`✅ Loaded ${response.comments?.length || 0} comments:`, response.comments);
       setComments(response.comments || []);
+      setCommentCount(response.comments?.length ?? 0);
       // Initialize comment likes state
       const likes: Record<string, boolean> = {};
       response.comments?.forEach((comment) => {
@@ -159,7 +160,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
       });
       console.log(`✅ Comment created:`, response);
 
-      // Reload comments from server to get fresh data
+      // Reload comments from server to get fresh data (also syncs commentCount)
       await loadComments();
       setCommentText('');
     } catch (error) {
@@ -174,6 +175,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
     try {
       await api.delete(`/api/comments/${post.id}/${commentId}`);
       setComments(comments.filter((c) => c.id !== commentId));
+      setCommentCount((c) => Math.max(0, c - 1));
     } catch (error) {
       console.error('Error deleting comment:', error);
     }
@@ -362,18 +364,12 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
   const handleLike = async () => {
     const newLiked = !isLiked;
-    // Optimistic update
     setIsLiked(newLiked);
     setSelectedReaction(newLiked ? '❤️' : null);
     setLikeCount((c) => (newLiked ? c + 1 : c - 1));
     try {
-      if (newLiked) {
-        await api.post(`/api/posts/${post.id}/react`, { reaction: '❤️' });
-      } else {
-        await api.delete(`/api/posts/${post.id}/react`);
-      }
+      await api.post(`/api/posts/${post.id}/like`, {});
     } catch {
-      // Revert on error
       setIsLiked(!newLiked);
       setSelectedReaction(!newLiked ? '❤️' : null);
       setLikeCount((c) => (newLiked ? c - 1 : c + 1));
@@ -382,20 +378,26 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
   const handleReactionPick = async (emoji: string) => {
     const alreadyPicked = isLiked && selectedReaction === emoji;
-    setIsLiked(!alreadyPicked);
+    const newLiked = !alreadyPicked;
+    setIsLiked(newLiked);
     setSelectedReaction(alreadyPicked ? null : emoji);
     setLikeCount((c) => (alreadyPicked ? c - 1 : isLiked ? c : c + 1));
     setShowReactions(false);
     try {
+      // Server uses toggle: POST /like. If switching reaction while already liked,
+      // we don't need to change the like state on server (still liked).
       if (alreadyPicked) {
-        await api.delete(`/api/posts/${post.id}/react`);
-      } else {
-        await api.post(`/api/posts/${post.id}/react`, { reaction: emoji });
+        // unlike
+        await api.post(`/api/posts/${post.id}/like`, {});
+      } else if (!isLiked) {
+        // was not liked, now like
+        await api.post(`/api/posts/${post.id}/like`, {});
       }
+      // if isLiked && !alreadyPicked: just changing emoji locally, server stays liked
     } catch {
-      setIsLiked(alreadyPicked);
-      setSelectedReaction(alreadyPicked ? emoji : null);
-      setLikeCount((c) => (alreadyPicked ? c + 1 : c - 1));
+      setIsLiked(isLiked);
+      setSelectedReaction(selectedReaction);
+      setLikeCount((c) => (alreadyPicked ? c + 1 : isLiked ? c : c - 1));
     }
   };
 
@@ -480,7 +482,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
       <article
         ref={articleRef}
-        className={`overflow-hidden rounded-2xl ${
+        className={`rounded-2xl ${showComments ? 'overflow-hidden' : 'overflow-visible'} ${
           showComments
             ? 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[95vw] max-w-2xl max-h-[90vh] bg-white dark:bg-slate-800 shadow-2xl'
             : hasMedia
@@ -499,7 +501,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
       >
         {/* ── MEDIA HERO LAYOUT ── */}
         {hasMedia && !showComments ? (
-          <div className="relative">
+          <div className="relative overflow-hidden rounded-2xl">
             {/* Full-bleed image */}
             <img
               src={post.mediaUrls[0]}
@@ -658,9 +660,9 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     />
                   </svg>
                 </div>
-                {post.replyCount > 0 && (
+                {commentCount > 0 && (
                   <span className="text-xs font-semibold text-white drop-shadow">
-                    {post.replyCount}
+                    {commentCount}
                   </span>
                 )}
               </button>
@@ -796,12 +798,12 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   {post.content}
                 </p>
               )}
-              {post.replyCount > 0 && (
+              {commentCount > 0 && (
                 <button
                   onClick={() => setShowComments(true)}
                   className="mt-1 text-white/60 text-xs hover:text-white/90 transition-colors"
                 >
-                  {post.replyCount} bình luận
+                  {commentCount} bình luận
                 </button>
               )}
             </div>
@@ -989,20 +991,20 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
             )}
 
             {/* Stats */}
-            {(likeCount > 0 || post.replyCount > 0) && (
+            {(likeCount > 0 || commentCount > 0) && (
               <div className="flex items-center justify-between py-3 mb-3 border-b border-gray-200 dark:border-slate-700/50">
                 {likeCount > 0 && (
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span>❤️</span>
+                    <span>{selectedReaction || '❤️'}</span>
                     <span>{likeCount} lượt thích</span>
                   </div>
                 )}
-                {post.replyCount > 0 && (
+                {commentCount > 0 && (
                   <button
                     onClick={() => setShowComments(!showComments)}
                     className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
                   >
-                    {post.replyCount} bình luận
+                    {commentCount} bình luận
                   </button>
                 )}
               </div>
@@ -1081,7 +1083,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                   />
                 </svg>
-                <span>Bình luận</span>
+                <span>Bình luận{commentCount > 0 ? ` (${commentCount})` : ''}</span>
               </button>
 
               {/* Share */}
