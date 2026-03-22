@@ -23,10 +23,15 @@ export default {
           '0%': { transform: 'translateY(120%)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(-6px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
       },
       animation: {
         'logo-drop': 'logo-drop 0.7s ease-out forwards',
         'cta-slide-up': 'cta-slide-up 0.7s ease-out forwards',
+        'fade-in': 'fade-in 0.15s ease-out forwards',
       },
     },
   },

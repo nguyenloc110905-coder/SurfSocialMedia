@@ -14,6 +14,7 @@ import SettingsPage from './pages/settings/SettingsPage';
 import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
+import SearchPage from './pages/SearchPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -116,6 +117,7 @@ export default function App() {
           }
         >
           <Route index element={<Feed />} />
+          <Route path="search" element={<SearchPage />} />
           <Route path="profile/:uid" element={<Profile />} />
           <Route path="short-video" element={<ShortVideo />} />
           <Route path="friends" element={<Friends />} />

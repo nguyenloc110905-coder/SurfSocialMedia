@@ -6,6 +6,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import type { ThemeMode } from '@/stores/themeStore';
 import SettingsPrivacy from './SettingsPrivacy';
 import HelpSupport from './HelpSupport';
+import SearchBox from './SearchBox';
 
 type Panel = 'main' | 'settings' | 'help' | 'display';
 
@@ -55,17 +56,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
         <Link to="/feed" className="flex-shrink-0">
           <img src="/DashboardLogo.png" alt="Surf" className="h-7 sm:h-9 w-auto object-contain dark:invert dark:brightness-90" />
         </Link>
-        <div className={`hidden sm:flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1.5 flex-1 min-w-[80px] ${hideCenterNav ? 'max-w-[140px] md:max-w-[160px] lg:max-w-[200px]' : 'max-w-[260px] sm:max-w-[300px] lg:max-w-[340px]'}`}>
-          <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-          </svg>
-          <input
-            type="search"
-            placeholder="Tìm kiếm trên Surf"
-            className="bg-transparent border-none outline-none text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 w-full"
-            aria-label="Tìm kiếm trên Surf"
-          />
-        </div>
+        <SearchBox wrapperClassName={`hidden sm:flex flex-1 min-w-[80px] ${hideCenterNav ? 'max-w-[140px] md:max-w-[160px] lg:max-w-[200px]' : 'max-w-[260px] sm:max-w-[300px] lg:max-w-[340px]'}`} />
       </div>
 
       {/* Giữa: nav chỉ icon — ẩn trên desktop khi dùng cột trái (layout 25-50-25) */}

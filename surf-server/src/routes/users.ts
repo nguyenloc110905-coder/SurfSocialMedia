@@ -37,7 +37,10 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
     const matched = snap.docs
       .filter((d) => d.id !== uid)
       .map((d) => ({ id: d.id, ...d.data() }) as UserDoc)
-      .filter((u) => (u.displayName ?? '').toLowerCase().includes(lower))
+      .filter((u) => {
+        const words = (u.displayName ?? '').toLowerCase().split(/\s+/);
+        return words.some((w) => w.startsWith(lower));
+      })
       .slice(0, 20);
 
     // Compute mutual friend count for each result
@@ -100,6 +103,33 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     }
     const updated = await ref.get();
     res.json({ id: updated.id, ...updated.data() });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** GET /api/users/me/recent-searches */
+router.get('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const doc = await getDb().collection('users').doc(req.uid!).get();
+    const recentSearches = doc.exists ? (doc.data()?.recentSearches ?? []) : [];
+    res.json({ recentSearches });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** PUT /api/users/me/recent-searches */
+router.put('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { recentSearches } = req.body as { recentSearches?: unknown[] };
+    if (!Array.isArray(recentSearches)) {
+      res.status(400).json({ error: 'recentSearches must be an array' });
+      return;
+    }
+    const trimmed = recentSearches.slice(0, 8);
+    await getDb().collection('users').doc(req.uid!).set({ recentSearches: trimmed }, { merge: true });
+    res.json({ recentSearches: trimmed });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

@@ -4,60 +4,74 @@
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "parentId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "parentId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "authorId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "parentId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "authorId", "order": "ASCENDING" },
+        { "fieldPath": "parentId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "authorId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "authorId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "parentId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     },
     {
       "collectionGroup": "comments",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "postId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
-        }
+        { "fieldPath": "postId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "friend_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "friend_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromUid", "order": "ASCENDING" },
+        { "fieldPath": "toUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "friend_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "friend_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromUid", "order": "ASCENDING" },
+        { "fieldPath": "toUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
       ]
     }
   ],
