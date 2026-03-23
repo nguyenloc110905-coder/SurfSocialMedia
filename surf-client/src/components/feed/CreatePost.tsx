@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../lib/api';
+import { uploadImage } from '../../lib/cloudinary';
 import TagFriendsModal from './TagFriendsModal';
 
 interface ImagePreview {
@@ -120,57 +121,16 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     setSelectedFriendIds((prev) => prev.filter((id) => id !== friendUid));
   };
 
-  const compressImage = (
-    file: File,
-    maxWidth: number = 1920,
-    quality: number = 0.8
-  ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-
-          // Resize if image is too large
-          if (width > maxWidth) {
-            height = (height * maxWidth) / width;
-            width = maxWidth;
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Failed to get canvas context'));
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Convert to base64 with compression
-          const base64 = canvas.toDataURL('image/jpeg', quality);
-          resolve(base64);
-        };
-        img.onerror = reject;
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!content.trim() && images.length === 0) || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      // Compress and convert images to base64
-      const mediaUrls = await Promise.all(images.map((img) => compressImage(img.file)));
+      // Upload images to Cloudinary, get back CDN URLs
+      const mediaUrls = await Promise.all(
+        images.map((img) => uploadImage(img.file, { folder: 'surf/posts' }))
+      );
 
       // Prepare tagged friends data
       const taggedFriendsData = taggedFriends.map((f) => ({
