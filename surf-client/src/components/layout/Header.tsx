@@ -46,8 +46,8 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
     return () => document.removeEventListener('mousedown', onOutside);
   }, [open]);
 
-  const displayName = user?.displayName?.trim() || 'Người dùng';
-  const initial = displayName.charAt(0).toUpperCase();
+  const avatarSeed = user?.displayName?.trim() || user?.email?.trim() || 'Người dùng';
+  const initial = avatarSeed.charAt(0).toUpperCase();
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 safe-area-header flex items-center justify-between h-12 sm:h-14 px-3 sm:px-6 lg:px-8 gap-2 sm:gap-4 relative">
@@ -139,7 +139,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                       <span className="text-white font-bold text-sm">{initial}</span>
                     </div>
                   )}
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{displayName}</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">Trang cá nhân</span>
                 </Link>
                 <Link
                   to={`/feed/profile/${user?.uid}`}

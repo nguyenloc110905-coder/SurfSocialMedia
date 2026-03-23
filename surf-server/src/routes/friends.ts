@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import {
+  requireAuth,
+  AuthRequest,
+  requireNoBlock,
+  rejectIfBlocked,
+  hasBlockRelation,
+} from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { io } from '../index.js';
@@ -81,7 +87,11 @@ router.get('/requests', requireAuth, async (req: AuthRequest, res) => {
 });
 
 /** POST /api/friends/requests — gửi lời mời kết bạn (body: { toUid }) */
-router.post('/requests', requireAuth, async (req: AuthRequest, res) => {
+router.post(
+  '/requests',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => (req.body as { toUid?: string })?.toUid),
+  async (req: AuthRequest, res) => {
   try {
     const fromUid = req.uid!;
     const { toUid } = req.body as { toUid?: string };
@@ -166,6 +176,10 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     const fromUid = doc.data()!.fromUid;
+    const toUid = doc.data()!.toUid;
+    const otherUid = uid === fromUid ? toUid : fromUid;
+    if (await rejectIfBlocked(uid, otherUid, res)) return;
+
     await ref.update({ status: action });
     if (action === 'accept') {
       const batch = db().batch();
@@ -222,46 +236,109 @@ router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
 router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
+    const [myUserDoc, blockedByMeSnap] = await Promise.all([
+      db().collection('users').doc(uid).get(),
+      db().collection('users').where('blockedBy', 'array-contains', uid).get(),
+    ]);
+    const blockedByOthers = new Set<string>(
+      myUserDoc.exists ? ((myUserDoc.data()?.blockedBy ?? []) as string[]) : []
+    );
+    const blockedByMe = new Set<string>(blockedByMeSnap.docs.map((d) => d.id));
+
     const friendDoc = await db().collection('friends').doc(uid).get();
     const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    const myFriendsSet = new Set(friendIds);
-    const sent = await db().collection('friend_requests').where('fromUid', '==', uid).get();
-    const received = await db().collection('friend_requests').where('toUid', '==', uid).get();
+    const sent = await db()
+      .collection('friend_requests')
+      .where('fromUid', '==', uid)
+      .where('status', '==', 'pending')
+      .get();
+    const received = await db()
+      .collection('friend_requests')
+      .where('toUid', '==', uid)
+      .where('status', '==', 'pending')
+      .get();
     const requested = new Set([
       ...sent.docs.map((d) => d.data().toUid),
       ...received.docs.map((d) => d.data().fromUid),
     ]);
-    const exclude = new Set([uid, ...friendIds, ...requested]);
-    const usersSnap = await db().collection('users').get();
+    const exclude = new Set([
+      uid,
+      ...friendIds,
+      ...requested,
+      ...blockedByOthers,
+      ...blockedByMe,
+    ]);
 
-    // Batch-load friend lists of suggestions to compute mutual counts
-    const candidates = usersSnap.docs.filter((d) => !exclude.has(d.id)).slice(0, 40);
-    const candidateIds = candidates.map((d) => d.id);
-    const friendDocs =
-      candidateIds.length > 0
-        ? await db().getAll(...candidateIds.map((id) => db().collection('friends').doc(id)))
-        : [];
-    const candidateFriendsMap = new Map<string, string[]>();
-    friendDocs.forEach((d) => {
-      if (d.exists) candidateFriendsMap.set(d.id, d.data()?.friendIds ?? []);
+    // FOAF: chỉ lấy bạn của bạn bè rồi đếm mutualCount
+    const mutualCountMap = new Map<string, number>();
+    if (friendIds.length > 0) {
+      const friendDocs = await db().getAll(...friendIds.map((id) => db().collection('friends').doc(id)));
+      friendDocs.forEach((doc) => {
+        if (!doc.exists) return;
+        const foafIds: string[] = doc.data()?.friendIds ?? [];
+        foafIds.forEach((candidateId) => {
+          if (exclude.has(candidateId)) return;
+          mutualCountMap.set(candidateId, (mutualCountMap.get(candidateId) ?? 0) + 1);
+        });
+      });
+    }
+
+    // Ưu tiên danh sách FOAF có mutualCount > 0
+    const foafIds = [...mutualCountMap.keys()].sort((a, b) => {
+      const diff = (mutualCountMap.get(b) ?? 0) - (mutualCountMap.get(a) ?? 0);
+      return diff !== 0 ? diff : a.localeCompare(b);
     });
 
-    const suggestions = candidates
-      .map((d) => {
-        const data = d.data();
-        const theirFriends = candidateFriendsMap.get(d.id) ?? [];
-        const mutualCount = theirFriends.filter((id: string) => myFriendsSet.has(id)).length;
-        return {
-          id: d.id,
-          name: (data.displayName as string) ?? 'Unknown',
-          avatarUrl: data.photoURL as string | undefined,
-          mutualCount,
-        };
-      })
-      // Sắp xếp gợi ý theo số bạn chung giảm dần
-      .sort((a, b) => b.mutualCount - a.mutualCount)
-      .slice(0, 20);
-    res.json({ suggestions });
+    const maxSuggestions = 20;
+    const mutualSuggestions =
+      foafIds.length === 0
+        ? []
+        : (
+            await db().getAll(
+              ...foafIds.slice(0, 200).map((id) => db().collection('users').doc(id))
+            )
+          )
+            .filter((d) => d.exists)
+            .map((d) => {
+              const data = d.data()!;
+              return {
+                id: d.id,
+                name: (data.displayName as string) ?? 'Unknown',
+                avatarUrl: data.photoURL as string | undefined,
+                mutualCount: mutualCountMap.get(d.id) ?? 0,
+              };
+            })
+            .sort((a, b) => {
+              const diff = b.mutualCount - a.mutualCount;
+              if (diff !== 0) return diff;
+              return a.name.localeCompare(b.name);
+            })
+            .slice(0, maxSuggestions);
+
+    // Phần còn lại: người dùng chưa bị loại, không trùng nhóm FOAF
+    const remainingSlots = Math.max(0, maxSuggestions - mutualSuggestions.length);
+    const excludeForOthers = new Set<string>([
+      ...exclude,
+      ...mutualSuggestions.map((s) => s.id),
+    ]);
+
+    const otherSuggestions =
+      remainingSlots === 0
+        ? []
+        : (await db().collection('users').limit(500).get()).docs
+            .filter((d) => !excludeForOthers.has(d.id))
+            .map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                name: (data.displayName as string) ?? 'Unknown',
+                avatarUrl: data.photoURL as string | undefined,
+                mutualCount: 0,
+              };
+            })
+            .slice(0, remainingSlots);
+
+    res.json({ suggestions: [...mutualSuggestions, ...otherSuggestions] });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -275,6 +352,10 @@ router.get('/status/:uid', requireAuth, async (req: AuthRequest, res) => {
 
     if (me === other) {
       res.json({ status: 'self' });
+      return;
+    }
+    if (await hasBlockRelation(me, other)) {
+      res.json({ status: 'blocked' });
       return;
     }
 
@@ -333,6 +414,9 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       res.status(403).json({ error: 'Not your request' });
       return;
     }
+    const otherUid = data.toUid === uid ? data.fromUid : data.toUid;
+    if (await rejectIfBlocked(uid, otherUid, res)) return;
+
     await db().collection('friend_requests').doc(id).delete();
     res.status(204).send();
   } catch (e) {
@@ -346,7 +430,11 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
 /* ======================================================================== */
 
 /** GET /api/friends/mutual/:uid — bạn chung giữa mình và user khác */
-router.get('/mutual/:uid', requireAuth, async (req: AuthRequest, res) => {
+router.get(
+  '/mutual/:uid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.uid),
+  async (req: AuthRequest, res) => {
   try {
     const me = req.uid!;
     const other = req.params.uid;
@@ -387,7 +475,11 @@ router.get('/mutual/:uid', requireAuth, async (req: AuthRequest, res) => {
 /* ======================================================================== */
 
 /** GET /api/friends/tier/:friendUid — lấy tier hiện tại */
-router.get('/tier/:friendUid', requireAuth, async (req: AuthRequest, res) => {
+router.get(
+  '/tier/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const doc = await db().collection('friend_tiers').doc(uid).get();
@@ -399,7 +491,11 @@ router.get('/tier/:friendUid', requireAuth, async (req: AuthRequest, res) => {
 });
 
 /** PUT /api/friends/tier/:friendUid — đặt tier (body: { tier: 'priority'|'normal'|'restricted' }) */
-router.put('/tier/:friendUid', requireAuth, async (req: AuthRequest, res) => {
+router.put(
+  '/tier/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const { friendUid } = req.params;
@@ -467,7 +563,11 @@ router.get('/nicknames', requireAuth, async (req: AuthRequest, res) => {
 });
 
 /** PUT /api/friends/nicknames/:friendUid — đặt / cập nhật biệt danh cho 1 bạn */
-router.put('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) => {
+router.put(
+  '/nicknames/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const { friendUid } = req.params;
@@ -498,7 +598,11 @@ router.put('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) =
 });
 
 /** DELETE /api/friends/nicknames/:friendUid — xóa biệt danh */
-router.delete('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) => {
+router.delete(
+  '/nicknames/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const { friendUid } = req.params;

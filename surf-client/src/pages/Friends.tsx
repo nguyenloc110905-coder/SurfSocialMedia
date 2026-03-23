@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+﻿import { Fragment, useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -7,6 +7,7 @@ import { getSocket } from '@/lib/socket';
 type FriendItem  = { id: string; name: string; avatarUrl?: string; mutualCount?: number };
 type RequestItem = { id: string; fromUid: string; name: string; avatarUrl?: string };
 type SentItem    = { id: string; toUid: string;  name: string; avatarUrl?: string };
+type BlockedItem = { id: string; name: string; avatarUrl?: string | null; email?: string | null };
 
 /* -- Avatar ---------------------------------------------------------------- */
 function Avatar({ url, name, size = 'md' }: { url?: string | null; name: string; size?: 'sm' | 'md' | 'lg' }) {
@@ -82,6 +83,7 @@ export default function Friends() {
   const [requests,    setRequests]    = useState<RequestItem[]>([]);
   const [sent,        setSent]        = useState<SentItem[]>([]);
   const [suggestions, setSuggestions] = useState<FriendItem[]>([]);
+  const [blocked,     setBlocked]     = useState<BlockedItem[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState('');
   const [actioningId, setActioningId] = useState<string | null>(null);
@@ -102,6 +104,7 @@ export default function Friends() {
     : pathname.endsWith('/suggestions')          ? 'suggestions'
     : pathname.endsWith('/all')                  ? 'all'
     : pathname.endsWith('/birthdays')            ? 'birthdays'
+    : pathname.endsWith('/blocked')              ? 'blocked'
     : pathname.endsWith('/history')              ? 'history'
     : 'home';
 
@@ -110,16 +113,18 @@ export default function Friends() {
     if (!user) { setLoading(false); return; }
     setError('');
     try {
-      const [fRes, rRes, sRes, sugRes] = await Promise.all([
+      const [fRes, rRes, sRes, sugRes, bRes] = await Promise.all([
         api.get<{ friends: FriendItem[] }>('/api/friends'),
         api.get<{ requests: RequestItem[] }>('/api/friends/requests'),
         api.get<{ sent: SentItem[] }>('/api/friends/sent'),
         api.get<{ suggestions: FriendItem[] }>('/api/friends/suggestions'),
+        api.get<{ blocked: BlockedItem[] }>('/api/users/me/blocked'),
       ]);
       setFriends(fRes?.friends ?? []);
       setRequests(rRes?.requests ?? []);
       setSent(sRes?.sent ?? []);
       setSuggestions(sugRes?.suggestions ?? []);
+      setBlocked(bRes?.blocked ?? []);
       const m = new Map<string, string>();
       (sRes?.sent ?? []).forEach((s) => m.set(s.toUid, s.id));
       setSentMap(m);
@@ -197,6 +202,18 @@ export default function Friends() {
     finally { setActioningId(null); }
   };
 
+  const handleUnblock = async (targetUid: string) => {
+    setActioningId(targetUid);
+    try {
+      await api.delete(`/api/users/${targetUid}/block`);
+      setBlocked((prev) => prev.filter((u) => u.id !== targetUid));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Lỗi bỏ chặn.');
+    } finally {
+      setActioningId(null);
+    }
+  };
+
   /* -- Relationship helpers ------------------------------------------------ */
   const isFriend   = (uid: string) => friends.some((f) => f.id === uid);
   const hasSent    = (uid: string) => sentMap.has(uid);
@@ -239,7 +256,7 @@ export default function Friends() {
   /* -- Section title map --------------------------------------------------- */
   const titles: Record<string, string> = {
     home: 'Tìm kiếm', requests: 'Lời mời kết bạn', suggestions: 'Gợi ý',
-    all: 'Tất cả bạn bè', birthdays: 'Sinh nhật', history: 'Lịch sử',
+    all: 'Tất cả bạn bè', birthdays: 'Sinh nhật', blocked: 'Danh sách chặn', history: 'Lịch sử',
   };
 
   /* -- Render -------------------------------------------------------------- */
@@ -432,22 +449,41 @@ export default function Friends() {
                 desc="Những người chưa kết bạn sẽ hiện ở đây."
               />
             ) : (
-              <ul className="space-y-2">
-                {suggestions.map((s) => (
-                  <li key={s.id}>
-                    <Card>
-                      <Link to={`/feed/profile/${s.id}`}><Avatar url={s.avatarUrl} name={s.name} /></Link>
-                      <div className="flex-1 min-w-0">
-                        <Link to={`/feed/profile/${s.id}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{s.name}</Link>
-                        {s.mutualCount != null && s.mutualCount > 0 && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500">{s.mutualCount} bạn chung</p>
+              (() => {
+                const firstNonMutualIndex = suggestions.findIndex(
+                  (s) => (s.mutualCount ?? 0) <= 0
+                );
+                const showOtherSectionHeader =
+                  firstNonMutualIndex > 0 && firstNonMutualIndex < suggestions.length;
+
+                return (
+                  <ul className="space-y-2">
+                    {suggestions.map((s, idx) => (
+                      <Fragment key={s.id}>
+                        {showOtherSectionHeader && idx === firstNonMutualIndex && (
+                          <li className="pt-3 pb-1">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                              Những người bạn có thể biết
+                            </p>
+                          </li>
                         )}
-                      </div>
-                      <AddFriendBtn uid={s.id} name={s.name} avatarUrl={s.avatarUrl} />
-                    </Card>
-                  </li>
-                ))}
-              </ul>
+                        <li>
+                          <Card>
+                            <Link to={`/feed/profile/${s.id}`}><Avatar url={s.avatarUrl} name={s.name} /></Link>
+                            <div className="flex-1 min-w-0">
+                              <Link to={`/feed/profile/${s.id}`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block">{s.name}</Link>
+                              {s.mutualCount != null && s.mutualCount > 0 && (
+                                <p className="text-xs text-gray-400 dark:text-gray-500">{s.mutualCount} bạn chung</p>
+                              )}
+                            </div>
+                            <AddFriendBtn uid={s.id} name={s.name} avatarUrl={s.avatarUrl} />
+                          </Card>
+                        </li>
+                      </Fragment>
+                    ))}
+                  </ul>
+                );
+              })()
             )
           )}
 
@@ -518,6 +554,48 @@ export default function Friends() {
               title="Lịch sử tương tác"
               desc="Theo dõi hoạt động kết bạn và theo dõi của bạn tại đây."
             />
+          )}
+
+          {/* BLOCKED */}
+          {section === 'blocked' && (
+            blocked.length === 0 ? (
+              <EmptyState
+                icon={<svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.68L5.68 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.68L18.32 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" /></svg>}
+                title="Chưa chặn ai"
+                desc="Những người bạn đã chặn sẽ hiển thị tại đây."
+              />
+            ) : (
+              <ul className="space-y-2">
+                {blocked.map((b) => (
+                  <li key={b.id}>
+                    <Card>
+                      <Link to={`/feed/profile/${b.id}`}>
+                        <Avatar url={b.avatarUrl} name={b.name} />
+                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <Link
+                          to={`/feed/profile/${b.id}`}
+                          className="font-semibold text-gray-900 dark:text-gray-100 hover:text-surf-primary transition-colors truncate block"
+                        >
+                          {b.name}
+                        </Link>
+                        {b.email && (
+                          <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{b.email}</p>
+                        )}
+                      </div>
+                      <GradBtn
+                        variant="danger"
+                        disabled={actioningId === b.id}
+                        onClick={() => handleUnblock(b.id)}
+                      >
+                        {actioningId === b.id ? <Spinner /> : null}
+                        Bỏ chặn
+                      </GradBtn>
+                    </Card>
+                  </li>
+                ))}
+              </ul>
+            )
           )}
         </>
       )}

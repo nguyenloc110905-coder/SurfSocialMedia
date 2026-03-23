@@ -84,9 +84,7 @@ export default function Profile() {
     ? (user?.displayName?.trim() || profile?.displayName || 'Người dùng')
     : (profile?.displayName || 'Người dùng');
   const initial = displayName.charAt(0).toUpperCase();
-  // Lấy username từ đúng email của người sở hữu profile
   const profileEmail = isOwnProfile ? user?.email : profile?.email;
-  const username = profileEmail?.split('@')[0]?.trim();
   const photoURL = isOwnProfile ? (user?.photoURL ?? profile?.photoURL) : profile?.photoURL ?? null;
   const coverImageUrl = profile?.coverImageUrl ?? null;
   const bio = profile?.bio ?? null;
@@ -148,10 +146,15 @@ export default function Profile() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photos.length]);
 
-  const friendCount: number | null = friends.length > 0 ? friends.length : null;
-
   // Trạng thái quan hệ bạn bè với user đang xem (chỉ dùng khi !isOwnProfile)
-  type FriendStatus = 'loading' | 'self' | 'friends' | 'request_sent' | 'request_received' | 'stranger';
+  type FriendStatus =
+    | 'loading'
+    | 'self'
+    | 'friends'
+    | 'request_sent'
+    | 'request_received'
+    | 'stranger'
+    | 'blocked';
   const [friendStatus, setFriendStatus] = useState<FriendStatus>('loading');
   const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -159,6 +162,9 @@ export default function Profile() {
   // Follow state
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
+  const [isBlockedBy, setIsBlockedBy] = useState(false);
+  const [blockActionLoading, setBlockActionLoading] = useState(false);
 
   // Load profile
   useEffect(() => {
@@ -226,7 +232,7 @@ export default function Profile() {
 
   // Load friends
   useEffect(() => {
-    if (!uid || activeTab !== 'friends') return;
+    if (!uid || (!isOwnProfile && activeTab !== 'friends')) return;
     let cancelled = false;
     
     const loadFriends = async () => {
@@ -254,7 +260,7 @@ export default function Profile() {
     
     loadFriends();
     return () => { cancelled = true; };
-  }, [uid, activeTab]);
+  }, [uid, activeTab, isOwnProfile]);
 
   // Load photos
   useEffect(() => {
@@ -318,6 +324,33 @@ export default function Profile() {
       .then((data) => { if (!cancelled) setIsFollowing(data.isFollowing); })
       .catch(() => {});
     return () => { cancelled = true; };
+  }, [uid, isOwnProfile]);
+
+  // Kiểm tra block status với user đang xem
+  useEffect(() => {
+    if (!uid || isOwnProfile) {
+      setIsBlocking(false);
+      setIsBlockedBy(false);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ isBlocking: boolean; isBlockedBy: boolean; isBlocked: boolean }>(
+        `/api/users/${uid}/block-status`
+      )
+      .then((data) => {
+        if (cancelled) return;
+        setIsBlocking(data.isBlocking);
+        setIsBlockedBy(data.isBlockedBy);
+        if (data.isBlocked) {
+          setFriendStatus('blocked');
+          setFriendRequestId(null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [uid, isOwnProfile]);
 
   const refreshProfile = () => uid && getProfile(uid).then(setProfile);
@@ -479,8 +512,8 @@ export default function Profile() {
       const res = await api.post<{ id: string }>('/api/friends/requests', { toUid: uid });
       setFriendStatus('request_sent');
       setFriendRequestId(res.id);
-    } catch {
-      // silent
+    } catch (e) {
+      setError((e as Error).message || 'Không thể gửi lời mời kết bạn.');
     } finally {
       setActionLoading(false);
     }
@@ -493,8 +526,8 @@ export default function Profile() {
       await api.delete(`/api/friends/requests/${friendRequestId}`);
       setFriendStatus('stranger');
       setFriendRequestId(null);
-    } catch {
-      // silent
+    } catch (e) {
+      setError((e as Error).message || 'Không thể hủy lời mời.');
     } finally {
       setActionLoading(false);
     }
@@ -507,8 +540,8 @@ export default function Profile() {
       await api.patch(`/api/friends/requests/${friendRequestId}`, { action: 'accept' });
       setFriendStatus('friends');
       setFriendRequestId(null);
-    } catch {
-      // silent
+    } catch (e) {
+      setError((e as Error).message || 'Không thể chấp nhận lời mời.');
     } finally {
       setActionLoading(false);
     }
@@ -521,8 +554,8 @@ export default function Profile() {
       await api.delete(`/api/friends/requests/${friendRequestId}`);
       setFriendStatus('stranger');
       setFriendRequestId(null);
-    } catch {
-      // silent
+    } catch (e) {
+      setError((e as Error).message || 'Không thể từ chối lời mời.');
     } finally {
       setActionLoading(false);
     }
@@ -535,10 +568,38 @@ export default function Profile() {
       const endpoint = isFollowing ? `/api/users/${uid}/unfollow` : `/api/users/${uid}/follow`;
       await api.post(endpoint, {});
       setIsFollowing((prev) => !prev);
-    } catch {
-      // silent
+    } catch (e) {
+      setError((e as Error).message || 'Không thể cập nhật theo dõi.');
     } finally {
       setFollowLoading(false);
+    }
+  };
+
+  const handleBlockToggle = async () => {
+    if (!uid || blockActionLoading) return;
+    setBlockActionLoading(true);
+    setError('');
+    try {
+      if (isBlocking) {
+        await api.delete(`/api/users/${uid}/block`);
+        setIsBlocking(false);
+        // Sau khi bỏ chặn, reload lại trạng thái bạn bè
+        const status = await api.get<{ status: FriendStatus; requestId?: string }>(
+          `/api/friends/status/${uid}`
+        );
+        setFriendStatus(status.status);
+        setFriendRequestId(status.requestId ?? null);
+      } else {
+        await api.post(`/api/users/${uid}/block`, {});
+        setIsBlocking(true);
+        setFriendStatus('blocked');
+        setFriendRequestId(null);
+        setIsFollowing(false);
+      }
+    } catch (e) {
+      setError((e as Error).message || 'Không thể cập nhật trạng thái chặn.');
+    } finally {
+      setBlockActionLoading(false);
     }
   };
 
@@ -776,7 +837,7 @@ export default function Profile() {
             )}
           </div>
 
-          {/* Name + username + bio */}
+          {/* Name + bio */}
           <div className="mt-4 text-center max-w-lg w-full">
             <div className="flex items-center justify-center gap-2 flex-wrap">
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">{displayName}</h1>
@@ -792,9 +853,6 @@ export default function Profile() {
                 </span>
               )}
             </div>
-            {username && (
-              <p className="mt-1.5 text-sm font-bold surf-username tracking-wide">@{username}</p>
-            )}
             {bio && (
               <p className="mt-3 text-sm text-gray-600 dark:text-gray-400 leading-relaxed max-w-sm mx-auto">{bio}</p>
             )}
@@ -808,7 +866,9 @@ export default function Profile() {
           {/* Stats row */}
           <div className="mt-5 flex items-stretch divide-x divide-gray-200 dark:divide-gray-700/60 border border-gray-200/80 dark:border-gray-700/60 rounded-2xl overflow-hidden">
             <div className="surf-stat-pop flex flex-col items-center px-6 sm:px-8 py-3" style={{ animationDelay: '0.25s' }}>
-              <span className="text-xl font-extrabold text-gray-900 dark:text-gray-100 tabular-nums">{postsLoading ? '–' : countPosts}</span>
+              <span className="text-xl font-extrabold text-gray-900 dark:text-gray-100 tabular-nums">
+                {postsLoading ? '–' : countPosts}
+              </span>
               <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">Bài viết</span>
             </div>
             <button
@@ -864,7 +924,12 @@ export default function Profile() {
                 {friendStatus === 'loading' && (
                   <div className="h-10 w-36 rounded-2xl bg-gray-200 dark:bg-gray-700 animate-pulse" />
                 )}
-                {friendStatus === 'stranger' && (
+                {friendStatus === 'blocked' && (
+                  <div className="inline-flex items-center h-10 px-4 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 text-sm font-semibold">
+                    {isBlocking ? 'Bạn đã chặn người này' : 'Bạn đã bị người này chặn'}
+                  </div>
+                )}
+                {friendStatus === 'stranger' && !isBlocking && !isBlockedBy && (
                   <button
                     type="button"
                     disabled={actionLoading}
@@ -878,7 +943,7 @@ export default function Profile() {
                     Thêm bạn bè
                   </button>
                 )}
-                {friendStatus === 'request_sent' && (
+                {friendStatus === 'request_sent' && !isBlocking && !isBlockedBy && (
                   <button
                     type="button"
                     disabled={actionLoading}
@@ -894,7 +959,7 @@ export default function Profile() {
                     <span className="hidden group-hover:inline">Hủy lời mời</span>
                   </button>
                 )}
-                {friendStatus === 'request_received' && (
+                {friendStatus === 'request_received' && !isBlocking && !isBlockedBy && (
                   <>
                     <button
                       type="button"
@@ -915,7 +980,7 @@ export default function Profile() {
                     </button>
                   </>
                 )}
-                {friendStatus === 'friends' && (
+                {friendStatus === 'friends' && !isBlocking && !isBlockedBy && (
                   <button
                     type="button"
                     className="inline-flex items-center gap-2 h-10 px-6 rounded-2xl bg-surf-primary/10 dark:bg-surf-primary/20 text-surf-primary text-sm font-bold hover:bg-surf-primary/20 dark:hover:bg-surf-primary/30 transition-colors"
@@ -925,7 +990,7 @@ export default function Profile() {
                     <svg className="w-3.5 h-3.5 opacity-60" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
                   </button>
                 )}
-                {friendStatus !== 'loading' && (
+                {friendStatus !== 'loading' && friendStatus !== 'blocked' && (
                   <button
                     type="button"
                     onClick={handleToggleFollow}
@@ -948,13 +1013,35 @@ export default function Profile() {
                     </span>
                   </button>
                 )}
-                {friendStatus !== 'loading' && (
+                {friendStatus !== 'loading' && friendStatus !== 'blocked' && (
                   <button
                     type="button"
                     className="inline-flex items-center gap-2 h-10 px-5 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
                     Nhắn tin
+                  </button>
+                )}
+                {friendStatus !== 'loading' && (
+                  <button
+                    type="button"
+                    onClick={handleBlockToggle}
+                    disabled={blockActionLoading}
+                    className={[
+                      'inline-flex items-center gap-2 h-10 px-5 rounded-2xl text-sm font-bold transition-colors disabled:opacity-60',
+                      isBlocking
+                        ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-300',
+                    ].join(' ')}
+                  >
+                    {blockActionLoading ? (
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.68L5.68 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.68L18.32 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" />
+                      </svg>
+                    )}
+                    {isBlocking ? 'Bỏ chặn' : 'Chặn'}
                   </button>
                 )}
                 {friendStatus !== 'loading' && (
@@ -1502,12 +1589,14 @@ export default function Profile() {
                 <div className="mx-3 my-1.5 border-t border-gray-100 dark:border-gray-800" />
                 <button
                   type="button"
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-left group"
+                  onClick={handleBlockToggle}
+                  disabled={blockActionLoading}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-left group disabled:opacity-60"
                 >
                   <span className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center flex-shrink-0">
                     <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.68L5.68 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.68L18.32 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z"/></svg>
                   </span>
-                  <span className="font-medium">Chặn người dùng</span>
+                  <span className="font-medium">{isBlocking ? 'Bỏ chặn người dùng' : 'Chặn người dùng'}</span>
                 </button>
                 <button
                   type="button"
