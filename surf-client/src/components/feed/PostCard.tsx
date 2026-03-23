@@ -641,7 +641,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                           key={emoji}
                           onClick={() => void handleReactionPick(emoji)}
                           className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
-                          style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
+                          style={{ animation: `fadeInScale 0.5s ease-out ${index * 0.05}s both` }}
                         >
                           {emoji}
                         </button>
