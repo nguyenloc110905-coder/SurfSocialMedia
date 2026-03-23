@@ -38,6 +38,11 @@ const UPLOAD_URL = () => {
   return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 };
 
+const VIDEO_UPLOAD_URL = () => {
+  if (!CLOUD_NAME) throw new Error('VITE_CLOUDINARY_CLOUD_NAME is required');
+  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`;
+};
+
 export type UploadOptions = {
   folder?: string;
   publicId?: string;
@@ -94,4 +99,47 @@ export async function uploadImage(
     throw new Error('No URL returned from Cloudinary');
   }
   return data.secure_url;
+}
+
+/**
+ * Upload một file video lên Cloudinary, trả về secure_url.
+ */
+export async function uploadVideo(
+  file: File,
+  options: UploadOptions = {}
+): Promise<string> {
+  if (!API_KEY || !UPLOAD_PRESET) {
+    throw new Error('VITE_CLOUDINARY_API_KEY and VITE_CLOUDINARY_UPLOAD_PRESET are required');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', UPLOAD_PRESET);
+  formData.append('api_key', API_KEY);
+  if (options.folder) formData.append('folder', options.folder);
+  if (options.publicId) formData.append('public_id', options.publicId);
+
+  const res = await fetch(VIDEO_UPLOAD_URL(), { method: 'POST', body: formData });
+
+  let data: CloudinaryUploadResponse & { error?: { message: string } };
+  try {
+    data = (await res.json()) as CloudinaryUploadResponse & { error?: { message: string } };
+  } catch {
+    throw new Error(`Cloudinary: invalid response (${res.status})`);
+  }
+
+  if (!res.ok) {
+    const msg = data?.error?.message ?? JSON.stringify(data);
+    throw new Error(`Cloudinary ${res.status}: ${msg}`);
+  }
+  if (data.error) throw new Error(data.error.message || 'Cloudinary video upload failed');
+  if (!data.secure_url) throw new Error('No URL returned from Cloudinary');
+  return data.secure_url;
+}
+
+/** Trả về true nếu URL là video Cloudinary hoặc có đuôi video */
+export function isVideoUrl(url: string): boolean {
+  if (!url) return false;
+  if (url.includes('/video/upload/')) return true;
+  return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import Modal from '../ui/Modal';
+import { isVideoUrl } from '../../lib/cloudinary';
 
 interface Comment {
   id: string;
@@ -49,6 +50,185 @@ interface PostCardProps {
   currentUserId?: string;
 }
 
+/** Plays video when ≥30% visible in the viewport; pauses when scrolled away. */
+function FeedVideo({
+  src,
+  fill = true,
+  style,
+  onExpand,
+}: {
+  src: string;
+  fill?: boolean;
+  style?: React.CSSProperties;
+  onExpand?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [focused, setFocused] = useState(false);
+
+  // Auto play/pause based on visibility
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          el.play().catch(() => {});
+        } else {
+          el.pause();
+        }
+      },
+      { threshold: 0.3 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [src]);
+
+  // Spacebar toggles play/pause when focused
+  useEffect(() => {
+    if (!focused) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        const el = videoRef.current;
+        if (!el) return;
+        if (el.paused) { el.play().catch(() => {}); } else { el.pause(); }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [focused]);
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) { el.play().catch(() => {}); } else { el.pause(); }
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setMuted(el.muted);
+  };
+
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const el = videoRef.current;
+    if (!el || !el.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    el.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * el.duration;
+  };
+
+  const fmt = (s: number) =>
+    `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  return (
+    <div
+      className={`relative group ${fill ? 'w-full h-full' : 'w-full'}`}
+      style={style}
+      tabIndex={0}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onMouseEnter={() => setFocused(true)}
+      onMouseLeave={() => setFocused(false)}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Raw video — no native controls, no layout shift */}
+      <video
+        ref={videoRef}
+        src={src}
+        className={fill ? 'w-full h-full block object-cover' : 'w-full block'}
+        muted
+        loop
+        playsInline
+        onPlay={() => setPaused(false)}
+        onPause={() => setPaused(true)}
+        onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime ?? 0)}
+        onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
+        onClick={togglePlay}
+      />
+
+      {/* Paused indicator — center */}
+      {paused && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
+            <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+        </div>
+      )}
+
+      {/* Custom controls — fade in on hover, always interactable */}
+      <div
+        className="absolute bottom-0 left-0 right-0 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-2 pt-10">
+          {/* Seek bar */}
+          <div
+            className="w-full h-1 bg-white/30 rounded-full cursor-pointer mb-2 hover:h-2 transition-all"
+            onClick={seek}
+          >
+            <div
+              className="h-full bg-white rounded-full pointer-events-none"
+              style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
+            />
+          </div>
+          {/* Buttons */}
+          <div className="flex items-center gap-3">
+            {/* Play / Pause */}
+            <button className="text-white hover:text-white/70 transition-colors" onClick={togglePlay}>
+              {paused ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              )}
+            </button>
+            {/* Mute */}
+            <button className="text-white hover:text-white/70 transition-colors" onClick={toggleMute}>
+              {muted ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM18.5 12c0-2.77-1.5-5.17-3.8-6.47v2.15l3.76 3.76c.04-.27.04-.43.04-.44z"/>
+                </svg>
+              )}
+            </button>
+            {/* Time */}
+            {duration > 0 && (
+              <span className="text-white/80 text-xs tabular-nums select-none">
+                {fmt(currentTime)} / {fmt(duration)}
+              </span>
+            )}
+            <div className="flex-1" />
+            {/* Expand to lightbox */}
+            {onExpand && (
+              <button
+                className="text-white hover:text-white/70 transition-colors"
+                onClick={(e) => { e.stopPropagation(); onExpand(); }}
+                title="Xem toàn màn hình"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PostCard({ post, currentUserId }: PostCardProps) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -73,6 +253,8 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
   const [isClosing, setIsClosing] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
+  const [contentExpanded, setContentExpanded] = useState(false);
+  const CONTENT_COLLAPSE_LIMIT = 100; // chars before showing "Xem thêm"
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -548,9 +730,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
         className={`rounded-2xl ${showComments ? 'overflow-hidden' : 'overflow-visible'} ${
           showComments
             ? 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[95vw] max-w-2xl max-h-[90vh] bg-white dark:bg-slate-800 shadow-2xl'
-            : hasMedia
-              ? 'relative mb-4 bg-black'
-              : 'relative mb-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-sm'
+            : 'relative mb-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-sm'
         }`}
         style={
           showComments
@@ -562,20 +742,29 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
             : undefined
         }
       >
-        {/* ── MEDIA HERO LAYOUT ── */}
-        {hasMedia && !showComments ? (
+        {/* ── MEDIA HERO LAYOUT — kept as dead code; media now rendered inside card ── */}
+        {false ? (
           <div className="relative overflow-hidden rounded-2xl">
             {/* overflow-hidden wrapper only around media images */}
             <div className="relative overflow-hidden rounded-2xl">
             {/* ── 1 image: full width, natural aspect ── */}
             {post.mediaUrls.length === 1 && (
-              <img
-                src={post.mediaUrls[0]}
-                alt="Post media"
-                className="w-full block object-cover cursor-pointer"
-                style={{ maxHeight: '520px' }}
-                onClick={() => openLightbox(0)}
-              />
+              isVideoUrl(post.mediaUrls[0]) ? (
+                <FeedVideo
+                  src={post.mediaUrls[0]}
+                  fill={false}
+                  style={{ maxHeight: '520px' }}
+                  onExpand={() => openLightbox(0)}
+                />
+              ) : (
+                <img
+                  src={post.mediaUrls[0]}
+                  alt="Post media"
+                  className="w-full block object-cover cursor-pointer"
+                  style={{ maxHeight: '520px' }}
+                  onClick={() => openLightbox(0)}
+                />
+              )
             )}
 
             {/* ── 2 images: main (2/3) primary + secondary (1/3) ── */}
@@ -585,18 +774,18 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                 style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
               >
                 <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-                  <img
-                    src={post.mediaUrls[0]}
-                    alt="Post media 1"
-                    className="w-full h-full object-cover"
-                  />
+                  {isVideoUrl(post.mediaUrls[0]) ? (
+                    <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                  ) : (
+                    <img src={post.mediaUrls[0]} alt="Post media 1" className="w-full h-full object-cover" />
+                  )}
                 </div>
                 <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                  <img
-                    src={post.mediaUrls[1]}
-                    alt="Post media 2"
-                    className="w-full h-full object-cover"
-                  />
+                  {isVideoUrl(post.mediaUrls[1]) ? (
+                    <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                  ) : (
+                    <img src={post.mediaUrls[1]} alt="Post media 2" className="w-full h-full object-cover" />
+                  )}
                 </div>
               </div>
             )}
@@ -608,25 +797,25 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   className="overflow-hidden row-span-2 cursor-pointer"
                   onClick={() => openLightbox(0)}
                 >
-                  <img
-                    src={post.mediaUrls[0]}
-                    alt="Post media 1"
-                    className="w-full h-full object-cover"
-                  />
+                  {isVideoUrl(post.mediaUrls[0]) ? (
+                    <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                  ) : (
+                    <img src={post.mediaUrls[0]} alt="Post media 1" className="w-full h-full object-cover" />
+                  )}
                 </div>
                 <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                  <img
-                    src={post.mediaUrls[1]}
-                    alt="Post media 2"
-                    className="w-full h-full object-cover"
-                  />
+                  {isVideoUrl(post.mediaUrls[1]) ? (
+                    <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                  ) : (
+                    <img src={post.mediaUrls[1]} alt="Post media 2" className="w-full h-full object-cover" />
+                  )}
                 </div>
                 <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
-                  <img
-                    src={post.mediaUrls[2]}
-                    alt="Post media 3"
-                    className="w-full h-full object-cover"
-                  />
+                  {isVideoUrl(post.mediaUrls[2]) ? (
+                    <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} />
+                  ) : (
+                    <img src={post.mediaUrls[2]} alt="Post media 3" className="w-full h-full object-cover" />
+                  )}
                 </div>
               </div>
             )}
@@ -640,11 +829,11 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   style={{ height: '260px' }}
                   onClick={() => openLightbox(0)}
                 >
-                  <img
-                    src={post.mediaUrls[0]}
-                    alt="Post media 1"
-                    className="w-full h-full object-cover"
-                  />
+                  {isVideoUrl(post.mediaUrls[0]) ? (
+                    <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                  ) : (
+                    <img src={post.mediaUrls[0]} alt="Post media 1" className="w-full h-full object-cover" />
+                  )}
                 </div>
                 {/* All secondaries — equal-width flex strip, scrolls if too many */}
                 <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
@@ -658,11 +847,11 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                       }}
                       onClick={() => openLightbox(i + 1)}
                     >
-                      <img
-                        src={url}
-                        alt={`Post media ${i + 2}`}
-                        className="w-full h-full object-cover"
-                      />
+                      {isVideoUrl(url) ? (
+                        <FeedVideo src={url} onExpand={() => openLightbox(i + 1)} />
+                      ) : (
+                        <img src={url} alt={`Post media ${i + 2}`} className="w-full h-full object-cover" />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -849,14 +1038,34 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
             {/* Author overlay - bottom left */}
             <div className="absolute bottom-0 left-0 right-14 p-4 z-10">
-              <div className="flex items-center gap-2 mb-1">
+              {/* Content first (shows above author row) */}
+              {post.content && (
+                <div className="mb-2">
+                  <p className="text-white/90 text-sm leading-snug">
+                    {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
+                      ? post.content
+                      : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
+                  </p>
+                  {post.content.length > CONTENT_COLLAPSE_LIMIT && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setContentExpanded((v) => !v); }}
+                      className="text-white/60 text-xs hover:text-white mt-0.5 transition-colors"
+                    >
+                      {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Author row */}
+              <div className="flex items-center gap-2">
                 <div
                   onClick={() => goToProfile(post.authorId)}
                   className="cursor-pointer flex-shrink-0"
                 >
                   {post.authorPhotoURL ? (
                     <img
-                      src={post.authorPhotoURL}
+                      src={post.authorPhotoURL ?? undefined}
                       alt={post.authorDisplayName}
                       className="w-9 h-9 rounded-full ring-2 ring-white/50 object-cover"
                     />
@@ -882,10 +1091,10 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     >
                       {post.authorDisplayName}
                     </span>
-                    {post.taggedFriends && post.taggedFriends.length > 0 && (
+                    {(post.taggedFriends?.length ?? 0) > 0 && (
                       <span className="text-white/80 text-xs">
                         cùng với{' '}
-                        {post.taggedFriends.map((f, i) => (
+                        {post.taggedFriends!.map((f, i) => (
                           <span key={f.uid}>
                             <span
                               onClick={() => goToProfile(f.uid)}
@@ -906,11 +1115,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   </div>
                 </div>
               </div>
-              {post.content && (
-                <p className="text-white/90 text-sm leading-snug line-clamp-2 mt-1">
-                  {post.content}
-                </p>
-              )}
+
               {commentCount > 0 && (
                 <button
                   onClick={() => setShowComments(true)}
@@ -1098,9 +1303,71 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
             {/* Content */}
             {post.content && (
-              <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap text-[15px] mb-4">
-                {post.content}
-              </p>
+              <div className="mb-3">
+                <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap text-[15px]">
+                  {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
+                    ? post.content
+                    : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
+                </p>
+                {post.content.length > CONTENT_COLLAPSE_LIMIT && (
+                  <button
+                    onClick={() => setContentExpanded((v) => !v)}
+                    className="text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-200 mt-0.5 transition-colors"
+                  >
+                    {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Media — edge-to-edge inside card */}
+            {hasMedia && (
+              <div className="-mx-5 sm:-mx-6 mb-4 overflow-hidden">
+                {post.mediaUrls.length === 1 && (
+                  isVideoUrl(post.mediaUrls[0]) ? (
+                    <FeedVideo src={post.mediaUrls[0]} fill={false} onExpand={() => openLightbox(0)} />
+                  ) : (
+                    <img src={post.mediaUrls[0]} alt="Post media" className="w-full block object-cover cursor-pointer" style={{ maxHeight: '520px' }} onClick={() => openLightbox(0)} />
+                  )
+                )}
+                {post.mediaUrls.length === 2 && (
+                  <div className="grid gap-0.5" style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
+                      {isVideoUrl(post.mediaUrls[0]) ? <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} /> : <img src={post.mediaUrls[0]} alt="Post media 1" className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
+                      {isVideoUrl(post.mediaUrls[1]) ? <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} /> : <img src={post.mediaUrls[1]} alt="Post media 2" className="w-full h-full object-cover" />}
+                    </div>
+                  </div>
+                )}
+                {post.mediaUrls.length === 3 && (
+                  <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
+                    <div className="overflow-hidden row-span-2 cursor-pointer" onClick={() => openLightbox(0)}>
+                      {isVideoUrl(post.mediaUrls[0]) ? <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} /> : <img src={post.mediaUrls[0]} alt="Post media 1" className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
+                      {isVideoUrl(post.mediaUrls[1]) ? <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} /> : <img src={post.mediaUrls[1]} alt="Post media 2" className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
+                      {isVideoUrl(post.mediaUrls[2]) ? <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} /> : <img src={post.mediaUrls[2]} alt="Post media 3" className="w-full h-full object-cover" />}
+                    </div>
+                  </div>
+                )}
+                {post.mediaUrls.length >= 4 && (
+                  <div className="flex flex-col gap-0.5">
+                    <div className="overflow-hidden cursor-pointer" style={{ height: '260px' }} onClick={() => openLightbox(0)}>
+                      {isVideoUrl(post.mediaUrls[0]) ? <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} /> : <img src={post.mediaUrls[0]} alt="Post media 1" className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
+                      {post.mediaUrls.slice(1).map((url, i) => (
+                        <div key={i} className="flex-none overflow-hidden cursor-pointer" style={{ width: `calc((100% - ${(post.mediaUrls.length - 2) * 2}px) / ${post.mediaUrls.length - 1})`, minWidth: '60px' }} onClick={() => openLightbox(i + 1)}>
+                          {isVideoUrl(url) ? <FeedVideo src={url} onExpand={() => openLightbox(i + 1)} /> : <img src={url} alt={`Post media ${i + 2}`} className="w-full h-full object-cover" />}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Stats */}
@@ -1540,11 +1807,22 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
               className="absolute inset-0 flex items-center justify-center pointer-events-none"
               style={{ top: '52px', bottom: '0' }}
             >
-              <img
-                src={post.mediaUrls[lightboxIndex]}
-                alt={`Ảnh ${lightboxIndex + 1} / ${post.mediaUrls.length}`}
-                className="max-w-full max-h-full object-contain select-none"
-              />
+              {isVideoUrl(post.mediaUrls[lightboxIndex]) ? (
+                <video
+                  src={post.mediaUrls[lightboxIndex]}
+                  className="max-w-full max-h-full object-contain select-none"
+                  controls
+                  autoPlay
+                  muted
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={post.mediaUrls[lightboxIndex]}
+                  alt={`Ảnh ${lightboxIndex + 1} / ${post.mediaUrls.length}`}
+                  className="max-w-full max-h-full object-contain select-none"
+                />
+              )}
             </div>
 
             {/* Nav — left half */}

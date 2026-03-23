@@ -1,13 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../lib/api';
-import { uploadImage } from '../../lib/cloudinary';
+import { uploadImage, uploadVideo } from '../../lib/cloudinary';
 import TagFriendsModal from './TagFriendsModal';
 
 interface ImagePreview {
   id: string;
   url: string;
   file: File;
+}
+
+interface VideoPreview {
+  id: string;
+  url: string;
+  file: File;
+  name: string;
 }
 
 interface TaggedFriend {
@@ -27,6 +34,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [images, setImages] = useState<ImagePreview[]>([]);
+  const [videos, setVideos] = useState<VideoPreview[]>([]);
   const [feeling, setFeeling] = useState('');
   const [location, setLocation] = useState('');
   const [showFeelingPicker, setShowFeelingPicker] = useState(false);
@@ -37,6 +45,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const privacyDropdownRef = useRef<HTMLDivElement>(null);
 
   const privacyOptions = [
@@ -123,14 +132,17 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!content.trim() && images.length === 0) || isSubmitting) return;
+    if ((!content.trim() && images.length === 0 && videos.length === 0) || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      // Upload images to Cloudinary, get back CDN URLs
-      const mediaUrls = await Promise.all(
+      const imageUrls = await Promise.all(
         images.map((img) => uploadImage(img.file, { folder: 'surf/posts' }))
       );
+      const videoUrls = await Promise.all(
+        videos.map((v) => uploadVideo(v.file, { folder: 'surf/posts/videos' }))
+      );
+      const mediaUrls = [...imageUrls, ...videoUrls];
 
       // Prepare tagged friends data
       const taggedFriendsData = taggedFriends.map((f) => ({
@@ -151,6 +163,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       // Reset form
       setContent('');
       setImages([]);
+      setVideos([]);
       setFeeling('');
       setLocation('');
       setTaggedFriends([]);
@@ -187,6 +200,27 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       file,
     }));
     setImages((prev) => [...prev, ...newImages]);
+    e.target.value = '';
+  };
+
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newVideos: VideoPreview[] = files.map((file) => ({
+      id: Math.random().toString(36),
+      url: URL.createObjectURL(file),
+      file,
+      name: file.name,
+    }));
+    setVideos((prev) => [...prev, ...newVideos]);
+    e.target.value = '';
+  };
+
+  const removeVideo = (id: string) => {
+    setVideos((prev) => {
+      const removed = prev.find((v) => v.id === id);
+      if (removed) URL.revokeObjectURL(removed.url);
+      return prev.filter((v) => v.id !== id);
+    });
   };
 
   const removeImage = (id: string) => {
@@ -197,9 +231,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     });
   };
 
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
-  };
+  const triggerFileInput = () => { fileInputRef.current?.click(); };
+  const triggerVideoInput = () => { videoInputRef.current?.click(); };
 
   return (
     <div
@@ -601,6 +634,31 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
             </div>
           )}
 
+          {/* Video Preview */}
+          {videos.length > 0 && (
+            <div className="mb-3 space-y-2 animate-smooth-fade-in-delayed">
+              {videos.map((v) => (
+                <div key={v.id} className="relative group rounded-xl overflow-hidden bg-gray-100 dark:bg-slate-900/50 border-2 border-dashed border-gray-300 dark:border-slate-600/50">
+                  <video
+                    src={v.url}
+                    controls
+                    className="w-full max-h-64 object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeVideo(v.id)}
+                    className="absolute top-2 right-2 w-8 h-8 bg-gray-900/80 hover:bg-red-600 rounded-full flex items-center justify-center text-white transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 truncate">{v.name}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Feeling Picker */}
           {showFeelingPicker && (
             <div className="mb-3 p-2.5 bg-gray-50 dark:bg-slate-900/50 rounded-xl border border-gray-200 dark:border-slate-700/50 animate-smooth-fade-in-delayed">
@@ -689,7 +747,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
                   ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/30'
                   : 'bg-white dark:bg-slate-700/50 text-gray-800 dark:text-gray-300 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 dark:hover:bg-slate-700 border-2 border-gray-200 dark:border-slate-700 hover:border-cyan-300 dark:hover:border-cyan-700'
               }`}
-              title="Ảnh/Video"
+              title="Ảnh"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -700,6 +758,23 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
                 />
               </svg>
               <span className="text-xs font-semibold">Ảnh</span>
+            </button>
+
+            {/* Video Pill */}
+            <button
+              type="button"
+              onClick={triggerVideoInput}
+              className={`group flex items-center gap-2 px-3 py-2 rounded-full transition-all hover:scale-105 ${
+                videos.length > 0
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/30'
+                  : 'bg-white dark:bg-slate-700/50 text-gray-800 dark:text-gray-300 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 dark:hover:bg-slate-700 border-2 border-gray-200 dark:border-slate-700 hover:border-cyan-300 dark:hover:border-cyan-700'
+              }`}
+              title="Video"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.892L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+              </svg>
+              <span className="text-xs font-semibold">Video{videos.length > 0 ? ` (${videos.length})` : ''}</span>
             </button>
 
             {/* Tag Pill */}
@@ -787,15 +862,15 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
           {/* Wave-Styled Submit Button */}
           <button
             type="submit"
-            disabled={(!content.trim() && images.length === 0) || isSubmitting}
+            disabled={(!content.trim() && images.length === 0 && videos.length === 0) || isSubmitting}
             className={`relative w-full py-3.5 rounded-2xl font-bold text-sm transition-all duration-300 overflow-hidden group animate-fade-in-2 ${
-              (!content.trim() && images.length === 0) || isSubmitting
+              (!content.trim() && images.length === 0 && videos.length === 0) || isSubmitting
                 ? 'bg-gray-200 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed'
                 : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 text-white hover:shadow-2xl hover:shadow-cyan-500/30 hover:scale-[1.02]'
             }`}
           >
             {/* Animated Wave Effect */}
-            {!isSubmitting && content.trim() && (
+            {!isSubmitting && (content.trim() || images.length > 0 || videos.length > 0) && (
               <div className="absolute inset-0 opacity-50">
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
               </div>
@@ -836,13 +911,21 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
             </span>
           </button>
 
-          {/* Hidden file input */}
+          {/* Hidden file inputs */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
             multiple
             onChange={handleImageSelect}
+            className="hidden"
+          />
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            multiple
+            onChange={handleVideoSelect}
             className="hidden"
           />
         </form>
