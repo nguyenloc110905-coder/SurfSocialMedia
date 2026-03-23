@@ -117,12 +117,20 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
     }
     const data = doc.data()!;
     const likedBy: string[] = data.likedBy ?? [];
+    const reactions: Record<string, string> = data.reactions ?? {};
+    const { reaction = '❤️' } = req.body;
     const idx = likedBy.indexOf(req.uid!);
-    if (idx === -1) likedBy.push(req.uid!);
-    else likedBy.splice(idx, 1);
+    if (idx === -1) {
+      likedBy.push(req.uid!);
+      reactions[req.uid!] = reaction;
+    } else {
+      likedBy.splice(idx, 1);
+      delete reactions[req.uid!];
+    }
     await ref.update({
       likedBy,
       likeCount: likedBy.length,
+      reactions,
       updatedAt: new Date(),
     });
     const updated = await ref.get();

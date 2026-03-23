@@ -343,11 +343,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
           {/* Close Button */}
           <button
             type="button"
-            onClick={() => {
-              if (!content.trim() && images.length === 0) {
-                setIsExpanded(false);
-              }
-            }}
+            onClick={() => setIsExpanded(false)}
             className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700/50 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
             title="Đóng"
           >
@@ -786,10 +782,16 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               }`}
               title="Cảm xúc/Hoạt động"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm3.5-9c.828 0 1.5-.672 1.5-1.5S16.328 8 15.5 8 14 8.672 14 9.5s.672 1.5 1.5 1.5zm-7 0c.828 0 1.5-.672 1.5-1.5S9.328 8 8.5 8 7 8.672 7 9.5 7.672 11 8.5 11zm3.5 6c2.28 0 4.22-1.66 5-4H7c.78 2.34 2.72 4 5 4z" />
-              </svg>
-              <span className="text-xs font-semibold">Cảm xúc</span>
+              {feeling ? (
+                <span className="text-sm leading-none">{feeling.split(' ')[0]}</span>
+              ) : (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm3.5-9c.828 0 1.5-.672 1.5-1.5S16.328 8 15.5 8 14 8.672 14 9.5s.672 1.5 1.5 1.5zm-7 0c.828 0 1.5-.672 1.5-1.5S9.328 8 8.5 8 7 8.672 7 9.5 7.672 11 8.5 11zm3.5 6c2.28 0 4.22-1.66 5-4H7c.78 2.34 2.72 4 5 4z" />
+                </svg>
+              )}
+              <span className="text-xs font-semibold">
+                {feeling ? feeling.split(' ').slice(1).join(' ') : 'Cảm xúc'}
+              </span>
             </button>
 
             {/* Location Pill */}

@@ -39,6 +39,7 @@ interface PostCardProps {
     likeCount: number;
     replyCount: number;
     likedBy: string[];
+    reactions?: Record<string, string>;
     feeling?: string;
     location?: string;
     taggedFriends?: Array<{ uid: string; displayName: string }>;
@@ -54,6 +55,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const commentInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const initialLiked = currentUserId ? (post.likedBy?.includes(currentUserId) ?? false) : false;
+  const initialReaction = currentUserId ? (post.reactions?.[currentUserId] ?? null) : null;
   const [isLiked, setIsLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
   const [showComments, setShowComments] = useState(false);
@@ -61,7 +63,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const [showOptions, setShowOptions] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
-  const [selectedReaction, setSelectedReaction] = useState<string | null>(initialLiked ? '❤️' : null);
+  const [selectedReaction, setSelectedReaction] = useState<string | null>(initialReaction ?? (initialLiked ? '❤️' : null));
   const [commentCount, setCommentCount] = useState(post.replyCount || 0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
@@ -368,7 +370,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
     setSelectedReaction(newLiked ? '❤️' : null);
     setLikeCount((c) => (newLiked ? c + 1 : c - 1));
     try {
-      await api.post(`/api/posts/${post.id}/like`, {});
+      await api.post(`/api/posts/${post.id}/like`, { reaction: '❤️' });
     } catch {
       setIsLiked(!newLiked);
       setSelectedReaction(!newLiked ? '❤️' : null);
@@ -379,25 +381,29 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const handleReactionPick = async (emoji: string) => {
     const alreadyPicked = isLiked && selectedReaction === emoji;
     const newLiked = !alreadyPicked;
+    const prevLiked = isLiked;
+    const prevReaction = selectedReaction;
+    const prevCount = likeCount;
     setIsLiked(newLiked);
     setSelectedReaction(alreadyPicked ? null : emoji);
-    setLikeCount((c) => (alreadyPicked ? c - 1 : isLiked ? c : c + 1));
+    setLikeCount((c) => (alreadyPicked ? c - 1 : prevLiked ? c : c + 1));
     setShowReactions(false);
     try {
-      // Server uses toggle: POST /like. If switching reaction while already liked,
-      // we don't need to change the like state on server (still liked).
       if (alreadyPicked) {
         // unlike
-        await api.post(`/api/posts/${post.id}/like`, {});
-      } else if (!isLiked) {
-        // was not liked, now like
-        await api.post(`/api/posts/${post.id}/like`, {});
+        await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
+      } else if (!prevLiked) {
+        // was not liked, now like with new emoji
+        await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
+      } else {
+        // switching reaction: unlike old, then like with new emoji
+        await api.post(`/api/posts/${post.id}/like`, { reaction: prevReaction });
+        await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
       }
-      // if isLiked && !alreadyPicked: just changing emoji locally, server stays liked
     } catch {
-      setIsLiked(isLiked);
-      setSelectedReaction(selectedReaction);
-      setLikeCount((c) => (alreadyPicked ? c + 1 : isLiked ? c : c - 1));
+      setIsLiked(prevLiked);
+      setSelectedReaction(prevReaction);
+      setLikeCount(prevCount);
     }
   };
 
@@ -994,9 +1000,9 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
             {(likeCount > 0 || commentCount > 0) && (
               <div className="flex items-center justify-between py-3 mb-3 border-b border-gray-200 dark:border-slate-700/50">
                 {likeCount > 0 && (
-                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
                     <span>{selectedReaction || '❤️'}</span>
-                    <span>{likeCount} lượt thích</span>
+                    <span className="font-medium">{likeCount}</span>
                   </div>
                 )}
                 {commentCount > 0 && (
@@ -1026,8 +1032,8 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                 >
                   {isLiked && selectedReaction ? (
                     <>
-                      <span className="text-base">{selectedReaction}</span>
-                      <span>{reactions[selectedReaction].label}</span>
+                      <span className="text-base leading-none">{selectedReaction}</span>
+                      {likeCount > 0 && <span>{likeCount}</span>}
                     </>
                   ) : (
                     <>
@@ -1044,7 +1050,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                           d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
                         />
                       </svg>
-                      <span>Thích</span>
+                      {likeCount > 0 && <span>{likeCount}</span>}
                     </>
                   )}
                 </button>
