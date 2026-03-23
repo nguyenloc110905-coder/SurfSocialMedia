@@ -243,7 +243,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
 
   return (
     <div
-      className={`relative overflow-hidden bg-gradient-to-br from-cyan-50 via-blue-50 to-purple-50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 rounded-3xl mb-4 transition-all duration-700 ease-out border-2 ${
+      className={`relative bg-gradient-to-br from-cyan-50 via-blue-50 to-purple-50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 rounded-3xl mb-4 transition-all duration-700 ease-out border-2 ${
         isExpanded
           ? 'shadow-2xl shadow-cyan-500/30 dark:shadow-cyan-500/10 border-cyan-300 dark:border-slate-700'
           : 'shadow-xl shadow-blue-500/20 dark:shadow-xl hover:shadow-2xl hover:shadow-cyan-500/30 dark:hover:shadow-2xl cursor-pointer border-blue-200 dark:border-slate-700/50 hover:border-cyan-300 dark:hover:border-slate-600'
@@ -362,7 +362,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
           </button>
 
           {/* Header with Floating Avatar */}
-          <div className="flex items-start gap-4 mb-4 animate-fade-in-header">
+          <div className="relative z-50 flex items-start gap-4 mb-4 animate-fade-in-header">
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full blur-md group-hover:blur-lg transition-all opacity-50"></div>
               {user?.photoURL ? (
@@ -425,7 +425,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               </div>
 
               {/* Privacy Selector - Surf Style */}
-              <div className="relative inline-block" ref={privacyDropdownRef}>
+              <div className="relative inline-block z-50" ref={privacyDropdownRef}>
                 <button
                   type="button"
                   onClick={() => setShowPrivacyDropdown(!showPrivacyDropdown)}
