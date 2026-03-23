@@ -63,13 +63,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const [showOptions, setShowOptions] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
-<<<<<<< HEAD
   const [selectedReaction, setSelectedReaction] = useState<string | null>(initialReaction ?? (initialLiked ? '❤️' : null));
-=======
-  const [selectedReaction, setSelectedReaction] = useState<string | null>(
-    initialLiked ? '❤️' : null
-  );
->>>>>>> 15da3cd6a86167b42597e759839400162efcdc41
   const [commentCount, setCommentCount] = useState(post.replyCount || 0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
@@ -85,6 +79,8 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const lightboxCommentRef = useRef<HTMLInputElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
+  const reactionHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lightboxReactionHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Close menus when clicking outside
   const handleClickOutside = useCallback((e: MouseEvent) => {
@@ -509,7 +505,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
       {/* Backdrop */}
       {showComments && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40"
           onClick={handleCloseComments}
           style={{ animation: isClosing ? 'fadeOut 0.4s ease-out' : 'fadeIn 0.4s ease-out' }}
         />
@@ -537,6 +533,8 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
         {/* ── MEDIA HERO LAYOUT ── */}
         {hasMedia && !showComments ? (
           <div className="relative overflow-hidden rounded-2xl">
+            {/* overflow-hidden wrapper only around media images */}
+            <div className="relative overflow-hidden rounded-2xl">
             {/* ── 1 image: full width, natural aspect ── */}
             {post.mediaUrls.length === 1 && (
               <img
@@ -642,86 +640,21 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
             {/* Dark gradient overlay from bottom */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
 
-            {/* Options button - top right */}
-            <div className="absolute top-3 right-3 z-10" ref={optionsRef}>
-              <button
-                onClick={() => setShowOptions(!showOptions)}
-                className="w-9 h-9 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white hover:bg-black/60 transition-all"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                </svg>
-              </button>
-              {showOptions && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
-                  <button
-                    onClick={() => {
-                      void handleSavePost();
-                      setShowOptions(false);
-                    }}
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                      />
-                    </svg>
-                    {isSaved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
-                  </button>
-                  <hr className="my-2 border-gray-200 dark:border-slate-700" />
-                  {currentUserId === post.authorId && (
-                    <button
-                      onClick={() => {
-                        void handleDeletePost();
-                        setShowOptions(false);
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                      Xóa bài viết
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowOptions(false)}
-                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                      />
-                    </svg>
-                    Báo cáo bài viết
-                  </button>
-                </div>
-              )}
-            </div>
+            </div>{/* end overflow-hidden media wrapper */}
 
-            {/* Vertical action buttons - right side */}
-            <div className="absolute right-3 bottom-20 flex flex-col items-center gap-5 z-10">
+            {/* ── VERTICAL ACTION STRIP (outside overflow-hidden, reaction picker won't be clipped) ── */}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-5 z-20">
               {/* Like/React */}
               <div className="relative flex flex-col items-center">
                 <button
                   onClick={handleLike}
-                  onMouseEnter={() => setShowReactions(true)}
-                  onMouseLeave={() => setShowReactions(false)}
+                  onMouseEnter={() => {
+                    if (reactionHideTimeout.current) clearTimeout(reactionHideTimeout.current);
+                    setShowReactions(true);
+                  }}
+                  onMouseLeave={() => {
+                    reactionHideTimeout.current = setTimeout(() => setShowReactions(false), 300);
+                  }}
                   className="flex flex-col items-center gap-1 text-white"
                 >
                   <div
@@ -745,20 +678,20 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                       </svg>
                     )}
                   </div>
-                  {likeCount > 0 && (
-                    <span className="text-xs font-semibold text-white drop-shadow">
-                      {likeCount}
-                    </span>
-                  )}
                 </button>
                 {/* Reaction picker - opens to the left */}
                 {showReactions && (
                   <div
-                    onMouseEnter={() => setShowReactions(true)}
-                    onMouseLeave={() => setShowReactions(false)}
-                    className="absolute right-full bottom-0 mr-2 z-30"
+                    onMouseEnter={() => {
+                      if (reactionHideTimeout.current) clearTimeout(reactionHideTimeout.current);
+                      setShowReactions(true);
+                    }}
+                    onMouseLeave={() => {
+                      reactionHideTimeout.current = setTimeout(() => setShowReactions(false), 300);
+                    }}
+                    className="absolute right-full top-0 mr-2 z-30"
                   >
-                    <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-full shadow-2xl border border-gray-200 dark:border-slate-700 p-2 flex flex-col gap-1">
+                    <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 flex gap-1">
                       {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
                         <button
                           key={emoji}
@@ -776,7 +709,12 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
               {/* Comment */}
               <button
-                onClick={() => setShowComments(true)}
+                onClick={() => {
+                  setLightboxOpen(true);
+                  setLightboxCommentOpen(true);
+                  if (comments.length === 0) void loadComments();
+                  setTimeout(() => lightboxCommentRef.current?.focus(), 350);
+                }}
                 className="flex flex-col items-center gap-1 text-white"
               >
                 <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
@@ -838,29 +776,43 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                 )}
               </div>
 
-              {/* Bookmark/Save */}
-              <button
-                onClick={() => void handleSavePost()}
-                className="flex flex-col items-center text-white"
-              >
-                <div
-                  className={`w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all ${isSaved ? 'text-yellow-400' : ''}`}
+              {/* Options (3 dots) */}
+              <div className="relative" ref={optionsRef}>
+                <button
+                  onClick={() => setShowOptions(!showOptions)}
+                  className="flex flex-col items-center gap-1 text-white"
                 >
-                  <svg
-                    className="w-6 h-6"
-                    fill={isSaved ? 'currentColor' : 'none'}
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                    />
-                  </svg>
-                </div>
-              </button>
+                  <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
+                  </div>
+                </button>
+                {showOptions && (
+                  <div className="absolute right-full bottom-0 mr-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-30">
+                    {currentUserId === post.authorId && (
+                      <button
+                        onClick={() => { void handleDeletePost(); setShowOptions(false); }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Xóa bài viết
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowOptions(false)}
+                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Báo cáo bài viết
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Author overlay - bottom left */}
@@ -1411,6 +1363,120 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
       {/* ── LIGHTBOX ── */}
       {lightboxOpen && (
         <div className="fixed inset-0 z-[9999] flex" style={{ overflow: 'hidden' }}>
+          {/* ── ACTION COLUMN (left side) ── */}
+          <div
+            className="w-16 bg-black flex flex-col items-center justify-center gap-5 flex-shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Like / Reaction */}
+            <div className="relative flex flex-col items-center">
+              {lightboxShowReactions && (
+                <div
+                  className="absolute left-full top-0 ml-3 z-30"
+                  onMouseEnter={() => {
+                    if (lightboxReactionHideTimeout.current) clearTimeout(lightboxReactionHideTimeout.current);
+                    setLightboxShowReactions(true);
+                  }}
+                  onMouseLeave={() => {
+                    lightboxReactionHideTimeout.current = setTimeout(() => setLightboxShowReactions(false), 300);
+                  }}
+                >
+                  <div className="bg-white/10 backdrop-blur-xl rounded-full shadow-2xl border border-white/20 p-2 flex flex-col gap-1">
+                    {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
+                      <button
+                        key={emoji}
+                        onClick={() => void handleReactionPick(emoji)}
+                        className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 hover:translate-x-1 rounded-full hover:bg-white/20"
+                        style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                className="flex flex-col items-center gap-1"
+                onClick={() => void handleLike()}
+                onMouseEnter={() => {
+                  if (lightboxReactionHideTimeout.current) clearTimeout(lightboxReactionHideTimeout.current);
+                  setLightboxShowReactions(true);
+                }}
+                onMouseLeave={() => {
+                  lightboxReactionHideTimeout.current = setTimeout(() => setLightboxShowReactions(false), 300);
+                }}
+              >
+                <div
+                  className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isLiked ? 'scale-110' : ''}`}
+                >
+                  {isLiked && selectedReaction ? (
+                    <span className="text-xl">{selectedReaction}</span>
+                  ) : (
+                    <svg
+                      className="w-6 h-6 text-white"
+                      fill={isLiked ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                      />
+                    </svg>
+                  )}
+                </div>
+              </button>
+            </div>
+
+            {/* Comment */}
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={() => {
+                setLightboxCommentOpen((prev) => {
+                  const next = !prev;
+                  if (next && comments.length === 0) void loadComments();
+                  if (next) setTimeout(() => lightboxCommentRef.current?.focus(), 350);
+                  return next;
+                });
+              }}
+            >
+              <div className={`w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-sm hover:bg-white/20 transition-all ${lightboxCommentOpen ? 'bg-white/30' : 'bg-white/10'}`}>
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              {commentCount > 0 && (
+                <span className="text-white text-xs font-semibold">{commentCount}</span>
+              )}
+            </button>
+
+            {/* Share */}
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={() => void handleCopyLink()}
+            >
+              <div className="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+              </div>
+            </button>
+
+            {/* Save */}
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={() => void handleSavePost()}
+            >
+              <div className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isSaved ? 'text-yellow-400' : 'text-white'}`}>
+                <svg className="w-6 h-6" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              </div>
+            </button>
+          </div>
+
           {/* ── IMAGE PANE ── */}
           <div className="relative flex-1 bg-black flex flex-col transition-all duration-300">
             {/* Top bar */}
@@ -1437,10 +1503,10 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
               </button>
             </div>
 
-            {/* Image — centered between top bar and bottom bar */}
+            {/* Image — centered between top bar and bottom */}
             <div
               className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{ top: '52px', bottom: '68px' }}
+              style={{ top: '52px', bottom: '0' }}
             >
               <img
                 src={post.mediaUrls[lightboxIndex]}
@@ -1454,7 +1520,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
               className="absolute left-0 z-10 flex items-center pl-4"
               style={{
                 top: '52px',
-                bottom: '68px',
+                bottom: '0',
                 width: '50%',
                 cursor: lightboxIndex > 0 ? 'w-resize' : 'default',
               }}
@@ -1479,7 +1545,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
               className="absolute right-0 z-10 flex items-center justify-end pr-4"
               style={{
                 top: '52px',
-                bottom: '68px',
+                bottom: '0',
                 width: '50%',
                 cursor: lightboxIndex < post.mediaUrls.length - 1 ? 'e-resize' : 'default',
               }}
@@ -1505,7 +1571,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
             {post.mediaUrls.length > 1 && (
               <div
                 className="absolute z-20 flex gap-2"
-                style={{ bottom: '72px', left: '50%', transform: 'translateX(-50%)' }}
+                style={{ bottom: '20px', left: '50%', transform: 'translateX(-50%)' }}
                 onClick={(e) => e.stopPropagation()}
               >
                 {post.mediaUrls.map((_, i) => (
@@ -1520,144 +1586,6 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
               </div>
             )}
 
-            {/* Bottom action bar */}
-            <div
-              className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-6 px-6 py-3 bg-gradient-to-t from-black/80 to-transparent"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Like / Reaction */}
-              <div className="relative">
-                {lightboxShowReactions && (
-                  <div
-                    className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2"
-                    onMouseEnter={() => setLightboxShowReactions(true)}
-                    onMouseLeave={() => setLightboxShowReactions(false)}
-                  >
-                    <div className="bg-white/10 backdrop-blur-xl rounded-full shadow-2xl border border-white/20 p-2 flex gap-1">
-                      {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
-                        <button
-                          key={emoji}
-                          onClick={() => void handleReactionPick(emoji)}
-                          className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 hover:-translate-y-1 rounded-full hover:bg-white/20"
-                          style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <button
-                  className="flex flex-col items-center gap-1"
-                  onClick={() => void handleLike()}
-                  onMouseEnter={() => setLightboxShowReactions(true)}
-                  onMouseLeave={() => setLightboxShowReactions(false)}
-                >
-                  <div
-                    className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isLiked ? 'scale-110' : ''}`}
-                  >
-                    {isLiked && selectedReaction ? (
-                      <span className="text-xl">{selectedReaction}</span>
-                    ) : (
-                      <svg
-                        className="w-6 h-6 text-white"
-                        fill={isLiked ? 'currentColor' : 'none'}
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                        />
-                      </svg>
-                    )}
-                  </div>
-                  {likeCount > 0 && (
-                    <span className="text-white text-xs font-semibold">{likeCount}</span>
-                  )}
-                </button>
-              </div>
-
-              {/* Comment */}
-              <button
-                className="flex flex-col items-center gap-1"
-                onClick={() => {
-                  const next = !lightboxCommentOpen;
-                  setLightboxCommentOpen(next);
-                  if (next && comments.length === 0) void loadComments();
-                  if (next) setTimeout(() => lightboxCommentRef.current?.focus(), 350);
-                }}
-              >
-                <div
-                  className={`w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-sm hover:bg-white/20 transition-all ${lightboxCommentOpen ? 'bg-white/30' : 'bg-white/10'}`}
-                >
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                    />
-                  </svg>
-                </div>
-                {commentCount > 0 && (
-                  <span className="text-white text-xs font-semibold">{commentCount}</span>
-                )}
-              </button>
-
-              {/* Share */}
-              <button
-                className="flex flex-col items-center gap-1"
-                onClick={() => void handleCopyLink()}
-              >
-                <div className="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                    />
-                  </svg>
-                </div>
-              </button>
-
-              {/* Save */}
-              <button
-                className="flex flex-col items-center gap-1"
-                onClick={() => void handleSavePost()}
-              >
-                <div
-                  className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isSaved ? 'text-yellow-400' : 'text-white'}`}
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill={isSaved ? 'currentColor' : 'none'}
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                    />
-                  </svg>
-                </div>
-              </button>
-            </div>
           </div>
 
           {/* ── COMMENT SIDEBAR ── */}
