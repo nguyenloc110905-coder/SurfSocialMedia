@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+import Modal from '../ui/Modal';
 
 interface Comment {
   id: string;
@@ -72,6 +73,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
   const [isClosing, setIsClosing] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxCommentOpen, setLightboxCommentOpen] = useState(false);
@@ -446,8 +448,12 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
     }
   };
 
-  const handleDeletePost = async () => {
-    if (!confirm('Bạn có chắc muốn xóa bài viết này?')) return;
+  const handleDeletePost = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeletePost = async () => {
+    setShowDeleteConfirm(false);
     try {
       await api.delete(`/api/posts/${post.id}`);
       setIsDeleted(true);
@@ -502,6 +508,32 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
   return (
     <>
+      {/* Confirm delete → trash modal */}
+      <Modal
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="Chuyển vào thùng rác?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Bài viết sẽ được chuyển vào thùng rác. Bạn có thể khôi phục trong vòng <span className="font-semibold">36 ngày</span> trước khi bị xóa vĩnh viễn.
+          </p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => void confirmDeletePost()}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+            >
+              Chuyển vào thùng rác
+            </button>
+          </div>
+        </div>
+      </Modal>
       {/* Backdrop */}
       {showComments && (
         <div
@@ -792,13 +824,13 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   <div className="absolute right-full bottom-0 mr-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-30">
                     {currentUserId === post.authorId && (
                       <button
-                        onClick={() => { void handleDeletePost(); setShowOptions(false); }}
+                        onClick={() => { handleDeletePost(); setShowOptions(false); }}
                         className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
-                        Xóa bài viết
+                        Chuyển vào thùng rác
                       </button>
                     )}
                     <button
@@ -1019,7 +1051,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     {currentUserId === post.authorId && (
                       <button
                         onClick={() => {
-                          void handleDeletePost();
+                          handleDeletePost();
                           setShowOptions(false);
                         }}
                         className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"

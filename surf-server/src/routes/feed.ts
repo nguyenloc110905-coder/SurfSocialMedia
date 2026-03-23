@@ -36,8 +36,11 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const snap = await q.get();
     const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
 
+    // Loại bỏ bài đã xóa (đang trong thùng rác)
+    const activeDocs = allDocs.filter((p: any) => p.deleted !== true);
+
     // ── Feed cá nhân hoá ──────────────────────────────────────────────────
-    const personalizedPosts = isNewUser ? [] : allDocs.filter((p: any) => {
+    const personalizedPosts = isNewUser ? [] : activeDocs.filter((p: any) => {
       const authorId = p.authorId as string;
       const privacy = p.privacy ?? 'public';
       if (authorId === uid) return true;
@@ -52,7 +55,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 
     if (needDiscover) {
       const personalIds = new Set(personalizedPosts.map((p: any) => p.id));
-      const discoverPosts = allDocs.filter((p: any) => {
+      const discoverPosts = activeDocs.filter((p: any) => {
         if (personalIds.has(p.id)) return false;           // đã có rồi
         if (p.authorId === uid) return false;               // bài của mình
         return (p.privacy ?? 'public') === 'public';        // chỉ lấy public

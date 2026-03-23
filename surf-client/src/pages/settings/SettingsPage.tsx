@@ -8,6 +8,7 @@ import QuickAccessSection from './QuickAccessSection';
 import ReviewModal from './ReviewModal';
 import CustomSettingsModal from './CustomSettingsModal';
 import SettingsSectionPage from './SettingsSectionPage';
+import TrashPage from '../TrashPage';
 
 export default function SettingsPage() {
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
@@ -48,6 +49,8 @@ export default function SettingsPage() {
               onShowReview={(a) => setReviewAudience(a)}
               onShowCustom={() => setShowCustomModal(true)}
             />
+          ) : selectedDetail === 'posts-trash' ? (
+            <TrashPage />
           ) : sectionKey ? (
             <SettingsSectionPage sectionKey={sectionKey} activeItem={selectedDetail} />
           ) : (

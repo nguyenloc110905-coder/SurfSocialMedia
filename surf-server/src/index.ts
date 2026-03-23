@@ -1,3 +1,5 @@
+import { getDb } from './config/firebase-admin.js';
+
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
@@ -92,3 +94,33 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🔌 Socket.io ready`);
   console.log(`🏥 Health check: http://0.0.0.0:${PORT}/api/health`);
 });
+
+// ── Dọn thùng rác: xóa vĩnh viễn bài viết đã xóa quá 36 ngày ─────────────
+async function cleanupTrash() {
+  try {
+    const db = getDb();
+    const cutoff = Date.now() - 36 * 24 * 60 * 60 * 1000;
+    const snap = await db.collection('posts').where('deleted', '==', true).get();
+    if (snap.empty) return;
+    const batch = db.batch();
+    let count = 0;
+    snap.docs.forEach((doc) => {
+      const raw = doc.data().deletedAt;
+      const ts: number = raw?.toMillis?.() ?? raw?.getTime?.() ?? 0;
+      if (ts > 0 && ts < cutoff) {
+        batch.delete(doc.ref);
+        count++;
+      }
+    });
+    if (count > 0) {
+      await batch.commit();
+      console.log(`[Trash cleanup] Đã xóa vĩnh viễn ${count} bài viết.`);
+    }
+  } catch (e) {
+    console.error('[Trash cleanup] Lỗi:', e);
+  }
+}
+
+// Chạy ngay khi khởi động server, sau đó mỗi giờ một lần
+cleanupTrash();
+setInterval(cleanupTrash, 60 * 60 * 1000);

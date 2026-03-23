@@ -61,7 +61,11 @@ export default function Feed() {
       const response = await api.get<{ posts: Post[]; nextLastId?: string }>(
         `/api/feed?lastId=${nextCursor}`
       );
-      setPosts((prev) => [...prev, ...(response.posts || [])]);
+      setPosts((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const newPosts = (response.posts || []).filter((p) => !existingIds.has(p.id));
+        return [...prev, ...newPosts];
+      });
       setNextCursor(response.nextLastId ?? null);
       setHasMore(!!response.nextLastId);
     } catch (err) {
