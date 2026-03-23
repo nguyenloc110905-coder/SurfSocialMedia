@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation';
-import { signUp, signInWithGoogle } from '@/lib/firebase/auth';
+import { signUp } from '@/lib/firebase/auth';
+import { useGoogleSignIn, useFacebookSignIn } from '@/lib/social-auth';
 
 const ERRORS: Record<string, string> = {
   'auth/email-already-in-use': 'Email này đã được sử dụng.',
@@ -45,6 +46,9 @@ export default function RegisterScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const { promptAsync: googlePrompt, disabled: googleDisabled } = useGoogleSignIn(setError);
+  const { promptAsync: fbPrompt, disabled: fbDisabled } = useFacebookSignIn(setError);
+
   const handleRegister = async () => {
     setError('');
     if (!name || !email || !password || !confirmPassword) {
@@ -62,17 +66,14 @@ export default function RegisterScreen({ navigation }: Props) {
     } finally { setLoading(false); }
   };
 
-  const handleGoogle = async () => {
-    setLoading(true); setError('');
-    try { await signInWithGoogle(); }
-    catch (err) {
-      const code = (err as { code?: string }).code ?? '';
-      setError(ERRORS[code] || 'Đăng nhập Google thất bại.');
-    } finally { setLoading(false); }
+  const handleGoogle = () => {
+    setError('');
+    googlePrompt();
   };
 
-  const handleFacebook = async () => {
-    setError('Đăng ký Facebook trên mobile sẽ được hỗ trợ sớm.');
+  const handleFacebook = () => {
+    setError('');
+    fbPrompt();
   };
 
   return (
@@ -171,13 +172,13 @@ export default function RegisterScreen({ navigation }: Props) {
             </View>
 
             {/* Google */}
-            <TouchableOpacity style={s.googleBtn} onPress={handleGoogle} disabled={loading}>
+            <TouchableOpacity style={s.googleBtn} onPress={handleGoogle} disabled={loading || googleDisabled}>
               <View style={s.gCircle}><Text style={s.gLetter}>G</Text></View>
               <Text style={s.socialText}>Đăng ký với Google</Text>
             </TouchableOpacity>
 
             {/* Facebook */}
-            <TouchableOpacity style={s.fbBtn} onPress={handleFacebook} disabled={loading}>
+            <TouchableOpacity style={s.fbBtn} onPress={handleFacebook} disabled={loading || fbDisabled}>
               <Text style={s.fbLetter}>f</Text>
               <Text style={s.fbText}>Đăng ký với Facebook</Text>
             </TouchableOpacity>
