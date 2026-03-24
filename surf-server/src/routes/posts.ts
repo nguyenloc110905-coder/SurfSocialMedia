@@ -9,21 +9,21 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const db = getDb();
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
-    const { 
-      content, 
-      mediaUrls = [], 
+    const {
+      content,
+      mediaUrls = [],
       parentId,
       feeling,
       location,
       taggedFriends = [],
-      privacy = 'public'
+      privacy = 'public',
     } = req.body;
-    
+
     if (!content?.trim() && mediaUrls.length === 0) {
       res.status(400).json({ error: 'Content or media is required' });
       return;
     }
-    
+
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
     const docRef = postsRef.doc();
@@ -51,11 +51,33 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// GET /trash — danh sách bài viết trong thùng rác của user
+router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const postsRef = getDb().collection('posts');
+    const snap = await postsRef
+      .where('authorId', '==', req.uid!)
+      .where('deleted', '==', true)
+      .get();
+    type PostDoc = { id: string; deletedAt?: { toMillis?: () => number }; [key: string]: unknown };
+    const posts = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
+      .sort((a, b) => {
+        const aTime = a.deletedAt?.toMillis?.() ?? 0;
+        const bTime = b.deletedAt?.toMillis?.() ?? 0;
+        return bTime - aTime;
+      });
+    res.json({ posts });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const postsRef = getDb().collection('posts');
     const postDoc = await postsRef.doc(req.params.id).get();
-    if (!postDoc.exists) {
+    if (!postDoc.exists || postDoc.data()?.deleted === true) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -92,6 +114,45 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
 });
 
 router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const postsRef = getDb().collection('posts');
+    const doc = await postsRef.doc(req.params.id).get();
+    if (!doc.exists || doc.data()?.authorId !== req.uid) {
+      res.status(404).json({ error: 'Post not found or forbidden' });
+      return;
+    }
+    // Chuyển vào thùng rác thay vì xóa vĩnh viễn
+    await postsRef.doc(req.params.id).update({
+      deleted: true,
+      deletedAt: new Date(),
+    });
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/restore — khôi phục bài viết từ thùng rác
+router.post('/:id/restore', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const postsRef = getDb().collection('posts');
+    const doc = await postsRef.doc(req.params.id).get();
+    if (!doc.exists || doc.data()?.authorId !== req.uid) {
+      res.status(404).json({ error: 'Post not found or forbidden' });
+      return;
+    }
+    await postsRef.doc(req.params.id).update({
+      deleted: false,
+      deletedAt: null,
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// DELETE /:id/permanent — xóa vĩnh viễn khỏi Firestore
+router.delete('/:id/permanent', requireAuth, async (req: AuthRequest, res) => {
   try {
     const postsRef = getDb().collection('posts');
     const doc = await postsRef.doc(req.params.id).get();

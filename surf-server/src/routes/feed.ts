@@ -34,31 +34,49 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const snap = await q.get();
-    const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+
+    type PostDoc = {
+      id: string;
+      authorId: string;
+      privacy?: string;
+      deleted?: boolean;
+      _discover?: boolean;
+      deletedAt?: { toMillis?: () => number };
+      [key: string]: unknown;
+    };
+
+    const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PostDoc);
+
+    // Loại bỏ bài đã xóa (đang trong thùng rác)
+    const activeDocs = allDocs.filter((p) => p.deleted !== true);
 
     // ── Feed cá nhân hoá ──────────────────────────────────────────────────
-    const personalizedPosts = isNewUser ? [] : allDocs.filter((p: any) => {
-      const authorId = p.authorId as string;
-      const privacy = p.privacy ?? 'public';
-      if (authorId === uid) return true;
-      if (!visibleAuthors.has(authorId)) return false;
-      if (friendIds.includes(authorId)) return privacy === 'public' || privacy === 'friends';
-      return privacy === 'public'; // chỉ follow
-    });
+    const personalizedPosts = isNewUser
+      ? []
+      : activeDocs.filter((p) => {
+          const authorId = p.authorId;
+          const privacy = p.privacy ?? 'public';
+          if (authorId === uid) return true;
+          if (!visibleAuthors.has(authorId)) return false;
+          if (friendIds.includes(authorId)) return privacy === 'public' || privacy === 'friends';
+          return privacy === 'public'; // chỉ follow
+        });
 
     // ── Bổ sung "Khám phá" khi feed cá nhân thiếu ────────────────────────
     const needDiscover = personalizedPosts.length < limitNum;
     let posts = personalizedPosts;
 
     if (needDiscover) {
-      const personalIds = new Set(personalizedPosts.map((p: any) => p.id));
-      const discoverPosts = allDocs.filter((p: any) => {
-        if (personalIds.has(p.id)) return false;           // đã có rồi
-        if (p.authorId === uid) return false;               // bài của mình
-        return (p.privacy ?? 'public') === 'public';        // chỉ lấy public
+      const personalIds = new Set(personalizedPosts.map((p) => p.id));
+      const discoverPosts = activeDocs.filter((p) => {
+        if (personalIds.has(p.id)) return false; // đã có rồi
+        if (p.authorId === uid) return false; // bài của mình
+        return (p.privacy ?? 'public') === 'public'; // chỉ lấy public
       });
       // Đánh dấu bài khám phá để client có thể hiện label "Khám phá"
-      discoverPosts.forEach((p: any) => { p._discover = true; });
+      discoverPosts.forEach((p) => {
+        p._discover = true;
+      });
       posts = [...personalizedPosts, ...discoverPosts].slice(0, limitNum);
     }
 
@@ -72,4 +90,3 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 });
 
 export default router;
-
