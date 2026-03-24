@@ -150,7 +150,10 @@ function FeedVideo({
       <video
         ref={videoRef}
         src={src}
-        className={fill ? 'w-full h-full block object-cover' : 'w-full block'}
+        className={
+          fill ? 'w-full h-full block object-cover' : 'w-full block object-contain bg-black'
+        }
+        style={fill ? undefined : { maxHeight: '320px' }}
         muted
         loop
         playsInline
@@ -1825,17 +1828,56 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
 
       {/* ── LIGHTBOX ── */}
       {lightboxOpen && (
-        <div className="fixed inset-0 z-[9999] flex" style={{ overflow: 'hidden' }}>
-          {/* ── ACTION COLUMN (left side) ── */}
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+          onClick={() => {
+            setLightboxOpen(false);
+            setLightboxCommentOpen(false);
+          }}
+        >
           <div
-            className="w-16 bg-black flex flex-col items-center justify-center gap-5 flex-shrink-0"
+            className="flex w-full max-w-5xl h-[85vh] rounded-2xl overflow-hidden shadow-2xl mx-3"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Like / Reaction */}
-            <div className="relative flex flex-col items-center">
-              {lightboxShowReactions && (
-                <div
-                  className="absolute left-full top-0 ml-3 z-30"
+            {/* ── ACTION COLUMN (left side) ── */}
+            <div
+              className="w-16 bg-black flex flex-col items-center justify-center gap-5 flex-shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Like / Reaction */}
+              <div className="relative flex flex-col items-center">
+                {lightboxShowReactions && (
+                  <div
+                    className="absolute left-full top-0 ml-3 z-30"
+                    onMouseEnter={() => {
+                      if (lightboxReactionHideTimeout.current)
+                        clearTimeout(lightboxReactionHideTimeout.current);
+                      setLightboxShowReactions(true);
+                    }}
+                    onMouseLeave={() => {
+                      lightboxReactionHideTimeout.current = setTimeout(
+                        () => setLightboxShowReactions(false),
+                        300
+                      );
+                    }}
+                  >
+                    <div className="bg-white/10 backdrop-blur-xl rounded-full shadow-2xl border border-white/20 p-2 flex flex-col gap-1">
+                      {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
+                        <button
+                          key={emoji}
+                          onClick={() => void handleReactionPick(emoji)}
+                          className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 hover:translate-x-1 rounded-full hover:bg-white/20"
+                          style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button
+                  className="flex flex-col items-center gap-1"
+                  onClick={() => void handleLike()}
                   onMouseEnter={() => {
                     if (lightboxReactionHideTimeout.current)
                       clearTimeout(lightboxReactionHideTimeout.current);
@@ -1848,276 +1890,127 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     );
                   }}
                 >
-                  <div className="bg-white/10 backdrop-blur-xl rounded-full shadow-2xl border border-white/20 p-2 flex flex-col gap-1">
-                    {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
-                      <button
-                        key={emoji}
-                        onClick={() => void handleReactionPick(emoji)}
-                        className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 hover:translate-x-1 rounded-full hover:bg-white/20"
-                        style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
+                  <div
+                    className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isLiked ? 'scale-110' : ''}`}
+                  >
+                    {isLiked && selectedReaction ? (
+                      <span className="text-xl">{selectedReaction}</span>
+                    ) : (
+                      <svg
+                        className="w-6 h-6 text-white"
+                        fill={isLiked ? 'currentColor' : 'none'}
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
                       >
-                        {emoji}
-                      </button>
-                    ))}
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                        />
+                      </svg>
+                    )}
                   </div>
-                </div>
-              )}
+                </button>
+              </div>
+
+              {/* Comment */}
               <button
                 className="flex flex-col items-center gap-1"
-                onClick={() => void handleLike()}
-                onMouseEnter={() => {
-                  if (lightboxReactionHideTimeout.current)
-                    clearTimeout(lightboxReactionHideTimeout.current);
-                  setLightboxShowReactions(true);
-                }}
-                onMouseLeave={() => {
-                  lightboxReactionHideTimeout.current = setTimeout(
-                    () => setLightboxShowReactions(false),
-                    300
-                  );
+                onClick={() => {
+                  setLightboxCommentOpen((prev) => {
+                    const next = !prev;
+                    if (next && comments.length === 0) void loadComments();
+                    if (next) setTimeout(() => lightboxCommentRef.current?.focus(), 350);
+                    return next;
+                  });
                 }}
               >
                 <div
-                  className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isLiked ? 'scale-110' : ''}`}
+                  className={`w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-sm hover:bg-white/20 transition-all ${lightboxCommentOpen ? 'bg-white/30' : 'bg-white/10'}`}
                 >
-                  {isLiked && selectedReaction ? (
-                    <span className="text-xl">{selectedReaction}</span>
-                  ) : (
-                    <svg
-                      className="w-6 h-6 text-white"
-                      fill={isLiked ? 'currentColor' : 'none'}
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                      />
-                    </svg>
-                  )}
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
                 </div>
+                {commentCount > 0 && (
+                  <span className="text-white text-xs font-semibold">{commentCount}</span>
+                )}
               </button>
-            </div>
 
-            {/* Comment */}
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={() => {
-                setLightboxCommentOpen((prev) => {
-                  const next = !prev;
-                  if (next && comments.length === 0) void loadComments();
-                  if (next) setTimeout(() => lightboxCommentRef.current?.focus(), 350);
-                  return next;
-                });
-              }}
-            >
-              <div
-                className={`w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-sm hover:bg-white/20 transition-all ${lightboxCommentOpen ? 'bg-white/30' : 'bg-white/10'}`}
-              >
-                <svg
-                  className="w-6 h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                  />
-                </svg>
-              </div>
-              {commentCount > 0 && (
-                <span className="text-white text-xs font-semibold">{commentCount}</span>
-              )}
-            </button>
-
-            {/* Share */}
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={() => void handleCopyLink()}
-            >
-              <div className="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all">
-                <svg
-                  className="w-6 h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                  />
-                </svg>
-              </div>
-            </button>
-
-            {/* Save */}
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={() => void handleSavePost()}
-            >
-              <div
-                className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isSaved ? 'text-yellow-400' : 'text-white'}`}
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill={isSaved ? 'currentColor' : 'none'}
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                  />
-                </svg>
-              </div>
-            </button>
-          </div>
-
-          {/* ── IMAGE PANE ── */}
-          <div className="relative flex-1 bg-black flex flex-col transition-all duration-300">
-            {/* Top bar */}
-            <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/70 to-transparent">
-              <div className="text-white/70 text-sm font-medium">
-                {lightboxIndex + 1} / {post.mediaUrls.length}
-              </div>
+              {/* Share */}
               <button
-                className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-all"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxOpen(false);
-                  setLightboxCommentOpen(false);
-                }}
+                className="flex flex-col items-center gap-1"
+                onClick={() => void handleCopyLink()}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
+                <div className="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all">
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Save */}
+              <button
+                className="flex flex-col items-center gap-1"
+                onClick={() => void handleSavePost()}
+              >
+                <div
+                  className={`w-11 h-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all ${isSaved ? 'text-yellow-400' : 'text-white'}`}
+                >
+                  <svg
+                    className="w-6 h-6"
+                    fill={isSaved ? 'currentColor' : 'none'}
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                    />
+                  </svg>
+                </div>
               </button>
             </div>
 
-            {/* Image — centered between top bar and bottom */}
-            <div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{ top: '52px', bottom: '0' }}
-            >
-              {isVideoUrl(post.mediaUrls[lightboxIndex]) ? (
-                <video
-                  src={post.mediaUrls[lightboxIndex]}
-                  className="max-w-full max-h-full object-contain select-none"
-                  controls
-                  autoPlay
-                  muted
-                  playsInline
-                />
-              ) : (
-                <img
-                  src={post.mediaUrls[lightboxIndex]}
-                  alt={`Ảnh ${lightboxIndex + 1} / ${post.mediaUrls.length}`}
-                  className="max-w-full max-h-full object-contain select-none"
-                />
-              )}
-            </div>
-
-            {/* Nav — left half */}
-            <div
-              className="absolute left-0 z-10 flex items-center pl-4"
-              style={{
-                top: '52px',
-                bottom: '0',
-                width: '50%',
-                cursor: lightboxIndex > 0 ? 'w-resize' : 'default',
-              }}
-              onClick={() => setLightboxIndex((prev) => Math.max(0, prev - 1))}
-            >
-              {lightboxIndex > 0 && (
-                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-lg">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
+            {/* ── IMAGE PANE ── */}
+            <div className="relative flex-1 bg-black flex flex-col transition-all duration-300">
+              {/* Top bar */}
+              <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/70 to-transparent">
+                <div className="text-white/70 text-sm font-medium">
+                  {lightboxIndex + 1} / {post.mediaUrls.length}
                 </div>
-              )}
-            </div>
-
-            {/* Nav — right half */}
-            <div
-              className="absolute right-0 z-10 flex items-center justify-end pr-4"
-              style={{
-                top: '52px',
-                bottom: '0',
-                width: '50%',
-                cursor: lightboxIndex < post.mediaUrls.length - 1 ? 'e-resize' : 'default',
-              }}
-              onClick={() =>
-                setLightboxIndex((prev) => Math.min(post.mediaUrls.length - 1, prev + 1))
-              }
-            >
-              {lightboxIndex < post.mediaUrls.length - 1 && (
-                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-lg">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
-                </div>
-              )}
-            </div>
-
-            {/* Dot indicators */}
-            {post.mediaUrls.length > 1 && (
-              <div
-                className="absolute z-20 flex gap-2"
-                style={{ bottom: '20px', left: '50%', transform: 'translateX(-50%)' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {post.mediaUrls.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setLightboxIndex(i)}
-                    className={`w-2 h-2 rounded-full transition-all ${
-                      i === lightboxIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/70'
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ── COMMENT SIDEBAR ── */}
-          {lightboxCommentOpen && (
-            <div
-              className="w-80 bg-white dark:bg-slate-900 flex flex-col border-l border-gray-200 dark:border-slate-700"
-              style={{ animation: 'slideInRight 0.25s ease-out' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">Bình luận</span>
                 <button
-                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
-                  onClick={() => setLightboxCommentOpen(false)}
+                  className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-all"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxOpen(false);
+                    setLightboxCommentOpen(false);
+                  }}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -2128,152 +2021,273 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                 </button>
               </div>
 
-              {/* Post caption */}
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
-                <div className="flex items-center gap-2 mb-1">
-                  {post.authorPhotoURL ? (
-                    <img
-                      src={post.authorPhotoURL}
-                      alt={post.authorDisplayName}
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                      <span className="text-xs font-bold text-white">
-                        {(post.authorDisplayName || 'U')[0].toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                    {post.authorDisplayName}
-                  </span>
-                  <span className="text-xs text-gray-400">{formatTime(post.createdAt)}</span>
-                </div>
-                {post.content && (
-                  <p className="text-sm text-gray-700 dark:text-gray-300 leading-snug line-clamp-3">
-                    {post.content}
-                  </p>
+              {/* Image — centered between top bar and bottom */}
+              <div
+                className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                style={{ top: '52px', bottom: '0' }}
+              >
+                {isVideoUrl(post.mediaUrls[lightboxIndex]) ? (
+                  <video
+                    src={post.mediaUrls[lightboxIndex]}
+                    className="max-w-full max-h-full object-contain pointer-events-auto"
+                    controls
+                    autoPlay
+                    muted
+                    playsInline
+                  />
+                ) : (
+                  <img
+                    src={post.mediaUrls[lightboxIndex]}
+                    alt={`Ảnh ${lightboxIndex + 1} / ${post.mediaUrls.length}`}
+                    className="max-w-full max-h-full object-contain select-none"
+                  />
                 )}
               </div>
 
-              {/* Comments list */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 custom-scrollbar">
-                {loadingComments ? (
-                  <div className="flex justify-center py-6">
-                    <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              {/* Nav — left half */}
+              <div
+                className="absolute left-0 z-10 flex items-center pl-4"
+                style={{
+                  top: '52px',
+                  bottom: '0',
+                  width: '50%',
+                  cursor: lightboxIndex > 0 ? 'w-resize' : 'default',
+                }}
+                onClick={() => setLightboxIndex((prev) => Math.max(0, prev - 1))}
+              >
+                {lightboxIndex > 0 && (
+                  <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-lg">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 19l-7-7 7-7"
+                      />
+                    </svg>
                   </div>
-                ) : comments.length === 0 ? (
-                  <div className="text-center text-sm text-gray-400 py-6">
-                    Chưa có bình luận nào
+                )}
+              </div>
+
+              {/* Nav — right half */}
+              <div
+                className="absolute right-0 z-10 flex items-center justify-end pr-4"
+                style={{
+                  top: '52px',
+                  bottom: '0',
+                  width: '50%',
+                  cursor: lightboxIndex < post.mediaUrls.length - 1 ? 'e-resize' : 'default',
+                }}
+                onClick={() =>
+                  setLightboxIndex((prev) => Math.min(post.mediaUrls.length - 1, prev + 1))
+                }
+              >
+                {lightboxIndex < post.mediaUrls.length - 1 && (
+                  <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-lg">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
                   </div>
-                ) : (
-                  comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-2">
-                      {comment.authorPhotoURL ? (
-                        <img
-                          src={comment.authorPhotoURL}
-                          alt={comment.authorDisplayName}
-                          className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer"
-                          onClick={() => {
-                            goToProfile(comment.authorId);
-                            setLightboxOpen(false);
-                            setLightboxCommentOpen(false);
-                          }}
-                        />
-                      ) : (
-                        <div
-                          className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer"
-                          onClick={() => {
-                            goToProfile(comment.authorId);
-                            setLightboxOpen(false);
-                            setLightboxCommentOpen(false);
-                          }}
-                        >
-                          <span className="text-xs font-bold text-white">
-                            {(comment.authorDisplayName || 'U')[0].toUpperCase()}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="bg-gray-100 dark:bg-slate-800 rounded-2xl px-3 py-2">
-                          <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                            {comment.authorDisplayName}
-                          </div>
-                          <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
-                            {comment.content}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 px-2 text-xs font-semibold">
-                          <button
-                            onClick={() => void handleLikeComment(comment.id)}
-                            className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600' : 'text-gray-500'}`}
+                )}
+              </div>
+
+              {/* Dot indicators */}
+              {post.mediaUrls.length > 1 && (
+                <div
+                  className="absolute z-20 flex gap-2"
+                  style={{ bottom: '20px', left: '50%', transform: 'translateX(-50%)' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {post.mediaUrls.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setLightboxIndex(i)}
+                      className={`w-2 h-2 rounded-full transition-all ${
+                        i === lightboxIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/70'
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── COMMENT SIDEBAR ── */}
+            {lightboxCommentOpen && (
+              <div
+                className="w-80 bg-white dark:bg-slate-900 flex flex-col border-l border-gray-200 dark:border-slate-700"
+                style={{ animation: 'slideInRight 0.25s ease-out' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">Bình luận</span>
+                  <button
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
+                    onClick={() => setLightboxCommentOpen(false)}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Post caption */}
+                <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    {post.authorPhotoURL ? (
+                      <img
+                        src={post.authorPhotoURL}
+                        alt={post.authorDisplayName}
+                        className="w-8 h-8 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                        <span className="text-xs font-bold text-white">
+                          {(post.authorDisplayName || 'U')[0].toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                      {post.authorDisplayName}
+                    </span>
+                    <span className="text-xs text-gray-400">{formatTime(post.createdAt)}</span>
+                  </div>
+                  {post.content && (
+                    <p className="text-sm text-gray-700 dark:text-gray-300 leading-snug line-clamp-3">
+                      {post.content}
+                    </p>
+                  )}
+                </div>
+
+                {/* Comments list */}
+                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 custom-scrollbar">
+                  {loadingComments ? (
+                    <div className="flex justify-center py-6">
+                      <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : comments.length === 0 ? (
+                    <div className="text-center text-sm text-gray-400 py-6">
+                      Chưa có bình luận nào
+                    </div>
+                  ) : (
+                    comments.map((comment) => (
+                      <div key={comment.id} className="flex gap-2">
+                        {comment.authorPhotoURL ? (
+                          <img
+                            src={comment.authorPhotoURL}
+                            alt={comment.authorDisplayName}
+                            className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer"
+                            onClick={() => {
+                              goToProfile(comment.authorId);
+                              setLightboxOpen(false);
+                              setLightboxCommentOpen(false);
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer"
+                            onClick={() => {
+                              goToProfile(comment.authorId);
+                              setLightboxOpen(false);
+                              setLightboxCommentOpen(false);
+                            }}
                           >
-                            Thích
-                          </button>
-                          <span className="text-gray-400 font-normal">
-                            {comment.createdAt && formatTime(comment.createdAt)}
-                          </span>
-                          {comment.likeCount > 0 && (
-                            <span className="text-gray-400 font-normal">
-                              {comment.likeCount} ❤️
+                            <span className="text-xs font-bold text-white">
+                              {(comment.authorDisplayName || 'U')[0].toUpperCase()}
                             </span>
-                          )}
-                          {currentUserId === comment.authorId && (
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="bg-gray-100 dark:bg-slate-800 rounded-2xl px-3 py-2">
+                            <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                              {comment.authorDisplayName}
+                            </div>
+                            <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
+                              {comment.content}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 px-2 text-xs font-semibold">
                             <button
-                              onClick={() => void handleDeleteComment(comment.id)}
-                              className="text-gray-400 hover:text-red-500 ml-auto"
+                              onClick={() => void handleLikeComment(comment.id)}
+                              className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600' : 'text-gray-500'}`}
                             >
-                              Xóa
+                              Thích
                             </button>
-                          )}
+                            <span className="text-gray-400 font-normal">
+                              {comment.createdAt && formatTime(comment.createdAt)}
+                            </span>
+                            {comment.likeCount > 0 && (
+                              <span className="text-gray-400 font-normal">
+                                {comment.likeCount} ❤️
+                              </span>
+                            )}
+                            {currentUserId === comment.authorId && (
+                              <button
+                                onClick={() => void handleDeleteComment(comment.id)}
+                                className="text-gray-400 hover:text-red-500 ml-auto"
+                              >
+                                Xóa
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Comment input */}
-              <div className="px-4 py-3 border-t border-gray-200 dark:border-slate-700 flex-shrink-0">
-                <div className="flex gap-2">
-                  {user?.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt="You"
-                      className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                      <span className="text-xs font-bold text-white">
-                        {(user?.displayName || user?.email || 'U')[0].toUpperCase()}
-                      </span>
-                    </div>
+                    ))
                   )}
-                  <div className="flex-1 relative">
-                    <input
-                      ref={lightboxCommentRef}
-                      type="text"
-                      value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && void handleSubmitComment()}
-                      placeholder="Viết bình luận..."
-                      disabled={submittingComment}
-                      className="w-full bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 rounded-full px-4 py-2 pr-10 text-sm border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
-                    />
-                    <button
-                      onClick={() => void handleSubmitComment()}
-                      disabled={!commentText.trim() || submittingComment}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-cyan-600 hover:text-cyan-700 disabled:opacity-40"
-                    >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                      </svg>
-                    </button>
+                </div>
+
+                {/* Comment input */}
+                <div className="px-4 py-3 border-t border-gray-200 dark:border-slate-700 flex-shrink-0">
+                  <div className="flex gap-2">
+                    {user?.photoURL ? (
+                      <img
+                        src={user.photoURL}
+                        alt="You"
+                        className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                        <span className="text-xs font-bold text-white">
+                          {(user?.displayName || user?.email || 'U')[0].toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex-1 relative">
+                      <input
+                        ref={lightboxCommentRef}
+                        type="text"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && void handleSubmitComment()}
+                        placeholder="Viết bình luận..."
+                        disabled={submittingComment}
+                        className="w-full bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 rounded-full px-4 py-2 pr-10 text-sm border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+                      />
+                      <button
+                        onClick={() => void handleSubmitComment()}
+                        disabled={!commentText.trim() || submittingComment}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-cyan-600 hover:text-cyan-700 disabled:opacity-40"
+                      >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </>
