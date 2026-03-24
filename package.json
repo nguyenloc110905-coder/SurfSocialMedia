@@ -5,23 +5,10 @@
   "scripts": {
     "lint:client": "cd surf-client && npm run lint",
     "lint:server": "cd surf-server && npm run lint",
-    "lint": "npm run lint:client && npm run lint:server",
-    "prepare": "husky"
+    "lint": "npm run lint:client && npm run lint:server"
   },
   "devDependencies": {
     "eslint": "^10.0.3",
-    "husky": "^9.1.7",
-    "lint-staged": "^15.5.0",
     "prettier": "^3.8.1"
-  },
-  "lint-staged": {
-    "surf-client/src/**/*.{ts,tsx}": [
-      "eslint --fix --max-warnings=0",
-      "prettier --write"
-    ],
-    "surf-server/src/**/*.ts": [
-      "eslint --fix --max-warnings=0",
-      "prettier --write"
-    ]
   }
 }

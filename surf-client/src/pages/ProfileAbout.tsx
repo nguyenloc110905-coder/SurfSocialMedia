@@ -7,10 +7,10 @@ import {
   updateProfileFields,
 } from '@/lib/firebase/profile';
 
-// ─── Static suggestion data ────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Static suggestion data ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 const COMPANY_SUGGESTIONS = [
-  // ── Công nghệ thông tin / Phần mềm VN ──
+  // ΓöÇΓöÇ C├┤ng nghß╗ç th├┤ng tin / Phß║ºn mß╗üm VN ΓöÇΓöÇ
   'FPT Software',
   'FPT Corporation',
   'FPT Telecom',
@@ -45,7 +45,7 @@ const COMPANY_SUGGESTIONS = [
   'Framgia',
   'Base.vn',
   'MISA',
-  'Lạc Việt Computing',
+  'Lß║íc Viß╗çt Computing',
   'Bravo Software',
   'VCCorp',
   'Vietnamworks',
@@ -61,13 +61,13 @@ const COMPANY_SUGGESTIONS = [
   'Fujinet Systems',
   'OceanTech',
   'SmartDev',
-  'Đất Xanh Technology',
+  '─Éß║Ñt Xanh Technology',
   'HMS Vietnam',
   'Gameloft Vietnam',
   'Gear Inc.',
   'Hiker Games',
   'Topebox',
-  // ── E-commerce / Fintech / Giao vận ──
+  // ΓöÇΓöÇ E-commerce / Fintech / Giao vß║¡n ΓöÇΓöÇ
   'MoMo',
   'VNPay',
   'Moca',
@@ -86,11 +86,11 @@ const COMPANY_SUGGESTIONS = [
   'Be Group',
   'FastGo',
   'Ahamove',
-  'GHN (Giao Hàng Nhanh)',
+  'GHN (Giao H├áng Nhanh)',
   'GHTK',
   'Viettel Post',
   'Vietnam Post',
-  // ── Ngân hàng & Tài chính ──
+  // ΓöÇΓöÇ Ng├ón h├áng & T├ái ch├¡nh ΓöÇΓöÇ
   'Vietcombank',
   'BIDV',
   'Agribank',
@@ -111,22 +111,22 @@ const COMPANY_SUGGESTIONS = [
   'LienVietPostBank',
   'Nam A Bank',
   'BacABank',
-  'Bản Việt Bank',
+  'Bß║ún Viß╗çt Bank',
   'Manulife Vietnam',
   'Prudential Vietnam',
   'AIA Vietnam',
-  'Bảo Việt',
+  'Bß║úo Viß╗çt',
   'PVI Holdings',
-  'Bảo hiểm PTI',
+  'Bß║úo hiß╗âm PTI',
   'SSI Securities',
   'VPS Securities',
   'VCSC',
   'HSC Securities',
-  // ── Viễn thông ──
+  // ΓöÇΓöÇ Viß╗àn th├┤ng ΓöÇΓöÇ
   'Mobifone',
   'Reddi (Vietnamobile)',
   'Indochina Telecom',
-  // ── Tập đoàn & Sản xuất ──
+  // ΓöÇΓöÇ Tß║¡p ─æo├án & Sß║ún xuß║Ñt ΓöÇΓöÇ
   'VinGroup',
   'VinHomes',
   'VinFast',
@@ -136,70 +136,70 @@ const COMPANY_SUGGESTIONS = [
   'Vinamilk',
   'TH True Milk',
   'Masan Group',
-  'Hòa Phát Group',
-  'Trung Nguyên Legend',
+  'H├▓a Ph├ít Group',
+  'Trung Nguy├¬n Legend',
   'Highlands Coffee',
-  'Phúc Long Coffee',
+  'Ph├║c Long Coffee',
   "Biti's",
   'PetroVietnam (PVN)',
   'PVGas',
   'PVOil',
   'PVFCCo',
-  'EVN (Điện lực Việt Nam)',
+  'EVN (─Éiß╗çn lß╗▒c Viß╗çt Nam)',
   'Vinacomin',
   'Vicem',
   'Sabeco',
   'Habeco',
   'Unilever Vietnam',
   'P&G Vietnam',
-  'Nestlé Vietnam',
+  'Nestl├⌐ Vietnam',
   'Abbott Vietnam',
-  // ── Bất động sản & Xây dựng ──
+  // ΓöÇΓöÇ Bß║Ñt ─æß╗Öng sß║ún & X├óy dß╗▒ng ΓöÇΓöÇ
   'Novaland',
-  'Hưng Thịnh Land',
-  'Phát Đạt',
-  'Khải Hoàn Land',
+  'H╞░ng Thß╗ïnh Land',
+  'Ph├ít ─Éß║ít',
+  'Khß║úi Ho├án Land',
   'Nam Long Group',
-  'Đất Xanh Group',
+  '─Éß║Ñt Xanh Group',
   'Sunshine Homes',
   'Coteccons',
-  'Hòa Bình Corporation',
+  'H├▓a B├¼nh Corporation',
   'Ricons',
   'Delta',
-  // ── Bán lẻ & Tiêu dùng ──
-  'Thế Giới Di Động (MWG)',
-  'Điện Máy Xanh',
+  // ΓöÇΓöÇ B├ín lß║╗ & Ti├¬u d├╣ng ΓöÇΓöÇ
+  'Thß║┐ Giß╗¢i Di ─Éß╗Öng (MWG)',
+  '─Éiß╗çn M├íy Xanh',
   'FPT Shop',
   'Viettel Store',
   'Co.opMart',
   'VinMart / WinMart',
-  'Bách Hóa Xanh',
+  'B├ích H├│a Xanh',
   'Circle K Vietnam',
   'GS25 Vietnam',
   'Lotte Mart',
   'AEON Vietnam',
   'BigC (Central Group)',
-  // ── Y tế & Giáo dục ──
-  'Bệnh viện Vinmec',
-  'Bệnh viện Medlatec',
-  'Bệnh viện Thu Cúc',
+  // ΓöÇΓöÇ Y tß║┐ & Gi├ío dß╗Ñc ΓöÇΓöÇ
+  'Bß╗çnh viß╗çn Vinmec',
+  'Bß╗çnh viß╗çn Medlatec',
+  'Bß╗çnh viß╗çn Thu C├║c',
   'VUS',
-  'Anh văn Hội Việt Mỹ',
+  'Anh v─ân Hß╗Öi Viß╗çt Mß╗╣',
   'Apax English',
   'ZIM Academy',
   'IELTS Fighter',
-  // ── Truyền thông & PR ──
+  // ΓöÇΓöÇ Truyß╗ün th├┤ng & PR ΓöÇΓöÇ
   'VTV',
   'VTC',
   'HTV',
   'VnExpress',
-  'Báo Tuổi Trẻ',
-  'Báo Thanh Niên',
+  'B├ío Tuß╗òi Trß║╗',
+  'B├ío Thanh Ni├¬n',
   'Kenh14 (VCCorp)',
   'Zing.vn',
   'Dentsu Vietnam',
   'Ogilvy Vietnam',
-  // ── Đa quốc gia tại VN ──
+  // ΓöÇΓöÇ ─Éa quß╗æc gia tß║íi VN ΓöÇΓöÇ
   'Intel Products Vietnam',
   'Samsung Vietnam (SEV/SEVT)',
   'LG Electronics Vietnam',
@@ -222,7 +222,7 @@ const COMPANY_SUGGESTIONS = [
   'McKinsey Vietnam',
   'BCG Vietnam',
   'Accenture Vietnam',
-  // ── Quốc tế (toàn cầu) ──
+  // ΓöÇΓöÇ Quß╗æc tß║┐ (to├án cß║ºu) ΓöÇΓöÇ
   'Google',
   'Microsoft',
   'Meta',
@@ -249,145 +249,145 @@ const COMPANY_SUGGESTIONS = [
   'Uber',
   'SpaceX',
   'Tesla',
-  // ── Khác ──
-  'Freelancer / Tự do',
-  'Tự kinh doanh',
-  'Startup của riêng tôi',
-  'Đang tìm việc',
-  'Sinh viên / Học sinh',
-  'Về hưu',
+  // ΓöÇΓöÇ Kh├íc ΓöÇΓöÇ
+  'Freelancer / Tß╗▒ do',
+  'Tß╗▒ kinh doanh',
+  'Startup cß╗ºa ri├¬ng t├┤i',
+  '─Éang t├¼m viß╗çc',
+  'Sinh vi├¬n / Hß╗ìc sinh',
+  'Vß╗ü h╞░u',
 ];
 
 const SCHOOL_SUGGESTIONS = [
-  // ══ HÀ NỘI & MIỀN BẮC ══
-  'Đại học Bách khoa Hà Nội',
-  'Đại học Quốc gia Hà Nội',
-  'Đại học Khoa học Tự nhiên (ĐHQGHN)',
-  'Đại học Khoa học Xã hội và Nhân văn (ĐHQGHN)',
-  'Đại học Công nghệ (ĐHQGHN)',
-  'Đại học Kinh tế (ĐHQGHN)',
-  'Đại học Ngoại ngữ (ĐHQGHN)',
-  'Đại học Kinh tế Quốc dân',
-  'Đại học Ngoại thương',
-  'Đại học Luật Hà Nội',
-  'Đại học Sư phạm Hà Nội',
-  'Đại học Sư phạm Hà Nội 2',
-  'Đại học Giao thông Vận tải',
-  'Đại học Xây dựng Hà Nội',
-  'Đại học Thủy Lợi',
-  'Đại học Y Hà Nội',
-  'Đại học Dược Hà Nội',
-  'Đại học Y tế Công cộng',
-  'Học viện Nông nghiệp Việt Nam',
-  'Đại học Lâm nghiệp',
-  'Đại học Mỏ - Địa chất',
-  'Đại học Điện lực',
-  'Đại học Công nghiệp Hà Nội',
-  'Đại học Thương mại',
-  'Đại học Hà Nội (HANU)',
-  'Đại học Kiến trúc Hà Nội',
-  'Đại học Mỹ thuật Việt Nam',
-  'Học viện Âm nhạc Quốc gia Việt Nam',
-  'Đại học Văn hóa Hà Nội',
-  // Học viện Hà Nội
-  'Học viện Công nghệ Bưu chính Viễn thông (PTIT)',
-  'Học viện Kỹ thuật Quân sự',
-  'Học viện Hành chính Quốc gia',
-  'Học viện Tài chính',
-  'Học viện Ngân hàng',
-  'Học viện Báo chí và Tuyên truyền',
-  'Học viện Ngoại giao',
-  'Học viện Cảnh sát Nhân dân',
-  'Học viện An ninh Nhân dân',
-  // Tư thục Hà Nội
-  'Đại học FPT (Hà Nội)',
-  'Đại học Thăng Long',
-  'Đại học Đại Nam',
-  'Đại học Phương Đông',
-  'Đại học Kinh doanh và Công nghệ Hà Nội',
-  // Miền Bắc khác
-  'Đại học Hải Phòng',
-  'Đại học Hàng Hải Việt Nam',
-  'Đại học Sư phạm Kỹ thuật Hưng Yên',
-  'Đại học Công nghiệp Quảng Ninh',
-  'Đại học Thái Nguyên',
-  'Đại học Kỹ thuật Công nghiệp Thái Nguyên',
-  'Đại học Nông Lâm Thái Nguyên',
-  'Đại học Vinh',
-  'Đại học Sư phạm Kỹ thuật Vinh',
-  // ══ TP. HỒ CHÍ MINH & MIỀN NAM ══
-  'Đại học Quốc gia TP.HCM',
-  'Đại học Bách khoa TP.HCM',
-  'Đại học Khoa học Tự nhiên TP.HCM',
-  'Đại học Khoa học Xã hội và Nhân văn TP.HCM',
-  'Đại học Công nghệ Thông tin TP.HCM',
-  'Đại học Quốc tế (ĐHQG TP.HCM)',
-  'Đại học Kinh tế - Luật TP.HCM',
-  'Đại học Kinh tế TP.HCM (UEH)',
-  'Đại học Ngân hàng TP.HCM',
-  'Đại học Luật TP.HCM',
-  'Đại học Sư phạm TP.HCM',
-  'Đại học Sư phạm Kỹ thuật TP.HCM',
-  'Đại học Y Dược TP.HCM',
-  'Đại học Nông Lâm TP.HCM',
-  'Đại học Tôn Đức Thắng',
-  'Đại học Mở TP.HCM',
-  'Đại học Công nghiệp TP.HCM',
-  'Đại học Kiến trúc TP.HCM',
-  'Đại học Giao thông Vận tải TP.HCM',
-  'Đại học Tài chính - Marketing',
-  'Đại học Văn Lang',
-  'Đại học Hoa Sen',
-  'Đại học Nguyễn Tất Thành',
-  'Đại học Gia Định',
-  'Đại học Công nghệ Sài Gòn (STU)',
-  'Đại học Việt Đức (VGU)',
-  'Đại học RMIT Vietnam',
-  'Đại học BUV (British University Vietnam)',
-  'Đại học FPT (TP.HCM)',
-  'Đại học Lạc Hồng',
-  'Đại học Thủ Dầu Một',
-  'Đại học Bình Dương',
-  'Đại học Cần Thơ',
-  'Đại học An Giang',
-  'Đại học Tiền Giang',
-  'Đại học Trà Vinh',
-  'Đại học Kiên Giang',
-  // ══ ĐÀ NẴNG & MIỀN TRUNG ══
-  'Đại học Đà Nẵng',
-  'Đại học Bách khoa Đà Nẵng',
-  'Đại học Kinh tế Đà Nẵng',
-  'Đại học Sư phạm Đà Nẵng',
-  'Đại học Ngoại ngữ Đà Nẵng',
-  'Đại học Công nghệ Thông tin và Truyền thông Việt Hàn',
-  'Đại học FPT (Đà Nẵng)',
-  'Đại học Duy Tân',
-  'Đại học Đông Á',
-  'Đại học Huế',
-  'Đại học Khoa học (ĐH Huế)',
-  'Đại học Nông Lâm (ĐH Huế)',
-  'Đại học Y Dược Huế',
-  'Đại học Nha Trang',
-  'Đại học Tây Nguyên',
-  'Đại học Quy Nhơn',
-  'Đại học Phạm Văn Đồng (Quảng Ngãi)',
-  // ══ CAO ĐẲNG ══
-  'Cao đẳng FPT Polytechnic',
-  'Cao đẳng Công nghệ Thủ Đức',
-  'Cao đẳng Kỹ thuật Cao Thắng',
-  'Cao đẳng Kinh tế TP.HCM',
-  'Cao đẳng Công nghệ Thông tin TP.HCM',
-  'Cao đẳng Nghề Việt Nam - Hàn Quốc',
-  'Cao đẳng Kinh tế - Kỹ thuật Hà Nội',
-  'Cao đẳng Cộng đồng Hà Nội',
-  // ══ TRUNG HỌC ══
-  'THPT Chuyên (các tỉnh)',
+  // ΓòÉΓòÉ H├Ç Nß╗ÿI & MIß╗ÇN Bß║«C ΓòÉΓòÉ
+  '─Éß║íi hß╗ìc B├ích khoa H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc Quß╗æc gia H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc Khoa hß╗ìc Tß╗▒ nhi├¬n (─ÉHQGHN)',
+  '─Éß║íi hß╗ìc Khoa hß╗ìc X├ú hß╗Öi v├á Nh├ón v─ân (─ÉHQGHN)',
+  '─Éß║íi hß╗ìc C├┤ng nghß╗ç (─ÉHQGHN)',
+  '─Éß║íi hß╗ìc Kinh tß║┐ (─ÉHQGHN)',
+  '─Éß║íi hß╗ìc Ngoß║íi ngß╗» (─ÉHQGHN)',
+  '─Éß║íi hß╗ìc Kinh tß║┐ Quß╗æc d├ón',
+  '─Éß║íi hß╗ìc Ngoß║íi th╞░╞íng',
+  '─Éß║íi hß╗ìc Luß║¡t H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc S╞░ phß║ím H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc S╞░ phß║ím H├á Nß╗Öi 2',
+  '─Éß║íi hß╗ìc Giao th├┤ng Vß║¡n tß║úi',
+  '─Éß║íi hß╗ìc X├óy dß╗▒ng H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc Thß╗ºy Lß╗úi',
+  '─Éß║íi hß╗ìc Y H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc D╞░ß╗úc H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc Y tß║┐ C├┤ng cß╗Öng',
+  'Hß╗ìc viß╗çn N├┤ng nghiß╗çp Viß╗çt Nam',
+  '─Éß║íi hß╗ìc L├óm nghiß╗çp',
+  '─Éß║íi hß╗ìc Mß╗Å - ─Éß╗ïa chß║Ñt',
+  '─Éß║íi hß╗ìc ─Éiß╗çn lß╗▒c',
+  '─Éß║íi hß╗ìc C├┤ng nghiß╗çp H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc Th╞░╞íng mß║íi',
+  '─Éß║íi hß╗ìc H├á Nß╗Öi (HANU)',
+  '─Éß║íi hß╗ìc Kiß║┐n tr├║c H├á Nß╗Öi',
+  '─Éß║íi hß╗ìc Mß╗╣ thuß║¡t Viß╗çt Nam',
+  'Hß╗ìc viß╗çn ├ém nhß║íc Quß╗æc gia Viß╗çt Nam',
+  '─Éß║íi hß╗ìc V─ân h├│a H├á Nß╗Öi',
+  // Hß╗ìc viß╗çn H├á Nß╗Öi
+  'Hß╗ìc viß╗çn C├┤ng nghß╗ç B╞░u ch├¡nh Viß╗àn th├┤ng (PTIT)',
+  'Hß╗ìc viß╗çn Kß╗╣ thuß║¡t Qu├ón sß╗▒',
+  'Hß╗ìc viß╗çn H├ánh ch├¡nh Quß╗æc gia',
+  'Hß╗ìc viß╗çn T├ái ch├¡nh',
+  'Hß╗ìc viß╗çn Ng├ón h├áng',
+  'Hß╗ìc viß╗çn B├ío ch├¡ v├á Tuy├¬n truyß╗ün',
+  'Hß╗ìc viß╗çn Ngoß║íi giao',
+  'Hß╗ìc viß╗çn Cß║únh s├ít Nh├ón d├ón',
+  'Hß╗ìc viß╗çn An ninh Nh├ón d├ón',
+  // T╞░ thß╗Ñc H├á Nß╗Öi
+  '─Éß║íi hß╗ìc FPT (H├á Nß╗Öi)',
+  '─Éß║íi hß╗ìc Th─âng Long',
+  '─Éß║íi hß╗ìc ─Éß║íi Nam',
+  '─Éß║íi hß╗ìc Ph╞░╞íng ─É├┤ng',
+  '─Éß║íi hß╗ìc Kinh doanh v├á C├┤ng nghß╗ç H├á Nß╗Öi',
+  // Miß╗ün Bß║»c kh├íc
+  '─Éß║íi hß╗ìc Hß║úi Ph├▓ng',
+  '─Éß║íi hß╗ìc H├áng Hß║úi Viß╗çt Nam',
+  '─Éß║íi hß╗ìc S╞░ phß║ím Kß╗╣ thuß║¡t H╞░ng Y├¬n',
+  '─Éß║íi hß╗ìc C├┤ng nghiß╗çp Quß║úng Ninh',
+  '─Éß║íi hß╗ìc Th├íi Nguy├¬n',
+  '─Éß║íi hß╗ìc Kß╗╣ thuß║¡t C├┤ng nghiß╗çp Th├íi Nguy├¬n',
+  '─Éß║íi hß╗ìc N├┤ng L├óm Th├íi Nguy├¬n',
+  '─Éß║íi hß╗ìc Vinh',
+  '─Éß║íi hß╗ìc S╞░ phß║ím Kß╗╣ thuß║¡t Vinh',
+  // ΓòÉΓòÉ TP. Hß╗Æ CH├ì MINH & MIß╗ÇN NAM ΓòÉΓòÉ
+  '─Éß║íi hß╗ìc Quß╗æc gia TP.HCM',
+  '─Éß║íi hß╗ìc B├ích khoa TP.HCM',
+  '─Éß║íi hß╗ìc Khoa hß╗ìc Tß╗▒ nhi├¬n TP.HCM',
+  '─Éß║íi hß╗ìc Khoa hß╗ìc X├ú hß╗Öi v├á Nh├ón v─ân TP.HCM',
+  '─Éß║íi hß╗ìc C├┤ng nghß╗ç Th├┤ng tin TP.HCM',
+  '─Éß║íi hß╗ìc Quß╗æc tß║┐ (─ÉHQG TP.HCM)',
+  '─Éß║íi hß╗ìc Kinh tß║┐ - Luß║¡t TP.HCM',
+  '─Éß║íi hß╗ìc Kinh tß║┐ TP.HCM (UEH)',
+  '─Éß║íi hß╗ìc Ng├ón h├áng TP.HCM',
+  '─Éß║íi hß╗ìc Luß║¡t TP.HCM',
+  '─Éß║íi hß╗ìc S╞░ phß║ím TP.HCM',
+  '─Éß║íi hß╗ìc S╞░ phß║ím Kß╗╣ thuß║¡t TP.HCM',
+  '─Éß║íi hß╗ìc Y D╞░ß╗úc TP.HCM',
+  '─Éß║íi hß╗ìc N├┤ng L├óm TP.HCM',
+  '─Éß║íi hß╗ìc T├┤n ─Éß╗⌐c Thß║»ng',
+  '─Éß║íi hß╗ìc Mß╗ƒ TP.HCM',
+  '─Éß║íi hß╗ìc C├┤ng nghiß╗çp TP.HCM',
+  '─Éß║íi hß╗ìc Kiß║┐n tr├║c TP.HCM',
+  '─Éß║íi hß╗ìc Giao th├┤ng Vß║¡n tß║úi TP.HCM',
+  '─Éß║íi hß╗ìc T├ái ch├¡nh - Marketing',
+  '─Éß║íi hß╗ìc V─ân Lang',
+  '─Éß║íi hß╗ìc Hoa Sen',
+  '─Éß║íi hß╗ìc Nguyß╗àn Tß║Ñt Th├ánh',
+  '─Éß║íi hß╗ìc Gia ─Éß╗ïnh',
+  '─Éß║íi hß╗ìc C├┤ng nghß╗ç S├ái G├▓n (STU)',
+  '─Éß║íi hß╗ìc Viß╗çt ─Éß╗⌐c (VGU)',
+  '─Éß║íi hß╗ìc RMIT Vietnam',
+  '─Éß║íi hß╗ìc BUV (British University Vietnam)',
+  '─Éß║íi hß╗ìc FPT (TP.HCM)',
+  '─Éß║íi hß╗ìc Lß║íc Hß╗ông',
+  '─Éß║íi hß╗ìc Thß╗º Dß║ºu Mß╗Öt',
+  '─Éß║íi hß╗ìc B├¼nh D╞░╞íng',
+  '─Éß║íi hß╗ìc Cß║ºn Th╞í',
+  '─Éß║íi hß╗ìc An Giang',
+  '─Éß║íi hß╗ìc Tiß╗ün Giang',
+  '─Éß║íi hß╗ìc Tr├á Vinh',
+  '─Éß║íi hß╗ìc Ki├¬n Giang',
+  // ΓòÉΓòÉ ─É├Ç Nß║┤NG & MIß╗ÇN TRUNG ΓòÉΓòÉ
+  '─Éß║íi hß╗ìc ─É├á Nß║╡ng',
+  '─Éß║íi hß╗ìc B├ích khoa ─É├á Nß║╡ng',
+  '─Éß║íi hß╗ìc Kinh tß║┐ ─É├á Nß║╡ng',
+  '─Éß║íi hß╗ìc S╞░ phß║ím ─É├á Nß║╡ng',
+  '─Éß║íi hß╗ìc Ngoß║íi ngß╗» ─É├á Nß║╡ng',
+  '─Éß║íi hß╗ìc C├┤ng nghß╗ç Th├┤ng tin v├á Truyß╗ün th├┤ng Viß╗çt H├án',
+  '─Éß║íi hß╗ìc FPT (─É├á Nß║╡ng)',
+  '─Éß║íi hß╗ìc Duy T├ón',
+  '─Éß║íi hß╗ìc ─É├┤ng ├ü',
+  '─Éß║íi hß╗ìc Huß║┐',
+  '─Éß║íi hß╗ìc Khoa hß╗ìc (─ÉH Huß║┐)',
+  '─Éß║íi hß╗ìc N├┤ng L├óm (─ÉH Huß║┐)',
+  '─Éß║íi hß╗ìc Y D╞░ß╗úc Huß║┐',
+  '─Éß║íi hß╗ìc Nha Trang',
+  '─Éß║íi hß╗ìc T├óy Nguy├¬n',
+  '─Éß║íi hß╗ìc Quy Nh╞ín',
+  '─Éß║íi hß╗ìc Phß║ím V─ân ─Éß╗ông (Quß║úng Ng├úi)',
+  // ΓòÉΓòÉ CAO ─Éß║▓NG ΓòÉΓòÉ
+  'Cao ─æß║│ng FPT Polytechnic',
+  'Cao ─æß║│ng C├┤ng nghß╗ç Thß╗º ─Éß╗⌐c',
+  'Cao ─æß║│ng Kß╗╣ thuß║¡t Cao Thß║»ng',
+  'Cao ─æß║│ng Kinh tß║┐ TP.HCM',
+  'Cao ─æß║│ng C├┤ng nghß╗ç Th├┤ng tin TP.HCM',
+  'Cao ─æß║│ng Nghß╗ü Viß╗çt Nam - H├án Quß╗æc',
+  'Cao ─æß║│ng Kinh tß║┐ - Kß╗╣ thuß║¡t H├á Nß╗Öi',
+  'Cao ─æß║│ng Cß╗Öng ─æß╗ông H├á Nß╗Öi',
+  // ΓòÉΓòÉ TRUNG Hß╗îC ΓòÉΓòÉ
+  'THPT Chuy├¬n (c├íc tß╗ënh)',
   'THPT Hanoi - Amsterdam',
-  'THPT Chu Văn An (Hà Nội)',
-  'THPT Lê Hồng Phong (TP.HCM)',
-  'THPT Chuyên Trần Đại Nghĩa (TP.HCM)',
-  'Trường Quốc tế (International School)',
-  // ══ QUỐC TẾ ══
+  'THPT Chu V─ân An (H├á Nß╗Öi)',
+  'THPT L├¬ Hß╗ông Phong (TP.HCM)',
+  'THPT Chuy├¬n Trß║ºn ─Éß║íi Ngh─⌐a (TP.HCM)',
+  'Tr╞░ß╗¥ng Quß╗æc tß║┐ (International School)',
+  // ΓòÉΓòÉ QUß╗ÉC Tß║╛ ΓòÉΓòÉ
   'Harvard University',
   'MIT',
   'Stanford University',
@@ -407,150 +407,150 @@ const SCHOOL_SUGGESTIONS = [
 ];
 
 const DEGREE_SUGGESTIONS = [
-  // ── Bằng cấp ──
-  'Cử nhân',
-  'Kỹ sư',
-  'Thạc sĩ',
-  'Tiến sĩ',
-  'Cao đẳng',
-  'Trung cấp',
-  'Liên thông Đại học',
-  'Văn bằng 2',
-  // ── CNTT & Kỹ thuật số ──
-  'Công nghệ Thông tin',
-  'Kỹ thuật Phần mềm',
-  'Khoa học Máy tính',
-  'Hệ thống Thông tin',
-  'Trí tuệ Nhân tạo',
-  'Khoa học Dữ liệu',
-  'An toàn Thông tin (Cyber Security)',
-  'Mạng Máy tính và Truyền thông',
-  'Kỹ thuật Máy tính',
+  // ΓöÇΓöÇ Bß║▒ng cß║Ñp ΓöÇΓöÇ
+  'Cß╗¡ nh├ón',
+  'Kß╗╣ s╞░',
+  'Thß║íc s─⌐',
+  'Tiß║┐n s─⌐',
+  'Cao ─æß║│ng',
+  'Trung cß║Ñp',
+  'Li├¬n th├┤ng ─Éß║íi hß╗ìc',
+  'V─ân bß║▒ng 2',
+  // ΓöÇΓöÇ CNTT & Kß╗╣ thuß║¡t sß╗æ ΓöÇΓöÇ
+  'C├┤ng nghß╗ç Th├┤ng tin',
+  'Kß╗╣ thuß║¡t Phß║ºn mß╗üm',
+  'Khoa hß╗ìc M├íy t├¡nh',
+  'Hß╗ç thß╗æng Th├┤ng tin',
+  'Tr├¡ tuß╗ç Nh├ón tß║ío',
+  'Khoa hß╗ìc Dß╗» liß╗çu',
+  'An to├án Th├┤ng tin (Cyber Security)',
+  'Mß║íng M├íy t├¡nh v├á Truyß╗ün th├┤ng',
+  'Kß╗╣ thuß║¡t M├íy t├¡nh',
   'Internet of Things (IoT)',
-  'Thiết kế Game',
-  'Công nghệ Thông tin (Tiếng Anh)',
-  // ── Kỹ thuật ──
-  'Kỹ thuật Điện tử Viễn thông',
-  'Kỹ thuật Điện - Điện tử',
-  'Kỹ thuật Điều khiển và Tự động hóa',
-  'Kỹ thuật Cơ điện tử',
-  'Kỹ thuật Cơ khí',
-  'Kỹ thuật Ô tô',
-  'Kỹ thuật Hàng không',
-  'Kỹ thuật Xây dựng',
-  'Kỹ thuật Môi trường',
-  'Kỹ thuật Hóa học',
-  'Kỹ thuật Nhiệt',
-  'Kỹ thuật Dầu khí',
-  'Kỹ thuật Địa chất',
-  'Kỹ thuật Giao thông',
-  'Kỹ thuật Y sinh',
-  // ── Kinh tế & Quản trị ──
-  'Quản trị Kinh doanh (BBA)',
-  'Quản trị Kinh doanh (MBA)',
-  'Kinh tế',
-  'Kinh tế Quốc tế',
-  'Kinh tế Phát triển',
-  'Tài chính - Ngân hàng',
-  'Tài chính Doanh nghiệp',
-  'Kế toán',
-  'Kiểm toán',
-  'Kế toán - Kiểm toán',
+  'Thiß║┐t kß║┐ Game',
+  'C├┤ng nghß╗ç Th├┤ng tin (Tiß║┐ng Anh)',
+  // ΓöÇΓöÇ Kß╗╣ thuß║¡t ΓöÇΓöÇ
+  'Kß╗╣ thuß║¡t ─Éiß╗çn tß╗¡ Viß╗àn th├┤ng',
+  'Kß╗╣ thuß║¡t ─Éiß╗çn - ─Éiß╗çn tß╗¡',
+  'Kß╗╣ thuß║¡t ─Éiß╗üu khiß╗ân v├á Tß╗▒ ─æß╗Öng h├│a',
+  'Kß╗╣ thuß║¡t C╞í ─æiß╗çn tß╗¡',
+  'Kß╗╣ thuß║¡t C╞í kh├¡',
+  'Kß╗╣ thuß║¡t ├ö t├┤',
+  'Kß╗╣ thuß║¡t H├áng kh├┤ng',
+  'Kß╗╣ thuß║¡t X├óy dß╗▒ng',
+  'Kß╗╣ thuß║¡t M├┤i tr╞░ß╗¥ng',
+  'Kß╗╣ thuß║¡t H├│a hß╗ìc',
+  'Kß╗╣ thuß║¡t Nhiß╗çt',
+  'Kß╗╣ thuß║¡t Dß║ºu kh├¡',
+  'Kß╗╣ thuß║¡t ─Éß╗ïa chß║Ñt',
+  'Kß╗╣ thuß║¡t Giao th├┤ng',
+  'Kß╗╣ thuß║¡t Y sinh',
+  // ΓöÇΓöÇ Kinh tß║┐ & Quß║ún trß╗ï ΓöÇΓöÇ
+  'Quß║ún trß╗ï Kinh doanh (BBA)',
+  'Quß║ún trß╗ï Kinh doanh (MBA)',
+  'Kinh tß║┐',
+  'Kinh tß║┐ Quß╗æc tß║┐',
+  'Kinh tß║┐ Ph├ít triß╗ân',
+  'T├ái ch├¡nh - Ng├ón h├áng',
+  'T├ái ch├¡nh Doanh nghiß╗çp',
+  'Kß║┐ to├ín',
+  'Kiß╗âm to├ín',
+  'Kß║┐ to├ín - Kiß╗âm to├ín',
   'Marketing',
-  'Quản trị Marketing',
+  'Quß║ún trß╗ï Marketing',
   'Digital Marketing',
-  'Thương mại Điện tử',
-  'Kinh doanh Quốc tế',
-  'Logistics và Quản lý Chuỗi cung ứng',
-  'Quản trị Nhân lực',
-  'Quản lý Dự án',
-  'Khởi nghiệp và Đổi mới sáng tạo',
-  // ── Luật ──
-  'Luật',
-  'Luật Kinh tế',
-  'Luật Quốc tế',
-  'Luật Dân sự',
-  'Quản lý Nhà nước',
-  'Hành chính Công',
-  // ── Ngoại ngữ ──
-  'Ngôn ngữ Anh',
-  'Ngôn ngữ Nhật',
-  'Ngôn ngữ Hàn',
-  'Ngôn ngữ Trung',
-  'Ngôn ngữ Pháp',
-  'Ngôn ngữ Đức',
-  'Ngôn ngữ Nga',
-  'Biên - Phiên dịch Anh',
-  'Sư phạm Tiếng Anh',
-  // ── Y - Dược ──
-  'Y đa khoa',
-  'Răng Hàm Mặt',
-  'Y học dự phòng',
-  'Điều dưỡng',
-  'Dược học',
-  'Y tế Công cộng',
-  'Kỹ thuật Xét nghiệm Y học',
-  'Kỹ thuật Hình ảnh Y học',
-  'Phục hồi Chức năng',
-  // ── Sư phạm ──
-  'Sư phạm Toán',
-  'Sư phạm Vật lý',
-  'Sư phạm Hóa học',
-  'Sư phạm Ngữ văn',
-  'Sư phạm Lịch sử',
-  'Sư phạm Địa lý',
-  'Giáo dục Tiểu học',
-  'Giáo dục Mầm non',
-  'Giáo dục Đặc biệt',
-  'Tâm lý Giáo dục',
-  'Công tác Xã hội',
-  'Xã hội học',
-  'Tâm lý học',
-  // ── Kiến trúc & Thiết kế ──
-  'Kiến trúc',
-  'Quy hoạch Đô thị',
-  'Thiết kế Đồ họa',
-  'Thiết kế Nội thất',
-  'Thiết kế Công nghiệp',
-  'Thiết kế Thời trang',
-  'Mỹ thuật Ứng dụng',
-  'Nghệ thuật Số',
-  // ── Truyền thông ──
-  'Báo chí',
-  'Truyền thông Đa phương tiện',
-  'Quan hệ Công chúng (PR)',
-  'Quảng cáo',
-  'Xuất bản',
-  // ── Nông - Lâm - Ngư ──
-  'Nông học',
-  'Chăn nuôi Thú y',
-  'Thủy sản',
-  'Lâm nghiệp',
-  'Công nghệ Thực phẩm',
-  'Công nghệ Sinh học',
-  'Môi trường',
-  // ── Du lịch & Khách sạn ──
-  'Quản trị Du lịch - Lữ hành',
-  'Quản trị Khách sạn',
-  'Ẩm thực (Culinary Arts)',
-  'Quản trị Nhà hàng',
-  // ── Khoa học tự nhiên ──
-  'Toán học',
-  'Vật lý',
-  'Hóa học',
-  'Sinh học',
-  'Địa lý',
-  'Khoa học Vật liệu',
-  'Địa chất học',
-  // ── Khác ──
-  'Thể dục Thể thao',
-  'Âm nhạc',
-  'Điện ảnh',
-  'Sân khấu',
-  'Khác',
+  'Th╞░╞íng mß║íi ─Éiß╗çn tß╗¡',
+  'Kinh doanh Quß╗æc tß║┐',
+  'Logistics v├á Quß║ún l├╜ Chuß╗ùi cung ß╗⌐ng',
+  'Quß║ún trß╗ï Nh├ón lß╗▒c',
+  'Quß║ún l├╜ Dß╗▒ ├ín',
+  'Khß╗ƒi nghiß╗çp v├á ─Éß╗òi mß╗¢i s├íng tß║ío',
+  // ΓöÇΓöÇ Luß║¡t ΓöÇΓöÇ
+  'Luß║¡t',
+  'Luß║¡t Kinh tß║┐',
+  'Luß║¡t Quß╗æc tß║┐',
+  'Luß║¡t D├ón sß╗▒',
+  'Quß║ún l├╜ Nh├á n╞░ß╗¢c',
+  'H├ánh ch├¡nh C├┤ng',
+  // ΓöÇΓöÇ Ngoß║íi ngß╗» ΓöÇΓöÇ
+  'Ng├┤n ngß╗» Anh',
+  'Ng├┤n ngß╗» Nhß║¡t',
+  'Ng├┤n ngß╗» H├án',
+  'Ng├┤n ngß╗» Trung',
+  'Ng├┤n ngß╗» Ph├íp',
+  'Ng├┤n ngß╗» ─Éß╗⌐c',
+  'Ng├┤n ngß╗» Nga',
+  'Bi├¬n - Phi├¬n dß╗ïch Anh',
+  'S╞░ phß║ím Tiß║┐ng Anh',
+  // ΓöÇΓöÇ Y - D╞░ß╗úc ΓöÇΓöÇ
+  'Y ─æa khoa',
+  'R─âng H├ám Mß║╖t',
+  'Y hß╗ìc dß╗▒ ph├▓ng',
+  '─Éiß╗üu d╞░ß╗íng',
+  'D╞░ß╗úc hß╗ìc',
+  'Y tß║┐ C├┤ng cß╗Öng',
+  'Kß╗╣ thuß║¡t X├⌐t nghiß╗çm Y hß╗ìc',
+  'Kß╗╣ thuß║¡t H├¼nh ß║únh Y hß╗ìc',
+  'Phß╗Ñc hß╗ôi Chß╗⌐c n─âng',
+  // ΓöÇΓöÇ S╞░ phß║ím ΓöÇΓöÇ
+  'S╞░ phß║ím To├ín',
+  'S╞░ phß║ím Vß║¡t l├╜',
+  'S╞░ phß║ím H├│a hß╗ìc',
+  'S╞░ phß║ím Ngß╗» v─ân',
+  'S╞░ phß║ím Lß╗ïch sß╗¡',
+  'S╞░ phß║ím ─Éß╗ïa l├╜',
+  'Gi├ío dß╗Ñc Tiß╗âu hß╗ìc',
+  'Gi├ío dß╗Ñc Mß║ºm non',
+  'Gi├ío dß╗Ñc ─Éß║╖c biß╗çt',
+  'T├óm l├╜ Gi├ío dß╗Ñc',
+  'C├┤ng t├íc X├ú hß╗Öi',
+  'X├ú hß╗Öi hß╗ìc',
+  'T├óm l├╜ hß╗ìc',
+  // ΓöÇΓöÇ Kiß║┐n tr├║c & Thiß║┐t kß║┐ ΓöÇΓöÇ
+  'Kiß║┐n tr├║c',
+  'Quy hoß║ích ─É├┤ thß╗ï',
+  'Thiß║┐t kß║┐ ─Éß╗ô hß╗ìa',
+  'Thiß║┐t kß║┐ Nß╗Öi thß║Ñt',
+  'Thiß║┐t kß║┐ C├┤ng nghiß╗çp',
+  'Thiß║┐t kß║┐ Thß╗¥i trang',
+  'Mß╗╣ thuß║¡t ß╗¿ng dß╗Ñng',
+  'Nghß╗ç thuß║¡t Sß╗æ',
+  // ΓöÇΓöÇ Truyß╗ün th├┤ng ΓöÇΓöÇ
+  'B├ío ch├¡',
+  'Truyß╗ün th├┤ng ─Éa ph╞░╞íng tiß╗çn',
+  'Quan hß╗ç C├┤ng ch├║ng (PR)',
+  'Quß║úng c├ío',
+  'Xuß║Ñt bß║ún',
+  // ΓöÇΓöÇ N├┤ng - L├óm - Ng╞░ ΓöÇΓöÇ
+  'N├┤ng hß╗ìc',
+  'Ch─ân nu├┤i Th├║ y',
+  'Thß╗ºy sß║ún',
+  'L├óm nghiß╗çp',
+  'C├┤ng nghß╗ç Thß╗▒c phß║⌐m',
+  'C├┤ng nghß╗ç Sinh hß╗ìc',
+  'M├┤i tr╞░ß╗¥ng',
+  // ΓöÇΓöÇ Du lß╗ïch & Kh├ích sß║ín ΓöÇΓöÇ
+  'Quß║ún trß╗ï Du lß╗ïch - Lß╗» h├ánh',
+  'Quß║ún trß╗ï Kh├ích sß║ín',
+  'ß║¿m thß╗▒c (Culinary Arts)',
+  'Quß║ún trß╗ï Nh├á h├áng',
+  // ΓöÇΓöÇ Khoa hß╗ìc tß╗▒ nhi├¬n ΓöÇΓöÇ
+  'To├ín hß╗ìc',
+  'Vß║¡t l├╜',
+  'H├│a hß╗ìc',
+  'Sinh hß╗ìc',
+  '─Éß╗ïa l├╜',
+  'Khoa hß╗ìc Vß║¡t liß╗çu',
+  '─Éß╗ïa chß║Ñt hß╗ìc',
+  // ΓöÇΓöÇ Kh├íc ΓöÇΓöÇ
+  'Thß╗â dß╗Ñc Thß╗â thao',
+  '├ém nhß║íc',
+  '─Éiß╗çn ß║únh',
+  'S├ón khß║Ñu',
+  'Kh├íc',
 ];
 
-// ─── AutocompleteInput component ───────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ AutocompleteInput component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 type SuggestionMode = { type: 'static'; list: string[] } | { type: 'location' }; // uses Nominatim OpenStreetMap API
 
@@ -578,7 +578,7 @@ function AutocompleteInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // ── Close on outside click ──
+  // ΓöÇΓöÇ Close on outside click ΓöÇΓöÇ
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -589,7 +589,7 @@ function AutocompleteInput({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ── Fetch / filter suggestions on input change ──
+  // ΓöÇΓöÇ Fetch / filter suggestions on input change ΓöÇΓöÇ
   const fetchSuggestions = useCallback(
     async (q: string) => {
       const trimmed = q.trim();
@@ -608,7 +608,7 @@ function AutocompleteInput({
         return;
       }
 
-      // Location mode — Nominatim
+      // Location mode ΓÇö Nominatim
       setLoading(true);
       try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(trimmed)}&addressdetails=1&limit=8&accept-language=vi`;
@@ -716,7 +716,7 @@ function AutocompleteInput({
         )}
         {!loading && mode.type === 'location' && (
           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-base pointer-events-none">
-            📍
+            ≡ƒôì
           </span>
         )}
       </div>
@@ -738,7 +738,7 @@ function AutocompleteInput({
                 }`}
             >
               <span className="shrink-0 text-base">
-                {mode.type === 'location' ? '📍' : mode.list === SCHOOL_SUGGESTIONS ? '🎓' : '🏢'}
+                {mode.type === 'location' ? '≡ƒôì' : mode.list === SCHOOL_SUGGESTIONS ? '≡ƒÄô' : '≡ƒÅó'}
               </span>
               <span className="truncate">{s}</span>
             </li>
@@ -749,7 +749,7 @@ function AutocompleteInput({
   );
 }
 
-// ─── AutocompleteInlineEdit — like InlineEdit but with autocomplete ─────────
+// ΓöÇΓöÇΓöÇ AutocompleteInlineEdit ΓÇö like InlineEdit but with autocomplete ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function AutocompleteInlineEdit({
   label,
@@ -795,7 +795,7 @@ function AutocompleteInlineEdit({
           onClick={onCancel}
           className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
         >
-          Hủy
+          Hß╗ºy
         </button>
         <button
           type="button"
@@ -803,14 +803,14 @@ function AutocompleteInlineEdit({
           disabled={saving}
           className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 transition-colors font-medium"
         >
-          {saving ? 'Đang lưu...' : 'Lưu'}
+          {saving ? '─Éang l╞░u...' : 'L╞░u'}
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Types ─────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Types ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 type Section = 'overview' | 'work_edu' | 'places' | 'contact' | 'basic' | 'life';
 
@@ -821,80 +821,80 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: 'overview', label: 'Tổng quan', icon: '🌊' },
-  { id: 'work_edu', label: 'Công việc & Học vấn', icon: '💼' },
-  { id: 'places', label: 'Địa điểm', icon: '📍' },
-  { id: 'contact', label: 'Liên hệ & Mạng xã hội', icon: '📱' },
-  { id: 'basic', label: 'Thông tin cơ bản', icon: '🌐' },
-  { id: 'life', label: 'Sự kiện cuộc đời', icon: '⭐' },
+  { id: 'overview', label: 'Tß╗òng quan', icon: '≡ƒîè' },
+  { id: 'work_edu', label: 'C├┤ng viß╗çc & Hß╗ìc vß║Ñn', icon: '≡ƒÆ╝' },
+  { id: 'places', label: '─Éß╗ïa ─æiß╗âm', icon: '≡ƒôì' },
+  { id: 'contact', label: 'Li├¬n hß╗ç & Mß║íng x├ú hß╗Öi', icon: '≡ƒô▒' },
+  { id: 'basic', label: 'Th├┤ng tin c╞í bß║ún', icon: '≡ƒîÉ' },
+  { id: 'life', label: 'Sß╗▒ kiß╗çn cuß╗Öc ─æß╗¥i', icon: 'Γ¡É' },
 ];
 
 const RELATIONSHIP_OPTIONS = [
-  { value: 'single', label: 'Độc thân' },
-  { value: 'in_relationship', label: 'Đang hẹn hò' },
-  { value: 'engaged', label: 'Đã đính hôn' },
-  { value: 'married', label: 'Đã kết hôn' },
-  { value: 'complicated', label: 'Phức tạp' },
-  { value: 'separated', label: 'Đã ly thân' },
-  { value: 'divorced', label: 'Đã ly hôn' },
-  { value: 'widowed', label: 'Góa bụa' },
+  { value: 'single', label: '─Éß╗Öc th├ón' },
+  { value: 'in_relationship', label: '─Éang hß║╣n h├▓' },
+  { value: 'engaged', label: '─É├ú ─æ├¡nh h├┤n' },
+  { value: 'married', label: '─É├ú kß║┐t h├┤n' },
+  { value: 'complicated', label: 'Phß╗⌐c tß║íp' },
+  { value: 'separated', label: '─É├ú ly th├ón' },
+  { value: 'divorced', label: '─É├ú ly h├┤n' },
+  { value: 'widowed', label: 'G├│a bß╗Ña' },
 ];
 
 const GENDER_OPTIONS = [
   { value: 'male', label: 'Nam' },
-  { value: 'female', label: 'Nữ' },
-  { value: 'custom', label: 'Tùy chỉnh' },
+  { value: 'female', label: 'Nß╗»' },
+  { value: 'custom', label: 'T├╣y chß╗ënh' },
 ];
 
 const LANGUAGE_OPTIONS = [
-  'Tiếng Việt',
+  'Tiß║┐ng Viß╗çt',
   'English',
-  'Tiếng Trung',
-  '日本語',
-  '한국어',
-  'Français',
+  'Tiß║┐ng Trung',
+  'µùÑµ£¼Φ¬₧',
+  'φò£Ω╡¡∞û┤',
+  'Fran├ºais',
   'Deutsch',
-  'Español',
-  'ภาษาไทย',
+  'Espa├▒ol',
+  'α╕áα╕▓α╕⌐α╕▓α╣äα╕ùα╕ó',
   'Bahasa Indonesia',
 ];
 
 const RELIGION_OPTIONS = [
-  'Thiên Chúa giáo',
-  'Phật giáo',
-  'Hồi giáo',
-  'Đạo Tin Lành',
-  'Ấn Độ giáo',
-  'Do Thái giáo',
-  'Không tôn giáo',
-  'Khác',
+  'Thi├¬n Ch├║a gi├ío',
+  'Phß║¡t gi├ío',
+  'Hß╗ôi gi├ío',
+  '─Éß║ío Tin L├ánh',
+  'ß║ñn ─Éß╗Ö gi├ío',
+  'Do Th├íi gi├ío',
+  'Kh├┤ng t├┤n gi├ío',
+  'Kh├íc',
 ];
 
-const POLITICAL_OPTIONS = ['Tự do', 'Bảo thủ', 'Ôn hòa', 'Cấp tiến', 'Trung lập', 'Khác'];
+const POLITICAL_OPTIONS = ['Tß╗▒ do', 'Bß║úo thß╗º', '├ön h├▓a', 'Cß║Ñp tiß║┐n', 'Trung lß║¡p', 'Kh├íc'];
 
 const MONTHS = [
-  'Tháng 1',
-  'Tháng 2',
-  'Tháng 3',
-  'Tháng 4',
-  'Tháng 5',
-  'Tháng 6',
-  'Tháng 7',
-  'Tháng 8',
-  'Tháng 9',
-  'Tháng 10',
-  'Tháng 11',
-  'Tháng 12',
+  'Th├íng 1',
+  'Th├íng 2',
+  'Th├íng 3',
+  'Th├íng 4',
+  'Th├íng 5',
+  'Th├íng 6',
+  'Th├íng 7',
+  'Th├íng 8',
+  'Th├íng 9',
+  'Th├íng 10',
+  'Th├íng 11',
+  'Th├íng 12',
 ];
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function relationshipLabel(val?: string | null) {
   return RELATIONSHIP_OPTIONS.find((r) => r.value === val)?.label ?? '';
 }
 
 function genderLabel(val?: string | null, custom?: string | null) {
-  if (val === 'custom') return custom || 'Tùy chỉnh';
+  if (val === 'custom') return custom || 'T├╣y chß╗ënh';
   return GENDER_OPTIONS.find((g) => g.value === val)?.label ?? '';
 }
 
@@ -929,7 +929,7 @@ function formatJoinedAt(
   }
 }
 
-// ─── Reusable sub-components ───────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Reusable sub-components ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function SectionRow({
   icon,
@@ -964,7 +964,7 @@ function SectionRow({
               type="button"
               onClick={onEdit}
               className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-surf-primary/10 hover:text-surf-primary transition-colors"
-              title="Chỉnh sửa"
+              title="Chß╗ënh sß╗¡a"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -981,7 +981,7 @@ function SectionRow({
               type="button"
               onClick={onDelete}
               className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-red-50 hover:text-red-500 transition-colors"
-              title="Xóa"
+              title="X├│a"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -1028,7 +1028,7 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
-// ─── Inline text edit panel ────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Inline text edit panel ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function InlineEdit({
   label,
@@ -1086,7 +1086,7 @@ function InlineEdit({
           onClick={onCancel}
           className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
         >
-          Hủy
+          Hß╗ºy
         </button>
         <button
           type="button"
@@ -1094,14 +1094,14 @@ function InlineEdit({
           disabled={saving}
           className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 transition-colors font-medium"
         >
-          {saving ? 'Đang lưu...' : 'Lưu'}
+          {saving ? '─Éang l╞░u...' : 'L╞░u'}
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Modal wrapper ──────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Modal wrapper ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function SmallModal({
   title,
@@ -1138,7 +1138,7 @@ function SmallModal({
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 interface ProfileAboutProps {
   uid: string;
@@ -1162,7 +1162,7 @@ export default function ProfileAbout({
   const [activeSection, setActiveSection] = useState<Section>('overview');
   const [saving, setSaving] = useState(false);
 
-  // ── inline edit flags ──
+  // ΓöÇΓöÇ inline edit flags ΓöÇΓöÇ
   const [editBio, setEditBio] = useState(false);
   const [editWebsite, setEditWebsite] = useState(false);
   const [editPhone, setEditPhone] = useState(false);
@@ -1171,7 +1171,7 @@ export default function ProfileAbout({
   const [editHometown, setEditHometown] = useState(false);
   const [editCustomGender, setEditCustomGender] = useState(false);
 
-  // ── draft values ──
+  // ΓöÇΓöÇ draft values ΓöÇΓöÇ
   const [bioDraft, setBioDraft] = useState('');
   const [websiteDraft, setWebsiteDraft] = useState('');
   const [phoneDraft, setPhoneDraft] = useState('');
@@ -1180,7 +1180,7 @@ export default function ProfileAbout({
   const [hometownDraft, setHometownDraft] = useState('');
   const [customGenderDraft, setCustomGenderDraft] = useState('');
 
-  // ── modal states ──
+  // ΓöÇΓöÇ modal states ΓöÇΓöÇ
   const [workModal, setWorkModal] = useState<{ open: boolean; index: number | null }>({
     open: false,
     index: null,
@@ -1207,7 +1207,7 @@ export default function ProfileAbout({
   const [religionModal, setReligionModal] = useState(false);
   const [politicsModal, setPoliticsModal] = useState(false);
 
-  // ── save helper ──
+  // ΓöÇΓöÇ save helper ΓöÇΓöÇ
   const save = async (fields: Partial<UserProfile>) => {
     setSaving(true);
     try {
@@ -1218,21 +1218,21 @@ export default function ProfileAbout({
     }
   };
 
-  // ── convenience ──
+  // ΓöÇΓöÇ convenience ΓöÇΓöÇ
   const work = profile.work ?? [];
   const education = profile.education ?? [];
   const languages = profile.languages ?? [];
   const joined = formatJoinedAt(profile.joinedAt);
 
-  // ─── SECTION: Tổng quan ─────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ SECTION: Tß╗òng quan ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const OverviewSection = () => (
     <div className="space-y-4">
       {/* Bio */}
-      <SectionCard title="Tiểu sử">
+      <SectionCard title="Tiß╗âu sß╗¡">
         {profile.bio ? (
           <SectionRow
-            icon="✍️"
+            icon="Γ£ì∩╕Å"
             primary={profile.bio}
             isOwn={isOwn}
             onEdit={() => {
@@ -1242,21 +1242,21 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm tiểu sử"
+            label="Th├¬m tiß╗âu sß╗¡"
             onClick={() => {
               setBioDraft('');
               setEditBio(true);
             }}
           />
         ) : (
-          <p className="text-sm text-gray-400 py-1">Chưa có tiểu sử</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a c├│ tiß╗âu sß╗¡</p>
         )}
         {editBio && (
           <InlineEdit
-            label="Tiểu sử (tối đa 101 ký tự)"
+            label="Tiß╗âu sß╗¡ (tß╗æi ─æa 101 k├╜ tß╗▒)"
             value={bioDraft}
             onChange={setBioDraft}
-            placeholder='Ví dụ: "Student | Love guitar 🎸"'
+            placeholder='V├¡ dß╗Ñ: "Student | Love guitar ≡ƒÄ╕"'
             multiline
             maxLength={101}
             saving={saving}
@@ -1270,12 +1270,12 @@ export default function ProfileAbout({
       </SectionCard>
 
       {/* Quick overview items */}
-      <SectionCard title="Thông tin nổi bật">
+      <SectionCard title="Th├┤ng tin nß╗òi bß║¡t">
         {work[0] && (
           <SectionRow
-            icon="💼"
-            primary={work[0].title ? `${work[0].title} tại ${work[0].company}` : work[0].company}
-            secondary={work[0].current ? 'Đang làm việc' : undefined}
+            icon="≡ƒÆ╝"
+            primary={work[0].title ? `${work[0].title} tß║íi ${work[0].company}` : work[0].company}
+            secondary={work[0].current ? '─Éang l├ám viß╗çc' : undefined}
             isOwn={isOwn}
             onEdit={() => {
               setWorkDraft({ ...work[0] });
@@ -1285,8 +1285,8 @@ export default function ProfileAbout({
         )}
         {education[0] && (
           <SectionRow
-            icon="🎓"
-            primary={`Học tại ${education[0].school}`}
+            icon="≡ƒÄô"
+            primary={`Hß╗ìc tß║íi ${education[0].school}`}
             secondary={education[0].degree || undefined}
             isOwn={isOwn}
             onEdit={() => {
@@ -1297,8 +1297,8 @@ export default function ProfileAbout({
         )}
         {profile.currentCity && (
           <SectionRow
-            icon="🏙️"
-            primary={`Đang sống tại ${profile.currentCity}`}
+            icon="≡ƒÅÖ∩╕Å"
+            primary={`─Éang sß╗æng tß║íi ${profile.currentCity}`}
             isOwn={isOwn}
             onEdit={() => {
               setCityDraft(profile.currentCity ?? '');
@@ -1309,8 +1309,8 @@ export default function ProfileAbout({
         )}
         {profile.hometown && (
           <SectionRow
-            icon="🏡"
-            primary={`Quê ở ${profile.hometown}`}
+            icon="≡ƒÅí"
+            primary={`Qu├¬ ß╗ƒ ${profile.hometown}`}
             isOwn={isOwn}
             onEdit={() => {
               setHometownDraft(profile.hometown ?? '');
@@ -1321,33 +1321,33 @@ export default function ProfileAbout({
         )}
         {profile.relationship && (
           <SectionRow
-            icon="❤️"
+            icon="Γ¥ñ∩╕Å"
             primary={relationshipLabel(profile.relationship)}
             isOwn={isOwn}
             onEdit={() => setRelationshipModal(true)}
           />
         )}
-        {joined && <SectionRow icon="🌊" primary={`Tham gia Surf từ ${joined}`} isOwn={false} />}
+        {joined && <SectionRow icon="≡ƒîè" primary={`Tham gia Surf tß╗½ ${joined}`} isOwn={false} />}
         {!work[0] &&
           !education[0] &&
           !profile.currentCity &&
           !profile.hometown &&
           !profile.relationship &&
-          !joined && <p className="text-sm text-gray-400 py-1">Chưa có thông tin để hiển thị</p>}
+          !joined && <p className="text-sm text-gray-400 py-1">Ch╞░a c├│ th├┤ng tin ─æß╗â hiß╗ân thß╗ï</p>}
       </SectionCard>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { val: postsCount, label: 'Bài viết', icon: '📝' },
-          { val: friendsCount, label: 'Bạn bè', icon: '👥' },
-          { val: null, label: 'Người theo dõi', icon: '⭐' },
+          { val: postsCount, label: 'B├ái viß║┐t', icon: '≡ƒô¥' },
+          { val: friendsCount, label: 'Bß║ín b├¿', icon: '≡ƒæÑ' },
+          { val: null, label: 'Ng╞░ß╗¥i theo d├╡i', icon: 'Γ¡É' },
         ].map(({ val, label, icon }) => (
           <div
             key={label}
             className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/60 p-4 text-center shadow-sm"
           >
-            <p className="text-2xl font-bold text-surf-primary">{val ?? '—'}</p>
+            <p className="text-2xl font-bold text-surf-primary">{val ?? 'ΓÇö'}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {icon} {label}
             </p>
@@ -1357,17 +1357,17 @@ export default function ProfileAbout({
     </div>
   );
 
-  // ─── SECTION: Công việc & Học vấn ──────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ SECTION: C├┤ng viß╗çc & Hß╗ìc vß║Ñn ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const WorkEduSection = () => (
     <div className="space-y-4">
-      <SectionCard title="Công việc">
+      <SectionCard title="C├┤ng viß╗çc">
         {work.map((w, i) => (
           <SectionRow
             key={i}
-            icon="💼"
-            primary={w.title ? `${w.title} tại ${w.company}` : w.company}
-            secondary={w.current ? 'Đang làm việc' : 'Đã từng làm'}
+            icon="≡ƒÆ╝"
+            primary={w.title ? `${w.title} tß║íi ${w.company}` : w.company}
+            secondary={w.current ? '─Éang l├ám viß╗çc' : '─É├ú tß╗½ng l├ám'}
             isOwn={isOwn}
             onEdit={() => {
               setWorkDraft({ ...w });
@@ -1382,7 +1382,7 @@ export default function ProfileAbout({
         {isOwn && (
           <div className="pt-2">
             <AddButton
-              label="Thêm nơi làm việc"
+              label="Th├¬m n╞íi l├ám viß╗çc"
               onClick={() => {
                 setWorkDraft({ company: '', title: '', current: true });
                 setWorkModal({ open: true, index: null });
@@ -1391,17 +1391,17 @@ export default function ProfileAbout({
           </div>
         )}
         {!isOwn && work.length === 0 && (
-          <p className="text-sm text-gray-400 py-1">Chưa có thông tin công việc</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a c├│ th├┤ng tin c├┤ng viß╗çc</p>
         )}
       </SectionCard>
 
-      <SectionCard title="Học vấn">
+      <SectionCard title="Hß╗ìc vß║Ñn">
         {education.map((e, i) => (
           <SectionRow
             key={i}
-            icon="🎓"
+            icon="≡ƒÄô"
             primary={e.school}
-            secondary={[e.degree, e.year ? `Năm ${e.year}` : undefined].filter(Boolean).join(' · ')}
+            secondary={[e.degree, e.year ? `N─âm ${e.year}` : undefined].filter(Boolean).join(' ┬╖ ')}
             isOwn={isOwn}
             onEdit={() => {
               setEduDraft({ ...e });
@@ -1416,7 +1416,7 @@ export default function ProfileAbout({
         {isOwn && (
           <div className="pt-2">
             <AddButton
-              label="Thêm trường học"
+              label="Th├¬m tr╞░ß╗¥ng hß╗ìc"
               onClick={() => {
                 setEduDraft({ school: '', degree: '' });
                 setEduModal({ open: true, index: null });
@@ -1425,21 +1425,21 @@ export default function ProfileAbout({
           </div>
         )}
         {!isOwn && education.length === 0 && (
-          <p className="text-sm text-gray-400 py-1">Chưa có thông tin học vấn</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a c├│ th├┤ng tin hß╗ìc vß║Ñn</p>
         )}
       </SectionCard>
     </div>
   );
 
-  // ─── SECTION: Địa điểm ─────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ SECTION: ─Éß╗ïa ─æiß╗âm ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const PlacesSection = () => (
     <div className="space-y-4">
-      <SectionCard title="Nơi sống">
+      <SectionCard title="N╞íi sß╗æng">
         {profile.currentCity ? (
           <SectionRow
-            icon="🏙️"
-            primary={`Đang sống tại ${profile.currentCity}`}
+            icon="≡ƒÅÖ∩╕Å"
+            primary={`─Éang sß╗æng tß║íi ${profile.currentCity}`}
             isOwn={isOwn}
             onEdit={() => {
               setCityDraft(profile.currentCity ?? '');
@@ -1452,21 +1452,21 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm thành phố đang sống"
+            label="Th├¬m th├ánh phß╗æ ─æang sß╗æng"
             onClick={() => {
               setCityDraft('');
               setEditCity(true);
             }}
           />
         ) : (
-          <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a cß║¡p nhß║¡t</p>
         )}
         {editCity && (
           <AutocompleteInlineEdit
-            label="Thành phố đang sống"
+            label="Th├ánh phß╗æ ─æang sß╗æng"
             value={cityDraft}
             onChange={setCityDraft}
-            placeholder="Nhập tên thành phố..."
+            placeholder="Nhß║¡p t├¬n th├ánh phß╗æ..."
             mode={{ type: 'location' }}
             saving={saving}
             onSave={async () => {
@@ -1478,11 +1478,11 @@ export default function ProfileAbout({
         )}
       </SectionCard>
 
-      <SectionCard title="Quê quán">
+      <SectionCard title="Qu├¬ qu├ín">
         {profile.hometown ? (
           <SectionRow
-            icon="🏡"
-            primary={`Quê ở ${profile.hometown}`}
+            icon="≡ƒÅí"
+            primary={`Qu├¬ ß╗ƒ ${profile.hometown}`}
             isOwn={isOwn}
             onEdit={() => {
               setHometownDraft(profile.hometown ?? '');
@@ -1494,21 +1494,21 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm quê quán"
+            label="Th├¬m qu├¬ qu├ín"
             onClick={() => {
               setHometownDraft('');
               setEditHometown(true);
             }}
           />
         ) : (
-          <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a cß║¡p nhß║¡t</p>
         )}
         {editHometown && (
           <AutocompleteInlineEdit
-            label="Quê quán"
+            label="Qu├¬ qu├ín"
             value={hometownDraft}
             onChange={setHometownDraft}
-            placeholder="Nhập tên tỉnh / thành phố..."
+            placeholder="Nhß║¡p t├¬n tß╗ënh / th├ánh phß╗æ..."
             mode={{ type: 'location' }}
             saving={saving}
             onSave={async () => {
@@ -1522,16 +1522,16 @@ export default function ProfileAbout({
     </div>
   );
 
-  // ─── SECTION: Liên hệ ──────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ SECTION: Li├¬n hß╗ç ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const ContactSection = () => (
     <div className="space-y-4">
-      <SectionCard title="Thông tin liên hệ">
-        {/* Email hiển thị mặc định là email đăng nhập */}
+      <SectionCard title="Th├┤ng tin li├¬n hß╗ç">
+        {/* Email hiß╗ân thß╗ï mß║╖c ─æß╗ïnh l├á email ─æ─âng nhß║¡p */}
         <SectionRow
-          icon="📧"
-          primary={profile.contactEmail || loginEmail || 'Chưa cập nhật email liên hệ'}
-          secondary="Email liên hệ"
+          icon="≡ƒôº"
+          primary={profile.contactEmail || loginEmail || 'Ch╞░a cß║¡p nhß║¡t email li├¬n hß╗ç'}
+          secondary="Email li├¬n hß╗ç"
           isOwn={isOwn}
           onEdit={() => {
             setContactEmailDraft(profile.contactEmail ?? loginEmail ?? '');
@@ -1540,7 +1540,7 @@ export default function ProfileAbout({
         />
         {editContactEmail && (
           <InlineEdit
-            label="Email liên hệ"
+            label="Email li├¬n hß╗ç"
             value={contactEmailDraft}
             onChange={setContactEmailDraft}
             placeholder="email@example.com"
@@ -1555,9 +1555,9 @@ export default function ProfileAbout({
 
         {profile.phone ? (
           <SectionRow
-            icon="📱"
+            icon="≡ƒô▒"
             primary={profile.phone}
-            secondary="Số điện thoại"
+            secondary="Sß╗æ ─æiß╗çn thoß║íi"
             isOwn={isOwn}
             onEdit={() => {
               setPhoneDraft(profile.phone ?? '');
@@ -1569,7 +1569,7 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm số điện thoại"
+            label="Th├¬m sß╗æ ─æiß╗çn thoß║íi"
             onClick={() => {
               setPhoneDraft('');
               setEditPhone(true);
@@ -1578,7 +1578,7 @@ export default function ProfileAbout({
         ) : null}
         {editPhone && (
           <InlineEdit
-            label="Số điện thoại"
+            label="Sß╗æ ─æiß╗çn thoß║íi"
             value={phoneDraft}
             onChange={setPhoneDraft}
             placeholder="+84 912 345 678"
@@ -1593,9 +1593,9 @@ export default function ProfileAbout({
 
         {profile.website ? (
           <SectionRow
-            icon="🌐"
+            icon="≡ƒîÉ"
             primary={profile.website}
-            secondary="Website cá nhân"
+            secondary="Website c├í nh├ón"
             isOwn={isOwn}
             onEdit={() => {
               setWebsiteDraft(profile.website ?? '');
@@ -1607,7 +1607,7 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm website cá nhân"
+            label="Th├¬m website c├í nh├ón"
             onClick={() => {
               setWebsiteDraft('');
               setEditWebsite(true);
@@ -1616,7 +1616,7 @@ export default function ProfileAbout({
         ) : null}
         {editWebsite && (
           <InlineEdit
-            label="Website cá nhân"
+            label="Website c├í nh├ón"
             value={websiteDraft}
             onChange={setWebsiteDraft}
             placeholder="https://yourwebsite.com"
@@ -1630,23 +1630,23 @@ export default function ProfileAbout({
         )}
 
         {!profile.phone && !profile.website && !isOwn && (
-          <p className="text-sm text-gray-400 py-1">Không có thêm thông tin liên hệ</p>
+          <p className="text-sm text-gray-400 py-1">Kh├┤ng c├│ th├¬m th├┤ng tin li├¬n hß╗ç</p>
         )}
       </SectionCard>
     </div>
   );
 
-  // ─── SECTION: Thông tin cơ bản ─────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ SECTION: Th├┤ng tin c╞í bß║ún ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const BasicSection = () => (
     <div className="space-y-4">
-      <SectionCard title="Thông tin cá nhân">
+      <SectionCard title="Th├┤ng tin c├í nh├ón">
         {/* Birthday */}
         {profile.birthday ? (
           <SectionRow
-            icon="🎂"
+            icon="≡ƒÄé"
             primary={birthdayLabel(profile.birthday)}
-            secondary="Ngày sinh"
+            secondary="Ng├áy sinh"
             isOwn={isOwn}
             onEdit={() => {
               setBdDraft(profile.birthday ?? { day: 1, month: 1, year: 2000, showYear: true });
@@ -1658,7 +1658,7 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm ngày sinh"
+            label="Th├¬m ng├áy sinh"
             onClick={() => {
               setBdDraft({ day: 1, month: 1, year: 2000, showYear: true });
               setBirthdayModal(true);
@@ -1669,9 +1669,9 @@ export default function ProfileAbout({
         {/* Gender */}
         {profile.gender ? (
           <SectionRow
-            icon="🪪"
+            icon="≡ƒ¬¬"
             primary={genderLabel(profile.gender, profile.customGender)}
-            secondary="Giới tính"
+            secondary="Giß╗¢i t├¡nh"
             isOwn={isOwn}
             onEdit={() => setGenderModal(true)}
             onDelete={async () => {
@@ -1679,15 +1679,15 @@ export default function ProfileAbout({
             }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm giới tính" onClick={() => setGenderModal(true)} />
+          <AddButton label="Th├¬m giß╗¢i t├¡nh" onClick={() => setGenderModal(true)} />
         ) : null}
 
         {/* Relationship */}
         {profile.relationship ? (
           <SectionRow
-            icon="❤️"
+            icon="Γ¥ñ∩╕Å"
             primary={relationshipLabel(profile.relationship)}
-            secondary="Tình trạng mối quan hệ"
+            secondary="T├¼nh trß║íng mß╗æi quan hß╗ç"
             isOwn={isOwn}
             onEdit={() => setRelationshipModal(true)}
             onDelete={async () => {
@@ -1696,36 +1696,36 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm tình trạng mối quan hệ"
+            label="Th├¬m t├¼nh trß║íng mß╗æi quan hß╗ç"
             onClick={() => setRelationshipModal(true)}
           />
         ) : null}
 
         {!profile.birthday && !profile.gender && !profile.relationship && !isOwn && (
-          <p className="text-sm text-gray-400 py-1">Chưa cập nhật thông tin cơ bản</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a cß║¡p nhß║¡t th├┤ng tin c╞í bß║ún</p>
         )}
       </SectionCard>
 
-      <SectionCard title="Ngôn ngữ & Tín ngưỡng">
+      <SectionCard title="Ng├┤n ngß╗» & T├¡n ng╞░ß╗íng">
         {/* Languages */}
         {languages.length > 0 ? (
           <SectionRow
-            icon="🗣️"
+            icon="≡ƒùú∩╕Å"
             primary={languages.join(', ')}
-            secondary="Ngôn ngữ"
+            secondary="Ng├┤n ngß╗»"
             isOwn={isOwn}
             onEdit={() => setLanguageModal(true)}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm ngôn ngữ" onClick={() => setLanguageModal(true)} />
+          <AddButton label="Th├¬m ng├┤n ngß╗»" onClick={() => setLanguageModal(true)} />
         ) : null}
 
         {/* Religion */}
         {profile.religion ? (
           <SectionRow
-            icon="🕊️"
+            icon="≡ƒòè∩╕Å"
             primary={profile.religion}
-            secondary="Tôn giáo"
+            secondary="T├┤n gi├ío"
             isOwn={isOwn}
             onEdit={() => setReligionModal(true)}
             onDelete={async () => {
@@ -1733,15 +1733,15 @@ export default function ProfileAbout({
             }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm tôn giáo (tùy chọn)" onClick={() => setReligionModal(true)} />
+          <AddButton label="Th├¬m t├┤n gi├ío (t├╣y chß╗ìn)" onClick={() => setReligionModal(true)} />
         ) : null}
 
         {/* Political */}
         {profile.politicalViews ? (
           <SectionRow
-            icon="🏛️"
+            icon="≡ƒÅ¢∩╕Å"
             primary={profile.politicalViews}
-            secondary="Quan điểm chính trị"
+            secondary="Quan ─æiß╗âm ch├¡nh trß╗ï"
             isOwn={isOwn}
             onEdit={() => setPoliticsModal(true)}
             onDelete={async () => {
@@ -1750,43 +1750,43 @@ export default function ProfileAbout({
           />
         ) : isOwn ? (
           <AddButton
-            label="Thêm quan điểm chính trị (tùy chọn)"
+            label="Th├¬m quan ─æiß╗âm ch├¡nh trß╗ï (t├╣y chß╗ìn)"
             onClick={() => setPoliticsModal(true)}
           />
         ) : null}
 
         {languages.length === 0 && !profile.religion && !profile.politicalViews && !isOwn && (
-          <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a cß║¡p nhß║¡t</p>
         )}
       </SectionCard>
     </div>
   );
 
-  // ─── SECTION: Cuộc đời ─────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ SECTION: Cuß╗Öc ─æß╗¥i ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   const LifeSection = () => (
     <div className="space-y-4">
-      <SectionCard title="Sự kiện cuộc đời">
+      <SectionCard title="Sß╗▒ kiß╗çn cuß╗Öc ─æß╗¥i">
         {joined && (
           <SectionRow
-            icon="🌊"
-            primary={`Tham gia Surf vào ${joined}`}
-            secondary="Bắt đầu hành trình Surf"
+            icon="≡ƒîè"
+            primary={`Tham gia Surf v├áo ${joined}`}
+            secondary="Bß║»t ─æß║ºu h├ánh tr├¼nh Surf"
             isOwn={false}
           />
         )}
         {profile.birthday && (
           <SectionRow
-            icon="🎂"
-            primary={`Sinh nhật: ${birthdayLabel(profile.birthday)}`}
+            icon="≡ƒÄé"
+            primary={`Sinh nhß║¡t: ${birthdayLabel(profile.birthday)}`}
             isOwn={false}
           />
         )}
         {profile.relationship && (
-          <SectionRow icon="❤️" primary={relationshipLabel(profile.relationship)} isOwn={false} />
+          <SectionRow icon="Γ¥ñ∩╕Å" primary={relationshipLabel(profile.relationship)} isOwn={false} />
         )}
         {!joined && !profile.birthday && !profile.relationship && (
-          <p className="text-sm text-gray-400 py-1">Chưa có sự kiện nào</p>
+          <p className="text-sm text-gray-400 py-1">Ch╞░a c├│ sß╗▒ kiß╗çn n├áo</p>
         )}
       </SectionCard>
     </div>
@@ -1801,7 +1801,7 @@ export default function ProfileAbout({
     life: <LifeSection />,
   };
 
-  // ─── Modals ─────────────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Modals ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   return (
     <>
@@ -1811,7 +1811,7 @@ export default function ProfileAbout({
         <aside className="md:w-56 shrink-0">
           <div className="md:sticky md:top-4 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/60 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Giới thiệu</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Giß╗¢i thiß╗çu</p>
             </div>
             {/* Mobile: horizontal scroll */}
             <div className="flex md:flex-col overflow-x-auto md:overflow-x-visible p-2 gap-1">
@@ -1839,33 +1839,33 @@ export default function ProfileAbout({
         <div className="flex-1 min-w-0 space-y-4">{sectionMap[activeSection]}</div>
       </div>
 
-      {/* ── Work Modal ── */}
+      {/* ΓöÇΓöÇ Work Modal ΓöÇΓöÇ */}
       {workModal.open && (
         <SmallModal
-          title={workModal.index !== null ? 'Chỉnh sửa công việc' : 'Thêm nơi làm việc'}
+          title={workModal.index !== null ? 'Chß╗ënh sß╗¡a c├┤ng viß╗çc' : 'Th├¬m n╞íi l├ám viß╗çc'}
           onClose={() => setWorkModal({ open: false, index: null })}
         >
           <div className="space-y-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                Tên công ty *
+                T├¬n c├┤ng ty *
               </label>
               <AutocompleteInput
                 value={workDraft.company}
                 onChange={(v) => setWorkDraft({ ...workDraft, company: v })}
-                placeholder="Ví dụ: Google, FPT Software..."
+                placeholder="V├¡ dß╗Ñ: Google, FPT Software..."
                 mode={{ type: 'static', list: COMPANY_SUGGESTIONS }}
                 autoFocus
               />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                Chức danh
+                Chß╗⌐c danh
               </label>
               <input
                 type="text"
                 className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
-                placeholder="Ví dụ: Software Developer, Intern..."
+                placeholder="V├¡ dß╗Ñ: Software Developer, Intern..."
                 value={workDraft.title}
                 onChange={(e) => setWorkDraft({ ...workDraft, title: e.target.value })}
               />
@@ -1878,7 +1878,7 @@ export default function ProfileAbout({
                 onChange={(e) => setWorkDraft({ ...workDraft, current: e.target.checked })}
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
-                Đang làm việc tại đây
+                ─Éang l├ám viß╗çc tß║íi ─æ├óy
               </span>
             </label>
             <div className="flex justify-end gap-2 pt-2">
@@ -1887,7 +1887,7 @@ export default function ProfileAbout({
                 onClick={() => setWorkModal({ open: false, index: null })}
                 className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors"
               >
-                Hủy
+                Hß╗ºy
               </button>
               <button
                 type="button"
@@ -1901,51 +1901,51 @@ export default function ProfileAbout({
                   setWorkModal({ open: false, index: null });
                 }}
               >
-                {saving ? 'Đang lưu...' : 'Lưu'}
+                {saving ? '─Éang l╞░u...' : 'L╞░u'}
               </button>
             </div>
           </div>
         </SmallModal>
       )}
 
-      {/* ── Education Modal ── */}
+      {/* ΓöÇΓöÇ Education Modal ΓöÇΓöÇ */}
       {eduModal.open && (
         <SmallModal
-          title={eduModal.index !== null ? 'Chỉnh sửa học vấn' : 'Thêm trường học'}
+          title={eduModal.index !== null ? 'Chß╗ënh sß╗¡a hß╗ìc vß║Ñn' : 'Th├¬m tr╞░ß╗¥ng hß╗ìc'}
           onClose={() => setEduModal({ open: false, index: null })}
         >
           <div className="space-y-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                Tên trường *
+                T├¬n tr╞░ß╗¥ng *
               </label>
               <AutocompleteInput
                 value={eduDraft.school}
                 onChange={(v) => setEduDraft({ ...eduDraft, school: v })}
-                placeholder="Ví dụ: Đại học Bách khoa Hà Nội..."
+                placeholder="V├¡ dß╗Ñ: ─Éß║íi hß╗ìc B├ích khoa H├á Nß╗Öi..."
                 mode={{ type: 'static', list: SCHOOL_SUGGESTIONS }}
                 autoFocus
               />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                Chuyên ngành / Bằng cấp
+                Chuy├¬n ng├ánh / Bß║▒ng cß║Ñp
               </label>
               <AutocompleteInput
                 value={eduDraft.degree}
                 onChange={(v) => setEduDraft({ ...eduDraft, degree: v })}
-                placeholder="Ví dụ: Kỹ thuật Phần mềm, Tài chính - Ngân hàng..."
+                placeholder="V├¡ dß╗Ñ: Kß╗╣ thuß║¡t Phß║ºn mß╗üm, T├ái ch├¡nh - Ng├ón h├áng..."
                 mode={{ type: 'static', list: DEGREE_SUGGESTIONS }}
               />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                Năm tốt nghiệp (tuỳ chọn)
+                N─âm tß╗æt nghiß╗çp (tuß╗│ chß╗ìn)
               </label>
               <input
                 type="number"
                 className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
-                placeholder="Ví dụ: 2025"
+                placeholder="V├¡ dß╗Ñ: 2025"
                 min={1950}
                 max={2100}
                 value={eduDraft.year ?? ''}
@@ -1963,7 +1963,7 @@ export default function ProfileAbout({
                 onClick={() => setEduModal({ open: false, index: null })}
                 className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors"
               >
-                Hủy
+                Hß╗ºy
               </button>
               <button
                 type="button"
@@ -1977,21 +1977,21 @@ export default function ProfileAbout({
                   setEduModal({ open: false, index: null });
                 }}
               >
-                {saving ? 'Đang lưu...' : 'Lưu'}
+                {saving ? '─Éang l╞░u...' : 'L╞░u'}
               </button>
             </div>
           </div>
         </SmallModal>
       )}
 
-      {/* ── Birthday Modal ── */}
+      {/* ΓöÇΓöÇ Birthday Modal ΓöÇΓöÇ */}
       {birthdayModal && (
-        <SmallModal title="Ngày sinh" onClose={() => setBirthdayModal(false)}>
+        <SmallModal title="Ng├áy sinh" onClose={() => setBirthdayModal(false)}>
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Ngày
+                  Ng├áy
                 </label>
                 <select
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
@@ -2007,7 +2007,7 @@ export default function ProfileAbout({
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Tháng
+                  Th├íng
                 </label>
                 <select
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
@@ -2023,7 +2023,7 @@ export default function ProfileAbout({
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Năm
+                  N─âm
                 </label>
                 <select
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
@@ -2045,7 +2045,7 @@ export default function ProfileAbout({
                 checked={bdDraft.showYear}
                 onChange={(e) => setBdDraft({ ...bdDraft, showYear: e.target.checked })}
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">Hiển thị năm sinh</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Hiß╗ân thß╗ï n─âm sinh</span>
             </label>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -2053,7 +2053,7 @@ export default function ProfileAbout({
                 onClick={() => setBirthdayModal(false)}
                 className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors"
               >
-                Hủy
+                Hß╗ºy
               </button>
               <button
                 type="button"
@@ -2064,16 +2064,16 @@ export default function ProfileAbout({
                   setBirthdayModal(false);
                 }}
               >
-                {saving ? 'Đang lưu...' : 'Lưu'}
+                {saving ? '─Éang l╞░u...' : 'L╞░u'}
               </button>
             </div>
           </div>
         </SmallModal>
       )}
 
-      {/* ── Relationship Modal ── */}
+      {/* ΓöÇΓöÇ Relationship Modal ΓöÇΓöÇ */}
       {relationshipModal && (
-        <SmallModal title="Tình trạng mối quan hệ" onClose={() => setRelationshipModal(false)}>
+        <SmallModal title="T├¼nh trß║íng mß╗æi quan hß╗ç" onClose={() => setRelationshipModal(false)}>
           <div className="space-y-1.5">
             {RELATIONSHIP_OPTIONS.map((r) => (
               <button
@@ -2092,12 +2092,12 @@ export default function ProfileAbout({
               >
                 <span>
                   {r.value === 'single'
-                    ? '💔'
+                    ? '≡ƒÆö'
                     : r.value === 'married'
-                      ? '💍'
+                      ? '≡ƒÆì'
                       : r.value === 'engaged'
-                        ? '💌'
-                        : '❤️'}
+                        ? '≡ƒÆî'
+                        : 'Γ¥ñ∩╕Å'}
                 </span>
                 {r.label}
               </button>
@@ -2111,16 +2111,16 @@ export default function ProfileAbout({
                 }}
                 className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
               >
-                <span>🚫</span> Xóa tình trạng mối quan hệ
+                <span>≡ƒÜ½</span> X├│a t├¼nh trß║íng mß╗æi quan hß╗ç
               </button>
             )}
           </div>
         </SmallModal>
       )}
 
-      {/* ── Gender Modal ── */}
+      {/* ΓöÇΓöÇ Gender Modal ΓöÇΓöÇ */}
       {genderModal && (
-        <SmallModal title="Giới tính" onClose={() => setGenderModal(false)}>
+        <SmallModal title="Giß╗¢i t├¡nh" onClose={() => setGenderModal(false)}>
           <div className="space-y-1.5">
             {GENDER_OPTIONS.map((g) => (
               <button
@@ -2142,16 +2142,16 @@ export default function ProfileAbout({
                       : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
                   }`}
               >
-                <span>{g.value === 'male' ? '♂️' : g.value === 'female' ? '♀️' : '⚧️'}</span>
+                <span>{g.value === 'male' ? 'ΓÖé∩╕Å' : g.value === 'female' ? 'ΓÖÇ∩╕Å' : 'ΓÜº∩╕Å'}</span>
                 {g.label}
               </button>
             ))}
             {editCustomGender && (
               <InlineEdit
-                label="Giới tính tùy chỉnh"
+                label="Giß╗¢i t├¡nh t├╣y chß╗ënh"
                 value={customGenderDraft}
                 onChange={setCustomGenderDraft}
-                placeholder="Nhập giới tính của bạn..."
+                placeholder="Nhß║¡p giß╗¢i t├¡nh cß╗ºa bß║ín..."
                 saving={saving}
                 onSave={async () => {
                   await save({ gender: 'custom', customGender: customGenderDraft.trim() || null });
@@ -2165,9 +2165,9 @@ export default function ProfileAbout({
         </SmallModal>
       )}
 
-      {/* ── Language Modal ── */}
+      {/* ΓöÇΓöÇ Language Modal ΓöÇΓöÇ */}
       {languageModal && (
-        <SmallModal title="Ngôn ngữ" onClose={() => setLanguageModal(false)}>
+        <SmallModal title="Ng├┤n ngß╗»" onClose={() => setLanguageModal(false)}>
           <div className="space-y-1.5">
             {LANGUAGE_OPTIONS.map((lang) => {
               const selected = languages.includes(lang);
@@ -2215,9 +2215,9 @@ export default function ProfileAbout({
         </SmallModal>
       )}
 
-      {/* ── Religion Modal ── */}
+      {/* ΓöÇΓöÇ Religion Modal ΓöÇΓöÇ */}
       {religionModal && (
-        <SmallModal title="Tôn giáo" onClose={() => setReligionModal(false)}>
+        <SmallModal title="T├┤n gi├ío" onClose={() => setReligionModal(false)}>
           <div className="space-y-1.5">
             {RELIGION_OPTIONS.map((r) => (
               <button
@@ -2230,16 +2230,16 @@ export default function ProfileAbout({
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
                   ${profile.religion === r ? 'bg-surf-primary/10 text-surf-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
               >
-                🕊️ {r}
+                ≡ƒòè∩╕Å {r}
               </button>
             ))}
           </div>
         </SmallModal>
       )}
 
-      {/* ── Political Views Modal ── */}
+      {/* ΓöÇΓöÇ Political Views Modal ΓöÇΓöÇ */}
       {politicsModal && (
-        <SmallModal title="Quan điểm chính trị" onClose={() => setPoliticsModal(false)}>
+        <SmallModal title="Quan ─æiß╗âm ch├¡nh trß╗ï" onClose={() => setPoliticsModal(false)}>
           <div className="space-y-1.5">
             {POLITICAL_OPTIONS.map((p) => (
               <button
@@ -2252,7 +2252,7 @@ export default function ProfileAbout({
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
                   ${profile.politicalViews === p ? 'bg-surf-primary/10 text-surf-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
               >
-                🏛️ {p}
+                ≡ƒÅ¢∩╕Å {p}
               </button>
             ))}
           </div>
