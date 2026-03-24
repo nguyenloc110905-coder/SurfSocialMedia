@@ -89,3 +89,49 @@ export async function sendWelcomeEmail(to: string, displayName: string) {
     `,
   });
 }
+
+/** Gửi mã OTP xác nhận đổi mật khẩu hoặc đổi email */
+export async function sendOtpEmail(
+  to: string,
+  displayName: string,
+  code: string,
+  purpose: 'change-password' | 'change-email'
+) {
+  const from = `"Surf Social" <${process.env.SMTP_EMAIL}>`;
+  const year = new Date().getFullYear();
+  const subject =
+    purpose === 'change-password'
+      ? '🔑 Mã xác nhận đổi mật khẩu Surf của bạn'
+      : '📧 Mã xác nhận đổi email Surf của bạn';
+  const action = purpose === 'change-password' ? 'đổi mật khẩu' : 'đổi địa chỉ email';
+
+  await getTransporter().sendMail({
+    from,
+    to,
+    subject,
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:16px">
+        <div style="text-align:center;margin-bottom:24px">
+          <h1 style="color:#0891b2;margin:0;font-size:28px">🏄 Surf</h1>
+        </div>
+        <div style="background:#fff;border-radius:12px;padding:28px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+          <h2 style="margin:0 0 12px;color:#1e293b">Xin chào ${displayName},</h2>
+          <p style="color:#475569;line-height:1.6;margin:0 0 20px">
+            Bạn đã yêu cầu <strong>${action}</strong> trên tài khoản Surf.<br>
+            Nhập mã bên dưới để xác nhận. Mã có hiệu lực trong <strong>5 phút</strong>.
+          </p>
+          <div style="background:linear-gradient(135deg,#0891b2,#06b6d4);border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
+            <p style="color:rgba(255,255,255,.75);font-size:11px;margin:0 0 10px;letter-spacing:3px;text-transform:uppercase">Mã xác nhận</p>
+            <p style="color:#fff;font-size:40px;font-weight:800;letter-spacing:12px;margin:0;font-family:monospace">${code}</p>
+          </div>
+          <p style="color:#94a3b8;font-size:13px;text-align:center;margin:0">
+            Nếu bạn không yêu cầu thao tác này, hãy bỏ qua email này.
+          </p>
+        </div>
+        <p style="text-align:center;color:#94a3b8;font-size:12px;margin:20px 0 0">
+          © ${year} Surf Social Media.
+        </p>
+      </div>
+    `,
+  });
+}

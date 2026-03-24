@@ -15,6 +15,8 @@ import {
   browserLocalPersistence,
   browserSessionPersistence,
   fetchSignInMethodsForEmail,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
   User,
 } from 'firebase/auth';
 import { app } from './config';
@@ -75,6 +77,13 @@ export async function updateUserProfile(updates: { displayName?: string; photoUR
   const u = auth.currentUser;
   if (!u) throw new Error('Chưa đăng nhập');
   await updateProfile(u, updates);
+}
+
+export async function reauthenticate(password: string) {
+  const u = auth.currentUser;
+  if (!u || !u.email) throw new Error('Không tìm thấy tài khoản.');
+  const credential = EmailAuthProvider.credential(u.email, password);
+  return reauthenticateWithCredential(u, credential);
 }
 
 export type { User };

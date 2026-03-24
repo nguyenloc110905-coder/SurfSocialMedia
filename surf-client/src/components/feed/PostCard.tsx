@@ -63,13 +63,9 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
   const [showOptions, setShowOptions] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
-<<<<<<< HEAD
-  const [selectedReaction, setSelectedReaction] = useState<string | null>(initialReaction ?? (initialLiked ? '❤️' : null));
-=======
   const [selectedReaction, setSelectedReaction] = useState<string | null>(
-    initialLiked ? '❤️' : null
+    initialReaction ?? (initialLiked ? '❤️' : null)
   );
->>>>>>> 15da3cd6a86167b42597e759839400162efcdc41
   const [commentCount, setCommentCount] = useState(post.replyCount || 0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');

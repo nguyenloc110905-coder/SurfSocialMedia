@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ITEM_TO_SECTION } from '@/lib/settings-data.tsx';
+import { ITEM_TO_SECTION } from '@/lib/settings-constants';
 import SettingsSidebar from './SettingsSidebar';
 import PrivacyCheckupPanel from './PrivacyCheckupPanel';
 import DefaultAudiencePanel from './DefaultAudiencePanel';
+import AccountSecurityPanel from './AccountSecurityPanel';
+import DeleteAccountPanel from './DeleteAccountPanel';
 import QuickAccessSection from './QuickAccessSection';
 import ReviewModal from './ReviewModal';
 import CustomSettingsModal from './CustomSettingsModal';
@@ -34,13 +36,10 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex-1 flex min-h-0 flex-col lg:flex-row overflow-hidden">
-        <SettingsSidebar
-          selectedDetail={selectedDetail}
-          onSelectDetail={setSelectedDetail}
-        />
+        <SettingsSidebar selectedDetail={selectedDetail} onSelectDetail={setSelectedDetail} />
 
         {/* Nội dung bên phải */}
-        <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-900/30">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto flex flex-col p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-900/30">
           {selectedDetail === 'privacy-checkup' ? (
             <PrivacyCheckupPanel onBack={() => setSelectedDetail(null)} />
           ) : selectedDetail === 'default-audience' ? (
@@ -48,6 +47,10 @@ export default function SettingsPage() {
               onShowReview={(a) => setReviewAudience(a)}
               onShowCustom={() => setShowCustomModal(true)}
             />
+          ) : selectedDetail === 'account-security' ? (
+            <AccountSecurityPanel />
+          ) : selectedDetail === 'delete-account' ? (
+            <DeleteAccountPanel />
           ) : sectionKey ? (
             <SettingsSectionPage sectionKey={sectionKey} activeItem={selectedDetail} />
           ) : (
@@ -60,7 +63,10 @@ export default function SettingsPage() {
       {reviewAudience && (
         <ReviewModal
           audience={reviewAudience}
-          onConfirm={() => { setReviewAudience(null); setSelectedDetail(null); }}
+          onConfirm={() => {
+            setReviewAudience(null);
+            setSelectedDetail(null);
+          }}
           onClose={() => setReviewAudience(null)}
         />
       )}
@@ -68,7 +74,10 @@ export default function SettingsPage() {
       {/* Modal Cài đặt tùy chỉnh */}
       {showCustomModal && (
         <CustomSettingsModal
-          onDone={() => { setShowCustomModal(false); setSelectedDetail(null); }}
+          onDone={() => {
+            setShowCustomModal(false);
+            setSelectedDetail(null);
+          }}
           onClose={() => setShowCustomModal(false)}
         />
       )}

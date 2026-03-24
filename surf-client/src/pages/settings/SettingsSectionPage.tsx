@@ -1,4 +1,5 @@
-import { SETTINGS_DETAIL_SECTIONS, SettingsIcon } from '@/lib/settings-data.tsx';
+import { SETTINGS_DETAIL_SECTIONS } from '@/lib/settings-constants';
+import { SettingsIcon } from '@/lib/settings-data';
 
 interface SettingsSectionPageProps {
   sectionKey: string;

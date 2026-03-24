@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { SETTINGS_DETAIL_SECTIONS, SettingsIcon } from '@/lib/settings-data.tsx';
+import { SETTINGS_DETAIL_SECTIONS } from '@/lib/settings-constants';
+import { SettingsIcon } from '@/lib/settings-data';
 
 function normalizeSearch(s: string): string {
   return s
@@ -27,15 +28,29 @@ export default function SettingsSearch({ onSelectDetail }: SettingsSearchProps) 
     const qNorm = normalizeSearch(q);
     if (!qNorm) return [];
 
-    const out: { type: 'section' | 'item'; sectionTitle: string; label?: string; icon?: string; key?: string }[] = [];
+    const out: {
+      type: 'section' | 'item';
+      sectionTitle: string;
+      label?: string;
+      icon?: string;
+      key?: string;
+    }[] = [];
     for (const section of SETTINGS_DETAIL_SECTIONS) {
-      const sectionMatch = matchesQuery(section.title, qNorm) || (section.subtitle && matchesQuery(section.subtitle, qNorm));
+      const sectionMatch =
+        matchesQuery(section.title, qNorm) ||
+        (section.subtitle && matchesQuery(section.subtitle, qNorm));
       if (sectionMatch) {
         out.push({ type: 'section', sectionTitle: section.title });
       }
       for (const item of section.items) {
         if (matchesQuery(item.label, qNorm)) {
-          out.push({ type: 'item', sectionTitle: section.title, label: item.label, icon: item.icon, key: item.key });
+          out.push({
+            type: 'item',
+            sectionTitle: section.title,
+            label: item.label,
+            icon: item.icon,
+            key: item.key,
+          });
         }
       }
     }
@@ -52,7 +67,12 @@ export default function SettingsSearch({ onSelectDetail }: SettingsSearchProps) 
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const handleSelectSuggestion = (entry: { type: 'section' | 'item'; sectionTitle: string; label?: string; key?: string }) => {
+  const handleSelectSuggestion = (entry: {
+    type: 'section' | 'item';
+    sectionTitle: string;
+    label?: string;
+    key?: string;
+  }) => {
     if (entry.type === 'item' && entry.key) {
       onSelectDetail(entry.key);
     }
@@ -62,7 +82,11 @@ export default function SettingsSearch({ onSelectDetail }: SettingsSearchProps) 
 
   return (
     <div className="relative" ref={searchContainerRef}>
-      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="currentColor">
+      <svg
+        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+      >
         <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
       </svg>
       <input
@@ -76,11 +100,19 @@ export default function SettingsSearch({ onSelectDetail }: SettingsSearchProps) 
       {searchFocused && searchQuery.trim().length > 0 && (
         <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-surf-card shadow-lg scrollbar-hide">
           {searchSuggestions.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">Không tìm thấy cài đặt phù hợp</p>
+            <p className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+              Không tìm thấy cài đặt phù hợp
+            </p>
           ) : (
             <ul className="py-1">
               {searchSuggestions.map((entry, i) => (
-                <li key={entry.type === 'section' ? entry.sectionTitle : `${entry.sectionTitle}-${entry.label}-${i}`}>
+                <li
+                  key={
+                    entry.type === 'section'
+                      ? entry.sectionTitle
+                      : `${entry.sectionTitle}-${entry.label}-${i}`
+                  }
+                >
                   <button
                     type="button"
                     onClick={() => handleSelectSuggestion(entry)}
@@ -96,7 +128,9 @@ export default function SettingsSearch({ onSelectDetail }: SettingsSearchProps) 
                         {entry.type === 'section' ? entry.sectionTitle : entry.label}
                       </span>
                       {entry.type === 'item' && (
-                        <span className="block text-xs text-slate-500 dark:text-slate-400">{entry.sectionTitle}</span>
+                        <span className="block text-xs text-slate-500 dark:text-slate-400">
+                          {entry.sectionTitle}
+                        </span>
                       )}
                     </div>
                   </button>
