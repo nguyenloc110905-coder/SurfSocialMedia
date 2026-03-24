@@ -47,6 +47,7 @@ export const SETTINGS_DETAIL_SECTIONS: {
       { label: 'Thông tin hiển thị công khai', icon: 'person', key: 'public-info' },
       { label: 'Tìm kiếm & kết nối với bạn', icon: 'people', key: 'search-connect' },
       { label: 'Bài đăng', icon: 'doc', key: 'posts-visibility' },
+      { label: 'Thùng rác bài đăng', icon: 'trash', key: 'posts-trash' },
       { label: 'Tin 24h', icon: 'story', key: 'stories-visibility' },
       { label: 'Surf Clips', icon: 'reel', key: 'clips-visibility' },
       { label: 'Người theo dõi & nội dung công khai', icon: 'follow', key: 'followers-public' },

@@ -153,6 +153,12 @@ export function SettingsIcon({ name }: { name: string }) {
         <path d="M11.56 5.5L10 4 6 8l2 2 3.56-3.5zM20 10l-4-4-2.56 2.5L16 10l4 4 2.5-2.5L20 10zM4 18l4 4 2.56-2.5L8 18l-4-4 2.5-2.5L4 18zm16 0l-2.5-2.5L16 18l4 4 2.56-2.5L20 18z" />
       </svg>
     );
+  if (name === 'trash')
+    return (
+      <svg className={cls} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9zm0 5h2v9H9V8zm4 0h2v9h-2V8z" />
+      </svg>
+    );
   if (name === 'lock-heart')
     return (
       <svg className={cls} viewBox="0 0 24 24" fill="currentColor">
