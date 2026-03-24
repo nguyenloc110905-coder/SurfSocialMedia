@@ -907,6 +907,7 @@ function birthdayLabel(b?: Birthday | null) {
 function formatJoinedAt(
   ts:
     | import('firebase/firestore').Timestamp
+    | { _seconds: number; _nanoseconds: number }
     | { toDate?: () => Date }
     | string
     | number
@@ -915,7 +916,14 @@ function formatJoinedAt(
 ): string {
   if (!ts) return '';
   try {
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    let d: Date;
+    if (typeof ts === 'object' && 'toDate' in ts && typeof (ts as { toDate?: unknown }).toDate === 'function') {
+      d = (ts as import('firebase/firestore').Timestamp).toDate();
+    } else if (typeof ts === 'object' && '_seconds' in ts) {
+      d = new Date((ts as { _seconds: number })._seconds * 1000);
+    } else {
+      d = new Date(ts as string | number);
+    }
     return d.toLocaleDateString('vi-VN', { year: 'numeric', month: 'long' });
   } catch {
     return '';

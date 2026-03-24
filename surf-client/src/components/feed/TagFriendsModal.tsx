@@ -40,7 +40,7 @@ export default function TagFriendsModal({
       const mappedFriends = (response.friends || []).map((f) => ({
         uid: f.id,
         displayName: f.name,
-        photoURL: f.avatarUrl,
+        photoURL: f.avatarUrl ?? null,
       }));
       setFriends(mappedFriends);
       console.log('Loaded friends:', mappedFriends);
