@@ -1,0 +1,71 @@
+[PRF-1] View Own Profile Page
+
+Description
+User can view their own profile.
+AC: profile page shows avatar, cover, bio, friends count, posts
+
+Plan thuc hien
+
+1) Chot scope truoc khi code
+- Man hinh can co: avatar, cover, bio, friends count, posts.
+- Chi xu ly own profile (uid hien tai), chua can profile user khac.
+- Co 3 state UI: loading, error, empty posts.
+
+2) Chot API contract truoc
+- De xuat endpoint: GET /api/users/me/overview
+- Response mau:
+{
+  "profile": {
+    "uid": "",
+    "displayName": "",
+    "photoURL": "",
+    "coverImageUrl": "",
+    "bio": ""
+  },
+  "stats": {
+    "friendsCount": 0,
+    "postsCount": 0
+  },
+  "posts": []
+}
+- Uu tien 1 endpoint gom du du lieu de frontend goi mot lan.
+
+3) Backend lam truoc (vertical slice)
+- File chinh: surf-server/src/routes/users.ts
+- Them route GET /me/overview (dat truoc route /:uid).
+- Logic:
+  + Lay uid tu req.uid.
+  + Doc users/{uid} de lay profile fields.
+  + Tinh friendsCount tu collection friends.
+  + Lay posts theo authorId == uid va tinh postsCount.
+  + Tra ve JSON theo contract.
+- Test endpoint truoc khi cham vao UI.
+
+4) Frontend ket noi API
+- File API: surf-client/src/lib/api.ts
+- Them ham getMyProfileOverview().
+- File UI: surf-client/src/pages/Profile.tsx
+  + Goi API trong useEffect khi mount.
+  + State can co: data, loading, error.
+  + Render profile header + stats + posts.
+  + Neu loi: hien message + nut Retry.
+
+5) Thu tu code tay de hoc
+- Buoc 1: code route backend + test JSON.
+- Buoc 2: code api client function.
+- Buoc 3: render UI toi thieu.
+- Buoc 4: them loading/error/empty.
+- Buoc 5: polish giao dien.
+
+6) Checklist tu test
+- Case user co bio/cover.
+- Case user khong co bio/cover.
+- Case user chua co bai viet.
+- Case token het han (hien auth error ro rang).
+- Case mobile responsive co ban.
+
+7) Definition of Done (goi y)
+- GET /api/users/me/overview tra dung contract.
+- Profile page hien du 5 thanh phan AC.
+- Khong co crash khi thieu du lieu.
+- Test thu cong pass tren localhost.
