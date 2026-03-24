@@ -101,10 +101,18 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
       res.status(404).json({ error: 'Post not found or forbidden' });
       return;
     }
-    const { content, mediaUrls } = req.body;
-    const update: Record<string, unknown> = { updatedAt: new Date() };
+    const { content, mediaUrls, privacy, feeling, location, taggedFriends } = req.body;
+    const update: Record<string, unknown> = {
+      updatedAt: new Date(),
+      isEdited: true,
+      editedAt: new Date(),
+    };
     if (content !== undefined) update.content = content;
     if (mediaUrls !== undefined) update.mediaUrls = mediaUrls;
+    if (privacy !== undefined) update.privacy = privacy;
+    if (feeling !== undefined) update.feeling = feeling ?? null;
+    if (location !== undefined) update.location = location ?? null;
+    if (taggedFriends !== undefined) update.taggedFriends = taggedFriends;
     await postsRef.doc(req.params.id).update(update);
     const updated = await postsRef.doc(req.params.id).get();
     res.json({ id: updated.id, ...updated.data() });

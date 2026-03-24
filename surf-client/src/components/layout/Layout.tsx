@@ -4,6 +4,7 @@ import BottomNav from './BottomNav';
 import MainLeftNav from './MainLeftNav';
 import MainRightSidebar from './MainRightSidebar';
 import FriendsLeftNav from './FriendsLeftNav';
+import QuickContactBar from './QuickContactBar';
 
 const MAIN_PATHS = [
   '/feed',
@@ -66,6 +67,7 @@ export default function Layout() {
         )}
       </main>
       <BottomNav />
+      {useThreeColumn && <QuickContactBar />}
     </div>
   );
 }

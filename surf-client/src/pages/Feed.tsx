@@ -12,7 +12,7 @@ interface Post {
   authorPhotoURL: string | null;
   content: string;
   mediaUrls: string[];
-  createdAt: import('firebase/firestore').Timestamp | string | number;
+  createdAt: import('firebase/firestore').Timestamp | { _seconds: number } | { seconds: number } | string | number | null;
   likeCount: number;
   replyCount: number;
   likedBy: string[];
@@ -20,6 +20,7 @@ interface Post {
   location?: string;
   taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
+  isEdited?: boolean;
   _discover?: boolean;
 }
 
@@ -32,6 +33,10 @@ export default function Feed() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const handlePostUpdated = (updated: Post & Record<string, unknown>) => {
+    setPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+  };
 
   const loadPosts = async () => {
     try {
@@ -181,7 +186,7 @@ export default function Feed() {
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent" />
               </div>
             )}
-            <PostCard post={post} currentUserId={user?.uid} />
+            <PostCard post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} />
           </div>
         ))}
 

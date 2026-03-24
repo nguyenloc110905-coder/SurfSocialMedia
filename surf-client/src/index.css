@@ -45,6 +45,18 @@ body {
   display: none;
 }
 
+/* Emoji falling animation for Moment reactions */
+@keyframes emoji-fall {
+  0%   { transform: translateY(0px) scale(1.4) rotate(-8deg); opacity: 1; }
+  30%  { transform: translateY(180px) scale(1.1) rotate(6deg); opacity: 1; }
+  70%  { transform: translateY(450px) scale(0.9) rotate(-4deg); opacity: 0.9; }
+  100% { transform: translateY(720px) scale(0.6) rotate(10deg); opacity: 0; }
+}
+.emoji-fall {
+  animation: emoji-fall 1.8s ease-in forwards;
+  will-change: transform, opacity;
+}
+
 /* Thanh cuộn chỉ hiện khi hover — dùng cho danh sách cài đặt bên trái */
 .scrollbar-hover {
   overflow-y: auto;

@@ -909,6 +909,7 @@ function formatJoinedAt(
     | import('firebase/firestore').Timestamp
     | { _seconds: number; _nanoseconds: number }
     | { toDate?: () => Date }
+    | { _seconds: number; _nanoseconds: number }
     | string
     | number
     | null
@@ -916,6 +917,7 @@ function formatJoinedAt(
 ): string {
   if (!ts) return '';
   try {
+<<<<<<< Updated upstream
     let d: Date;
     if (typeof ts === 'object' && 'toDate' in ts && typeof (ts as { toDate?: unknown }).toDate === 'function') {
       d = (ts as import('firebase/firestore').Timestamp).toDate();
@@ -924,6 +926,15 @@ function formatJoinedAt(
     } else {
       d = new Date(ts as string | number);
     }
+=======
+    if (typeof ts === 'object' && 'toDate' in ts && typeof (ts as { toDate?: unknown }).toDate === 'function') {
+      return (ts as import('firebase/firestore').Timestamp).toDate().toLocaleDateString('vi-VN', { year: 'numeric', month: 'long' });
+    }
+    if (typeof ts === 'object' && '_seconds' in ts) {
+      return new Date((ts as { _seconds: number })._seconds * 1000).toLocaleDateString('vi-VN', { year: 'numeric', month: 'long' });
+    }
+    const d = new Date(ts as string | number);
+>>>>>>> Stashed changes
     return d.toLocaleDateString('vi-VN', { year: 'numeric', month: 'long' });
   } catch {
     return '';
