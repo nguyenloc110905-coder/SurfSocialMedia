@@ -770,620 +770,19 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
             : undefined
         }
       >
-        <div className="relative overflow-hidden rounded-2xl">
-          {/* overflow-hidden wrapper only around media images */}
+        {/* ── MEDIA HERO LAYOUT — kept as dead code; media now rendered inside card ── */}
+        {/* eslint-disable-next-line no-constant-condition */}
+        {false ? (
           <div className="relative overflow-hidden rounded-2xl">
-            {/* ── 1 image: full width, natural aspect ── */}
-            {post.mediaUrls.length === 1 &&
-              (isVideoUrl(post.mediaUrls[0]) ? (
-                <FeedVideo
-                  src={post.mediaUrls[0]}
-                  fill={false}
-                  style={{ maxHeight: '520px' }}
-                  onExpand={() => openLightbox(0)}
-                />
-              ) : (
-                <img
-                  src={post.mediaUrls[0]}
-                  alt="Post media"
-                  className="w-full block object-cover cursor-pointer"
-                  style={{ maxHeight: '520px' }}
-                  onClick={() => openLightbox(0)}
-                />
-              ))}
-
-            {/* ── 2 images: main (2/3) primary + secondary (1/3) ── */}
-            {post.mediaUrls.length === 2 && (
-              <div
-                className="grid gap-0.5"
-                style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
-              >
-                <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-                  {isVideoUrl(post.mediaUrls[0]) ? (
-                    <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
-                  ) : (
-                    <img
-                      src={post.mediaUrls[0]}
-                      alt="Post media 1"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-                <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                  {isVideoUrl(post.mediaUrls[1]) ? (
-                    <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
-                  ) : (
-                    <img
-                      src={post.mediaUrls[1]}
-                      alt="Post media 2"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── 3 images: main left (tall, primary) + 2 stacked right ── */}
-            {post.mediaUrls.length === 3 && (
-              <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
-                <div
-                  className="overflow-hidden row-span-2 cursor-pointer"
-                  onClick={() => openLightbox(0)}
-                >
-                  {isVideoUrl(post.mediaUrls[0]) ? (
-                    <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
-                  ) : (
-                    <img
-                      src={post.mediaUrls[0]}
-                      alt="Post media 1"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-                <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                  {isVideoUrl(post.mediaUrls[1]) ? (
-                    <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
-                  ) : (
-                    <img
-                      src={post.mediaUrls[1]}
-                      alt="Post media 2"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-                <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
-                  {isVideoUrl(post.mediaUrls[2]) ? (
-                    <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} />
-                  ) : (
-                    <img
-                      src={post.mediaUrls[2]}
-                      alt="Post media 3"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── 4+ images: main (primary) full-width + ALL secondaries in equal strip ── */}
-            {post.mediaUrls.length >= 4 && (
-              <div className="flex flex-col gap-0.5">
-                {/* Primary — always full width, taller */}
-                <div
-                  className="overflow-hidden cursor-pointer"
-                  style={{ height: '260px' }}
-                  onClick={() => openLightbox(0)}
-                >
-                  {isVideoUrl(post.mediaUrls[0]) ? (
-                    <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
-                  ) : (
-                    <img
-                      src={post.mediaUrls[0]}
-                      alt="Post media 1"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-                {/* All secondaries — equal-width flex strip, scrolls if too many */}
-                <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
-                  {post.mediaUrls.slice(1).map((url, i) => (
-                    <div
-                      key={i}
-                      className="flex-none overflow-hidden cursor-pointer"
-                      style={{
-                        width: `calc((100% - ${(post.mediaUrls.length - 2) * 2}px) / ${post.mediaUrls.length - 1})`,
-                        minWidth: '60px',
-                      }}
-                      onClick={() => openLightbox(i + 1)}
-                    >
-                      {isVideoUrl(url) ? (
-                        <FeedVideo src={url} onExpand={() => openLightbox(i + 1)} />
-                      ) : (
-                        <img
-                          src={url}
-                          alt={`Post media ${i + 2}`}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Dark gradient overlay from bottom */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
-          </div>
-          {/* end overflow-hidden media wrapper */}
-
-          {/* ── VERTICAL ACTION STRIP (outside overflow-hidden, reaction picker won't be clipped) ── */}
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-5 z-20">
-            {/* Like/React */}
-            <div className="relative flex flex-col items-center">
-              <button
-                onClick={handleLike}
-                onMouseEnter={() => {
-                  if (reactionHideTimeout.current) clearTimeout(reactionHideTimeout.current);
-                  setShowReactions(true);
-                }}
-                onMouseLeave={() => {
-                  reactionHideTimeout.current = setTimeout(() => setShowReactions(false), 300);
-                }}
-                className="flex flex-col items-center gap-1 text-white"
-              >
-                <div
-                  className={`w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-all ${isLiked ? 'scale-110' : 'hover:bg-black/60'}`}
-                >
-                  {isLiked && selectedReaction ? (
-                    <span className="text-xl">{selectedReaction}</span>
-                  ) : (
-                    <svg
-                      className="w-6 h-6"
-                      fill={isLiked ? 'currentColor' : 'none'}
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                      />
-                    </svg>
-                  )}
-                </div>
-              </button>
-              {/* Reaction picker - opens to the left */}
-              {showReactions && (
-                <div
-                  onMouseEnter={() => {
-                    if (reactionHideTimeout.current) clearTimeout(reactionHideTimeout.current);
-                    setShowReactions(true);
-                  }}
-                  onMouseLeave={() => {
-                    reactionHideTimeout.current = setTimeout(() => setShowReactions(false), 300);
-                  }}
-                  className="absolute right-full top-0 mr-2 z-30"
-                >
-                  <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 flex gap-1">
-                    {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
-                      <button
-                        key={emoji}
-                        onClick={() => void handleReactionPick(emoji)}
-                        className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
-                        style={{ animation: `fadeInScale 0.5s ease-out ${index * 0.05}s both` }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Comment */}
-            <button
-              onClick={() => {
-                setLightboxOpen(true);
-                setLightboxCommentOpen(true);
-                if (comments.length === 0) void loadComments();
-                setTimeout(() => lightboxCommentRef.current?.focus(), 350);
-              }}
-              className="flex flex-col items-center gap-1 text-white"
-            >
-              <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                  />
-                </svg>
-              </div>
-              {commentCount > 0 && (
-                <span className="text-xs font-semibold text-white drop-shadow">{commentCount}</span>
-              )}
-            </button>
-
-            {/* Share */}
-            <div className="relative" ref={shareRef}>
-              <button
-                onClick={() => setShowShareMenu(!showShareMenu)}
-                className="flex flex-col items-center gap-1 text-white"
-              >
-                <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                    />
-                  </svg>
-                </div>
-              </button>
-              {showShareMenu && (
-                <div className="absolute right-full bottom-0 mr-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
-                  <button
-                    onClick={() => void handleCopyLink()}
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                      />
-                    </svg>
-                    Sao chép liên kết
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Options (3 dots) */}
-            <div className="relative" ref={optionsRef}>
-              <button
-                onClick={() => setShowOptions(!showOptions)}
-                className="flex flex-col items-center gap-1 text-white"
-              >
-                <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                  </svg>
-                </div>
-              </button>
-              {showOptions && (
-                <div className="absolute right-full bottom-0 mr-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-30">
-                  {currentUserId === post.authorId && (
-                    <button
-                      onClick={() => {
-                        handleDeletePost();
-                        setShowOptions(false);
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                      Chuyển vào thùng rác
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowOptions(false)}
-                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                      />
-                    </svg>
-                    Báo cáo bài viết
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Author overlay - bottom left */}
-          <div className="absolute bottom-0 left-0 right-14 p-4 z-10">
-            {/* Content first (shows above author row) */}
-            {post.content && (
-              <div className="mb-2">
-                <p className="text-white/90 text-sm leading-snug">
-                  {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
-                    ? post.content
-                    : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
-                </p>
-                {post.content.length > CONTENT_COLLAPSE_LIMIT && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setContentExpanded((v) => !v);
-                    }}
-                    className="text-white/60 text-xs hover:text-white mt-0.5 transition-colors"
-                  >
-                    {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Author row */}
-            <div className="flex items-center gap-2">
-              <div
-                onClick={() => goToProfile(post.authorId)}
-                className="cursor-pointer flex-shrink-0"
-              >
-                {post.authorPhotoURL ? (
-                  <img
-                    src={post.authorPhotoURL ?? undefined}
-                    alt={post.authorDisplayName}
-                    className="w-9 h-9 rounded-full ring-2 ring-white/50 object-cover"
-                  />
-                ) : (
-                  <div className="w-9 h-9 rounded-full ring-2 ring-white/50 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                    <span className="text-sm font-bold text-white">
-                      {(() => {
-                        const name = post.authorDisplayName || 'U';
-                        const words = name.split(' ');
-                        return words.length >= 2
-                          ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
-                          : name[0].toUpperCase();
-                      })()}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span
-                    onClick={() => goToProfile(post.authorId)}
-                    className="font-semibold text-white text-sm cursor-pointer hover:underline"
-                  >
-                    {post.authorDisplayName}
-                  </span>
-                  {(post.taggedFriends?.length ?? 0) > 0 && (
-                    <span className="text-white/80 text-xs">
-                      cùng với{' '}
-                      {post.taggedFriends!.map((f, i) => (
-                        <span key={f.uid}>
-                          <span
-                            onClick={() => goToProfile(f.uid)}
-                            className="font-medium text-white cursor-pointer hover:underline"
-                          >
-                            {f.displayName}
-                          </span>
-                          {i < post.taggedFriends!.length - 1 && ', '}
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 text-white/60 text-xs mt-0.5">
-                  <span>{formatTime(post.createdAt)}</span>
-                  <span>•</span>
-                  {getPrivacyIcon()}
-                </div>
-              </div>
-            </div>
-
-            {commentCount > 0 && (
-              <button
-                onClick={() => setShowComments(true)}
-                className="mt-1 text-white/60 text-xs hover:text-white/90 transition-colors"
-              >
-                {commentCount} bình luận
-              </button>
-            )}
-          </div>
-        </div>
-        /* ── TEXT CARD / COMMENTS MODAL ── */
-        <div className={`p-5 sm:p-6 ${showComments ? 'overflow-y-auto max-h-[90vh]' : ''}`}>
-          {/* Close button when modal */}
-          {showComments && (
-            <button
-              onClick={handleCloseComments}
-              className="absolute top-4 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300 transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          )}
-
-          {/* Author Header */}
-          <div className="flex items-start gap-3 mb-4">
-            <div
-              onClick={() => goToProfile(post.authorId)}
-              className="cursor-pointer flex-shrink-0"
-            >
-              {post.authorPhotoURL ? (
-                <img
-                  src={post.authorPhotoURL}
-                  alt={post.authorDisplayName}
-                  className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover hover:scale-105 transition-transform"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center hover:scale-105 transition-transform">
-                  <span className="text-lg font-bold text-white">
-                    {(() => {
-                      const name = post.authorDisplayName || 'U';
-                      const words = name.split(' ');
-                      return words.length >= 2
-                        ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
-                        : name[0].toUpperCase();
-                    })()}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="text-sm leading-relaxed mb-1">
-                <h3
-                  onClick={() => goToProfile(post.authorId)}
-                  className="inline font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
-                >
-                  {post.authorDisplayName}
-                </h3>
-                {post.feeling && (
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {' '}
-                    đang cảm thấy <span className="font-medium">{post.feeling}</span>
-                  </span>
-                )}
-                {post.taggedFriends && post.taggedFriends.length > 0 && (
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {' '}
-                    cùng với{' '}
-                    {post.taggedFriends.map((friend, idx) => (
-                      <span key={friend.uid}>
-                        <span
-                          onClick={() => goToProfile(friend.uid)}
-                          className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
-                        >
-                          {friend.displayName}
-                        </span>
-                        {idx < post.taggedFriends!.length - 1 && ', '}
-                      </span>
-                    ))}
-                  </span>
-                )}
-                {post.location && (
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {' '}
-                    tại <span className="font-medium">📍 {post.location}</span>
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span>{formatTime(post.createdAt)}</span>
-                <span>•</span>
-                <span className="flex items-center gap-1">{getPrivacyIcon()}</span>
-              </div>
-            </div>
-
-            {/* Options */}
-            <div className="relative" ref={optionsRef}>
-              <button
-                onClick={() => setShowOptions(!showOptions)}
-                className="w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                </svg>
-              </button>
-              {showOptions && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
-                  <button
-                    onClick={() => {
-                      void handleSavePost();
-                      setShowOptions(false);
-                    }}
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                      />
-                    </svg>
-                    {isSaved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
-                  </button>
-                  <hr className="my-2 border-gray-200 dark:border-slate-700" />
-                  {currentUserId === post.authorId && (
-                    <button
-                      onClick={() => {
-                        handleDeletePost();
-                        setShowOptions(false);
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                      Xóa bài viết
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowOptions(false)}
-                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                      />
-                    </svg>
-                    Báo cáo bài viết
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Content */}
-          {post.content && (
-            <div className="mb-3">
-              <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap text-[15px]">
-                {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
-                  ? post.content
-                  : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
-              </p>
-              {post.content.length > CONTENT_COLLAPSE_LIMIT && (
-                <button
-                  onClick={() => setContentExpanded((v) => !v)}
-                  className="text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-200 mt-0.5 transition-colors"
-                >
-                  {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Media — edge-to-edge inside card */}
-          {hasMedia && (
-            <div className="-mx-5 sm:-mx-6 mb-4 overflow-hidden">
+            {/* overflow-hidden wrapper only around media images */}
+            <div className="relative overflow-hidden rounded-2xl">
+              {/* ── 1 image: full width, natural aspect ── */}
               {post.mediaUrls.length === 1 &&
                 (isVideoUrl(post.mediaUrls[0]) ? (
                   <FeedVideo
                     src={post.mediaUrls[0]}
                     fill={false}
+                    style={{ maxHeight: '520px' }}
                     onExpand={() => openLightbox(0)}
                   />
                 ) : (
@@ -1395,6 +794,8 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                     onClick={() => openLightbox(0)}
                   />
                 ))}
+
+              {/* ── 2 images: main (2/3) primary + secondary (1/3) ── */}
               {post.mediaUrls.length === 2 && (
                 <div
                   className="grid gap-0.5"
@@ -1424,6 +825,8 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   </div>
                 </div>
               )}
+
+              {/* ── 3 images: main left (tall, primary) + 2 stacked right ── */}
               {post.mediaUrls.length === 3 && (
                 <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
                   <div
@@ -1464,8 +867,11 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   </div>
                 </div>
               )}
+
+              {/* ── 4+ images: main (primary) full-width + ALL secondaries in equal strip ── */}
               {post.mediaUrls.length >= 4 && (
                 <div className="flex flex-col gap-0.5">
+                  {/* Primary — always full width, taller */}
                   <div
                     className="overflow-hidden cursor-pointer"
                     style={{ height: '260px' }}
@@ -1481,6 +887,7 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                       />
                     )}
                   </div>
+                  {/* All secondaries — equal-width flex strip, scrolls if too many */}
                   <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
                     {post.mediaUrls.slice(1).map((url, i) => (
                       <div
@@ -1506,285 +913,914 @@ export default function PostCard({ post, currentUserId }: PostCardProps) {
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Stats */}
-          {(likeCount > 0 || commentCount > 0) && (
-            <div className="flex items-center justify-between py-3 mb-3 border-b border-gray-200 dark:border-slate-700/50">
-              {likeCount > 0 && (
-                <div className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
-                  <span>{selectedReaction || '❤️'}</span>
-                  <span className="font-medium">{likeCount}</span>
+              {/* Dark gradient overlay from bottom */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
+            </div>
+            {/* end overflow-hidden media wrapper */}
+
+            {/* ── VERTICAL ACTION STRIP (outside overflow-hidden, reaction picker won't be clipped) ── */}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-5 z-20">
+              {/* Like/React */}
+              <div className="relative flex flex-col items-center">
+                <button
+                  onClick={handleLike}
+                  onMouseEnter={() => {
+                    if (reactionHideTimeout.current) clearTimeout(reactionHideTimeout.current);
+                    setShowReactions(true);
+                  }}
+                  onMouseLeave={() => {
+                    reactionHideTimeout.current = setTimeout(() => setShowReactions(false), 300);
+                  }}
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <div
+                    className={`w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-all ${isLiked ? 'scale-110' : 'hover:bg-black/60'}`}
+                  >
+                    {isLiked && selectedReaction ? (
+                      <span className="text-xl">{selectedReaction}</span>
+                    ) : (
+                      <svg
+                        className="w-6 h-6"
+                        fill={isLiked ? 'currentColor' : 'none'}
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+                {/* Reaction picker - opens to the left */}
+                {showReactions && (
+                  <div
+                    onMouseEnter={() => {
+                      if (reactionHideTimeout.current) clearTimeout(reactionHideTimeout.current);
+                      setShowReactions(true);
+                    }}
+                    onMouseLeave={() => {
+                      reactionHideTimeout.current = setTimeout(() => setShowReactions(false), 300);
+                    }}
+                    className="absolute right-full top-0 mr-2 z-30"
+                  >
+                    <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 flex gap-1">
+                      {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
+                        <button
+                          key={emoji}
+                          onClick={() => void handleReactionPick(emoji)}
+                          className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
+                          style={{ animation: `fadeInScale 0.5s ease-out ${index * 0.05}s both` }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Comment */}
+              <button
+                onClick={() => {
+                  setLightboxOpen(true);
+                  setLightboxCommentOpen(true);
+                  if (comments.length === 0) void loadComments();
+                  setTimeout(() => lightboxCommentRef.current?.focus(), 350);
+                }}
+                className="flex flex-col items-center gap-1 text-white"
+              >
+                <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
+                </div>
+                {commentCount > 0 && (
+                  <span className="text-xs font-semibold text-white drop-shadow">
+                    {commentCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Share */}
+              <div className="relative" ref={shareRef}>
+                <button
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                      />
+                    </svg>
+                  </div>
+                </button>
+                {showShareMenu && (
+                  <div className="absolute right-full bottom-0 mr-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
+                    <button
+                      onClick={() => void handleCopyLink()}
+                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                      Sao chép liên kết
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Options (3 dots) */}
+              <div className="relative" ref={optionsRef}>
+                <button
+                  onClick={() => setShowOptions(!showOptions)}
+                  className="flex flex-col items-center gap-1 text-white"
+                >
+                  <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-all">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
+                  </div>
+                </button>
+                {showOptions && (
+                  <div className="absolute right-full bottom-0 mr-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-30">
+                    {currentUserId === post.authorId && (
+                      <button
+                        onClick={() => {
+                          handleDeletePost();
+                          setShowOptions(false);
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                        Chuyển vào thùng rác
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowOptions(false)}
+                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                      Báo cáo bài viết
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Author overlay - bottom left */}
+            <div className="absolute bottom-0 left-0 right-14 p-4 z-10">
+              {/* Content first (shows above author row) */}
+              {post.content && (
+                <div className="mb-2">
+                  <p className="text-white/90 text-sm leading-snug">
+                    {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
+                      ? post.content
+                      : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
+                  </p>
+                  {post.content.length > CONTENT_COLLAPSE_LIMIT && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setContentExpanded((v) => !v);
+                      }}
+                      className="text-white/60 text-xs hover:text-white mt-0.5 transition-colors"
+                    >
+                      {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
+                    </button>
+                  )}
                 </div>
               )}
+
+              {/* Author row */}
+              <div className="flex items-center gap-2">
+                <div
+                  onClick={() => goToProfile(post.authorId)}
+                  className="cursor-pointer flex-shrink-0"
+                >
+                  {post.authorPhotoURL ? (
+                    <img
+                      src={post.authorPhotoURL ?? undefined}
+                      alt={post.authorDisplayName}
+                      className="w-9 h-9 rounded-full ring-2 ring-white/50 object-cover"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full ring-2 ring-white/50 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                      <span className="text-sm font-bold text-white">
+                        {(() => {
+                          const name = post.authorDisplayName || 'U';
+                          const words = name.split(' ');
+                          return words.length >= 2
+                            ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+                            : name[0].toUpperCase();
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span
+                      onClick={() => goToProfile(post.authorId)}
+                      className="font-semibold text-white text-sm cursor-pointer hover:underline"
+                    >
+                      {post.authorDisplayName}
+                    </span>
+                    {(post.taggedFriends?.length ?? 0) > 0 && (
+                      <span className="text-white/80 text-xs">
+                        cùng với{' '}
+                        {post.taggedFriends!.map((f, i) => (
+                          <span key={f.uid}>
+                            <span
+                              onClick={() => goToProfile(f.uid)}
+                              className="font-medium text-white cursor-pointer hover:underline"
+                            >
+                              {f.displayName}
+                            </span>
+                            {i < post.taggedFriends!.length - 1 && ', '}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-white/60 text-xs mt-0.5">
+                    <span>{formatTime(post.createdAt)}</span>
+                    <span>•</span>
+                    {getPrivacyIcon()}
+                  </div>
+                </div>
+              </div>
+
               {commentCount > 0 && (
                 <button
-                  onClick={() => setShowComments(!showComments)}
-                  className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
+                  onClick={() => setShowComments(true)}
+                  className="mt-1 text-white/60 text-xs hover:text-white/90 transition-colors"
                 >
                   {commentCount} bình luận
                 </button>
               )}
             </div>
-          )}
-
-          {/* Action Bar */}
-          <div className="flex items-center gap-1">
-            {/* Like */}
-            <div className="relative flex-1">
+          </div>
+        ) : (
+          <div className={`p-5 sm:p-6 ${showComments ? 'overflow-y-auto max-h-[90vh]' : ''}`}>
+            {/* Close button when modal */}
+            {showComments && (
               <button
-                onClick={handleLike}
-                onMouseEnter={() => setShowReactions(true)}
-                onMouseLeave={() => setShowReactions(false)}
-                className={`group w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs transition-all border hover:scale-[1.02] active:scale-95 ${
-                  isLiked && selectedReaction
-                    ? `bg-gradient-to-r ${reactions[selectedReaction].bgColor} ${reactions[selectedReaction].color} ${reactions[selectedReaction].borderColor}`
-                    : 'text-gray-700 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 border-gray-200 dark:border-slate-700'
-                }`}
+                onClick={handleCloseComments}
+                className="absolute top-4 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300 transition-all"
               >
-                {isLiked && selectedReaction ? (
-                  <>
-                    <span className="text-base leading-none">{selectedReaction}</span>
-                    {likeCount > 0 && <span>{likeCount}</span>}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                      />
-                    </svg>
-                    {likeCount > 0 && <span>{likeCount}</span>}
-                  </>
-                )}
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
               </button>
-              {showReactions && (
-                <div
-                  onMouseEnter={() => setShowReactions(true)}
-                  onMouseLeave={() => setShowReactions(false)}
-                  className="absolute bottom-full left-1/2 -translate-x-1/2 pb-1 z-20"
-                >
-                  <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-full shadow-2xl border border-gray-200 dark:border-slate-700 p-2 flex gap-1">
-                    {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
-                      <button
-                        key={emoji}
-                        onClick={() => void handleReactionPick(emoji)}
-                        className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 hover:-translate-y-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
-                        style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+            )}
+
+            {/* Author Header */}
+            <div className="flex items-start gap-3 mb-4">
+              <div
+                onClick={() => goToProfile(post.authorId)}
+                className="cursor-pointer flex-shrink-0"
+              >
+                {post.authorPhotoURL ? (
+                  <img
+                    src={post.authorPhotoURL}
+                    alt={post.authorDisplayName}
+                    className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover hover:scale-105 transition-transform"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center hover:scale-105 transition-transform">
+                    <span className="text-lg font-bold text-white">
+                      {(() => {
+                        const name = post.authorDisplayName || 'U';
+                        const words = name.split(' ');
+                        return words.length >= 2
+                          ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+                          : name[0].toUpperCase();
+                      })()}
+                    </span>
                   </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="text-sm leading-relaxed mb-1">
+                  <h3
+                    onClick={() => goToProfile(post.authorId)}
+                    className="inline font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
+                  >
+                    {post.authorDisplayName}
+                  </h3>
+                  {post.feeling && (
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {' '}
+                      đang cảm thấy <span className="font-medium">{post.feeling}</span>
+                    </span>
+                  )}
+                  {post.taggedFriends && post.taggedFriends.length > 0 && (
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {' '}
+                      cùng với{' '}
+                      {post.taggedFriends.map((friend, idx) => (
+                        <span key={friend.uid}>
+                          <span
+                            onClick={() => goToProfile(friend.uid)}
+                            className="font-medium text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                          >
+                            {friend.displayName}
+                          </span>
+                          {idx < post.taggedFriends!.length - 1 && ', '}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  {post.location && (
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {' '}
+                      tại <span className="font-medium">📍 {post.location}</span>
+                    </span>
+                  )}
                 </div>
-              )}
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span>{formatTime(post.createdAt)}</span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">{getPrivacyIcon()}</span>
+                </div>
+              </div>
+
+              {/* Options */}
+              <div className="relative" ref={optionsRef}>
+                <button
+                  onClick={() => setShowOptions(!showOptions)}
+                  className="w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                  </svg>
+                </button>
+                {showOptions && (
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
+                    <button
+                      onClick={() => {
+                        void handleSavePost();
+                        setShowOptions(false);
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                        />
+                      </svg>
+                      {isSaved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
+                    </button>
+                    <hr className="my-2 border-gray-200 dark:border-slate-700" />
+                    {currentUserId === post.authorId && (
+                      <button
+                        onClick={() => {
+                          handleDeletePost();
+                          setShowOptions(false);
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                        Xóa bài viết
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowOptions(false)}
+                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                      Báo cáo bài viết
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Comment */}
-            <button
-              onClick={() => setShowComments(!showComments)}
-              className="group flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs text-gray-700 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 border border-gray-200 dark:border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                />
-              </svg>
-              <span>Bình luận{commentCount > 0 ? ` (${commentCount})` : ''}</span>
-            </button>
+            {/* Content */}
+            {post.content && (
+              <div className="mb-3">
+                <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap text-[15px]">
+                  {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
+                    ? post.content
+                    : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
+                </p>
+                {post.content.length > CONTENT_COLLAPSE_LIMIT && (
+                  <button
+                    onClick={() => setContentExpanded((v) => !v)}
+                    className="text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-200 mt-0.5 transition-colors"
+                  >
+                    {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
+                  </button>
+                )}
+              </div>
+            )}
 
-            {/* Share */}
-            <div className="relative flex-1" ref={shareRef}>
+            {/* Media — edge-to-edge inside card */}
+            {hasMedia && (
+              <div className="-mx-5 sm:-mx-6 mb-4 overflow-hidden">
+                {post.mediaUrls.length === 1 &&
+                  (isVideoUrl(post.mediaUrls[0]) ? (
+                    <FeedVideo
+                      src={post.mediaUrls[0]}
+                      fill={false}
+                      onExpand={() => openLightbox(0)}
+                    />
+                  ) : (
+                    <img
+                      src={post.mediaUrls[0]}
+                      alt="Post media"
+                      className="w-full block object-cover cursor-pointer"
+                      style={{ maxHeight: '520px' }}
+                      onClick={() => openLightbox(0)}
+                    />
+                  ))}
+                {post.mediaUrls.length === 2 && (
+                  <div
+                    className="grid gap-0.5"
+                    style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
+                  >
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
+                      {isVideoUrl(post.mediaUrls[0]) ? (
+                        <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                      ) : (
+                        <img
+                          src={post.mediaUrls[0]}
+                          alt="Post media 1"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
+                      {isVideoUrl(post.mediaUrls[1]) ? (
+                        <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                      ) : (
+                        <img
+                          src={post.mediaUrls[1]}
+                          alt="Post media 2"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+                {post.mediaUrls.length === 3 && (
+                  <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
+                    <div
+                      className="overflow-hidden row-span-2 cursor-pointer"
+                      onClick={() => openLightbox(0)}
+                    >
+                      {isVideoUrl(post.mediaUrls[0]) ? (
+                        <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                      ) : (
+                        <img
+                          src={post.mediaUrls[0]}
+                          alt="Post media 1"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
+                      {isVideoUrl(post.mediaUrls[1]) ? (
+                        <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                      ) : (
+                        <img
+                          src={post.mediaUrls[1]}
+                          alt="Post media 2"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
+                      {isVideoUrl(post.mediaUrls[2]) ? (
+                        <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} />
+                      ) : (
+                        <img
+                          src={post.mediaUrls[2]}
+                          alt="Post media 3"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+                {post.mediaUrls.length >= 4 && (
+                  <div className="flex flex-col gap-0.5">
+                    <div
+                      className="overflow-hidden cursor-pointer"
+                      style={{ height: '260px' }}
+                      onClick={() => openLightbox(0)}
+                    >
+                      {isVideoUrl(post.mediaUrls[0]) ? (
+                        <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                      ) : (
+                        <img
+                          src={post.mediaUrls[0]}
+                          alt="Post media 1"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
+                      {post.mediaUrls.slice(1).map((url, i) => (
+                        <div
+                          key={i}
+                          className="flex-none overflow-hidden cursor-pointer"
+                          style={{
+                            width: `calc((100% - ${(post.mediaUrls.length - 2) * 2}px) / ${post.mediaUrls.length - 1})`,
+                            minWidth: '60px',
+                          }}
+                          onClick={() => openLightbox(i + 1)}
+                        >
+                          {isVideoUrl(url) ? (
+                            <FeedVideo src={url} onExpand={() => openLightbox(i + 1)} />
+                          ) : (
+                            <img
+                              src={url}
+                              alt={`Post media ${i + 2}`}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Stats */}
+            {(likeCount > 0 || commentCount > 0) && (
+              <div className="flex items-center justify-between py-3 mb-3 border-b border-gray-200 dark:border-slate-700/50">
+                {likeCount > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
+                    <span>{selectedReaction || '❤️'}</span>
+                    <span className="font-medium">{likeCount}</span>
+                  </div>
+                )}
+                {commentCount > 0 && (
+                  <button
+                    onClick={() => setShowComments(!showComments)}
+                    className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
+                  >
+                    {commentCount} bình luận
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Action Bar */}
+            <div className="flex items-center gap-1">
+              {/* Like */}
+              <div className="relative flex-1">
+                <button
+                  onClick={handleLike}
+                  onMouseEnter={() => setShowReactions(true)}
+                  onMouseLeave={() => setShowReactions(false)}
+                  className={`group w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs transition-all border hover:scale-[1.02] active:scale-95 ${
+                    isLiked && selectedReaction
+                      ? `bg-gradient-to-r ${reactions[selectedReaction].bgColor} ${reactions[selectedReaction].color} ${reactions[selectedReaction].borderColor}`
+                      : 'text-gray-700 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 border-gray-200 dark:border-slate-700'
+                  }`}
+                >
+                  {isLiked && selectedReaction ? (
+                    <>
+                      <span className="text-base leading-none">{selectedReaction}</span>
+                      {likeCount > 0 && <span>{likeCount}</span>}
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                        />
+                      </svg>
+                      {likeCount > 0 && <span>{likeCount}</span>}
+                    </>
+                  )}
+                </button>
+                {showReactions && (
+                  <div
+                    onMouseEnter={() => setShowReactions(true)}
+                    onMouseLeave={() => setShowReactions(false)}
+                    className="absolute bottom-full left-1/2 -translate-x-1/2 pb-1 z-20"
+                  >
+                    <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-full shadow-2xl border border-gray-200 dark:border-slate-700 p-2 flex gap-1">
+                      {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji, index) => (
+                        <button
+                          key={emoji}
+                          onClick={() => void handleReactionPick(emoji)}
+                          className="w-10 h-10 flex items-center justify-center text-2xl transition-all hover:scale-150 hover:-translate-y-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
+                          style={{ animation: `fadeInScale 0.2s ease-out ${index * 0.05}s both` }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Comment */}
               <button
-                onClick={() => setShowShareMenu(!showShareMenu)}
-                className="group w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs text-gray-700 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-600 dark:hover:text-green-400 border border-gray-200 dark:border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
+                onClick={() => setShowComments(!showComments)}
+                className="group flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs text-gray-700 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 border border-gray-200 dark:border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                   />
                 </svg>
-                <span>Chia sẻ</span>
+                <span>Bình luận{commentCount > 0 ? ` (${commentCount})` : ''}</span>
               </button>
-              {showShareMenu && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
-                  <button
-                    onClick={() => void handleCopyLink()}
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                      />
-                    </svg>
-                    Sao chép liên kết
-                  </button>
-                </div>
-              )}
-            </div>
 
-            {/* Save */}
-            <button
-              onClick={() => void handleSavePost()}
-              className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all hover:scale-110 active:scale-95 ${isSaved ? 'text-yellow-600 border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20' : 'text-gray-700 dark:text-gray-400 border-gray-200 dark:border-slate-700 hover:text-yellow-600 hover:border-yellow-300'}`}
-            >
-              <svg
-                className="w-4 h-4"
-                fill={isSaved ? 'currentColor' : 'none'}
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                />
-              </svg>
-            </button>
-          </div>
-
-          {/* Comments Section */}
-          {showComments && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
-              {loadingComments ? (
-                <div className="text-center py-4">
-                  <div className="inline-block w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              ) : comments.length === 0 ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                  Chưa có bình luận nào
-                </div>
-              ) : (
-                <div className="space-y-3 mb-4">
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-2">
-                      {comment.authorPhotoURL ? (
-                        <img
-                          src={comment.authorPhotoURL}
-                          alt={comment.authorDisplayName}
-                          className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer"
-                          onClick={() => goToProfile(comment.authorId)}
+              {/* Share */}
+              <div className="relative flex-1" ref={shareRef}>
+                <button
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  className="group w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs text-gray-700 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-600 dark:hover:text-green-400 border border-gray-200 dark:border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
+                  </svg>
+                  <span>Chia sẻ</span>
+                </button>
+                {showShareMenu && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
+                    <button
+                      onClick={() => void handleCopyLink()}
+                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
                         />
-                      ) : (
-                        <div
-                          className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer"
-                          onClick={() => goToProfile(comment.authorId)}
-                        >
-                          <span className="text-xs font-bold text-white">
-                            {(() => {
-                              const n = comment.authorDisplayName || 'U';
-                              const w = n.split(' ');
-                              return w.length >= 2
-                                ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
-                                : n[0].toUpperCase();
-                            })()}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2">
-                          <div
-                            className="font-semibold text-sm text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
-                            onClick={() => goToProfile(comment.authorId)}
-                          >
-                            {comment.authorDisplayName}
-                          </div>
-                          <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
-                            {comment.content}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 mt-1 px-3 text-xs font-semibold">
-                          <button
-                            onClick={() => handleLikeComment(comment.id)}
-                            className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-600 dark:text-gray-400'}`}
-                          >
-                            Thích
-                          </button>
-                          <button className="text-gray-600 dark:text-gray-400 hover:underline">
-                            Trả lời
-                          </button>
-                          <span className="text-gray-500 font-normal">
-                            {comment.createdAt && formatTime(comment.createdAt)}
-                          </span>
-                          {comment.likeCount > 0 && (
-                            <span className="text-gray-500 font-normal">
-                              {comment.likeCount} ❤️
-                            </span>
-                          )}
-                          {currentUserId === comment.authorId && (
-                            <button
-                              onClick={() => handleDeleteComment(comment.id)}
-                              className="text-gray-400 hover:text-red-600 hover:underline ml-auto"
-                            >
-                              Xóa
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Comment Input */}
-              <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
-                {user?.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt="You"
-                    className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">
-                      {(() => {
-                        const n = user?.displayName || user?.email || 'U';
-                        const w = n.split(' ');
-                        return w.length >= 2
-                          ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
-                          : n[0].toUpperCase();
-                      })()}
-                    </span>
+                      </svg>
+                      Sao chép liên kết
+                    </button>
                   </div>
                 )}
-                <div className="flex-1 relative">
-                  <input
-                    ref={commentInputRef}
-                    type="text"
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
-                    placeholder="Viết bình luận của bạn..."
-                    disabled={submittingComment}
-                    className="w-full bg-white dark:bg-slate-900/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 rounded-full px-4 py-2.5 pr-12 border-2 border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-400 transition-all disabled:opacity-50"
+              </div>
+
+              {/* Save */}
+              <button
+                onClick={() => void handleSavePost()}
+                className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all hover:scale-110 active:scale-95 ${isSaved ? 'text-yellow-600 border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20' : 'text-gray-700 dark:text-gray-400 border-gray-200 dark:border-slate-700 hover:text-yellow-600 hover:border-yellow-300'}`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill={isSaved ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
                   />
-                  <button
-                    onClick={handleSubmitComment}
-                    disabled={!commentText.trim() || submittingComment}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-cyan-600 hover:text-cyan-700 transition-colors disabled:opacity-50"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                    </svg>
-                  </button>
+                </svg>
+              </button>
+            </div>
+
+            {/* Comments Section */}
+            {showComments && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
+                {loadingComments ? (
+                  <div className="text-center py-4">
+                    <div className="inline-block w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : comments.length === 0 ? (
+                  <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    Chưa có bình luận nào
+                  </div>
+                ) : (
+                  <div className="space-y-3 mb-4">
+                    {comments.map((comment) => (
+                      <div key={comment.id} className="flex gap-2">
+                        {comment.authorPhotoURL ? (
+                          <img
+                            src={comment.authorPhotoURL}
+                            alt={comment.authorDisplayName}
+                            className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer"
+                            onClick={() => goToProfile(comment.authorId)}
+                          />
+                        ) : (
+                          <div
+                            className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer"
+                            onClick={() => goToProfile(comment.authorId)}
+                          >
+                            <span className="text-xs font-bold text-white">
+                              {(() => {
+                                const n = comment.authorDisplayName || 'U';
+                                const w = n.split(' ');
+                                return w.length >= 2
+                                  ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
+                                  : n[0].toUpperCase();
+                              })()}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2">
+                            <div
+                              className="font-semibold text-sm text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
+                              onClick={() => goToProfile(comment.authorId)}
+                            >
+                              {comment.authorDisplayName}
+                            </div>
+                            <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
+                              {comment.content}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 mt-1 px-3 text-xs font-semibold">
+                            <button
+                              onClick={() => handleLikeComment(comment.id)}
+                              className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-600 dark:text-gray-400'}`}
+                            >
+                              Thích
+                            </button>
+                            <button className="text-gray-600 dark:text-gray-400 hover:underline">
+                              Trả lời
+                            </button>
+                            <span className="text-gray-500 font-normal">
+                              {comment.createdAt && formatTime(comment.createdAt)}
+                            </span>
+                            {comment.likeCount > 0 && (
+                              <span className="text-gray-500 font-normal">
+                                {comment.likeCount} ❤️
+                              </span>
+                            )}
+                            {currentUserId === comment.authorId && (
+                              <button
+                                onClick={() => handleDeleteComment(comment.id)}
+                                className="text-gray-400 hover:text-red-600 hover:underline ml-auto"
+                              >
+                                Xóa
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Comment Input */}
+                <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
+                  {user?.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt="You"
+                      className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                      <span className="text-xs font-bold text-white">
+                        {(() => {
+                          const n = user?.displayName || user?.email || 'U';
+                          const w = n.split(' ');
+                          return w.length >= 2
+                            ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
+                            : n[0].toUpperCase();
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex-1 relative">
+                    <input
+                      ref={commentInputRef}
+                      type="text"
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
+                      placeholder="Viết bình luận của bạn..."
+                      disabled={submittingComment}
+                      className="w-full bg-white dark:bg-slate-900/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 rounded-full px-4 py-2.5 pr-12 border-2 border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-400 transition-all disabled:opacity-50"
+                    />
+                    <button
+                      onClick={handleSubmitComment}
+                      disabled={!commentText.trim() || submittingComment}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-cyan-600 hover:text-cyan-700 transition-colors disabled:opacity-50"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </article>
 
       {/* ── LIGHTBOX ── */}
