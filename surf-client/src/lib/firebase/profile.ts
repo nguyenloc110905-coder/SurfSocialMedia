@@ -56,7 +56,12 @@ export interface UserProfile {
   religion?: string | null;
   politicalViews?: string | null;
   // Auto / legacy
-  joinedAt?: any;
+  joinedAt?:
+    | import('firebase/firestore').Timestamp
+    | { _seconds: number; _nanoseconds: number }
+    | string
+    | number
+    | null;
   coverImageUrl: string | null;
   aboutDetails: AboutDetail[];
   highlightPhotos: string[];

@@ -20,6 +20,15 @@ const GENDER_OPTIONS = ['Nam', 'Nữ', 'Khác'];
 
 const STEPS = ['Thông tin cơ bản', 'Giới thiệu bản thân', 'Xem lại & Lưu'];
 
+const ONBOARDING_PARTICLE_STYLES = Array.from({ length: 15 }, () => ({
+  left: `${Math.random() * 100}%`,
+  top: `${Math.random() * 100}%`,
+  animationDelay: `${Math.random() * 8}s`,
+  animationDuration: `${6 + Math.random() * 8}s`,
+  width: `${2 + Math.random() * 3}px`,
+  height: `${2 + Math.random() * 3}px`,
+}));
+
 function getDaysInMonth(month: number, year: number): number {
   if (!month) return 31;
   if (!year) return new Date(2000, month, 0).getDate();
@@ -42,19 +51,8 @@ function AuthBackground() {
           backgroundSize: '60px 60px',
         }}
       />
-      {Array.from({ length: 15 }).map((_, i) => (
-        <div
-          key={i}
-          className="auth-particle"
-          style={{
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            animationDelay: `${Math.random() * 8}s`,
-            animationDuration: `${6 + Math.random() * 8}s`,
-            width: `${2 + Math.random() * 3}px`,
-            height: `${2 + Math.random() * 3}px`,
-          }}
-        />
+      {ONBOARDING_PARTICLE_STYLES.map((style, i) => (
+        <div key={i} className="auth-particle" style={style} />
       ))}
     </div>
   );
@@ -93,7 +91,11 @@ function LocationAutocomplete({
   }, []);
 
   const search = useCallback((q: string) => {
-    if (q.trim().length < 2) { setResults([]); setOpen(false); return; }
+    if (q.trim().length < 2) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
     setLoading(true);
     const encoded = encodeURIComponent(q.trim());
     fetch(
@@ -101,26 +103,34 @@ function LocationAutocomplete({
       { headers: { 'User-Agent': 'SurfSocialMedia/1.0' } }
     )
       .then((r) => r.json())
-      .then((data: NominatimResult[]) => { setResults(data); setOpen(data.length > 0); })
+      .then((data: NominatimResult[]) => {
+        setResults(data);
+        setOpen(data.length > 0);
+      })
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
   }, []);
 
   const handleInput = (text: string) => {
-    setQuery(text); onChange('');
+    setQuery(text);
+    onChange('');
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => search(text), 400);
   };
 
   const pick = (item: NominatimResult) => {
     const short = item.display_name.split(',').slice(0, 3).join(', ');
-    setQuery(short); onChange(short); setOpen(false);
+    setQuery(short);
+    onChange(short);
+    setOpen(false);
   };
 
   return (
     <div ref={wrapperRef} className="relative">
       <input
-        type="text" placeholder={placeholder} value={query}
+        type="text"
+        placeholder={placeholder}
+        value={query}
         onChange={(e) => handleInput(e.target.value)}
         onFocus={() => results.length > 0 && setOpen(true)}
         className={inputClass}
@@ -135,7 +145,8 @@ function LocationAutocomplete({
           {results.map((r) => (
             <li key={r.place_id}>
               <button
-                type="button" onClick={() => pick(r)}
+                type="button"
+                onClick={() => pick(r)}
                 className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 transition-colors"
               >
                 {r.display_name}
@@ -156,15 +167,15 @@ export default function Onboarding() {
   const user = useAuthStore((s) => s.user);
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [phoneError, setPhoneError] = useState('');
+  const [, setPhoneError] = useState('');
 
   const [birthdayDay, setBirthdayDay] = useState('');
   const [birthdayMonth, setBirthdayMonth] = useState('');
   const [birthdayYear, setBirthdayYear] = useState('');
   const [gender, setGender] = useState('');
   const [customGender, setCustomGender] = useState('');
-  const [phoneCode, setPhoneCode] = useState('VN');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneCode] = useState('VN');
+  const [phoneNumber] = useState('');
 
   const [bio, setBio] = useState('');
   const [currentCity, setCurrentCity] = useState('');
@@ -190,20 +201,17 @@ export default function Onboarding() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 100 }, (_, i) => currentYear - i);
 
-  const handlePhoneChange = (raw: string) => {
-    const digits = raw.replace(/\D/g, '');
-    setPhoneNumber(digits);
-    setPhoneError(digits.length > 0 && digits.length !== 10 ? 'Số điện thoại phải đủ 10 chữ số.' : '');
-  };
-
   const validateStep = (): boolean => {
     if (step === 0 && phoneNumber && phoneNumber.length !== 10) {
-      setPhoneError('Số điện thoại phải đủ 10 chữ số.'); return false;
+      setPhoneError('Số điện thoại phải đủ 10 chữ số.');
+      return false;
     }
     return true;
   };
 
-  const next = () => { if (validateStep()) setStep((s) => Math.min(s + 1, STEPS.length - 1)); };
+  const next = () => {
+    if (validateStep()) setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  };
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
   const buildPhone = () => {
@@ -213,7 +221,9 @@ export default function Onboarding() {
   };
 
   const buildBirthday = (): Birthday | null => {
-    const d = parseInt(birthdayDay, 10), m = parseInt(birthdayMonth, 10), y = parseInt(birthdayYear, 10);
+    const d = parseInt(birthdayDay, 10),
+      m = parseInt(birthdayMonth, 10),
+      y = parseInt(birthdayYear, 10);
     if (!d || !m || !y) return null;
     return { day: d, month: m, year: y, showYear: true };
   };
@@ -245,8 +255,16 @@ export default function Onboarding() {
 
   /* ─── Review helpers ───────────────────────────────────────────────────── */
   const reviewRows: { label: string; value: string }[] = [];
-  if (buildBirthday()) reviewRows.push({ label: 'Ngày sinh', value: `${birthdayDay}/${birthdayMonth}/${birthdayYear}` });
-  if (gender) reviewRows.push({ label: 'Giới tính', value: gender === 'Khác' && customGender ? customGender : gender });
+  if (buildBirthday())
+    reviewRows.push({
+      label: 'Ngày sinh',
+      value: `${birthdayDay}/${birthdayMonth}/${birthdayYear}`,
+    });
+  if (gender)
+    reviewRows.push({
+      label: 'Giới tính',
+      value: gender === 'Khác' && customGender ? customGender : gender,
+    });
   if (phoneNumber.trim()) reviewRows.push({ label: 'Điện thoại', value: buildPhone()! });
   if (bio.trim()) reviewRows.push({ label: 'Tiểu sử', value: bio });
   if (currentCity.trim()) reviewRows.push({ label: 'Thành phố', value: currentCity });
@@ -284,7 +302,13 @@ export default function Onboarding() {
                   }`}
                 >
                   {i < step ? (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={3}
+                    >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
@@ -292,7 +316,9 @@ export default function Onboarding() {
                   )}
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className={`w-8 h-0.5 transition-colors duration-300 ${i < step ? 'bg-cyan-500' : 'bg-white/10'}`} />
+                  <div
+                    className={`w-8 h-0.5 transition-colors duration-300 ${i < step ? 'bg-cyan-500' : 'bg-white/10'}`}
+                  />
                 )}
               </div>
             ))}
@@ -305,17 +331,47 @@ export default function Onboarding() {
               <div>
                 <label className={LABEL}>Ngày sinh</label>
                 <div className="flex gap-2">
-                  <select value={birthdayMonth} onChange={(e) => setBirthdayMonth(e.target.value)} className={`${SELECT} flex-1`}>
-                    <option value="" className="bg-slate-800 text-white">Tháng</option>
-                    {months.map((m) => <option key={m} value={m} className="bg-slate-800 text-white">Tháng {m}</option>)}
+                  <select
+                    value={birthdayMonth}
+                    onChange={(e) => setBirthdayMonth(e.target.value)}
+                    className={`${SELECT} flex-1`}
+                  >
+                    <option value="" className="bg-slate-800 text-white">
+                      Tháng
+                    </option>
+                    {months.map((m) => (
+                      <option key={m} value={m} className="bg-slate-800 text-white">
+                        Tháng {m}
+                      </option>
+                    ))}
                   </select>
-                  <select value={birthdayDay} onChange={(e) => setBirthdayDay(e.target.value)} className={`${SELECT} flex-1`}>
-                    <option value="" className="bg-slate-800 text-white">Ngày</option>
-                    {days.map((d) => <option key={d} value={d} className="bg-slate-800 text-white">{d}</option>)}
+                  <select
+                    value={birthdayDay}
+                    onChange={(e) => setBirthdayDay(e.target.value)}
+                    className={`${SELECT} flex-1`}
+                  >
+                    <option value="" className="bg-slate-800 text-white">
+                      Ngày
+                    </option>
+                    {days.map((d) => (
+                      <option key={d} value={d} className="bg-slate-800 text-white">
+                        {d}
+                      </option>
+                    ))}
                   </select>
-                  <select value={birthdayYear} onChange={(e) => setBirthdayYear(e.target.value)} className={`${SELECT} flex-1`}>
-                    <option value="" className="bg-slate-800 text-white">Năm</option>
-                    {years.map((y) => <option key={y} value={y} className="bg-slate-800 text-white">{y}</option>)}
+                  <select
+                    value={birthdayYear}
+                    onChange={(e) => setBirthdayYear(e.target.value)}
+                    className={`${SELECT} flex-1`}
+                  >
+                    <option value="" className="bg-slate-800 text-white">
+                      Năm
+                    </option>
+                    {years.map((y) => (
+                      <option key={y} value={y} className="bg-slate-800 text-white">
+                        {y}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -325,7 +381,9 @@ export default function Onboarding() {
                 <div className="flex gap-2">
                   {GENDER_OPTIONS.map((g) => (
                     <button
-                      key={g} type="button" onClick={() => setGender(g)}
+                      key={g}
+                      type="button"
+                      onClick={() => setGender(g)}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-300 ${
                         gender === g
                           ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white border-transparent shadow-lg shadow-cyan-500/20'
@@ -337,7 +395,13 @@ export default function Onboarding() {
                   ))}
                 </div>
                 {gender === 'Khác' && (
-                  <input type="text" placeholder="Nhập giới tính của bạn" value={customGender} onChange={(e) => setCustomGender(e.target.value)} className={`${INPUT} mt-2`} />
+                  <input
+                    type="text"
+                    placeholder="Nhập giới tính của bạn"
+                    value={customGender}
+                    onChange={(e) => setCustomGender(e.target.value)}
+                    className={`${INPUT} mt-2`}
+                  />
                 )}
               </div>
             </div>
@@ -350,25 +414,47 @@ export default function Onboarding() {
                 <label className={LABEL}>Tiểu sử</label>
                 <textarea
                   placeholder="Giới thiệu ngắn về bạn..."
-                  value={bio} onChange={(e) => setBio(e.target.value)}
-                  maxLength={200} rows={3}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  maxLength={200}
+                  rows={3}
                   className={`${INPUT} resize-none`}
                 />
                 <p className="text-xs text-white/30 text-right mt-1">{bio.length}/200</p>
               </div>
               <div>
                 <label className={LABEL}>Thành phố hiện tại</label>
-                <LocationAutocomplete value={currentCity} onChange={setCurrentCity} placeholder="Tìm thành phố..." inputClass={INPUT} />
+                <LocationAutocomplete
+                  value={currentCity}
+                  onChange={setCurrentCity}
+                  placeholder="Tìm thành phố..."
+                  inputClass={INPUT}
+                />
               </div>
               <div>
                 <label className={LABEL}>Quê quán</label>
-                <LocationAutocomplete value={hometown} onChange={setHometown} placeholder="Tìm quê quán..." inputClass={INPUT} />
+                <LocationAutocomplete
+                  value={hometown}
+                  onChange={setHometown}
+                  placeholder="Tìm quê quán..."
+                  inputClass={INPUT}
+                />
               </div>
               <div>
                 <label className={LABEL}>Tình trạng mối quan hệ</label>
-                <select value={relationship} onChange={(e) => setRelationship(e.target.value)} className={`${SELECT} w-full`}>
-                  <option value="" className="bg-slate-800 text-white">-- Chọn --</option>
-                  {RELATIONSHIP_OPTIONS.map((r) => <option key={r} value={r} className="bg-slate-800 text-white">{r}</option>)}
+                <select
+                  value={relationship}
+                  onChange={(e) => setRelationship(e.target.value)}
+                  className={`${SELECT} w-full`}
+                >
+                  <option value="" className="bg-slate-800 text-white">
+                    -- Chọn --
+                  </option>
+                  {RELATIONSHIP_OPTIONS.map((r) => (
+                    <option key={r} value={r} className="bg-slate-800 text-white">
+                      {r}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -397,13 +483,17 @@ export default function Onboarding() {
           {/* Navigation */}
           <div className="flex justify-between mt-7">
             {step > 0 ? (
-              <button type="button" onClick={back}
+              <button
+                type="button"
+                onClick={back}
                 className="px-5 py-2.5 rounded-xl text-sm font-medium text-white/50 border border-white/[0.12] hover:bg-white/[0.07] hover:text-white/80 transition-all duration-200"
               >
                 Quay lại
               </button>
             ) : (
-              <button type="button" onClick={() => navigate('/feed', { replace: true })}
+              <button
+                type="button"
+                onClick={() => navigate('/feed', { replace: true })}
                 className="px-5 py-2.5 rounded-xl text-sm font-medium text-white/30 hover:text-white/60 transition-all duration-200"
               >
                 Bỏ qua
@@ -411,21 +501,42 @@ export default function Onboarding() {
             )}
 
             {step < STEPS.length - 1 ? (
-              <button type="button" onClick={next}
+              <button
+                type="button"
+                onClick={next}
                 className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-400/30 transition-all duration-300"
               >
                 Tiếp tục
               </button>
             ) : (
-              <button type="button" onClick={handleSave} disabled={saving}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
                 className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-400/30 transition-all duration-300 disabled:opacity-50"
               >
                 {saving ? (
                   <span className="flex items-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
                     Đang lưu...
                   </span>
-                ) : 'Hoàn tất'}
+                ) : (
+                  'Hoàn tất'
+                )}
               </button>
             )}
           </div>

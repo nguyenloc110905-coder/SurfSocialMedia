@@ -10,6 +10,7 @@ import QuickAccessSection from './QuickAccessSection';
 import ReviewModal from './ReviewModal';
 import CustomSettingsModal from './CustomSettingsModal';
 import SettingsSectionPage from './SettingsSectionPage';
+import BlockListPanel from './BlockListPanel';
 
 export default function SettingsPage() {
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
@@ -51,10 +52,12 @@ export default function SettingsPage() {
             <AccountSecurityPanel />
           ) : selectedDetail === 'delete-account' ? (
             <DeleteAccountPanel />
+          ) : selectedDetail === 'block-list' ? (
+            <BlockListPanel />
           ) : sectionKey ? (
             <SettingsSectionPage sectionKey={sectionKey} activeItem={selectedDetail} />
           ) : (
-            <QuickAccessSection />
+            <QuickAccessSection onSelectDetail={setSelectedDetail} />
           )}
         </main>
       </div>

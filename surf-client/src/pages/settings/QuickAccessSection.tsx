@@ -1,6 +1,16 @@
 import { MOST_ACCESSED } from '@/lib/settings-constants';
 
-export default function QuickAccessSection() {
+interface QuickAccessSectionProps {
+  onSelectDetail?: (key: string) => void;
+}
+
+export default function QuickAccessSection({ onSelectDetail }: QuickAccessSectionProps) {
+  const handleQuickAccess = (label: string) => {
+    if (!onSelectDetail) return;
+    if (label === 'Chặn') onSelectDetail('block-list');
+    if (label === 'Nhật ký hoạt động') onSelectDetail('activity-log');
+  };
+
   return (
     <>
       <section className="mb-8">
@@ -12,6 +22,7 @@ export default function QuickAccessSection() {
             <button
               key={item.label}
               type="button"
+              onClick={() => handleQuickAccess(item.label)}
               className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-surf-card/80 border border-slate-200/80 dark:border-slate-700/80 hover:border-surf-primary/50 dark:hover:border-surf-primary/50 hover:shadow-md hover:shadow-surf-primary/5 text-left transition-all group"
             >
               <span className="w-11 h-11 rounded-xl bg-surf-primary/15 dark:bg-surf-primary/25 flex items-center justify-center flex-shrink-0 text-surf-primary dark:text-surf-secondary group-hover:scale-105 transition-transform">

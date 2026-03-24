@@ -31,7 +31,7 @@ export const getSocket = (): Socket => {
 
 export const connectSocket = (userId: string) => {
   const socket = getSocket();
-  
+
   if (socket.connected) {
     // Đã connect rồi, join ngay
     socket.emit('join', userId);

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import { requireAuth, AuthRequest, requireNoBlock } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
@@ -31,11 +31,19 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       res.json({ users: [] });
       return;
     }
-    const snap = await getDb().collection('users').get();
+    const [myUserDoc, blockedByMeSnap, snap] = await Promise.all([
+      getDb().collection('users').doc(uid).get(),
+      getDb().collection('users').where('blockedBy', 'array-contains', uid).get(),
+      getDb().collection('users').get(),
+    ]);
+    const blockedByOthers = new Set<string>(
+      myUserDoc.exists ? ((myUserDoc.data()?.blockedBy ?? []) as string[]) : []
+    );
+    const blockedByMe = new Set<string>(blockedByMeSnap.docs.map((d) => d.id));
     const lower = q.toLowerCase();
     type UserDoc = { id: string; displayName?: string; photoURL?: string };
     const matched = snap.docs
-      .filter((d) => d.id !== uid)
+      .filter((d) => d.id !== uid && !blockedByOthers.has(d.id) && !blockedByMe.has(d.id))
       .map((d) => ({ id: d.id, ...d.data() }) as UserDoc)
       .filter((u) => {
         const words = (u.displayName ?? '').toLowerCase().split(/\s+/);
@@ -128,8 +136,235 @@ router.put('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => 
       return;
     }
     const trimmed = recentSearches.slice(0, 8);
-    await getDb().collection('users').doc(req.uid!).set({ recentSearches: trimmed }, { merge: true });
+    await getDb()
+      .collection('users')
+      .doc(req.uid!)
+      .set({ recentSearches: trimmed }, { merge: true });
     res.json({ recentSearches: trimmed });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** GET /api/users/me/blocked — danh sách user tôi đã chặn */
+router.get('/me/blocked', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const limitNum = Math.min(parseInt(req.query.limit as string) || 200, 500);
+
+    const snap = await getDb()
+      .collection('users')
+      .where('blockedBy', 'array-contains', uid)
+      .limit(limitNum)
+      .get();
+
+    const blocked = snap.docs.map((d) => {
+      const data = d.data() as {
+        displayName?: string;
+        photoURL?: string | null;
+        email?: string | null;
+      };
+      return {
+        id: d.id,
+        name: data.displayName ?? 'Unknown',
+        avatarUrl: data.photoURL ?? null,
+        email: data.email ?? null,
+      };
+    });
+
+    res.json({ blocked });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** GET /api/users/:uid/block-status */
+router.get('/:uid/block-status', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const viewerUid = req.uid!;
+    const targetUid = req.params.uid;
+
+    if (viewerUid === targetUid) {
+      res.json({
+        isSelf: true,
+        isBlocking: false,
+        isBlockedBy: false,
+        isBlocked: false,
+      });
+      return;
+    }
+
+    const [viewerDoc, targetDoc] = await Promise.all([
+      getDb().collection('users').doc(viewerUid).get(),
+      getDb().collection('users').doc(targetUid).get(),
+    ]);
+
+    if (!targetDoc.exists) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const viewerBlockedBy: string[] = viewerDoc.exists
+      ? ((viewerDoc.data()?.blockedBy ?? []) as string[])
+      : [];
+    const targetBlockedBy: string[] = targetDoc.exists
+      ? ((targetDoc.data()?.blockedBy ?? []) as string[])
+      : [];
+
+    const isBlocking = targetBlockedBy.includes(viewerUid);
+    const isBlockedBy = viewerBlockedBy.includes(targetUid);
+
+    res.json({
+      isSelf: false,
+      isBlocking,
+      isBlockedBy,
+      isBlocked: isBlocking || isBlockedBy,
+    });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** POST /api/users/:uid/block */
+router.post('/:uid/block', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const viewerUid = req.uid!;
+    const targetUid = req.params.uid;
+
+    if (viewerUid === targetUid) {
+      res.status(400).json({ error: 'Cannot block yourself' });
+      return;
+    }
+
+    const targetRef = getDb().collection('users').doc(targetUid);
+    const targetDoc = await targetRef.get();
+    if (!targetDoc.exists) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    // 1) Ghi trạng thái block theo AC: blockedBy array trên user bị block
+    await targetRef.set(
+      {
+        blockedBy: FieldValue.arrayUnion(viewerUid),
+        updatedAt: new Date(),
+      },
+      { merge: true }
+    );
+
+    // 2) Dọn dữ liệu quan hệ để tránh còn tương tác cũ
+    const [myFriendsDoc, theirFriendsDoc, req1, req2] = await Promise.all([
+      getDb().collection('friends').doc(viewerUid).get(),
+      getDb().collection('friends').doc(targetUid).get(),
+      getDb()
+        .collection('friend_requests')
+        .where('fromUid', '==', viewerUid)
+        .where('toUid', '==', targetUid)
+        .get(),
+      getDb()
+        .collection('friend_requests')
+        .where('fromUid', '==', targetUid)
+        .where('toUid', '==', viewerUid)
+        .get(),
+    ]);
+
+    const myFriendIds: string[] = myFriendsDoc.exists
+      ? ((myFriendsDoc.data()?.friendIds ?? []) as string[])
+      : [];
+    const theirFriendIds: string[] = theirFriendsDoc.exists
+      ? ((theirFriendsDoc.data()?.friendIds ?? []) as string[])
+      : [];
+
+    const batch = getDb().batch();
+    batch.set(
+      getDb().collection('friends').doc(viewerUid),
+      { friendIds: myFriendIds.filter((id) => id !== targetUid) },
+      { merge: true }
+    );
+    batch.set(
+      getDb().collection('friends').doc(targetUid),
+      { friendIds: theirFriendIds.filter((id) => id !== viewerUid) },
+      { merge: true }
+    );
+    batch.set(
+      getDb().collection('follows').doc(viewerUid),
+      { followingIds: FieldValue.arrayRemove(targetUid) },
+      { merge: true }
+    );
+    batch.set(
+      getDb().collection('follows').doc(targetUid),
+      { followingIds: FieldValue.arrayRemove(viewerUid) },
+      { merge: true }
+    );
+    req1.docs.forEach((d) => batch.delete(d.ref));
+    req2.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+
+    res.json({ success: true, blocked: true, targetUid });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** DELETE /api/users/:uid/block */
+router.delete('/:uid/block', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const viewerUid = req.uid!;
+    const targetUid = req.params.uid;
+
+    if (viewerUid === targetUid) {
+      res.status(400).json({ error: 'Cannot unblock yourself' });
+      return;
+    }
+
+    const targetRef = getDb().collection('users').doc(targetUid);
+    const targetDoc = await targetRef.get();
+    if (!targetDoc.exists) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    await targetRef.set(
+      {
+        blockedBy: FieldValue.arrayRemove(viewerUid),
+        updatedAt: new Date(),
+      },
+      { merge: true }
+    );
+
+    res.json({ success: true, blocked: false, targetUid });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** POST /api/users/:uid/unblock */
+router.post('/:uid/unblock', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const viewerUid = req.uid!;
+    const targetUid = req.params.uid;
+
+    if (viewerUid === targetUid) {
+      res.status(400).json({ error: 'Cannot unblock yourself' });
+      return;
+    }
+
+    const targetRef = getDb().collection('users').doc(targetUid);
+    const targetDoc = await targetRef.get();
+    if (!targetDoc.exists) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    await targetRef.set(
+      {
+        blockedBy: FieldValue.arrayRemove(viewerUid),
+        updatedAt: new Date(),
+      },
+      { merge: true }
+    );
+
+    res.json({ success: true, blocked: false, targetUid });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -164,38 +399,48 @@ router.get('/:uid/follow-status', requireAuth, async (req: AuthRequest, res) => 
 });
 
 /** POST /api/users/:uid/follow */
-router.post('/:uid/follow', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const viewerUid = req.uid!;
-    const targetUid = req.params.uid;
-    if (viewerUid === targetUid) {
-      res.status(400).json({ error: 'Cannot follow yourself' });
-      return;
+router.post(
+  '/:uid/follow',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.uid),
+  async (req: AuthRequest, res) => {
+    try {
+      const viewerUid = req.uid!;
+      const targetUid = req.params.uid;
+      if (viewerUid === targetUid) {
+        res.status(400).json({ error: 'Cannot follow yourself' });
+        return;
+      }
+      await getDb()
+        .collection('follows')
+        .doc(viewerUid)
+        .set({ followingIds: FieldValue.arrayUnion(targetUid) }, { merge: true });
+      res.json({ success: true, isFollowing: true });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
     }
-    await getDb()
-      .collection('follows')
-      .doc(viewerUid)
-      .set({ followingIds: FieldValue.arrayUnion(targetUid) }, { merge: true });
-    res.json({ success: true, isFollowing: true });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
   }
-});
+);
 
 /** POST /api/users/:uid/unfollow */
-router.post('/:uid/unfollow', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const viewerUid = req.uid!;
-    const targetUid = req.params.uid;
-    await getDb()
-      .collection('follows')
-      .doc(viewerUid)
-      .set({ followingIds: FieldValue.arrayRemove(targetUid) }, { merge: true });
-    res.json({ success: true, isFollowing: false });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
+router.post(
+  '/:uid/unfollow',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.uid),
+  async (req: AuthRequest, res) => {
+    try {
+      const viewerUid = req.uid!;
+      const targetUid = req.params.uid;
+      await getDb()
+        .collection('follows')
+        .doc(viewerUid)
+        .set({ followingIds: FieldValue.arrayRemove(targetUid) }, { merge: true });
+      res.json({ success: true, isFollowing: false });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
   }
-});
+);
 
 // ─── Sub-collection routes (phải đặt trước /:uid GET) ──────────────────────
 

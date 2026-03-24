@@ -2,6 +2,15 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { sendPasswordResetEmail } from '@/lib/firebase/auth';
 
+const PARTICLE_STYLES = Array.from({ length: 12 }, () => ({
+  left: `${Math.random() * 100}%`,
+  top: `${Math.random() * 100}%`,
+  animationDelay: `${Math.random() * 8}s`,
+  animationDuration: `${6 + Math.random() * 8}s`,
+  width: `${2 + Math.random() * 3}px`,
+  height: `${2 + Math.random() * 3}px`,
+}));
+
 const ERRORS: Record<string, string> = {
   'auth/invalid-email': 'Email không hợp lệ.',
   'auth/user-not-found': 'Không tìm thấy tài khoản với email này.',
@@ -24,19 +33,8 @@ function AuthBackground() {
           backgroundSize: '60px 60px',
         }}
       />
-      {Array.from({ length: 12 }).map((_, i) => (
-        <div
-          key={i}
-          className="auth-particle"
-          style={{
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            animationDelay: `${Math.random() * 8}s`,
-            animationDuration: `${6 + Math.random() * 8}s`,
-            width: `${2 + Math.random() * 3}px`,
-            height: `${2 + Math.random() * 3}px`,
-          }}
-        />
+      {PARTICLE_STYLES.map((style, i) => (
+        <div key={i} className="auth-particle" style={style} />
       ))}
     </div>
   );
@@ -56,7 +54,8 @@ export default function ForgotPassword() {
       await sendPasswordResetEmail(email.trim());
       setSent(true);
     } catch (err: unknown) {
-      const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+      const code =
+        err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
       setError(ERRORS[code] || 'Gửi email thất bại.');
     } finally {
       setLoading(false);
@@ -88,12 +87,24 @@ export default function ForgotPassword() {
             <div className="auth-entrance">
               <div className="flex flex-col items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 19V5a2 2 0 012-2h14a2 2 0 012 2v14M3 19l6.75-4.5M21 19l-6.75-4.5M3 5l9 6 9-6" />
+                  <svg
+                    className="w-8 h-8 text-emerald-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3 19V5a2 2 0 012-2h14a2 2 0 012 2v14M3 19l6.75-4.5M21 19l-6.75-4.5M3 5l9 6 9-6"
+                    />
                   </svg>
                 </div>
                 <p className="text-white/70 text-center text-sm leading-relaxed">
-                  Chúng tôi đã gửi email chứa link đặt lại mật khẩu đến <span className="text-cyan-400 font-medium">{email}</span>. Vui lòng kiểm tra hộp thư (và thư mục spam).
+                  Chúng tôi đã gửi email chứa link đặt lại mật khẩu đến{' '}
+                  <span className="text-cyan-400 font-medium">{email}</span>. Vui lòng kiểm tra hộp
+                  thư (và thư mục spam).
                 </p>
               </div>
               <Link
@@ -107,7 +118,9 @@ export default function ForgotPassword() {
             <>
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">Email</label>
+                  <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
+                    Email
+                  </label>
                   <input
                     type="email"
                     placeholder="you@example.com"
@@ -124,21 +137,50 @@ export default function ForgotPassword() {
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
-                      <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
+                      </svg>
                       Đang gửi...
                     </span>
-                  ) : 'Gửi link đặt lại mật khẩu'}
+                  ) : (
+                    'Gửi link đặt lại mật khẩu'
+                  )}
                 </button>
                 {error && (
                   <div className="flex items-center gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/20 animate-[shake_0.3s_ease-in-out]">
-                    <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="w-5 h-5 text-red-400 flex-shrink-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                     <p className="text-red-300 text-sm font-medium">{error}</p>
                   </div>
                 )}
               </form>
-              <Link to="/login" className="mt-5 block text-center text-sm text-cyan-400 hover:text-cyan-300 transition-colors">
+              <Link
+                to="/login"
+                className="mt-5 block text-center text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
                 ← Quay lại đăng nhập
               </Link>
             </>

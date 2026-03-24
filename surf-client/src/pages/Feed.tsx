@@ -38,7 +38,8 @@ export default function Feed() {
       setLoading(true);
       setError(null);
       const response = await api.get<{ posts: Post[]; nextLastId?: string }>('/api/feed');
-      setPosts(response.posts || []);
+      const seen = new Set<string>();
+      setPosts((response.posts || []).filter((p) => !seen.has(p.id) && !!seen.add(p.id)));
       setNextCursor(response.nextLastId ?? null);
       setHasMore(!!response.nextLastId);
     } catch (err) {
@@ -94,7 +95,11 @@ export default function Feed() {
   }, []);
 
   const handlePostCreated = (newPost: Record<string, unknown>) => {
-    setPosts((prev) => [newPost as unknown as Post, ...prev]);
+    setPosts((prev) => {
+      const castPost = newPost as unknown as Post;
+      if (prev.some((p) => p.id === castPost.id)) return prev;
+      return [castPost, ...prev];
+    });
   };
 
   // Vị trí đầu tiên của bài "Khám phá" để hiện divider

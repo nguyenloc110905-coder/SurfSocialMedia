@@ -8,26 +8,38 @@ export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const q = searchParams.get('q') ?? '';
 
-  const [users, setUsers]   = useState<SearchUser[]>([]);
+  const [users, setUsers] = useState<SearchUser[]>([]);
   const [loading, setLoading] = useState(false);
-  const [done, setDone]     = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
-    if (!q.trim()) { setUsers([]); setDone(true); return; }
-    setLoading(true);
-    setDone(false);
-    api
-      .get<{ users: SearchUser[] }>(`/api/users/search?q=${encodeURIComponent(q.trim())}`)
-      .then((res) => setUsers(res.users ?? []))
-      .catch(() => setUsers([]))
-      .finally(() => { setLoading(false); setDone(true); });
+    const run = async () => {
+      if (!q.trim()) {
+        setUsers([]);
+        setDone(true);
+        return;
+      }
+      setLoading(true);
+      setDone(false);
+      try {
+        const res = await api.get<{ users: SearchUser[] }>(
+          `/api/users/search?q=${encodeURIComponent(q.trim())}`
+        );
+        setUsers(res.users ?? []);
+      } catch {
+        setUsers([]);
+      } finally {
+        setLoading(false);
+        setDone(true);
+      }
+    };
+    run();
   }, [q]);
 
   return (
     <div className="py-4 px-2">
       <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">
-        Kết quả cho{' '}
-        <span className="text-surf-primary">"{q}"</span>
+        Kết quả cho <span className="text-surf-primary">"{q}"</span>
       </h2>
 
       {/* Loading */}
@@ -40,7 +52,11 @@ export default function SearchPage() {
       {/* No results */}
       {done && !loading && users.length === 0 && (
         <div className="flex flex-col items-center py-16 text-center gap-3">
-          <svg className="w-16 h-16 text-gray-300 dark:text-gray-600" viewBox="0 0 24 24" fill="currentColor">
+          <svg
+            className="w-16 h-16 text-gray-300 dark:text-gray-600"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
             <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
           </svg>
           <p className="font-medium text-gray-600 dark:text-gray-400">
@@ -53,9 +69,7 @@ export default function SearchPage() {
       {/* Results */}
       {done && !loading && users.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
-            {users.length} kết quả
-          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">{users.length} kết quả</p>
           {users.map((u) => (
             <Link
               key={u.id}

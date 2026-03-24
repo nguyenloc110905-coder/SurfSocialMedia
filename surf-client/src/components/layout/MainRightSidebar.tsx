@@ -46,97 +46,112 @@ export default function MainRightSidebar({
       {/* 1. Quảng cáo — gọi mềm hơn */}
       <Section title="Được tài trợ" empty={ads.length === 0} emptyMessage="Chưa có nội dung.">
         <ul className="space-y-2">
-            {ads.map((ad) => (
-              <li key={ad.id}>
-                {ad.href ? (
-                  <Link
-                    to={ad.href}
-                    className="block rounded-xl overflow-hidden border border-gray-200 dark:border-gray-600 hover:border-surf-primary/40 dark:hover:border-surf-secondary/40 transition-colors"
-                  >
-                    {ad.imageUrl ? (
-                      <img src={ad.imageUrl} alt="" className="w-full aspect-[2/1] object-cover" />
-                    ) : null}
-                    <span className="block p-2 text-xs font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
-                      {ad.title}
-                    </span>
-                  </Link>
-                ) : (
-                  <div className="rounded-xl border border-gray-200 dark:border-gray-600 p-2">
-                    <span className="block text-xs font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
-                      {ad.title}
-                    </span>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          {ads.map((ad) => (
+            <li key={ad.id}>
+              {ad.href ? (
+                <Link
+                  to={ad.href}
+                  className="block rounded-xl overflow-hidden border border-gray-200 dark:border-gray-600 hover:border-surf-primary/40 dark:hover:border-surf-secondary/40 transition-colors"
+                >
+                  {ad.imageUrl ? (
+                    <img src={ad.imageUrl} alt="" className="w-full aspect-[2/1] object-cover" />
+                  ) : null}
+                  <span className="block p-2 text-xs font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
+                    {ad.title}
+                  </span>
+                </Link>
+              ) : (
+                <div className="rounded-xl border border-gray-200 dark:border-gray-600 p-2">
+                  <span className="block text-xs font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
+                    {ad.title}
+                  </span>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       </Section>
 
       {/* 2. Bạn bè đang online — gọi mềm hơn */}
-      <Section title="Đang hoạt động" empty={friendsOnline.length === 0} emptyMessage="Chưa có ai đang hoạt động.">
+      <Section
+        title="Đang hoạt động"
+        empty={friendsOnline.length === 0}
+        emptyMessage="Chưa có ai đang hoạt động."
+      >
         <ul className="space-y-1.5">
-            {friendsOnline.map((friend) => (
-              <li key={friend.id}>
-                <Link
-                  to={`/feed/profile/${friend.id}`}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
-                >
-                  <span className="relative flex-shrink-0 w-8 h-8 rounded-full overflow-hidden">
-                    {friend.avatarUrl ? (
-                      <img src={friend.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
-                        <span className="text-xs font-bold text-white">
-                          {(() => {
-                            const name = friend.name || 'S';
-                            const words = name.split(' ');
-                            if (words.length >= 2) {
-                              return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-                            }
-                            return name.substring(0, 1).toUpperCase();
-                          })()}
-                        </span>
+          {friendsOnline.map((friend) => (
+            <li key={friend.id}>
+              <Link
+                to={`/feed/profile/${friend.id}`}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
+              >
+                <span className="relative flex-shrink-0 w-8 h-8 rounded-full overflow-hidden">
+                  {friend.avatarUrl ? (
+                    <img src={friend.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600">
+                      <span className="text-xs font-bold text-white">
+                        {(() => {
+                          const name = friend.name || 'S';
+                          const words = name.split(' ');
+                          if (words.length >= 2) {
+                            return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+                          }
+                          return name.substring(0, 1).toUpperCase();
+                        })()}
                       </span>
-                    )}
-                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-gray-800" title="Đang hoạt động" />
-                  </span>
-                  <span className="text-sm text-gray-800 dark:text-gray-200 truncate flex-1 min-w-0">
-                    {friend.name}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                    </span>
+                  )}
+                  <span
+                    className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-gray-800"
+                    title="Đang hoạt động"
+                  />
+                </span>
+                <span className="text-sm text-gray-800 dark:text-gray-200 truncate flex-1 min-w-0">
+                  {friend.name}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </Section>
 
       {/* 3. Nhóm chat — gọi mềm hơn */}
-      <Section title="Trò chuyện" empty={chatGroups.length === 0} emptyMessage="Chưa có cuộc trò chuyện.">
+      <Section
+        title="Trò chuyện"
+        empty={chatGroups.length === 0}
+        emptyMessage="Chưa có cuộc trò chuyện."
+      >
         <ul className="space-y-1.5">
-            {chatGroups.map((group) => (
-              <li key={group.id}>
-                <Link
-                  to={group.href || '/feed/waves'}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
-                >
-                  <span className="flex-shrink-0 w-8 h-8 rounded-full bg-surf-primary/20 dark:bg-surf-secondary/20 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-surf-primary dark:text-surf-secondary" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
-                    </svg>
+          {chatGroups.map((group) => (
+            <li key={group.id}>
+              <Link
+                to={group.href || '/feed/waves'}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
+              >
+                <span className="flex-shrink-0 w-8 h-8 rounded-full bg-surf-primary/20 dark:bg-surf-secondary/20 flex items-center justify-center">
+                  <svg
+                    className="w-4 h-4 text-surf-primary dark:text-surf-secondary"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+                  </svg>
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                    {group.name}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {group.name}
+                  {group.lastMessage != null && (
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {group.lastMessage}
                     </span>
-                    {group.lastMessage != null && (
-                      <span className="block text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {group.lastMessage}
-                      </span>
-                    )}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  )}
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </Section>
     </aside>
   );

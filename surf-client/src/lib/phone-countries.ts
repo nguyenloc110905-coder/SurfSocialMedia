@@ -241,5 +241,5 @@ export const PHONE_COUNTRIES: PhoneCountry[] = [
  * Tìm quốc gia mặc định (Vietnam).
  */
 export function getDefaultCountry(): PhoneCountry {
-  return PHONE_COUNTRIES.find(c => c.iso === 'VN')!;
+  return PHONE_COUNTRIES.find((c) => c.iso === 'VN')!;
 }

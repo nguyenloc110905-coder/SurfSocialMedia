@@ -7,11 +7,8 @@
  *  3. URL khác → trả nguyên gốc
  */
 
-import { CLOUDINARY_CLOUD_NAME } from './cloudinary-config';
-
 // Cloudflare Worker URL – set trong .env hoặc để trống nếu chưa deploy Worker
-const CF_WORKER_URL =
-  (import.meta.env.VITE_CF_WORKER_URL as string | undefined) ?? '';
+const CF_WORKER_URL = (import.meta.env.VITE_CF_WORKER_URL as string | undefined) ?? '';
 
 export interface ImageOptions {
   /** Chiều rộng tối đa (px) */

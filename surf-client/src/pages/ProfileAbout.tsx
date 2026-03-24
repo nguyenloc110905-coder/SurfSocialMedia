@@ -11,76 +11,251 @@ import {
 
 const COMPANY_SUGGESTIONS = [
   // ── Công nghệ thông tin / Phần mềm VN ──
-  'FPT Software', 'FPT Corporation', 'FPT Telecom', 'FPT IS',
-  'VNG Corporation', 'VNG Cloud', 'Zalo', 'ZaloPay',
-  'Viettel', 'Viettel Digital', 'Viettel Solutions', 'Viettel CyberSecurity',
-  'VNPT', 'VNPT Technology', 'VNPT-IT',
-  'CMC Corporation', 'CMC Telecom', 'CMC Technology & Solutions',
-  'TMA Solutions', 'TMA Technology', 'TMA Innovation',
-  'KMS Technology', 'KMS Healthcare', 'KMS Solutions',
-  'Nashtech', 'Axon Active', 'Logigear', 'Orient Software',
-  'SotaTek', 'Rikkeisoft', 'Sun* Inc.', 'Framgia',
-  'Base.vn', 'MISA', 'Lạc Việt Computing', 'Bravo Software',
-  'VCCorp', 'Vietnamworks', 'Teko Vietnam', 'VHT',
-  'Pascal Technology', 'Techbase Vietnam', 'Savvycom', 'Elcom',
-  'Harvey Nash Vietnam', 'CyberLogitec Vietnam',
-  'Global CyberSoft', 'Fujinet Systems', 'OceanTech', 'SmartDev',
-  'Đất Xanh Technology', 'HMS Vietnam',
-  'Gameloft Vietnam', 'Gear Inc.', 'Hiker Games', 'Topebox',
+  'FPT Software',
+  'FPT Corporation',
+  'FPT Telecom',
+  'FPT IS',
+  'VNG Corporation',
+  'VNG Cloud',
+  'Zalo',
+  'ZaloPay',
+  'Viettel',
+  'Viettel Digital',
+  'Viettel Solutions',
+  'Viettel CyberSecurity',
+  'VNPT',
+  'VNPT Technology',
+  'VNPT-IT',
+  'CMC Corporation',
+  'CMC Telecom',
+  'CMC Technology & Solutions',
+  'TMA Solutions',
+  'TMA Technology',
+  'TMA Innovation',
+  'KMS Technology',
+  'KMS Healthcare',
+  'KMS Solutions',
+  'Nashtech',
+  'Axon Active',
+  'Logigear',
+  'Orient Software',
+  'SotaTek',
+  'Rikkeisoft',
+  'Sun* Inc.',
+  'Framgia',
+  'Base.vn',
+  'MISA',
+  'Lạc Việt Computing',
+  'Bravo Software',
+  'VCCorp',
+  'Vietnamworks',
+  'Teko Vietnam',
+  'VHT',
+  'Pascal Technology',
+  'Techbase Vietnam',
+  'Savvycom',
+  'Elcom',
+  'Harvey Nash Vietnam',
+  'CyberLogitec Vietnam',
+  'Global CyberSoft',
+  'Fujinet Systems',
+  'OceanTech',
+  'SmartDev',
+  'Đất Xanh Technology',
+  'HMS Vietnam',
+  'Gameloft Vietnam',
+  'Gear Inc.',
+  'Hiker Games',
+  'Topebox',
   // ── E-commerce / Fintech / Giao vận ──
-  'MoMo', 'VNPay', 'Moca', 'ShopeePay', 'AirPay',
-  'Tiki', 'Shopee Vietnam', 'Lazada Vietnam', 'Sendo', 'Sapo',
-  'Haravan', 'KiotViet', 'POS365',
-  'Grab Vietnam', 'Gojek Vietnam', 'Be Group', 'FastGo',
-  'Ahamove', 'GHN (Giao Hàng Nhanh)', 'GHTK', 'Viettel Post', 'Vietnam Post',
+  'MoMo',
+  'VNPay',
+  'Moca',
+  'ShopeePay',
+  'AirPay',
+  'Tiki',
+  'Shopee Vietnam',
+  'Lazada Vietnam',
+  'Sendo',
+  'Sapo',
+  'Haravan',
+  'KiotViet',
+  'POS365',
+  'Grab Vietnam',
+  'Gojek Vietnam',
+  'Be Group',
+  'FastGo',
+  'Ahamove',
+  'GHN (Giao Hàng Nhanh)',
+  'GHTK',
+  'Viettel Post',
+  'Vietnam Post',
   // ── Ngân hàng & Tài chính ──
-  'Vietcombank', 'BIDV', 'Agribank', 'VietinBank', 'MB Bank',
-  'Techcombank', 'VPBank', 'ACB', 'Sacombank', 'HDBank',
-  'TPBank', 'MSB', 'OCB', 'SHB', 'SeABank', 'VIB', 'Eximbank',
-  'LienVietPostBank', 'Nam A Bank', 'BacABank', 'Bản Việt Bank',
-  'Manulife Vietnam', 'Prudential Vietnam', 'AIA Vietnam',
-  'Bảo Việt', 'PVI Holdings', 'Bảo hiểm PTI',
-  'SSI Securities', 'VPS Securities', 'VCSC', 'HSC Securities',
+  'Vietcombank',
+  'BIDV',
+  'Agribank',
+  'VietinBank',
+  'MB Bank',
+  'Techcombank',
+  'VPBank',
+  'ACB',
+  'Sacombank',
+  'HDBank',
+  'TPBank',
+  'MSB',
+  'OCB',
+  'SHB',
+  'SeABank',
+  'VIB',
+  'Eximbank',
+  'LienVietPostBank',
+  'Nam A Bank',
+  'BacABank',
+  'Bản Việt Bank',
+  'Manulife Vietnam',
+  'Prudential Vietnam',
+  'AIA Vietnam',
+  'Bảo Việt',
+  'PVI Holdings',
+  'Bảo hiểm PTI',
+  'SSI Securities',
+  'VPS Securities',
+  'VCSC',
+  'HSC Securities',
   // ── Viễn thông ──
-  'Mobifone', 'Reddi (Vietnamobile)', 'Indochina Telecom',
+  'Mobifone',
+  'Reddi (Vietnamobile)',
+  'Indochina Telecom',
   // ── Tập đoàn & Sản xuất ──
-  'VinGroup', 'VinHomes', 'VinFast', 'VinCommerce', 'VinBus', 'Vinmec',
-  'Vinamilk', 'TH True Milk', 'Masan Group', 'Hòa Phát Group',
-  'Trung Nguyên Legend', 'Highlands Coffee', 'Phúc Long Coffee',
-  'Biti\'s', 'PetroVietnam (PVN)', 'PVGas', 'PVOil', 'PVFCCo',
-  'EVN (Điện lực Việt Nam)', 'Vinacomin', 'Vicem', 'Sabeco', 'Habeco',
-  'Unilever Vietnam', 'P&G Vietnam', 'Nestlé Vietnam', 'Abbott Vietnam',
+  'VinGroup',
+  'VinHomes',
+  'VinFast',
+  'VinCommerce',
+  'VinBus',
+  'Vinmec',
+  'Vinamilk',
+  'TH True Milk',
+  'Masan Group',
+  'Hòa Phát Group',
+  'Trung Nguyên Legend',
+  'Highlands Coffee',
+  'Phúc Long Coffee',
+  "Biti's",
+  'PetroVietnam (PVN)',
+  'PVGas',
+  'PVOil',
+  'PVFCCo',
+  'EVN (Điện lực Việt Nam)',
+  'Vinacomin',
+  'Vicem',
+  'Sabeco',
+  'Habeco',
+  'Unilever Vietnam',
+  'P&G Vietnam',
+  'Nestlé Vietnam',
+  'Abbott Vietnam',
   // ── Bất động sản & Xây dựng ──
-  'Novaland', 'Hưng Thịnh Land', 'Phát Đạt', 'Khải Hoàn Land',
-  'Nam Long Group', 'Đất Xanh Group', 'Sunshine Homes',
-  'Coteccons', 'Hòa Bình Corporation', 'Ricons', 'Delta',
+  'Novaland',
+  'Hưng Thịnh Land',
+  'Phát Đạt',
+  'Khải Hoàn Land',
+  'Nam Long Group',
+  'Đất Xanh Group',
+  'Sunshine Homes',
+  'Coteccons',
+  'Hòa Bình Corporation',
+  'Ricons',
+  'Delta',
   // ── Bán lẻ & Tiêu dùng ──
-  'Thế Giới Di Động (MWG)', 'Điện Máy Xanh', 'FPT Shop', 'Viettel Store',
-  'Co.opMart', 'VinMart / WinMart', 'Bách Hóa Xanh', 'Circle K Vietnam', 'GS25 Vietnam',
-  'Lotte Mart', 'AEON Vietnam', 'BigC (Central Group)',
+  'Thế Giới Di Động (MWG)',
+  'Điện Máy Xanh',
+  'FPT Shop',
+  'Viettel Store',
+  'Co.opMart',
+  'VinMart / WinMart',
+  'Bách Hóa Xanh',
+  'Circle K Vietnam',
+  'GS25 Vietnam',
+  'Lotte Mart',
+  'AEON Vietnam',
+  'BigC (Central Group)',
   // ── Y tế & Giáo dục ──
-  'Bệnh viện Vinmec', 'Bệnh viện Medlatec', 'Bệnh viện Thu Cúc',
-  'VUS', 'Anh văn Hội Việt Mỹ', 'Apax English', 'ZIM Academy', 'IELTS Fighter',
+  'Bệnh viện Vinmec',
+  'Bệnh viện Medlatec',
+  'Bệnh viện Thu Cúc',
+  'VUS',
+  'Anh văn Hội Việt Mỹ',
+  'Apax English',
+  'ZIM Academy',
+  'IELTS Fighter',
   // ── Truyền thông & PR ──
-  'VTV', 'VTC', 'HTV', 'VnExpress', 'Báo Tuổi Trẻ', 'Báo Thanh Niên',
-  'Kenh14 (VCCorp)', 'Zing.vn', 'Dentsu Vietnam', 'Ogilvy Vietnam',
+  'VTV',
+  'VTC',
+  'HTV',
+  'VnExpress',
+  'Báo Tuổi Trẻ',
+  'Báo Thanh Niên',
+  'Kenh14 (VCCorp)',
+  'Zing.vn',
+  'Dentsu Vietnam',
+  'Ogilvy Vietnam',
   // ── Đa quốc gia tại VN ──
-  'Intel Products Vietnam', 'Samsung Vietnam (SEV/SEVT)',
-  'LG Electronics Vietnam', 'Canon Vietnam', 'Nidec Vietnam',
-  'Bosch Vietnam', 'Siemens Vietnam', 'ABB Vietnam',
-  'Panasonic Vietnam', 'Fujitsu Vietnam', 'NTT Data Vietnam',
-  'Hitachi Vietnam', 'Mitsubishi Vietnam', 'Honda Vietnam', 'Toyota Vietnam',
-  'KPMG Vietnam', 'Deloitte Vietnam', 'PwC Vietnam', 'EY Vietnam',
-  'McKinsey Vietnam', 'BCG Vietnam', 'Accenture Vietnam',
+  'Intel Products Vietnam',
+  'Samsung Vietnam (SEV/SEVT)',
+  'LG Electronics Vietnam',
+  'Canon Vietnam',
+  'Nidec Vietnam',
+  'Bosch Vietnam',
+  'Siemens Vietnam',
+  'ABB Vietnam',
+  'Panasonic Vietnam',
+  'Fujitsu Vietnam',
+  'NTT Data Vietnam',
+  'Hitachi Vietnam',
+  'Mitsubishi Vietnam',
+  'Honda Vietnam',
+  'Toyota Vietnam',
+  'KPMG Vietnam',
+  'Deloitte Vietnam',
+  'PwC Vietnam',
+  'EY Vietnam',
+  'McKinsey Vietnam',
+  'BCG Vietnam',
+  'Accenture Vietnam',
   // ── Quốc tế (toàn cầu) ──
-  'Google', 'Microsoft', 'Meta', 'Apple', 'Amazon', 'Netflix',
-  'Spotify', 'TikTok (ByteDance)', 'Alibaba', 'Tencent',
-  'Nvidia', 'AMD', 'Intel', 'IBM', 'Oracle', 'SAP', 'Salesforce',
-  'Shopify', 'Stripe', 'PayPal', 'Visa', 'Mastercard',
-  'Airbnb', 'Uber', 'SpaceX', 'Tesla',
+  'Google',
+  'Microsoft',
+  'Meta',
+  'Apple',
+  'Amazon',
+  'Netflix',
+  'Spotify',
+  'TikTok (ByteDance)',
+  'Alibaba',
+  'Tencent',
+  'Nvidia',
+  'AMD',
+  'Intel',
+  'IBM',
+  'Oracle',
+  'SAP',
+  'Salesforce',
+  'Shopify',
+  'Stripe',
+  'PayPal',
+  'Visa',
+  'Mastercard',
+  'Airbnb',
+  'Uber',
+  'SpaceX',
+  'Tesla',
   // ── Khác ──
-  'Freelancer / Tự do', 'Tự kinh doanh', 'Startup của riêng tôi',
-  'Đang tìm việc', 'Sinh viên / Học sinh', 'Về hưu',
+  'Freelancer / Tự do',
+  'Tự kinh doanh',
+  'Startup của riêng tôi',
+  'Đang tìm việc',
+  'Sinh viên / Học sinh',
+  'Về hưu',
 ];
 
 const SCHOOL_SUGGESTIONS = [
@@ -233,72 +408,151 @@ const SCHOOL_SUGGESTIONS = [
 
 const DEGREE_SUGGESTIONS = [
   // ── Bằng cấp ──
-  'Cử nhân', 'Kỹ sư', 'Thạc sĩ', 'Tiến sĩ',
-  'Cao đẳng', 'Trung cấp', 'Liên thông Đại học', 'Văn bằng 2',
+  'Cử nhân',
+  'Kỹ sư',
+  'Thạc sĩ',
+  'Tiến sĩ',
+  'Cao đẳng',
+  'Trung cấp',
+  'Liên thông Đại học',
+  'Văn bằng 2',
   // ── CNTT & Kỹ thuật số ──
-  'Công nghệ Thông tin', 'Kỹ thuật Phần mềm', 'Khoa học Máy tính',
-  'Hệ thống Thông tin', 'Trí tuệ Nhân tạo', 'Khoa học Dữ liệu',
-  'An toàn Thông tin (Cyber Security)', 'Mạng Máy tính và Truyền thông',
-  'Kỹ thuật Máy tính', 'Internet of Things (IoT)', 'Thiết kế Game',
+  'Công nghệ Thông tin',
+  'Kỹ thuật Phần mềm',
+  'Khoa học Máy tính',
+  'Hệ thống Thông tin',
+  'Trí tuệ Nhân tạo',
+  'Khoa học Dữ liệu',
+  'An toàn Thông tin (Cyber Security)',
+  'Mạng Máy tính và Truyền thông',
+  'Kỹ thuật Máy tính',
+  'Internet of Things (IoT)',
+  'Thiết kế Game',
   'Công nghệ Thông tin (Tiếng Anh)',
   // ── Kỹ thuật ──
-  'Kỹ thuật Điện tử Viễn thông', 'Kỹ thuật Điện - Điện tử',
-  'Kỹ thuật Điều khiển và Tự động hóa', 'Kỹ thuật Cơ điện tử',
-  'Kỹ thuật Cơ khí', 'Kỹ thuật Ô tô', 'Kỹ thuật Hàng không',
-  'Kỹ thuật Xây dựng', 'Kỹ thuật Môi trường', 'Kỹ thuật Hóa học',
-  'Kỹ thuật Nhiệt', 'Kỹ thuật Dầu khí', 'Kỹ thuật Địa chất',
-  'Kỹ thuật Giao thông', 'Kỹ thuật Y sinh',
+  'Kỹ thuật Điện tử Viễn thông',
+  'Kỹ thuật Điện - Điện tử',
+  'Kỹ thuật Điều khiển và Tự động hóa',
+  'Kỹ thuật Cơ điện tử',
+  'Kỹ thuật Cơ khí',
+  'Kỹ thuật Ô tô',
+  'Kỹ thuật Hàng không',
+  'Kỹ thuật Xây dựng',
+  'Kỹ thuật Môi trường',
+  'Kỹ thuật Hóa học',
+  'Kỹ thuật Nhiệt',
+  'Kỹ thuật Dầu khí',
+  'Kỹ thuật Địa chất',
+  'Kỹ thuật Giao thông',
+  'Kỹ thuật Y sinh',
   // ── Kinh tế & Quản trị ──
-  'Quản trị Kinh doanh (BBA)', 'Quản trị Kinh doanh (MBA)',
-  'Kinh tế', 'Kinh tế Quốc tế', 'Kinh tế Phát triển',
-  'Tài chính - Ngân hàng', 'Tài chính Doanh nghiệp',
-  'Kế toán', 'Kiểm toán', 'Kế toán - Kiểm toán',
-  'Marketing', 'Quản trị Marketing', 'Digital Marketing',
-  'Thương mại Điện tử', 'Kinh doanh Quốc tế',
+  'Quản trị Kinh doanh (BBA)',
+  'Quản trị Kinh doanh (MBA)',
+  'Kinh tế',
+  'Kinh tế Quốc tế',
+  'Kinh tế Phát triển',
+  'Tài chính - Ngân hàng',
+  'Tài chính Doanh nghiệp',
+  'Kế toán',
+  'Kiểm toán',
+  'Kế toán - Kiểm toán',
+  'Marketing',
+  'Quản trị Marketing',
+  'Digital Marketing',
+  'Thương mại Điện tử',
+  'Kinh doanh Quốc tế',
   'Logistics và Quản lý Chuỗi cung ứng',
-  'Quản trị Nhân lực', 'Quản lý Dự án', 'Khởi nghiệp và Đổi mới sáng tạo',
+  'Quản trị Nhân lực',
+  'Quản lý Dự án',
+  'Khởi nghiệp và Đổi mới sáng tạo',
   // ── Luật ──
-  'Luật', 'Luật Kinh tế', 'Luật Quốc tế', 'Luật Dân sự',
-  'Quản lý Nhà nước', 'Hành chính Công',
+  'Luật',
+  'Luật Kinh tế',
+  'Luật Quốc tế',
+  'Luật Dân sự',
+  'Quản lý Nhà nước',
+  'Hành chính Công',
   // ── Ngoại ngữ ──
-  'Ngôn ngữ Anh', 'Ngôn ngữ Nhật', 'Ngôn ngữ Hàn',
-  'Ngôn ngữ Trung', 'Ngôn ngữ Pháp', 'Ngôn ngữ Đức', 'Ngôn ngữ Nga',
-  'Biên - Phiên dịch Anh', 'Sư phạm Tiếng Anh',
+  'Ngôn ngữ Anh',
+  'Ngôn ngữ Nhật',
+  'Ngôn ngữ Hàn',
+  'Ngôn ngữ Trung',
+  'Ngôn ngữ Pháp',
+  'Ngôn ngữ Đức',
+  'Ngôn ngữ Nga',
+  'Biên - Phiên dịch Anh',
+  'Sư phạm Tiếng Anh',
   // ── Y - Dược ──
-  'Y đa khoa', 'Răng Hàm Mặt', 'Y học dự phòng',
-  'Điều dưỡng', 'Dược học', 'Y tế Công cộng',
-  'Kỹ thuật Xét nghiệm Y học', 'Kỹ thuật Hình ảnh Y học', 'Phục hồi Chức năng',
+  'Y đa khoa',
+  'Răng Hàm Mặt',
+  'Y học dự phòng',
+  'Điều dưỡng',
+  'Dược học',
+  'Y tế Công cộng',
+  'Kỹ thuật Xét nghiệm Y học',
+  'Kỹ thuật Hình ảnh Y học',
+  'Phục hồi Chức năng',
   // ── Sư phạm ──
-  'Sư phạm Toán', 'Sư phạm Vật lý', 'Sư phạm Hóa học',
-  'Sư phạm Ngữ văn', 'Sư phạm Lịch sử', 'Sư phạm Địa lý',
-  'Giáo dục Tiểu học', 'Giáo dục Mầm non', 'Giáo dục Đặc biệt',
-  'Tâm lý Giáo dục', 'Công tác Xã hội', 'Xã hội học', 'Tâm lý học',
+  'Sư phạm Toán',
+  'Sư phạm Vật lý',
+  'Sư phạm Hóa học',
+  'Sư phạm Ngữ văn',
+  'Sư phạm Lịch sử',
+  'Sư phạm Địa lý',
+  'Giáo dục Tiểu học',
+  'Giáo dục Mầm non',
+  'Giáo dục Đặc biệt',
+  'Tâm lý Giáo dục',
+  'Công tác Xã hội',
+  'Xã hội học',
+  'Tâm lý học',
   // ── Kiến trúc & Thiết kế ──
-  'Kiến trúc', 'Quy hoạch Đô thị',
-  'Thiết kế Đồ họa', 'Thiết kế Nội thất',
-  'Thiết kế Công nghiệp', 'Thiết kế Thời trang',
-  'Mỹ thuật Ứng dụng', 'Nghệ thuật Số',
+  'Kiến trúc',
+  'Quy hoạch Đô thị',
+  'Thiết kế Đồ họa',
+  'Thiết kế Nội thất',
+  'Thiết kế Công nghiệp',
+  'Thiết kế Thời trang',
+  'Mỹ thuật Ứng dụng',
+  'Nghệ thuật Số',
   // ── Truyền thông ──
-  'Báo chí', 'Truyền thông Đa phương tiện',
-  'Quan hệ Công chúng (PR)', 'Quảng cáo', 'Xuất bản',
+  'Báo chí',
+  'Truyền thông Đa phương tiện',
+  'Quan hệ Công chúng (PR)',
+  'Quảng cáo',
+  'Xuất bản',
   // ── Nông - Lâm - Ngư ──
-  'Nông học', 'Chăn nuôi Thú y', 'Thủy sản', 'Lâm nghiệp',
-  'Công nghệ Thực phẩm', 'Công nghệ Sinh học', 'Môi trường',
+  'Nông học',
+  'Chăn nuôi Thú y',
+  'Thủy sản',
+  'Lâm nghiệp',
+  'Công nghệ Thực phẩm',
+  'Công nghệ Sinh học',
+  'Môi trường',
   // ── Du lịch & Khách sạn ──
-  'Quản trị Du lịch - Lữ hành', 'Quản trị Khách sạn',
-  'Ẩm thực (Culinary Arts)', 'Quản trị Nhà hàng',
+  'Quản trị Du lịch - Lữ hành',
+  'Quản trị Khách sạn',
+  'Ẩm thực (Culinary Arts)',
+  'Quản trị Nhà hàng',
   // ── Khoa học tự nhiên ──
-  'Toán học', 'Vật lý', 'Hóa học', 'Sinh học', 'Địa lý',
-  'Khoa học Vật liệu', 'Địa chất học',
+  'Toán học',
+  'Vật lý',
+  'Hóa học',
+  'Sinh học',
+  'Địa lý',
+  'Khoa học Vật liệu',
+  'Địa chất học',
   // ── Khác ──
-  'Thể dục Thể thao', 'Âm nhạc', 'Điện ảnh', 'Sân khấu', 'Khác',
+  'Thể dục Thể thao',
+  'Âm nhạc',
+  'Điện ảnh',
+  'Sân khấu',
+  'Khác',
 ];
 
 // ─── AutocompleteInput component ───────────────────────────────────────────
 
-type SuggestionMode =
-  | { type: 'static'; list: string[] }
-  | { type: 'location' };          // uses Nominatim OpenStreetMap API
+type SuggestionMode = { type: 'static'; list: string[] } | { type: 'location' }; // uses Nominatim OpenStreetMap API
 
 interface AutocompleteInputProps {
   value: string;
@@ -336,50 +590,69 @@ function AutocompleteInput({
   }, []);
 
   // ── Fetch / filter suggestions on input change ──
-  const fetchSuggestions = useCallback(async (q: string) => {
-    const trimmed = q.trim();
-    if (trimmed.length < 2) { setSuggestions([]); setOpen(false); return; }
+  const fetchSuggestions = useCallback(
+    async (q: string) => {
+      const trimmed = q.trim();
+      if (trimmed.length < 2) {
+        setSuggestions([]);
+        setOpen(false);
+        return;
+      }
 
-    if (mode.type === 'static') {
-      const lower = trimmed.toLowerCase();
-      const filtered = mode.list
-        .filter((s) => s.toLowerCase().includes(lower))
-        .slice(0, 8);
-      setSuggestions(filtered);
-      setOpen(filtered.length > 0);
-      setHighlighted(-1);
-      return;
-    }
+      if (mode.type === 'static') {
+        const lower = trimmed.toLowerCase();
+        const filtered = mode.list.filter((s) => s.toLowerCase().includes(lower)).slice(0, 8);
+        setSuggestions(filtered);
+        setOpen(filtered.length > 0);
+        setHighlighted(-1);
+        return;
+      }
 
-    // Location mode — Nominatim
-    setLoading(true);
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(trimmed)}&addressdetails=1&limit=8&accept-language=vi`;
-      const res = await fetch(url, { headers: { 'Accept-Language': 'vi' } });
-      const data: Array<{ display_name: string; address?: { city?: string; town?: string; county?: string; state?: string; country?: string } }> = await res.json();
-      const items = data.map((item) => {
-        const a = item.address ?? {};
-        const city = a.city ?? a.town ?? a.county ?? '';
-        const state = a.state ?? '';
-        const country = a.country ?? '';
-        return [city, state, country].filter(Boolean).join(', ');
-      }).filter(Boolean);
-      const unique = [...new Set(items)].slice(0, 8);
-      setSuggestions(unique);
-      setOpen(unique.length > 0);
-      setHighlighted(-1);
-    } catch {
-      setSuggestions([]);
-      setOpen(false);
-    } finally {
-      setLoading(false);
-    }
-  }, [mode]);
+      // Location mode — Nominatim
+      setLoading(true);
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(trimmed)}&addressdetails=1&limit=8&accept-language=vi`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'vi' } });
+        const data: Array<{
+          display_name: string;
+          address?: {
+            city?: string;
+            town?: string;
+            county?: string;
+            state?: string;
+            country?: string;
+          };
+        }> = await res.json();
+        const items = data
+          .map((item) => {
+            const a = item.address ?? {};
+            const city = a.city ?? a.town ?? a.county ?? '';
+            const state = a.state ?? '';
+            const country = a.country ?? '';
+            return [city, state, country].filter(Boolean).join(', ');
+          })
+          .filter(Boolean);
+        const unique = [...new Set(items)].slice(0, 8);
+        setSuggestions(unique);
+        setOpen(unique.length > 0);
+        setHighlighted(-1);
+      } catch {
+        setSuggestions([]);
+        setOpen(false);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [mode]
+  );
 
   const handleChange = (v: string) => {
     onChange(v);
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(v), mode.type === 'location' ? 400 : 100);
+    debounceRef.current = setTimeout(
+      () => fetchSuggestions(v),
+      mode.type === 'location' ? 400 : 100
+    );
   };
 
   const pick = (s: string) => {
@@ -391,10 +664,21 @@ function AutocompleteInput({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted((h) => Math.min(h + 1, suggestions.length - 1)); }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); setHighlighted((h) => Math.max(h - 1, 0)); }
-    if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); pick(suggestions[highlighted]); }
-    if (e.key === 'Escape') { setOpen(false); }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlighted((h) => Math.min(h + 1, suggestions.length - 1));
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlighted((h) => Math.max(h - 1, 0));
+    }
+    if (e.key === 'Enter' && highlighted >= 0) {
+      e.preventDefault();
+      pick(suggestions[highlighted]);
+    }
+    if (e.key === 'Escape') {
+      setOpen(false);
+    }
   };
 
   return (
@@ -414,25 +698,43 @@ function AutocompleteInput({
         {loading && (
           <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
             <svg className="w-4 h-4 animate-spin text-surf-primary" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"
+              />
             </svg>
           </span>
         )}
         {!loading && mode.type === 'location' && (
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-base pointer-events-none">📍</span>
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-base pointer-events-none">
+            📍
+          </span>
         )}
       </div>
 
       {open && suggestions.length > 0 && (
         <ul className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden max-h-60 overflow-y-auto">
           {suggestions.map((s, i) => (
-            <li key={s}
-              onMouseDown={(e) => { e.preventDefault(); pick(s); }}
+            <li
+              key={s}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(s);
+              }}
               className={`flex items-center gap-2.5 px-3 py-2.5 text-sm cursor-pointer transition-colors
-                ${i === highlighted
-                  ? 'bg-surf-primary/10 text-surf-primary'
-                  : 'text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
+                ${
+                  i === highlighted
+                    ? 'bg-surf-primary/10 text-surf-primary'
+                    : 'text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
             >
               <span className="shrink-0 text-base">
@@ -472,7 +774,9 @@ function AutocompleteInlineEdit({
 }) {
   return (
     <div className="mt-2 rounded-xl border border-surf-primary/30 bg-surf-primary/5 dark:bg-surf-primary/10 p-4 space-y-3">
-      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</label>
+      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        {label}
+      </label>
       <AutocompleteInput
         value={value}
         onChange={onChange}
@@ -480,14 +784,25 @@ function AutocompleteInlineEdit({
         mode={mode}
         autoFocus
       />
-      {maxLength && <p className="text-xs text-gray-400 text-right">{value.length}/{maxLength}</p>}
+      {maxLength && (
+        <p className="text-xs text-gray-400 text-right">
+          {value.length}/{maxLength}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel}
-          className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        >
           Hủy
         </button>
-        <button type="button" onClick={onSave} disabled={saving}
-          className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 transition-colors font-medium">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 transition-colors font-medium"
+        >
           {saving ? 'Đang lưu...' : 'Lưu'}
         </button>
       </div>
@@ -532,22 +847,44 @@ const GENDER_OPTIONS = [
 ];
 
 const LANGUAGE_OPTIONS = [
-  'Tiếng Việt', 'English', 'Tiếng Trung', '日本語', '한국어',
-  'Français', 'Deutsch', 'Español', 'ภาษาไทย', 'Bahasa Indonesia',
+  'Tiếng Việt',
+  'English',
+  'Tiếng Trung',
+  '日本語',
+  '한국어',
+  'Français',
+  'Deutsch',
+  'Español',
+  'ภาษาไทย',
+  'Bahasa Indonesia',
 ];
 
 const RELIGION_OPTIONS = [
-  'Thiên Chúa giáo', 'Phật giáo', 'Hồi giáo', 'Đạo Tin Lành',
-  'Ấn Độ giáo', 'Do Thái giáo', 'Không tôn giáo', 'Khác',
+  'Thiên Chúa giáo',
+  'Phật giáo',
+  'Hồi giáo',
+  'Đạo Tin Lành',
+  'Ấn Độ giáo',
+  'Do Thái giáo',
+  'Không tôn giáo',
+  'Khác',
 ];
 
-const POLITICAL_OPTIONS = [
-  'Tự do', 'Bảo thủ', 'Ôn hòa', 'Cấp tiến', 'Trung lập', 'Khác',
-];
+const POLITICAL_OPTIONS = ['Tự do', 'Bảo thủ', 'Ôn hòa', 'Cấp tiến', 'Trung lập', 'Khác'];
 
 const MONTHS = [
-  'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
-  'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12',
+  'Tháng 1',
+  'Tháng 2',
+  'Tháng 3',
+  'Tháng 4',
+  'Tháng 5',
+  'Tháng 6',
+  'Tháng 7',
+  'Tháng 8',
+  'Tháng 9',
+  'Tháng 10',
+  'Tháng 11',
+  'Tháng 12',
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -567,7 +904,15 @@ function birthdayLabel(b?: Birthday | null) {
   return b.showYear ? `${b.day} ${m}, ${b.year}` : `${b.day} ${m}`;
 }
 
-function formatJoinedAt(ts: any): string {
+function formatJoinedAt(
+  ts:
+    | import('firebase/firestore').Timestamp
+    | { toDate?: () => Date }
+    | string
+    | number
+    | null
+    | undefined
+): string {
   if (!ts) return '';
   try {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
@@ -598,8 +943,12 @@ function SectionRow({
     <div className="group flex items-start gap-3 py-2.5">
       <span className="text-xl mt-0.5 shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-snug">{primary}</p>
-        {secondary && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{secondary}</p>}
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-snug">
+          {primary}
+        </p>
+        {secondary && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{secondary}</p>
+        )}
       </div>
       {isOwn && (
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
@@ -611,8 +960,12 @@ function SectionRow({
               title="Chỉnh sửa"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M15.232 5.232l3.536 3.536M9 13l6.293-6.293a1 1 0 011.414 0l1.586 1.586a1 1 0 010 1.414L12 16H9v-3z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15.232 5.232l3.536 3.536M9 13l6.293-6.293a1 1 0 011.414 0l1.586 1.586a1 1 0 010 1.414L12 16H9v-3z"
+                />
               </svg>
             </button>
           )}
@@ -624,7 +977,12 @@ function SectionRow({
               title="Xóa"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           )}
@@ -651,22 +1009,14 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/60 p-5 shadow-sm">
       <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
         <span className="w-1 h-5 rounded-full bg-gradient-to-b from-surf-primary to-surf-secondary shrink-0" />
         {title}
       </h3>
-      <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-        {children}
-      </div>
+      <div className="divide-y divide-gray-100 dark:divide-gray-800/60">{children}</div>
     </div>
   );
 }
@@ -696,7 +1046,9 @@ function InlineEdit({
 }) {
   return (
     <div className="mt-2 rounded-xl border border-surf-primary/30 bg-surf-primary/5 dark:bg-surf-primary/10 p-4 space-y-3">
-      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</label>
+      <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        {label}
+      </label>
       {multiline ? (
         <textarea
           className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-gray-100 resize-none focus:outline-none focus:ring-2 focus:ring-surf-primary/50 placeholder-gray-400"
@@ -717,15 +1069,24 @@ function InlineEdit({
         />
       )}
       {maxLength && (
-        <p className="text-xs text-gray-400 text-right">{value.length}/{maxLength}</p>
+        <p className="text-xs text-gray-400 text-right">
+          {value.length}/{maxLength}
+        </p>
       )}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel}
-          className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        >
           Hủy
         </button>
-        <button type="button" onClick={onSave} disabled={saving}
-          className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 transition-colors font-medium">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 transition-colors font-medium"
+        >
           {saving ? 'Đang lưu...' : 'Lưu'}
         </button>
       </div>
@@ -749,10 +1110,18 @@ function SmallModal({
       <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
-          <button type="button" onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -805,14 +1174,25 @@ export default function ProfileAbout({
   const [customGenderDraft, setCustomGenderDraft] = useState('');
 
   // ── modal states ──
-  const [workModal, setWorkModal] = useState<{ open: boolean; index: number | null }>({ open: false, index: null });
+  const [workModal, setWorkModal] = useState<{ open: boolean; index: number | null }>({
+    open: false,
+    index: null,
+  });
   const [workDraft, setWorkDraft] = useState<WorkEntry>({ company: '', title: '', current: true });
 
-  const [eduModal, setEduModal] = useState<{ open: boolean; index: number | null }>({ open: false, index: null });
+  const [eduModal, setEduModal] = useState<{ open: boolean; index: number | null }>({
+    open: false,
+    index: null,
+  });
   const [eduDraft, setEduDraft] = useState<EducationEntry>({ school: '', degree: '' });
 
   const [birthdayModal, setBirthdayModal] = useState(false);
-  const [bdDraft, setBdDraft] = useState<Birthday>({ day: 1, month: 1, year: 2000, showYear: true });
+  const [bdDraft, setBdDraft] = useState<Birthday>({
+    day: 1,
+    month: 1,
+    year: 2000,
+    showYear: true,
+  });
 
   const [relationshipModal, setRelationshipModal] = useState(false);
   const [genderModal, setGenderModal] = useState(false);
@@ -848,11 +1228,22 @@ export default function ProfileAbout({
             icon="✍️"
             primary={profile.bio}
             isOwn={isOwn}
-            onEdit={() => { setBioDraft(profile.bio ?? ''); setEditBio(true); }}
+            onEdit={() => {
+              setBioDraft(profile.bio ?? '');
+              setEditBio(true);
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm tiểu sử" onClick={() => { setBioDraft(''); setEditBio(true); }} />
-        ) : <p className="text-sm text-gray-400 py-1">Chưa có tiểu sử</p>}
+          <AddButton
+            label="Thêm tiểu sử"
+            onClick={() => {
+              setBioDraft('');
+              setEditBio(true);
+            }}
+          />
+        ) : (
+          <p className="text-sm text-gray-400 py-1">Chưa có tiểu sử</p>
+        )}
         {editBio && (
           <InlineEdit
             label="Tiểu sử (tối đa 101 ký tự)"
@@ -862,7 +1253,10 @@ export default function ProfileAbout({
             multiline
             maxLength={101}
             saving={saving}
-            onSave={async () => { await save({ bio: bioDraft.trim() || null }); setEditBio(false); }}
+            onSave={async () => {
+              await save({ bio: bioDraft.trim() || null });
+              setEditBio(false);
+            }}
             onCancel={() => setEditBio(false)}
           />
         )}
@@ -876,7 +1270,10 @@ export default function ProfileAbout({
             primary={work[0].title ? `${work[0].title} tại ${work[0].company}` : work[0].company}
             secondary={work[0].current ? 'Đang làm việc' : undefined}
             isOwn={isOwn}
-            onEdit={() => { setWorkDraft({ ...work[0] }); setWorkModal({ open: true, index: 0 }); }}
+            onEdit={() => {
+              setWorkDraft({ ...work[0] });
+              setWorkModal({ open: true, index: 0 });
+            }}
           />
         )}
         {education[0] && (
@@ -885,7 +1282,10 @@ export default function ProfileAbout({
             primary={`Học tại ${education[0].school}`}
             secondary={education[0].degree || undefined}
             isOwn={isOwn}
-            onEdit={() => { setEduDraft({ ...education[0] }); setEduModal({ open: true, index: 0 }); }}
+            onEdit={() => {
+              setEduDraft({ ...education[0] });
+              setEduModal({ open: true, index: 0 });
+            }}
           />
         )}
         {profile.currentCity && (
@@ -893,7 +1293,11 @@ export default function ProfileAbout({
             icon="🏙️"
             primary={`Đang sống tại ${profile.currentCity}`}
             isOwn={isOwn}
-            onEdit={() => { setCityDraft(profile.currentCity ?? ''); setActiveSection('places'); setTimeout(() => setEditCity(true), 50); }}
+            onEdit={() => {
+              setCityDraft(profile.currentCity ?? '');
+              setActiveSection('places');
+              setTimeout(() => setEditCity(true), 50);
+            }}
           />
         )}
         {profile.hometown && (
@@ -901,7 +1305,11 @@ export default function ProfileAbout({
             icon="🏡"
             primary={`Quê ở ${profile.hometown}`}
             isOwn={isOwn}
-            onEdit={() => { setHometownDraft(profile.hometown ?? ''); setActiveSection('places'); setTimeout(() => setEditHometown(true), 50); }}
+            onEdit={() => {
+              setHometownDraft(profile.hometown ?? '');
+              setActiveSection('places');
+              setTimeout(() => setEditHometown(true), 50);
+            }}
           />
         )}
         {profile.relationship && (
@@ -912,12 +1320,13 @@ export default function ProfileAbout({
             onEdit={() => setRelationshipModal(true)}
           />
         )}
-        {joined && (
-          <SectionRow icon="🌊" primary={`Tham gia Surf từ ${joined}`} isOwn={false} />
-        )}
-        {!work[0] && !education[0] && !profile.currentCity && !profile.hometown && !profile.relationship && !joined && (
-          <p className="text-sm text-gray-400 py-1">Chưa có thông tin để hiển thị</p>
-        )}
+        {joined && <SectionRow icon="🌊" primary={`Tham gia Surf từ ${joined}`} isOwn={false} />}
+        {!work[0] &&
+          !education[0] &&
+          !profile.currentCity &&
+          !profile.hometown &&
+          !profile.relationship &&
+          !joined && <p className="text-sm text-gray-400 py-1">Chưa có thông tin để hiển thị</p>}
       </SectionCard>
 
       {/* Stats */}
@@ -927,9 +1336,14 @@ export default function ProfileAbout({
           { val: friendsCount, label: 'Bạn bè', icon: '👥' },
           { val: null, label: 'Người theo dõi', icon: '⭐' },
         ].map(({ val, label, icon }) => (
-          <div key={label} className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/60 p-4 text-center shadow-sm">
+          <div
+            key={label}
+            className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/60 p-4 text-center shadow-sm"
+          >
             <p className="text-2xl font-bold text-surf-primary">{val ?? '—'}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{icon} {label}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {icon} {label}
+            </p>
           </div>
         ))}
       </div>
@@ -948,7 +1362,10 @@ export default function ProfileAbout({
             primary={w.title ? `${w.title} tại ${w.company}` : w.company}
             secondary={w.current ? 'Đang làm việc' : 'Đã từng làm'}
             isOwn={isOwn}
-            onEdit={() => { setWorkDraft({ ...w }); setWorkModal({ open: true, index: i }); }}
+            onEdit={() => {
+              setWorkDraft({ ...w });
+              setWorkModal({ open: true, index: i });
+            }}
             onDelete={async () => {
               const next = work.filter((_, j) => j !== i);
               await save({ work: next });
@@ -957,13 +1374,18 @@ export default function ProfileAbout({
         ))}
         {isOwn && (
           <div className="pt-2">
-            <AddButton label="Thêm nơi làm việc" onClick={() => {
-              setWorkDraft({ company: '', title: '', current: true });
-              setWorkModal({ open: true, index: null });
-            }} />
+            <AddButton
+              label="Thêm nơi làm việc"
+              onClick={() => {
+                setWorkDraft({ company: '', title: '', current: true });
+                setWorkModal({ open: true, index: null });
+              }}
+            />
           </div>
         )}
-        {!isOwn && work.length === 0 && <p className="text-sm text-gray-400 py-1">Chưa có thông tin công việc</p>}
+        {!isOwn && work.length === 0 && (
+          <p className="text-sm text-gray-400 py-1">Chưa có thông tin công việc</p>
+        )}
       </SectionCard>
 
       <SectionCard title="Học vấn">
@@ -974,7 +1396,10 @@ export default function ProfileAbout({
             primary={e.school}
             secondary={[e.degree, e.year ? `Năm ${e.year}` : undefined].filter(Boolean).join(' · ')}
             isOwn={isOwn}
-            onEdit={() => { setEduDraft({ ...e }); setEduModal({ open: true, index: i }); }}
+            onEdit={() => {
+              setEduDraft({ ...e });
+              setEduModal({ open: true, index: i });
+            }}
             onDelete={async () => {
               const next = education.filter((_, j) => j !== i);
               await save({ education: next });
@@ -983,13 +1408,18 @@ export default function ProfileAbout({
         ))}
         {isOwn && (
           <div className="pt-2">
-            <AddButton label="Thêm trường học" onClick={() => {
-              setEduDraft({ school: '', degree: '' });
-              setEduModal({ open: true, index: null });
-            }} />
+            <AddButton
+              label="Thêm trường học"
+              onClick={() => {
+                setEduDraft({ school: '', degree: '' });
+                setEduModal({ open: true, index: null });
+              }}
+            />
           </div>
         )}
-        {!isOwn && education.length === 0 && <p className="text-sm text-gray-400 py-1">Chưa có thông tin học vấn</p>}
+        {!isOwn && education.length === 0 && (
+          <p className="text-sm text-gray-400 py-1">Chưa có thông tin học vấn</p>
+        )}
       </SectionCard>
     </div>
   );
@@ -1004,12 +1434,26 @@ export default function ProfileAbout({
             icon="🏙️"
             primary={`Đang sống tại ${profile.currentCity}`}
             isOwn={isOwn}
-            onEdit={() => { setCityDraft(profile.currentCity ?? ''); setEditCity(false); setTimeout(() => setEditCity(true), 0); }}
-            onDelete={async () => { await save({ currentCity: null }); }}
+            onEdit={() => {
+              setCityDraft(profile.currentCity ?? '');
+              setEditCity(false);
+              setTimeout(() => setEditCity(true), 0);
+            }}
+            onDelete={async () => {
+              await save({ currentCity: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm thành phố đang sống" onClick={() => { setCityDraft(''); setEditCity(true); }} />
-        ) : <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>}
+          <AddButton
+            label="Thêm thành phố đang sống"
+            onClick={() => {
+              setCityDraft('');
+              setEditCity(true);
+            }}
+          />
+        ) : (
+          <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>
+        )}
         {editCity && (
           <AutocompleteInlineEdit
             label="Thành phố đang sống"
@@ -1018,7 +1462,10 @@ export default function ProfileAbout({
             placeholder="Nhập tên thành phố..."
             mode={{ type: 'location' }}
             saving={saving}
-            onSave={async () => { await save({ currentCity: cityDraft.trim() || null }); setEditCity(false); }}
+            onSave={async () => {
+              await save({ currentCity: cityDraft.trim() || null });
+              setEditCity(false);
+            }}
             onCancel={() => setEditCity(false)}
           />
         )}
@@ -1030,12 +1477,25 @@ export default function ProfileAbout({
             icon="🏡"
             primary={`Quê ở ${profile.hometown}`}
             isOwn={isOwn}
-            onEdit={() => { setHometownDraft(profile.hometown ?? ''); setEditHometown(true); }}
-            onDelete={async () => { await save({ hometown: null }); }}
+            onEdit={() => {
+              setHometownDraft(profile.hometown ?? '');
+              setEditHometown(true);
+            }}
+            onDelete={async () => {
+              await save({ hometown: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm quê quán" onClick={() => { setHometownDraft(''); setEditHometown(true); }} />
-        ) : <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>}
+          <AddButton
+            label="Thêm quê quán"
+            onClick={() => {
+              setHometownDraft('');
+              setEditHometown(true);
+            }}
+          />
+        ) : (
+          <p className="text-sm text-gray-400 py-1">Chưa cập nhật</p>
+        )}
         {editHometown && (
           <AutocompleteInlineEdit
             label="Quê quán"
@@ -1044,7 +1504,10 @@ export default function ProfileAbout({
             placeholder="Nhập tên tỉnh / thành phố..."
             mode={{ type: 'location' }}
             saving={saving}
-            onSave={async () => { await save({ hometown: hometownDraft.trim() || null }); setEditHometown(false); }}
+            onSave={async () => {
+              await save({ hometown: hometownDraft.trim() || null });
+              setEditHometown(false);
+            }}
             onCancel={() => setEditHometown(false)}
           />
         )}
@@ -1063,7 +1526,10 @@ export default function ProfileAbout({
           primary={profile.contactEmail || loginEmail || 'Chưa cập nhật email liên hệ'}
           secondary="Email liên hệ"
           isOwn={isOwn}
-          onEdit={() => { setContactEmailDraft(profile.contactEmail ?? loginEmail ?? ''); setEditContactEmail(true); }}
+          onEdit={() => {
+            setContactEmailDraft(profile.contactEmail ?? loginEmail ?? '');
+            setEditContactEmail(true);
+          }}
         />
         {editContactEmail && (
           <InlineEdit
@@ -1072,7 +1538,10 @@ export default function ProfileAbout({
             onChange={setContactEmailDraft}
             placeholder="email@example.com"
             saving={saving}
-            onSave={async () => { await save({ contactEmail: contactEmailDraft.trim() || null }); setEditContactEmail(false); }}
+            onSave={async () => {
+              await save({ contactEmail: contactEmailDraft.trim() || null });
+              setEditContactEmail(false);
+            }}
             onCancel={() => setEditContactEmail(false)}
           />
         )}
@@ -1083,11 +1552,22 @@ export default function ProfileAbout({
             primary={profile.phone}
             secondary="Số điện thoại"
             isOwn={isOwn}
-            onEdit={() => { setPhoneDraft(profile.phone ?? ''); setEditPhone(true); }}
-            onDelete={async () => { await save({ phone: null }); }}
+            onEdit={() => {
+              setPhoneDraft(profile.phone ?? '');
+              setEditPhone(true);
+            }}
+            onDelete={async () => {
+              await save({ phone: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm số điện thoại" onClick={() => { setPhoneDraft(''); setEditPhone(true); }} />
+          <AddButton
+            label="Thêm số điện thoại"
+            onClick={() => {
+              setPhoneDraft('');
+              setEditPhone(true);
+            }}
+          />
         ) : null}
         {editPhone && (
           <InlineEdit
@@ -1096,7 +1576,10 @@ export default function ProfileAbout({
             onChange={setPhoneDraft}
             placeholder="+84 912 345 678"
             saving={saving}
-            onSave={async () => { await save({ phone: phoneDraft.trim() || null }); setEditPhone(false); }}
+            onSave={async () => {
+              await save({ phone: phoneDraft.trim() || null });
+              setEditPhone(false);
+            }}
             onCancel={() => setEditPhone(false)}
           />
         )}
@@ -1107,11 +1590,22 @@ export default function ProfileAbout({
             primary={profile.website}
             secondary="Website cá nhân"
             isOwn={isOwn}
-            onEdit={() => { setWebsiteDraft(profile.website ?? ''); setEditWebsite(true); }}
-            onDelete={async () => { await save({ website: null }); }}
+            onEdit={() => {
+              setWebsiteDraft(profile.website ?? '');
+              setEditWebsite(true);
+            }}
+            onDelete={async () => {
+              await save({ website: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm website cá nhân" onClick={() => { setWebsiteDraft(''); setEditWebsite(true); }} />
+          <AddButton
+            label="Thêm website cá nhân"
+            onClick={() => {
+              setWebsiteDraft('');
+              setEditWebsite(true);
+            }}
+          />
         ) : null}
         {editWebsite && (
           <InlineEdit
@@ -1120,7 +1614,10 @@ export default function ProfileAbout({
             onChange={setWebsiteDraft}
             placeholder="https://yourwebsite.com"
             saving={saving}
-            onSave={async () => { await save({ website: websiteDraft.trim() || null }); setEditWebsite(false); }}
+            onSave={async () => {
+              await save({ website: websiteDraft.trim() || null });
+              setEditWebsite(false);
+            }}
             onCancel={() => setEditWebsite(false)}
           />
         )}
@@ -1144,11 +1641,22 @@ export default function ProfileAbout({
             primary={birthdayLabel(profile.birthday)}
             secondary="Ngày sinh"
             isOwn={isOwn}
-            onEdit={() => { setBdDraft(profile.birthday ?? { day: 1, month: 1, year: 2000, showYear: true }); setBirthdayModal(true); }}
-            onDelete={async () => { await save({ birthday: null }); }}
+            onEdit={() => {
+              setBdDraft(profile.birthday ?? { day: 1, month: 1, year: 2000, showYear: true });
+              setBirthdayModal(true);
+            }}
+            onDelete={async () => {
+              await save({ birthday: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm ngày sinh" onClick={() => { setBdDraft({ day: 1, month: 1, year: 2000, showYear: true }); setBirthdayModal(true); }} />
+          <AddButton
+            label="Thêm ngày sinh"
+            onClick={() => {
+              setBdDraft({ day: 1, month: 1, year: 2000, showYear: true });
+              setBirthdayModal(true);
+            }}
+          />
         ) : null}
 
         {/* Gender */}
@@ -1159,7 +1667,9 @@ export default function ProfileAbout({
             secondary="Giới tính"
             isOwn={isOwn}
             onEdit={() => setGenderModal(true)}
-            onDelete={async () => { await save({ gender: null, customGender: null }); }}
+            onDelete={async () => {
+              await save({ gender: null, customGender: null });
+            }}
           />
         ) : isOwn ? (
           <AddButton label="Thêm giới tính" onClick={() => setGenderModal(true)} />
@@ -1173,10 +1683,15 @@ export default function ProfileAbout({
             secondary="Tình trạng mối quan hệ"
             isOwn={isOwn}
             onEdit={() => setRelationshipModal(true)}
-            onDelete={async () => { await save({ relationship: null }); }}
+            onDelete={async () => {
+              await save({ relationship: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm tình trạng mối quan hệ" onClick={() => setRelationshipModal(true)} />
+          <AddButton
+            label="Thêm tình trạng mối quan hệ"
+            onClick={() => setRelationshipModal(true)}
+          />
         ) : null}
 
         {!profile.birthday && !profile.gender && !profile.relationship && !isOwn && (
@@ -1206,7 +1721,9 @@ export default function ProfileAbout({
             secondary="Tôn giáo"
             isOwn={isOwn}
             onEdit={() => setReligionModal(true)}
-            onDelete={async () => { await save({ religion: null }); }}
+            onDelete={async () => {
+              await save({ religion: null });
+            }}
           />
         ) : isOwn ? (
           <AddButton label="Thêm tôn giáo (tùy chọn)" onClick={() => setReligionModal(true)} />
@@ -1220,10 +1737,15 @@ export default function ProfileAbout({
             secondary="Quan điểm chính trị"
             isOwn={isOwn}
             onEdit={() => setPoliticsModal(true)}
-            onDelete={async () => { await save({ politicalViews: null }); }}
+            onDelete={async () => {
+              await save({ politicalViews: null });
+            }}
           />
         ) : isOwn ? (
-          <AddButton label="Thêm quan điểm chính trị (tùy chọn)" onClick={() => setPoliticsModal(true)} />
+          <AddButton
+            label="Thêm quan điểm chính trị (tùy chọn)"
+            onClick={() => setPoliticsModal(true)}
+          />
         ) : null}
 
         {languages.length === 0 && !profile.religion && !profile.politicalViews && !isOwn && (
@@ -1254,11 +1776,7 @@ export default function ProfileAbout({
           />
         )}
         {profile.relationship && (
-          <SectionRow
-            icon="❤️"
-            primary={relationshipLabel(profile.relationship)}
-            isOwn={false}
-          />
+          <SectionRow icon="❤️" primary={relationshipLabel(profile.relationship)} isOwn={false} />
         )}
         {!joined && !profile.birthday && !profile.relationship && (
           <p className="text-sm text-gray-400 py-1">Chưa có sự kiện nào</p>
@@ -1296,9 +1814,10 @@ export default function ProfileAbout({
                   type="button"
                   onClick={() => setActiveSection(s.id)}
                   className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap shrink-0 md:w-full text-left
-                    ${activeSection === s.id
-                      ? 'bg-surf-primary/10 text-surf-primary dark:bg-surf-primary/20'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                    ${
+                      activeSection === s.id
+                        ? 'bg-surf-primary/10 text-surf-primary dark:bg-surf-primary/20'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                 >
                   <span className="text-base">{s.icon}</span>
@@ -1310,9 +1829,7 @@ export default function ProfileAbout({
         </aside>
 
         {/* Right content */}
-        <div className="flex-1 min-w-0 space-y-4">
-          {sectionMap[activeSection]}
-        </div>
+        <div className="flex-1 min-w-0 space-y-4">{sectionMap[activeSection]}</div>
       </div>
 
       {/* ── Work Modal ── */}
@@ -1323,7 +1840,9 @@ export default function ProfileAbout({
         >
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Tên công ty *</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                Tên công ty *
+              </label>
               <AutocompleteInput
                 value={workDraft.company}
                 onChange={(v) => setWorkDraft({ ...workDraft, company: v })}
@@ -1333,8 +1852,11 @@ export default function ProfileAbout({
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Chức danh</label>
-              <input type="text"
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                Chức danh
+              </label>
+              <input
+                type="text"
                 className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
                 placeholder="Ví dụ: Software Developer, Intern..."
                 value={workDraft.title}
@@ -1342,18 +1864,27 @@ export default function ProfileAbout({
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="rounded border-gray-300"
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
                 checked={workDraft.current}
                 onChange={(e) => setWorkDraft({ ...workDraft, current: e.target.checked })}
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">Đang làm việc tại đây</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                Đang làm việc tại đây
+              </span>
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setWorkModal({ open: false, index: null })}
-                className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors">
+              <button
+                type="button"
+                onClick={() => setWorkModal({ open: false, index: null })}
+                className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors"
+              >
                 Hủy
               </button>
-              <button type="button" disabled={!workDraft.company.trim() || saving}
+              <button
+                type="button"
+                disabled={!workDraft.company.trim() || saving}
                 className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 font-medium transition-colors"
                 onClick={async () => {
                   const next = [...work];
@@ -1361,7 +1892,8 @@ export default function ProfileAbout({
                   else next.push(workDraft);
                   await save({ work: next });
                   setWorkModal({ open: false, index: null });
-                }}>
+                }}
+              >
                 {saving ? 'Đang lưu...' : 'Lưu'}
               </button>
             </div>
@@ -1377,7 +1909,9 @@ export default function ProfileAbout({
         >
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Tên trường *</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                Tên trường *
+              </label>
               <AutocompleteInput
                 value={eduDraft.school}
                 onChange={(v) => setEduDraft({ ...eduDraft, school: v })}
@@ -1387,7 +1921,9 @@ export default function ProfileAbout({
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Chuyên ngành / Bằng cấp</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                Chuyên ngành / Bằng cấp
+              </label>
               <AutocompleteInput
                 value={eduDraft.degree}
                 onChange={(v) => setEduDraft({ ...eduDraft, degree: v })}
@@ -1396,21 +1932,35 @@ export default function ProfileAbout({
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Năm tốt nghiệp (tuỳ chọn)</label>
-              <input type="number"
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                Năm tốt nghiệp (tuỳ chọn)
+              </label>
+              <input
+                type="number"
                 className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
                 placeholder="Ví dụ: 2025"
-                min={1950} max={2100}
+                min={1950}
+                max={2100}
                 value={eduDraft.year ?? ''}
-                onChange={(e) => setEduDraft({ ...eduDraft, year: e.target.value ? Number(e.target.value) : undefined })}
+                onChange={(e) =>
+                  setEduDraft({
+                    ...eduDraft,
+                    year: e.target.value ? Number(e.target.value) : undefined,
+                  })
+                }
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setEduModal({ open: false, index: null })}
-                className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors">
+              <button
+                type="button"
+                onClick={() => setEduModal({ open: false, index: null })}
+                className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors"
+              >
                 Hủy
               </button>
-              <button type="button" disabled={!eduDraft.school.trim() || saving}
+              <button
+                type="button"
+                disabled={!eduDraft.school.trim() || saving}
                 className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 font-medium transition-colors"
                 onClick={async () => {
                   const next = [...education];
@@ -1418,7 +1968,8 @@ export default function ProfileAbout({
                   else next.push(eduDraft);
                   await save({ education: next });
                   setEduModal({ open: false, index: null });
-                }}>
+                }}
+              >
                 {saving ? 'Đang lưu...' : 'Lưu'}
               </button>
             </div>
@@ -1432,49 +1983,80 @@ export default function ProfileAbout({
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Ngày</label>
-                <select className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                  Ngày
+                </label>
+                <select
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
                   value={bdDraft.day}
-                  onChange={(e) => setBdDraft({ ...bdDraft, day: Number(e.target.value) })}>
+                  onChange={(e) => setBdDraft({ ...bdDraft, day: Number(e.target.value) })}
+                >
                   {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={d}>{d}</option>
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Tháng</label>
-                <select className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                  Tháng
+                </label>
+                <select
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
                   value={bdDraft.month}
-                  onChange={(e) => setBdDraft({ ...bdDraft, month: Number(e.target.value) })}>
-                  {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  onChange={(e) => setBdDraft({ ...bdDraft, month: Number(e.target.value) })}
+                >
+                  {MONTHS.map((m, i) => (
+                    <option key={i} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Năm</label>
-                <select className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                  Năm
+                </label>
+                <select
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-surf-primary/50"
                   value={bdDraft.year}
-                  onChange={(e) => setBdDraft({ ...bdDraft, year: Number(e.target.value) })}>
+                  onChange={(e) => setBdDraft({ ...bdDraft, year: Number(e.target.value) })}
+                >
                   {Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-                    <option key={y} value={y}>{y}</option>
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
                   ))}
                 </select>
               </div>
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="rounded border-gray-300"
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
                 checked={bdDraft.showYear}
                 onChange={(e) => setBdDraft({ ...bdDraft, showYear: e.target.checked })}
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Hiển thị năm sinh</span>
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setBirthdayModal(false)}
-                className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors">
+              <button
+                type="button"
+                onClick={() => setBirthdayModal(false)}
+                className="px-4 py-1.5 text-sm rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors"
+              >
                 Hủy
               </button>
-              <button type="button" disabled={saving}
+              <button
+                type="button"
+                disabled={saving}
                 className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 disabled:opacity-60 font-medium transition-colors"
-                onClick={async () => { await save({ birthday: bdDraft }); setBirthdayModal(false); }}>
+                onClick={async () => {
+                  await save({ birthday: bdDraft });
+                  setBirthdayModal(false);
+                }}
+              >
                 {saving ? 'Đang lưu...' : 'Lưu'}
               </button>
             </div>
@@ -1490,19 +2072,38 @@ export default function ProfileAbout({
               <button
                 key={r.value}
                 type="button"
-                onClick={async () => { await save({ relationship: r.value }); setRelationshipModal(false); }}
+                onClick={async () => {
+                  await save({ relationship: r.value });
+                  setRelationshipModal(false);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
-                  ${profile.relationship === r.value
-                    ? 'bg-surf-primary/10 text-surf-primary'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
-                <span>{r.value === 'single' ? '💔' : r.value === 'married' ? '💍' : r.value === 'engaged' ? '💌' : '❤️'}</span>
+                  ${
+                    profile.relationship === r.value
+                      ? 'bg-surf-primary/10 text-surf-primary'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+                  }`}
+              >
+                <span>
+                  {r.value === 'single'
+                    ? '💔'
+                    : r.value === 'married'
+                      ? '💍'
+                      : r.value === 'engaged'
+                        ? '💌'
+                        : '❤️'}
+                </span>
                 {r.label}
               </button>
             ))}
             {profile.relationship && (
-              <button type="button"
-                onClick={async () => { await save({ relationship: null }); setRelationshipModal(false); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left">
+              <button
+                type="button"
+                onClick={async () => {
+                  await save({ relationship: null });
+                  setRelationshipModal(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
+              >
                 <span>🚫</span> Xóa tình trạng mối quan hệ
               </button>
             )}
@@ -1528,9 +2129,12 @@ export default function ProfileAbout({
                   }
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
-                  ${profile.gender === g.value
-                    ? 'bg-surf-primary/10 text-surf-primary'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                  ${
+                    profile.gender === g.value
+                      ? 'bg-surf-primary/10 text-surf-primary'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+                  }`}
+              >
                 <span>{g.value === 'male' ? '♂️' : g.value === 'female' ? '♀️' : '⚧️'}</span>
                 {g.label}
               </button>
@@ -1571,13 +2175,21 @@ export default function ProfileAbout({
                     save({ languages: next });
                   }}
                   className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
-                    ${selected
-                      ? 'bg-surf-primary/10 text-surf-primary'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                    ${
+                      selected
+                        ? 'bg-surf-primary/10 text-surf-primary'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+                    }`}
+                >
                   <span>{lang}</span>
                   {selected && (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.5}
+                        d="M5 13l4 4L19 7"
+                      />
                     </svg>
                   )}
                 </button>
@@ -1585,8 +2197,11 @@ export default function ProfileAbout({
             })}
           </div>
           <div className="flex justify-end pt-2">
-            <button type="button" onClick={() => setLanguageModal(false)}
-              className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 font-medium transition-colors">
+            <button
+              type="button"
+              onClick={() => setLanguageModal(false)}
+              className="px-4 py-1.5 text-sm rounded-xl bg-surf-primary text-white hover:bg-surf-primary/90 font-medium transition-colors"
+            >
               Xong
             </button>
           </div>
@@ -1598,10 +2213,16 @@ export default function ProfileAbout({
         <SmallModal title="Tôn giáo" onClose={() => setReligionModal(false)}>
           <div className="space-y-1.5">
             {RELIGION_OPTIONS.map((r) => (
-              <button key={r} type="button"
-                onClick={async () => { await save({ religion: r }); setReligionModal(false); }}
+              <button
+                key={r}
+                type="button"
+                onClick={async () => {
+                  await save({ religion: r });
+                  setReligionModal(false);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
-                  ${profile.religion === r ? 'bg-surf-primary/10 text-surf-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                  ${profile.religion === r ? 'bg-surf-primary/10 text-surf-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
+              >
                 🕊️ {r}
               </button>
             ))}
@@ -1614,10 +2235,16 @@ export default function ProfileAbout({
         <SmallModal title="Quan điểm chính trị" onClose={() => setPoliticsModal(false)}>
           <div className="space-y-1.5">
             {POLITICAL_OPTIONS.map((p) => (
-              <button key={p} type="button"
-                onClick={async () => { await save({ politicalViews: p }); setPoliticsModal(false); }}
+              <button
+                key={p}
+                type="button"
+                onClick={async () => {
+                  await save({ politicalViews: p });
+                  setPoliticsModal(false);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors text-left
-                  ${profile.politicalViews === p ? 'bg-surf-primary/10 text-surf-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                  ${profile.politicalViews === p ? 'bg-surf-primary/10 text-surf-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
+              >
                 🏛️ {p}
               </button>
             ))}

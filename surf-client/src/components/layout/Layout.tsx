@@ -6,9 +6,18 @@ import MainRightSidebar from './MainRightSidebar';
 import FriendsLeftNav from './FriendsLeftNav';
 
 const MAIN_PATHS = [
-  '/feed', '/feed/short-video', '/feed/friends', '/feed/groups', '/feed/market',
-  '/feed/saved', '/feed/events', '/feed/pages', '/feed/waves',
-  '/feed/explore', '/feed/moments', '/feed/live',
+  '/feed',
+  '/feed/short-video',
+  '/feed/friends',
+  '/feed/groups',
+  '/feed/market',
+  '/feed/saved',
+  '/feed/events',
+  '/feed/pages',
+  '/feed/waves',
+  '/feed/explore',
+  '/feed/moments',
+  '/feed/live',
 ] as const;
 function isMainPage(pathname: string): boolean {
   return MAIN_PATHS.some((p) => pathname === p) || pathname.startsWith('/feed/friends/');
@@ -25,7 +34,9 @@ export default function Layout() {
   const showFriendsLeftNav = isFriendsSection(location.pathname);
 
   return (
-    <div className={`bg-surf-light dark:bg-surf-dark flex flex-col ${isSettings || useThreeColumn ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+    <div
+      className={`bg-surf-light dark:bg-surf-dark flex flex-col ${isSettings || useThreeColumn ? 'h-screen overflow-hidden' : 'min-h-screen'}`}
+    >
       <Header hideCenterNav={useThreeColumn} />
       <main
         className={

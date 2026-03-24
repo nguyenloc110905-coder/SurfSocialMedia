@@ -15,7 +15,6 @@ export async function uploadProfileImage(
 ): Promise<string> {
   const folder = `users/${uid}`;
   const ts = highlightIndex ?? Date.now();
-  const publicId =
-    type === 'highlight' ? `highlight_${ts}` : `${type}_${ts}`;
+  const publicId = type === 'highlight' ? `highlight_${ts}` : `${type}_${ts}`;
   return uploadImage(file, { folder, publicId });
 }

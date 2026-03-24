@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import {
+  requireAuth,
+  AuthRequest,
+  requireNoBlock,
+  rejectIfBlocked,
+  hasBlockRelation,
+} from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { io } from '../index.js';
@@ -81,69 +87,74 @@ router.get('/requests', requireAuth, async (req: AuthRequest, res) => {
 });
 
 /** POST /api/friends/requests — gửi lời mời kết bạn (body: { toUid }) */
-router.post('/requests', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const fromUid = req.uid!;
-    const { toUid } = req.body as { toUid?: string };
-    if (!toUid || typeof toUid !== 'string') {
-      res.status(400).json({ error: 'toUid is required' });
-      return;
-    }
-    if (toUid === fromUid) {
-      res.status(400).json({ error: 'Cannot send request to yourself' });
-      return;
-    }
-    const toUser = await db().collection('users').doc(toUid).get();
-    if (!toUser.exists) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
-    const existing = await db()
-      .collection('friend_requests')
-      .where('fromUid', '==', fromUid)
-      .where('toUid', '==', toUid)
-      .limit(1)
-      .get();
-    if (!existing.empty) {
-      res.status(400).json({ error: 'Request already sent' });
-      return;
-    }
-    const friendDoc = await db().collection('friends').doc(fromUid).get();
-    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    if (friendIds.includes(toUid)) {
-      res.status(400).json({ error: 'Already friends' });
-      return;
-    }
-    const ref = await db().collection('friend_requests').add({
-      fromUid,
-      toUid,
-      status: 'pending',
-      createdAt: new Date(),
-    });
+router.post(
+  '/requests',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => (req.body as { toUid?: string })?.toUid),
+  async (req: AuthRequest, res) => {
+    try {
+      const fromUid = req.uid!;
+      const { toUid } = req.body as { toUid?: string };
+      if (!toUid || typeof toUid !== 'string') {
+        res.status(400).json({ error: 'toUid is required' });
+        return;
+      }
+      if (toUid === fromUid) {
+        res.status(400).json({ error: 'Cannot send request to yourself' });
+        return;
+      }
+      const toUser = await db().collection('users').doc(toUid).get();
+      if (!toUser.exists) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+      const existing = await db()
+        .collection('friend_requests')
+        .where('fromUid', '==', fromUid)
+        .where('toUid', '==', toUid)
+        .limit(1)
+        .get();
+      if (!existing.empty) {
+        res.status(400).json({ error: 'Request already sent' });
+        return;
+      }
+      const friendDoc = await db().collection('friends').doc(fromUid).get();
+      const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+      if (friendIds.includes(toUid)) {
+        res.status(400).json({ error: 'Already friends' });
+        return;
+      }
+      const ref = await db().collection('friend_requests').add({
+        fromUid,
+        toUid,
+        status: 'pending',
+        createdAt: new Date(),
+      });
 
-    // Auto-follow người được gửi lời mời (gửi lời mời = quan tâm người đó)
-    await db()
-      .collection('follows')
-      .doc(fromUid)
-      .set({ followingIds: FieldValue.arrayUnion(toUid) }, { merge: true });
+      // Auto-follow người được gửi lời mời (gửi lời mời = quan tâm người đó)
+      await db()
+        .collection('follows')
+        .doc(fromUid)
+        .set({ followingIds: FieldValue.arrayUnion(toUid) }, { merge: true });
 
-    // Emit Socket.io event để người nhận cập nhật real-time
-    const fromUser = await db().collection('users').doc(fromUid).get();
-    const fromData = fromUser.data();
-    const requestData = {
-      id: ref.id,
-      fromUid,
-      name: fromData?.displayName ?? 'Unknown',
-      avatarUrl: fromData?.photoURL,
-    };
-    console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
-    io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
+      // Emit Socket.io event để người nhận cập nhật real-time
+      const fromUser = await db().collection('users').doc(fromUid).get();
+      const fromData = fromUser.data();
+      const requestData = {
+        id: ref.id,
+        fromUid,
+        name: fromData?.displayName ?? 'Unknown',
+        avatarUrl: fromData?.photoURL,
+      };
+      console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
+      io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
 
-    res.status(201).json({ id: ref.id, toUid, status: 'pending' });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
+      res.status(201).json({ id: ref.id, toUid, status: 'pending' });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
   }
-});
+);
 
 /** PATCH /api/friends/requests/:id — chấp nhận hoặc từ chối (body: { action: 'accept'|'reject' }) */
 router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
@@ -166,6 +177,10 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     const fromUid = doc.data()!.fromUid;
+    const toUid = doc.data()!.toUid;
+    const otherUid = uid === fromUid ? toUid : fromUid;
+    if (await rejectIfBlocked(uid, otherUid, res)) return;
+
     await ref.update({ status: action });
     if (action === 'accept') {
       const batch = db().batch();
@@ -222,46 +237,102 @@ router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
 router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
+    const [myUserDoc, blockedByMeSnap] = await Promise.all([
+      db().collection('users').doc(uid).get(),
+      db().collection('users').where('blockedBy', 'array-contains', uid).get(),
+    ]);
+    const blockedByOthers = new Set<string>(
+      myUserDoc.exists ? ((myUserDoc.data()?.blockedBy ?? []) as string[]) : []
+    );
+    const blockedByMe = new Set<string>(blockedByMeSnap.docs.map((d) => d.id));
+
     const friendDoc = await db().collection('friends').doc(uid).get();
     const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    const myFriendsSet = new Set(friendIds);
-    const sent = await db().collection('friend_requests').where('fromUid', '==', uid).get();
-    const received = await db().collection('friend_requests').where('toUid', '==', uid).get();
+    const sent = await db()
+      .collection('friend_requests')
+      .where('fromUid', '==', uid)
+      .where('status', '==', 'pending')
+      .get();
+    const received = await db()
+      .collection('friend_requests')
+      .where('toUid', '==', uid)
+      .where('status', '==', 'pending')
+      .get();
     const requested = new Set([
       ...sent.docs.map((d) => d.data().toUid),
       ...received.docs.map((d) => d.data().fromUid),
     ]);
-    const exclude = new Set([uid, ...friendIds, ...requested]);
-    const usersSnap = await db().collection('users').get();
+    const exclude = new Set([uid, ...friendIds, ...requested, ...blockedByOthers, ...blockedByMe]);
 
-    // Batch-load friend lists of suggestions to compute mutual counts
-    const candidates = usersSnap.docs.filter((d) => !exclude.has(d.id)).slice(0, 40);
-    const candidateIds = candidates.map((d) => d.id);
-    const friendDocs =
-      candidateIds.length > 0
-        ? await db().getAll(...candidateIds.map((id) => db().collection('friends').doc(id)))
-        : [];
-    const candidateFriendsMap = new Map<string, string[]>();
-    friendDocs.forEach((d) => {
-      if (d.exists) candidateFriendsMap.set(d.id, d.data()?.friendIds ?? []);
+    // FOAF: chỉ lấy bạn của bạn bè rồi đếm mutualCount
+    const mutualCountMap = new Map<string, number>();
+    if (friendIds.length > 0) {
+      const friendDocs = await db().getAll(
+        ...friendIds.map((id) => db().collection('friends').doc(id))
+      );
+      friendDocs.forEach((doc) => {
+        if (!doc.exists) return;
+        const foafIds: string[] = doc.data()?.friendIds ?? [];
+        foafIds.forEach((candidateId) => {
+          if (exclude.has(candidateId)) return;
+          mutualCountMap.set(candidateId, (mutualCountMap.get(candidateId) ?? 0) + 1);
+        });
+      });
+    }
+
+    // Ưu tiên danh sách FOAF có mutualCount > 0
+    const foafIds = [...mutualCountMap.keys()].sort((a, b) => {
+      const diff = (mutualCountMap.get(b) ?? 0) - (mutualCountMap.get(a) ?? 0);
+      return diff !== 0 ? diff : a.localeCompare(b);
     });
 
-    const suggestions = candidates
-      .map((d) => {
-        const data = d.data();
-        const theirFriends = candidateFriendsMap.get(d.id) ?? [];
-        const mutualCount = theirFriends.filter((id: string) => myFriendsSet.has(id)).length;
-        return {
-          id: d.id,
-          name: (data.displayName as string) ?? 'Unknown',
-          avatarUrl: data.photoURL as string | undefined,
-          mutualCount,
-        };
-      })
-      // Sắp xếp gợi ý theo số bạn chung giảm dần
-      .sort((a, b) => b.mutualCount - a.mutualCount)
-      .slice(0, 20);
-    res.json({ suggestions });
+    const maxSuggestions = 20;
+    const mutualSuggestions =
+      foafIds.length === 0
+        ? []
+        : (
+            await db().getAll(
+              ...foafIds.slice(0, 200).map((id) => db().collection('users').doc(id))
+            )
+          )
+            .filter((d) => d.exists)
+            .map((d) => {
+              const data = d.data()!;
+              return {
+                id: d.id,
+                name: (data.displayName as string) ?? 'Unknown',
+                avatarUrl: data.photoURL as string | undefined,
+                mutualCount: mutualCountMap.get(d.id) ?? 0,
+              };
+            })
+            .sort((a, b) => {
+              const diff = b.mutualCount - a.mutualCount;
+              if (diff !== 0) return diff;
+              return a.name.localeCompare(b.name);
+            })
+            .slice(0, maxSuggestions);
+
+    // Phần còn lại: người dùng chưa bị loại, không trùng nhóm FOAF
+    const remainingSlots = Math.max(0, maxSuggestions - mutualSuggestions.length);
+    const excludeForOthers = new Set<string>([...exclude, ...mutualSuggestions.map((s) => s.id)]);
+
+    const otherSuggestions =
+      remainingSlots === 0
+        ? []
+        : (await db().collection('users').limit(500).get()).docs
+            .filter((d) => !excludeForOthers.has(d.id))
+            .map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                name: (data.displayName as string) ?? 'Unknown',
+                avatarUrl: data.photoURL as string | undefined,
+                mutualCount: 0,
+              };
+            })
+            .slice(0, remainingSlots);
+
+    res.json({ suggestions: [...mutualSuggestions, ...otherSuggestions] });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -275,6 +346,10 @@ router.get('/status/:uid', requireAuth, async (req: AuthRequest, res) => {
 
     if (me === other) {
       res.json({ status: 'self' });
+      return;
+    }
+    if (await hasBlockRelation(me, other)) {
+      res.json({ status: 'blocked' });
       return;
     }
 
@@ -333,6 +408,9 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       res.status(403).json({ error: 'Not your request' });
       return;
     }
+    const otherUid = data.toUid === uid ? data.fromUid : data.toUid;
+    if (await rejectIfBlocked(uid, otherUid, res)) return;
+
     await db().collection('friend_requests').doc(id).delete();
     res.status(204).send();
   } catch (e) {
@@ -346,40 +424,45 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
 /* ======================================================================== */
 
 /** GET /api/friends/mutual/:uid — bạn chung giữa mình và user khác */
-router.get('/mutual/:uid', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const me = req.uid!;
-    const other = req.params.uid;
-    if (me === other) {
-      res.json({ mutualFriends: [], count: 0 });
-      return;
+router.get(
+  '/mutual/:uid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.uid),
+  async (req: AuthRequest, res) => {
+    try {
+      const me = req.uid!;
+      const other = req.params.uid;
+      if (me === other) {
+        res.json({ mutualFriends: [], count: 0 });
+        return;
+      }
+      const [myDoc, theirDoc] = await Promise.all([
+        db().collection('friends').doc(me).get(),
+        db().collection('friends').doc(other).get(),
+      ]);
+      const myIds: string[] = myDoc.exists ? (myDoc.data()?.friendIds ?? []) : [];
+      const theirIds = new Set<string>(theirDoc.exists ? (theirDoc.data()?.friendIds ?? []) : []);
+      const mutualIds = myIds.filter((id) => theirIds.has(id));
+      if (mutualIds.length === 0) {
+        res.json({ mutualFriends: [], count: 0 });
+        return;
+      }
+      const usersSnap = await db().getAll(
+        ...mutualIds.slice(0, 20).map((id) => db().collection('users').doc(id))
+      );
+      const mutualFriends = usersSnap
+        .filter((d) => d.exists)
+        .map((d) => ({
+          id: d.id,
+          name: (d.data() as { displayName?: string }).displayName ?? 'Unknown',
+          avatarUrl: (d.data() as { photoURL?: string }).photoURL,
+        }));
+      res.json({ mutualFriends, count: mutualIds.length });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
     }
-    const [myDoc, theirDoc] = await Promise.all([
-      db().collection('friends').doc(me).get(),
-      db().collection('friends').doc(other).get(),
-    ]);
-    const myIds: string[] = myDoc.exists ? (myDoc.data()?.friendIds ?? []) : [];
-    const theirIds = new Set<string>(theirDoc.exists ? (theirDoc.data()?.friendIds ?? []) : []);
-    const mutualIds = myIds.filter((id) => theirIds.has(id));
-    if (mutualIds.length === 0) {
-      res.json({ mutualFriends: [], count: 0 });
-      return;
-    }
-    const usersSnap = await db().getAll(
-      ...mutualIds.slice(0, 20).map((id) => db().collection('users').doc(id))
-    );
-    const mutualFriends = usersSnap
-      .filter((d) => d.exists)
-      .map((d) => ({
-        id: d.id,
-        name: (d.data() as { displayName?: string }).displayName ?? 'Unknown',
-        avatarUrl: (d.data() as { photoURL?: string }).photoURL,
-      }));
-    res.json({ mutualFriends, count: mutualIds.length });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
   }
-});
+);
 
 /* ======================================================================== */
 /*  FRIEND TIER — ưu tiên / bình thường / hạn chế                          */
@@ -387,43 +470,53 @@ router.get('/mutual/:uid', requireAuth, async (req: AuthRequest, res) => {
 /* ======================================================================== */
 
 /** GET /api/friends/tier/:friendUid — lấy tier hiện tại */
-router.get('/tier/:friendUid', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const uid = req.uid!;
-    const doc = await db().collection('friend_tiers').doc(uid).get();
-    const tiers: Record<string, string> = doc.exists ? (doc.data()?.tiers ?? {}) : {};
-    res.json({ tier: tiers[req.params.friendUid] ?? 'normal' });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
+router.get(
+  '/tier/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
+    try {
+      const uid = req.uid!;
+      const doc = await db().collection('friend_tiers').doc(uid).get();
+      const tiers: Record<string, string> = doc.exists ? (doc.data()?.tiers ?? {}) : {};
+      res.json({ tier: tiers[req.params.friendUid] ?? 'normal' });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
   }
-});
+);
 
 /** PUT /api/friends/tier/:friendUid — đặt tier (body: { tier: 'priority'|'normal'|'restricted' }) */
-router.put('/tier/:friendUid', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const uid = req.uid!;
-    const { friendUid } = req.params;
-    const { tier } = req.body as { tier?: string };
-    if (!tier || !['priority', 'normal', 'restricted'].includes(tier)) {
-      res.status(400).json({ error: 'tier must be priority, normal, or restricted' });
-      return;
+router.put(
+  '/tier/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
+    try {
+      const uid = req.uid!;
+      const { friendUid } = req.params;
+      const { tier } = req.body as { tier?: string };
+      if (!tier || !['priority', 'normal', 'restricted'].includes(tier)) {
+        res.status(400).json({ error: 'tier must be priority, normal, or restricted' });
+        return;
+      }
+      // Verify friendship
+      const friendDoc = await db().collection('friends').doc(uid).get();
+      const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+      if (!friendIds.includes(friendUid)) {
+        res.status(400).json({ error: 'Not friends with this user' });
+        return;
+      }
+      await db()
+        .collection('friend_tiers')
+        .doc(uid)
+        .set({ tiers: { [friendUid]: tier } }, { merge: true });
+      res.json({ friendUid, tier });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
     }
-    // Verify friendship
-    const friendDoc = await db().collection('friends').doc(uid).get();
-    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    if (!friendIds.includes(friendUid)) {
-      res.status(400).json({ error: 'Not friends with this user' });
-      return;
-    }
-    await db()
-      .collection('friend_tiers')
-      .doc(uid)
-      .set({ tiers: { [friendUid]: tier } }, { merge: true });
-    res.json({ friendUid, tier });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
   }
-});
+);
 
 /** GET /api/friends/tiers — lấy tất cả tiers */
 router.get('/tiers', requireAuth, async (req: AuthRequest, res) => {
@@ -467,54 +560,64 @@ router.get('/nicknames', requireAuth, async (req: AuthRequest, res) => {
 });
 
 /** PUT /api/friends/nicknames/:friendUid — đặt / cập nhật biệt danh cho 1 bạn */
-router.put('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const uid = req.uid!;
-    const { friendUid } = req.params;
-    const { nickname } = req.body as { nickname?: string };
-    if (!nickname || typeof nickname !== 'string' || nickname.trim().length === 0) {
-      res.status(400).json({ error: 'nickname is required' });
-      return;
+router.put(
+  '/nicknames/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
+    try {
+      const uid = req.uid!;
+      const { friendUid } = req.params;
+      const { nickname } = req.body as { nickname?: string };
+      if (!nickname || typeof nickname !== 'string' || nickname.trim().length === 0) {
+        res.status(400).json({ error: 'nickname is required' });
+        return;
+      }
+      if (nickname.trim().length > 50) {
+        res.status(400).json({ error: 'nickname too long (max 50)' });
+        return;
+      }
+      // Verify they are friends
+      const friendDoc = await db().collection('friends').doc(uid).get();
+      const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+      if (!friendIds.includes(friendUid)) {
+        res.status(400).json({ error: 'Not friends with this user' });
+        return;
+      }
+      await db()
+        .collection('nicknames')
+        .doc(uid)
+        .set({ entries: { [friendUid]: nickname.trim() } }, { merge: true });
+      res.json({ friendUid, nickname: nickname.trim() });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
     }
-    if (nickname.trim().length > 50) {
-      res.status(400).json({ error: 'nickname too long (max 50)' });
-      return;
-    }
-    // Verify they are friends
-    const friendDoc = await db().collection('friends').doc(uid).get();
-    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    if (!friendIds.includes(friendUid)) {
-      res.status(400).json({ error: 'Not friends with this user' });
-      return;
-    }
-    await db()
-      .collection('nicknames')
-      .doc(uid)
-      .set({ entries: { [friendUid]: nickname.trim() } }, { merge: true });
-    res.json({ friendUid, nickname: nickname.trim() });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
   }
-});
+);
 
 /** DELETE /api/friends/nicknames/:friendUid — xóa biệt danh */
-router.delete('/nicknames/:friendUid', requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const uid = req.uid!;
-    const { friendUid } = req.params;
-    const ref = db().collection('nicknames').doc(uid);
-    const doc = await ref.get();
-    if (!doc.exists) {
+router.delete(
+  '/nicknames/:friendUid',
+  requireAuth,
+  requireNoBlock((req: AuthRequest) => req.params.friendUid),
+  async (req: AuthRequest, res) => {
+    try {
+      const uid = req.uid!;
+      const { friendUid } = req.params;
+      const ref = db().collection('nicknames').doc(uid);
+      const doc = await ref.get();
+      if (!doc.exists) {
+        res.status(204).send();
+        return;
+      }
+      const entries = { ...(doc.data()?.entries ?? {}) } as Record<string, string>;
+      delete entries[friendUid];
+      await ref.set({ entries }, { merge: false });
       res.status(204).send();
-      return;
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
     }
-    const entries = { ...(doc.data()?.entries ?? {}) } as Record<string, string>;
-    delete entries[friendUid];
-    await ref.set({ entries }, { merge: false });
-    res.status(204).send();
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
   }
-});
+);
 
 export default router;

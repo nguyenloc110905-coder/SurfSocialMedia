@@ -14,11 +14,11 @@ interface TagFriendsModalProps {
   onToggleFriend: (friendUid: string) => void;
 }
 
-export default function TagFriendsModal({ 
-  isOpen, 
-  onClose, 
+export default function TagFriendsModal({
+  isOpen,
+  onClose,
   selectedFriends,
-  onToggleFriend 
+  onToggleFriend,
 }: TagFriendsModalProps) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,12 +33,14 @@ export default function TagFriendsModal({
   const loadFriends = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ friends: any[] }>('/api/friends');
+      const response = await api.get<{
+        friends: { id: string; name: string; avatarUrl?: string }[];
+      }>('/api/friends');
       // Map API response: {id, name, avatarUrl} -> {uid, displayName, photoURL}
-      const mappedFriends = (response.friends || []).map(f => ({
+      const mappedFriends = (response.friends || []).map((f) => ({
         uid: f.id,
         displayName: f.name,
-        photoURL: f.avatarUrl
+        photoURL: f.avatarUrl,
       }));
       setFriends(mappedFriends);
       console.log('Loaded friends:', mappedFriends);
@@ -49,16 +51,19 @@ export default function TagFriendsModal({
     }
   };
 
-  const filteredFriends = friends.filter(friend =>
-    friend.displayName && 
-    friend.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFriends = friends.filter(
+    (friend) =>
+      friend.displayName && friend.displayName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div 
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+      onClick={onClose}
+    >
+      <div
         className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full max-h-[600px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
@@ -70,7 +75,12 @@ export default function TagFriendsModal({
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -78,8 +88,18 @@ export default function TagFriendsModal({
         {/* Search */}
         <div className="p-4 border-b border-gray-200 dark:border-slate-700">
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
             <input
               type="text"

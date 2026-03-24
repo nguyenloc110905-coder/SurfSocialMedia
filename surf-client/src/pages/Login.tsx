@@ -3,7 +3,10 @@ import AuthLayout from '@/components/layout/AuthLayout';
 
 export default function Login() {
   return (
-    <AuthLayout title="Đăng nhập" footerLink={{ to: '/register', label: 'Chưa có tài khoản? Đăng ký' }}>
+    <AuthLayout
+      title="Đăng nhập"
+      footerLink={{ to: '/register', label: 'Chưa có tài khoản? Đăng ký' }}
+    >
       <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">

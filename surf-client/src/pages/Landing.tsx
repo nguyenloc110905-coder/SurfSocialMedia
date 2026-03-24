@@ -5,7 +5,9 @@ export default function Landing() {
     <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-surf-light dark:bg-surf-dark">
       <div className="landing-logo-drop flex flex-col items-center">
         <img src="/SurfLogo.png" alt="Surf" className="h-16 w-auto object-contain" />
-        <p className="mt-4 text-gray-600 dark:text-gray-400 text-center text-lg">Kết nối và chia sẻ</p>
+        <p className="mt-4 text-gray-600 dark:text-gray-400 text-center text-lg">
+          Kết nối và chia sẻ
+        </p>
       </div>
       <div className="landing-cta-slide-up mt-12 flex flex-col sm:flex-row gap-4">
         <Link
