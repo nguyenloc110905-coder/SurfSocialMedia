@@ -11,27 +11,6 @@ import {
 import { syncUserProfile, api } from '@/lib/api';
 import { PHONE_COUNTRIES } from '@/lib/phone-countries';
 
-declare global {
-  interface Window {
-    grecaptcha: {
-      render: (
-        container: HTMLElement,
-        params: {
-          sitekey: string;
-          callback: (token: string) => void;
-          'expired-callback': () => void;
-          theme?: string;
-        }
-      ) => number;
-      reset: (widgetId: number) => void;
-      getResponse: (widgetId: number) => string;
-      ready: (cb: () => void) => void;
-    };
-  }
-}
-
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string;
-
 const ERRORS: Record<string, string> = {
   'auth/invalid-email': 'Email không hợp lệ.',
   'auth/user-disabled': 'Tài khoản đã bị vô hiệu hóa.',
@@ -239,13 +218,6 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState('');
-  const [showCaptchaModal, setShowCaptchaModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState<
-    'login' | 'register' | 'google' | 'facebook' | null
-  >(null);
-  const captchaModalRef = useRef<HTMLDivElement>(null);
-  const captchaWidgetId = useRef<number | null>(null);
   const loginFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -263,64 +235,6 @@ export default function AuthPage() {
     setMode(isRegister ? 'register' : 'login');
   }, [isRegister]);
 
-  /* CAPTCHA */
-  useEffect(() => {
-    if (!showCaptchaModal || !RECAPTCHA_SITE_KEY) return;
-    captchaWidgetId.current = null;
-    let cancelled = false;
-    const tryRender = () => {
-      if (cancelled || !captchaModalRef.current || !window.grecaptcha) return false;
-      try {
-        captchaWidgetId.current = window.grecaptcha.render(captchaModalRef.current, {
-          sitekey: RECAPTCHA_SITE_KEY,
-          callback: (token: string) => setCaptchaToken(token),
-          'expired-callback': () => setCaptchaToken(''),
-          theme: 'dark',
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (window.grecaptcha?.ready) {
-      window.grecaptcha.ready(() => {
-        if (!cancelled) tryRender();
-      });
-    }
-    const timer = setTimeout(() => {
-      if (!tryRender()) {
-        interval = setInterval(() => {
-          if (tryRender()) {
-            clearInterval(interval!);
-            interval = null;
-          }
-        }, 200);
-        setTimeout(() => {
-          if (interval) {
-            clearInterval(interval);
-            interval = null;
-          }
-        }, 10000);
-      }
-    }, 50);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      if (interval) clearInterval(interval);
-    };
-  }, [showCaptchaModal]);
-
-  const openCaptchaModal = (action: 'login' | 'register' | 'google' | 'facebook') => {
-    setCaptchaToken('');
-    setPendingAction(action);
-    setShowCaptchaModal(true);
-  };
-  const closeCaptchaModal = () => {
-    setShowCaptchaModal(false);
-    setPendingAction(null);
-    setCaptchaToken('');
-  };
 
   /* ─── Auth executors ─────────────────────────────────────────────────── */
   const executeLogin = async () => {
@@ -334,13 +248,7 @@ export default function AuthPage() {
       api.post('/api/auth/notify-login').catch(() => {});
       localStorage.setItem('surf_last_email', loginEmail.trim());
       setLoginPassword('');
-      setShowCaptchaModal(false);
       navigate('/feed', { replace: true });
-    } catch (err: unknown) {
-      const code =
-        err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng nhập thất bại.');
-      closeCaptchaModal();
     } finally {
       setLoading(false);
     }
@@ -354,13 +262,7 @@ export default function AuthPage() {
       await new Promise((r) => setTimeout(r, 800));
       await syncUserProfile();
       api.post('/api/auth/notify-register').catch(() => {});
-      setShowCaptchaModal(false);
       navigate('/onboarding', { replace: true });
-    } catch (err: unknown) {
-      const code =
-        err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng ký thất bại.');
-      closeCaptchaModal();
     } finally {
       setLoading(false);
     }
@@ -374,7 +276,6 @@ export default function AuthPage() {
       await new Promise((r) => setTimeout(r, 800));
       await syncUserProfile();
       api.post('/api/auth/notify-login').catch(() => {});
-      setShowCaptchaModal(false);
       navigate('/feed', { replace: true });
     } catch (err: unknown) {
       const code =
@@ -388,12 +289,10 @@ export default function AuthPage() {
           'auth/multi-factor-auth-required',
         ].includes(code)
       ) {
-        closeCaptchaModal();
         setLoading(false);
         return;
       }
       setError(ERRORS[code] || 'Đăng nhập Google thất bại.');
-      closeCaptchaModal();
     } finally {
       setLoading(false);
     }
@@ -407,7 +306,6 @@ export default function AuthPage() {
       const code =
         err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
       setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
-      closeCaptchaModal();
       setLoading(false);
     }
   };
@@ -432,22 +330,10 @@ export default function AuthPage() {
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!captchaToken || !pendingAction) return;
-    if (pendingAction === 'login') executeLogin();
-    else if (pendingAction === 'register') executeRegister();
-    else if (pendingAction === 'google') executeGooglePost();
-    else if (pendingAction === 'facebook') executeFacebookPost();
-  }, [captchaToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
   /* ─── Form handlers ──────────────────────────────────────────────────── */
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (RECAPTCHA_SITE_KEY && !captchaToken) {
-      openCaptchaModal('login');
-      return;
-    }
     await executeLogin();
   };
 
@@ -471,28 +357,16 @@ export default function AuthPage() {
       setError('Mật khẩu nhập lại không khớp.');
       return;
     }
-    if (RECAPTCHA_SITE_KEY && !captchaToken) {
-      openCaptchaModal('register');
-      return;
-    }
     await executeRegister();
   };
 
   const handleGoogleSignIn = async () => {
     setError('');
-    if (RECAPTCHA_SITE_KEY && !captchaToken) {
-      openCaptchaModal('google');
-      return;
-    }
     await executeGooglePost();
   };
 
   const handleFacebookSignIn = async () => {
     setError('');
-    if (RECAPTCHA_SITE_KEY && !captchaToken) {
-      openCaptchaModal('facebook');
-      return;
-    }
     await executeFacebookPost();
   };
 
@@ -795,44 +669,6 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
-
-      {/* CAPTCHA Modal */}
-      {showCaptchaModal && RECAPTCHA_SITE_KEY && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={closeCaptchaModal}
-        >
-          <div
-            className="auth-glass rounded-2xl p-6 flex flex-col items-center gap-4 mx-4 auth-entrance"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 text-white/80">
-              <svg
-                className="w-5 h-5 text-cyan-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                />
-              </svg>
-              <span className="font-medium">Xác nhận bạn không phải robot</span>
-            </div>
-            <div ref={captchaModalRef} />
-            <button
-              type="button"
-              onClick={closeCaptchaModal}
-              className="text-sm text-white/40 hover:text-white/70 transition-colors"
-            >
-              Hủy
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

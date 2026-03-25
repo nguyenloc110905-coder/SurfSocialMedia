@@ -1,47 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { useFeedStore, type FeedPost } from '../stores/feedStore';
 import CreatePost from '../components/feed/CreatePost';
 import MomentsBar from '../components/feed/MomentsBar';
 import PostCard from '../components/feed/PostCard';
 
-interface Post {
-  id: string;
-  authorId?: string;
-  authorDisplayName: string;
-  authorPhotoURL: string | null;
-  content: string;
-  mediaUrls: string[];
-  createdAt: import('firebase/firestore').Timestamp | string | number;
-  likeCount: number;
-  replyCount: number;
-  likedBy: string[];
-  feeling?: string;
-  location?: string;
-  taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
-  privacy?: 'public' | 'friends' | 'only-me' | 'custom';
-  _discover?: boolean;
-}
+type Post = FeedPost;
 
 export default function Feed() {
   const { user } = useAuthStore();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { posts, hasMore, nextCursor, loaded, setPosts, appendPosts, prependPost, updatePost, scrollTop, setScrollTop } =
+    useFeedStore();
+  const [loading, setLoading] = useState(!loaded);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const handlePostUpdated = (updated: Post & Record<string, unknown>) => {
+    updatePost(updated as Post);
+  };
 
   const loadPosts = async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await api.get<{ posts: Post[]; nextLastId?: string }>('/api/feed');
-      const seen = new Set<string>();
-      setPosts((response.posts || []).filter((p) => !seen.has(p.id) && !!seen.add(p.id)));
-      setNextCursor(response.nextLastId ?? null);
-      setHasMore(!!response.nextLastId);
+      setPosts(response.posts || [], !!response.nextLastId, response.nextLastId ?? null);
     } catch (err) {
       console.error('Failed to load feed:', err);
       const message = err instanceof Error ? err.message : '';
@@ -62,13 +47,7 @@ export default function Feed() {
       const response = await api.get<{ posts: Post[]; nextLastId?: string }>(
         `/api/feed?lastId=${nextCursor}`
       );
-      setPosts((prev) => {
-        const existingIds = new Set(prev.map((p) => p.id));
-        const newPosts = (response.posts || []).filter((p) => !existingIds.has(p.id));
-        return [...prev, ...newPosts];
-      });
-      setNextCursor(response.nextLastId ?? null);
-      setHasMore(!!response.nextLastId);
+      appendPosts(response.posts || [], !!response.nextLastId, response.nextLastId ?? null);
     } catch (err) {
       console.error('Failed to load more posts:', err);
     } finally {
@@ -91,15 +70,23 @@ export default function Feed() {
   }, [loadMore]);
 
   useEffect(() => {
-    loadPosts();
+    if (!loaded) void loadPosts();
+  }, []);
+
+  // Save scroll position on unmount, restore on mount
+  useEffect(() => {
+    const container = document.getElementById('main-feed-scroll');
+    if (container && scrollTop > 0) {
+      container.scrollTop = scrollTop;
+    }
+    return () => {
+      const c = document.getElementById('main-feed-scroll');
+      if (c) setScrollTop(c.scrollTop);
+    };
   }, []);
 
   const handlePostCreated = (newPost: Record<string, unknown>) => {
-    setPosts((prev) => {
-      const castPost = newPost as unknown as Post;
-      if (prev.some((p) => p.id === castPost.id)) return prev;
-      return [castPost, ...prev];
-    });
+    prependPost(newPost as unknown as Post);
   };
 
   // Vị trí đầu tiên của bài "Khám phá" để hiện divider
@@ -181,7 +168,7 @@ export default function Feed() {
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent" />
               </div>
             )}
-            <PostCard post={post} currentUserId={user?.uid} />
+            <PostCard post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} />
           </div>
         ))}
 

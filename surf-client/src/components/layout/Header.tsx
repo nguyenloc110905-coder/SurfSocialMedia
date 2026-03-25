@@ -136,19 +136,6 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
         <button
           type="button"
           className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
-          title="Tin nhắn"
-        >
-          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
-            <path
-              fillRule="evenodd"
-              d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 2.98.97 4.29L2 22l5.71-.97C9.02 21.64 10.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18c-1.58 0-3.05-.5-4.25-1.35l-.98-.63-2.1.29.29-2.08-.65-1.01C5.5 16.05 5 14.58 5 13c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
           title="Thông báo"
         >
           <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">

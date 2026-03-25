@@ -4,6 +4,7 @@ import BottomNav from './BottomNav';
 import MainLeftNav from './MainLeftNav';
 import MainRightSidebar from './MainRightSidebar';
 import FriendsLeftNav from './FriendsLeftNav';
+import QuickContactBar from './QuickContactBar';
 
 const MAIN_PATHS = [
   '/feed',
@@ -32,6 +33,7 @@ export default function Layout() {
   const isSettings = location.pathname === '/feed/settings';
   const useThreeColumn = isMainPage(location.pathname);
   const showFriendsLeftNav = isFriendsSection(location.pathname);
+  const isShortVideo = location.pathname === '/feed/short-video';
 
   return (
     <div
@@ -51,21 +53,32 @@ export default function Layout() {
       >
         {useThreeColumn ? (
           <>
-            <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[25%_1fr] lg:grid-cols-[22%_56%_22%] gap-1 md:gap-2 overflow-hidden">
-              {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
-              <div className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
-                <div className="flex-1 w-full">
-                  <Outlet />
+            {isShortVideo ? (
+              <div className="flex-1 min-h-0 w-full overflow-hidden">
+                <Outlet />
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%] gap-1 md:gap-2 overflow-hidden lg:pr-[90px]">
+                <div className="min-h-0 overflow-hidden">
+                  {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
+                </div>
+                <div id="main-feed-scroll" className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
+                  <div className="flex-1 w-full">
+                    <Outlet />
+                  </div>
+                </div>
+                <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
+                  <MainRightSidebar />
                 </div>
               </div>
-              <MainRightSidebar />
-            </div>
+            )}
           </>
         ) : (
           <Outlet />
         )}
       </main>
       <BottomNav />
+      {useThreeColumn && <QuickContactBar isShortVideo={isShortVideo} />}
     </div>
   );
 }

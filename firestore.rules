@@ -7,5 +7,15 @@ service cloud.firestore {
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Short videos — all CRUD goes through the Express server (Firebase Admin bypasses rules).
+    // These rules cover any future direct-client access.
+    match /videos/{videoId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.authorId;
+      allow update, delete: if request.auth != null
+        && request.auth.uid == resource.data.authorId;
+    }
   }
 }
