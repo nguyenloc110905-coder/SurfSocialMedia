@@ -3,24 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { uploadVideo } from '../lib/cloudinary';
 import { useAuthStore } from '../stores/authStore';
-
-interface ClipVideo {
-  id: string;
-  _source?: 'clip' | 'post'; // 'clip' = videos collection, 'post' = posts with video
-  authorId: string;
-  authorDisplayName: string;
-  authorPhotoURL: string | null;
-  title: string;
-  description: string;
-  videoUrl: string;
-  thumbnailUrl: string | null;
-  likeCount: number;
-  likedBy: string[];
-  viewCount: number;
-  commentCount: number;
-  duration: number | null;
-  createdAt: unknown;
-}
+import { useClipFeedStore, type ClipVideo } from '../stores/clipFeedStore';
 
 // Chuyển đổi URL Cloudinary video sang quality khác nhau
 function applyCloudinaryQuality(url: string, quality: string): string {
@@ -53,7 +36,7 @@ function ClipCard({
   const navigate = useNavigate();
 
   const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [liked, setLiked] = useState(video.likedBy?.includes(currentUserId ?? '') ?? false);
   const [likeCount, setLikeCount] = useState(video.likeCount ?? 0);
   const [showOptions, setShowOptions] = useState(false);
@@ -635,12 +618,11 @@ function UploadModal({
 export default function ShortVideo() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const [videos, setVideos] = useState<ClipVideo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { videos, hasMore, nextCursor, loaded, setFeed, appendFeed, removeVideo, prependVideo } =
+    useClipFeedStore();
+  const [loading, setLoading] = useState(!loaded);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
-  const nextCursorRef = useRef<number | null>(null);  // ms timestamp cursor
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadFeed = useCallback(async (cursor?: number) => {
@@ -655,42 +637,41 @@ export default function ShortVideo() {
         nextCursor: number | null;
       };
       if (cursor) {
-        setVideos((prev) => [...prev, ...data.videos]);
+        appendFeed(data.videos, data.hasMore, data.nextCursor);
       } else {
-        setVideos(data.videos);
+        setFeed(data.videos, data.hasMore, data.nextCursor);
       }
-      setHasMore(data.hasMore);
-      nextCursorRef.current = data.nextCursor;
     } catch (e) {
       console.error('Failed to load video feed:', e);
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [setFeed, appendFeed]);
 
+  // Chỉ fetch lần đầu nếu store chưa có data
   useEffect(() => {
-    void loadFeed();
-  }, [loadFeed]);
+    if (!loaded) void loadFeed();
+  }, [loaded, loadFeed]);
 
   // Load more when scrolled near the end
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (!el || loadingMore || !hasMore || !nextCursorRef.current) return;
+    if (!el || loadingMore || !hasMore || !nextCursor) return;
     const { scrollTop, scrollHeight, clientHeight } = el;
     if (scrollHeight - scrollTop - clientHeight < clientHeight * 1.5) {
-      void loadFeed(nextCursorRef.current);
+      void loadFeed(nextCursor);
     }
-  }, [loadFeed, loadingMore, hasMore]);
+  }, [loadFeed, loadingMore, hasMore, nextCursor]);
 
   const handleDelete = useCallback((id: string) => {
-    setVideos((prev) => prev.filter((v) => v.id !== id));
-  }, []);
+    removeVideo(id);
+  }, [removeVideo]);
 
   const handleUploaded = useCallback((video: ClipVideo) => {
-    setVideos((prev) => [video, ...prev]);
+    prependVideo(video);
     setShowUpload(false);
-  }, []);
+  }, [prependVideo]);
 
   return (
     <div className="relative bg-black" style={{ height: 'calc(100vh - 88px)' }}>

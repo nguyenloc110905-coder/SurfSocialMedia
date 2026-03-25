@@ -62,7 +62,7 @@ export default function Layout() {
                 <div className="min-h-0 overflow-hidden">
                   {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
                 </div>
-                <div className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
+                <div id="main-feed-scroll" className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
                   <div className="flex-1 w-full">
                     <Outlet />
                   </div>
