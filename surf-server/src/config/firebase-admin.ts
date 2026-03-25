@@ -52,14 +52,18 @@ function initFirebaseAdmin() {
     console.error('\n💡 Please set one of these environment variables:');
     console.error('   - FIREBASE_SERVICE_ACCOUNT_JSON (minified JSON string)');
     console.error('   - FIREBASE_SERVICE_ACCOUNT_PATH (path to serviceAccountKey.json)');
-    throw new Error('Firebase Admin SDK initialization failed. Server cannot start without valid credentials.');
+    throw new Error(
+      'Firebase Admin SDK initialization failed. Server cannot start without valid credentials.'
+    );
   }
 }
 
 function ensureInit() {
   initFirebaseAdmin();
   if (!_auth || !_db) {
-    throw new Error('Firebase chưa cấu hình. Đặt FIREBASE_SERVICE_ACCOUNT_JSON hoặc FIREBASE_SERVICE_ACCOUNT_PATH trong .env');
+    throw new Error(
+      'Firebase chưa cấu hình. Đặt FIREBASE_SERVICE_ACCOUNT_JSON hoặc FIREBASE_SERVICE_ACCOUNT_PATH trong .env'
+    );
   }
 }
 
