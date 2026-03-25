@@ -13,6 +13,7 @@ import feedRoutes from './routes/feed.js';
 import friendsRoutes from './routes/friends.js';
 import commentsRoutes from './routes/comments.js';
 import momentsRoutes from './routes/moments.js';
+import musicRoutes from './routes/music.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -90,6 +91,7 @@ app.use('/api/feed', feedRoutes);
 app.use('/api/friends', friendsRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/moments', momentsRoutes);
+app.use('/api/music', musicRoutes);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);

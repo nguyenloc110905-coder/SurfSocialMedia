@@ -52,7 +52,7 @@ export default function Layout() {
       >
         {useThreeColumn ? (
           <>
-            <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[25%_1fr] lg:grid-cols-[22%_56%_22%] gap-1 md:gap-2 overflow-hidden">
+            <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%] gap-1 md:gap-2 overflow-hidden lg:pr-[90px]">
               {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
               <div className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
                 <div className="flex-1 w-full">
