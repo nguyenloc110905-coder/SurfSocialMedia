@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
+import { io } from '../index.js';
 
 const router = Router();
 
@@ -89,10 +90,46 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     };
     
     console.log(`📤 Sending response:`, responseData);
-    
+
+    // RT-4: broadcast new comment to all users viewing this post
+    io.to(`post:${req.params.postId}`).emit('comment:new', responseData);
+
     res.status(201).json(responseData);
   } catch (e) {
     console.error('Error creating comment:', e);
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// Edit a comment (CMT-4)
+router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const commentsRef = db.collection('comments');
+
+    const { content } = req.body;
+    if (!content?.trim()) {
+      res.status(400).json({ error: 'Content is required' });
+      return;
+    }
+
+    const commentDoc = await commentsRef.doc(req.params.commentId).get();
+    if (!commentDoc.exists) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    if (commentDoc.data()?.authorId !== req.uid) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const updated = { content: content.trim(), updatedAt: new Date(), isEdited: true };
+    await commentsRef.doc(req.params.commentId).update(updated);
+
+    res.json({ id: req.params.commentId, ...commentDoc.data(), ...updated });
+  } catch (e) {
+    console.error('Error editing comment:', e);
     res.status(500).json({ error: (e as Error).message });
   }
 });

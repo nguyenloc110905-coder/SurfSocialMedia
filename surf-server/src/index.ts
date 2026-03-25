@@ -14,6 +14,7 @@ import friendsRoutes from './routes/friends.js';
 import commentsRoutes from './routes/comments.js';
 import momentsRoutes from './routes/moments.js';
 import musicRoutes from './routes/music.js';
+import videosRoutes from './routes/videos.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -62,6 +63,15 @@ io.on('connection', (socket) => {
     console.log(`👤 User ${userId} joined their room (${roomSize} clients in room)`);
   });
 
+  // RT-4: join/leave room để nhận comment:new real-time
+  socket.on('post:join', (postId: string) => {
+    socket.join(`post:${postId}`);
+  });
+
+  socket.on('post:leave', (postId: string) => {
+    socket.leave(`post:${postId}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('🔌 Client disconnected:', socket.id);
   });
@@ -92,6 +102,7 @@ app.use('/api/friends', friendsRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/moments', momentsRoutes);
 app.use('/api/music', musicRoutes);
+app.use('/api/videos', videosRoutes);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);

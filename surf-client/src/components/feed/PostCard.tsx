@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import Modal from '../ui/Modal';
 import { isVideoUrl } from '../../lib/cloudinary';
 import EditPostModal from './EditPostModal';
+import { getSocket } from '../../lib/socket';
 
 interface Comment {
   id: string;
@@ -22,6 +23,7 @@ interface Comment {
     | null;
   likeCount: number;
   likedBy: string[];
+  isEdited?: boolean;
 }
 
 interface PostCardProps {
@@ -270,6 +272,14 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
   const initialReaction = currentUserId ? (post.reactions?.[currentUserId] ?? null) : null;
   const [isLiked, setIsLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
+  const [reactionsMap, setReactionsMap] = useState<Record<string, string>>(post.reactions ?? {});
+  const dominantReaction = useMemo(() => {
+    const vals = Object.values(reactionsMap);
+    if (!vals.length) return '❤️';
+    const freq: Record<string, number> = {};
+    for (const v of vals) freq[v] = (freq[v] ?? 0) + 1;
+    return Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
+  }, [reactionsMap]);
   const [showComments, setShowComments] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -284,6 +294,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
   const [loadingComments, setLoadingComments] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [showReactorsModal, setShowReactorsModal] = useState(false);
+  const [reactorFilter, setReactorFilter] = useState<string | null>(null); // null = all
+  const [reactors, setReactors] = useState<{ uid: string; displayName: string; photoURL: string | null; reaction: string }[]>([]);
+  const [loadingReactors, setLoadingReactors] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -382,6 +398,46 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
     }
   }, [showComments, loadComments]);
 
+  // RT-3: join post room on mount, listen for reaction count updates in real-time
+  useEffect(() => {
+    const socket = getSocket();
+    socket.emit('post:join', post.id);
+
+    const handleReacted = (data: { postId: string; likeCount: number; reactions: Record<string, string> }) => {
+      if (data.postId !== post.id) return;
+      setLikeCount(data.likeCount);
+      setReactionsMap(data.reactions ?? {});
+    };
+
+    socket.on('post:reacted', handleReacted);
+    return () => {
+      socket.off('post:reacted', handleReacted);
+      socket.emit('post:leave', post.id);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id]);
+
+  // RT-4: join post room and listen for new comments in real-time
+  useEffect(() => {
+    if (!showComments) return;
+    const socket = getSocket();
+    socket.emit('post:join', post.id);
+
+    const handleNewComment = (comment: Comment) => {
+      setComments((prev) => {
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [...prev, comment];
+      });
+      setCommentCount((n) => n + 1);
+    };
+
+    socket.on('comment:new', handleNewComment);
+    return () => {
+      socket.off('comment:new', handleNewComment);
+      // post:leave is managed by the RT-3 effect on unmount
+    };
+  }, [showComments, post.id]);
+
   // Prevent body scroll when comments are open
   useEffect(() => {
     if (showComments) {
@@ -416,6 +472,29 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
     }
   };
 
+  const top3Reactions = useMemo(() => {
+    const freq: Record<string, number> = {};
+    for (const v of Object.values(reactionsMap)) freq[v] = (freq[v] ?? 0) + 1;
+    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([emoji]) => emoji);
+  }, [reactionsMap]);
+
+  const openReactorsModal = async () => {
+    setShowReactorsModal(true);
+    setReactorFilter(null);
+    if (reactors.length === 0) {
+      setLoadingReactors(true);
+      try {
+        type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
+        const data = (await api.get<Reactor[]>(`/api/posts/${post.id}/reactions`)) as Reactor[];
+        setReactors(data);
+      } catch (e) {
+        console.error('Failed to load reactors', e);
+      } finally {
+        setLoadingReactors(false);
+      }
+    }
+  };
+
   const handleDeleteComment = async (commentId: string) => {
     try {
       await api.delete(`/api/comments/${post.id}/${commentId}`);
@@ -423,6 +502,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
       setCommentCount((c) => Math.max(0, c - 1));
     } catch (error) {
       console.error('Error deleting comment:', error);
+    }
+  };
+
+  const handleEditComment = async (commentId: string) => {
+    const trimmed = editingText.trim();
+    if (!trimmed) return;
+    try {
+      await api.patch(`/api/comments/${post.id}/${commentId}`, { content: trimmed });
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId ? { ...c, content: trimmed, isEdited: true } : c
+        )
+      );
+      setEditingCommentId(null);
+      setEditingText('');
+    } catch (error) {
+      console.error('Error editing comment:', error);
     }
   };
 
@@ -1595,10 +1691,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
             {(likeCount > 0 || commentCount > 0) && (
               <div className="flex items-center justify-between py-3 mb-3 border-b border-gray-200 dark:border-slate-700/50">
                 {likeCount > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
-                    <span>{selectedReaction || '❤️'}</span>
+                  <button
+                    onClick={openReactorsModal}
+                    className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+                  >
+                    {top3Reactions.map((e) => <span key={e}>{e}</span>)}
                     <span className="font-medium">{likeCount}</span>
-                  </div>
+                  </button>
                 )}
                 {commentCount > 0 && (
                   <button
@@ -1788,17 +1887,47 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2">
-                            <div
-                              className="font-semibold text-sm text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
-                              onClick={() => goToProfile(comment.authorId)}
-                            >
-                              {comment.authorDisplayName}
+                          {editingCommentId === comment.id ? (
+                            <div className="flex gap-2 items-center">
+                              <input
+                                autoFocus
+                                value={editingText}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') void handleEditComment(comment.id);
+                                  if (e.key === 'Escape') { setEditingCommentId(null); setEditingText(''); }
+                                }}
+                                className="flex-1 bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2 text-sm text-gray-800 dark:text-gray-200 outline-none"
+                              />
+                              <button
+                                onClick={() => void handleEditComment(comment.id)}
+                                className="text-xs text-cyan-600 dark:text-cyan-400 font-semibold hover:underline"
+                              >
+                                Lưu
+                              </button>
+                              <button
+                                onClick={() => { setEditingCommentId(null); setEditingText(''); }}
+                                className="text-xs text-gray-400 hover:underline"
+                              >
+                                Hủy
+                              </button>
                             </div>
-                            <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
-                              {comment.content}
+                          ) : (
+                            <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2">
+                              <div
+                                className="font-semibold text-sm text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
+                                onClick={() => goToProfile(comment.authorId)}
+                              >
+                                {comment.authorDisplayName}
+                              </div>
+                              <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
+                                {comment.content}
+                                {comment.isEdited && (
+                                  <span className="ml-1 text-xs text-gray-400 font-normal">• Đã chỉnh sửa</span>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           <div className="flex items-center gap-4 mt-1 px-3 text-xs font-semibold">
                             <button
                               onClick={() => handleLikeComment(comment.id)}
@@ -1818,12 +1947,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                               </span>
                             )}
                             {currentUserId === comment.authorId && (
-                              <button
-                                onClick={() => handleDeleteComment(comment.id)}
-                                className="text-gray-400 hover:text-red-600 hover:underline ml-auto"
-                              >
-                                Xóa
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.content); }}
+                                  className="text-gray-400 hover:text-cyan-600 hover:underline"
+                                >
+                                  Chỉnh sửa
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteComment(comment.id)}
+                                  className="text-gray-400 hover:text-red-600 hover:underline ml-auto"
+                                >
+                                  Xóa
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -2262,14 +2399,44 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <div className="bg-gray-100 dark:bg-slate-800 rounded-2xl px-3 py-2">
-                            <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                              {comment.authorDisplayName}
+                          {editingCommentId === comment.id ? (
+                            <div className="flex gap-2 items-center">
+                              <input
+                                autoFocus
+                                value={editingText}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') void handleEditComment(comment.id);
+                                  if (e.key === 'Escape') { setEditingCommentId(null); setEditingText(''); }
+                                }}
+                                className="flex-1 bg-gray-100 dark:bg-slate-800 rounded-2xl px-3 py-2 text-sm text-gray-800 dark:text-gray-200 outline-none"
+                              />
+                              <button
+                                onClick={() => void handleEditComment(comment.id)}
+                                className="text-xs text-cyan-600 font-semibold hover:underline"
+                              >
+                                Lưu
+                              </button>
+                              <button
+                                onClick={() => { setEditingCommentId(null); setEditingText(''); }}
+                                className="text-xs text-gray-400 hover:underline"
+                              >
+                                Hủy
+                              </button>
                             </div>
-                            <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
-                              {comment.content}
+                          ) : (
+                            <div className="bg-gray-100 dark:bg-slate-800 rounded-2xl px-3 py-2">
+                              <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                                {comment.authorDisplayName}
+                              </div>
+                              <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
+                                {comment.content}
+                                {comment.isEdited && (
+                                  <span className="ml-1 text-xs text-gray-400 font-normal">• Đã chỉnh sửa</span>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           <div className="flex items-center gap-3 mt-1 px-2 text-xs font-semibold">
                             <button
                               onClick={() => void handleLikeComment(comment.id)}
@@ -2286,12 +2453,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                               </span>
                             )}
                             {currentUserId === comment.authorId && (
-                              <button
-                                onClick={() => void handleDeleteComment(comment.id)}
-                                className="text-gray-400 hover:text-red-500 ml-auto"
-                              >
-                                Xóa
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.content); }}
+                                  className="text-gray-400 hover:text-cyan-600"
+                                >
+                                  Chỉnh sửa
+                                </button>
+                                <button
+                                  onClick={() => void handleDeleteComment(comment.id)}
+                                  className="text-gray-400 hover:text-red-500 ml-auto"
+                                >
+                                  Xóa
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -2341,6 +2516,84 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Reactors Modal */}
+      {showReactorsModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setShowReactorsModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-200 dark:border-slate-700">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Cảm xúc</h3>
+              <button
+                onClick={() => setShowReactorsModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Top 3 emoji filter tabs */}
+            {top3Reactions.length > 0 && (
+              <div className="flex gap-1 px-4 pt-3 pb-2">
+                <button
+                  onClick={() => setReactorFilter(null)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    reactorFilter === null
+                      ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Tất cả {likeCount}
+                </button>
+                {top3Reactions.map((emoji) => {
+                  const cnt = Object.values(reactionsMap).filter((r) => r === emoji).length;
+                  return (
+                    <button
+                      key={emoji}
+                      onClick={() => setReactorFilter(emoji)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1 transition-colors ${
+                        reactorFilter === emoji
+                          ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300'
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{emoji}</span>
+                      <span>{cnt}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* List */}
+            <div className="max-h-72 overflow-y-auto px-4 pb-4">
+              {loadingReactors ? (
+                <div className="py-8 text-center text-gray-400 text-sm">Đang tải...</div>
+              ) : (
+                reactors
+                  .filter((r) => reactorFilter === null || r.reaction === reactorFilter)
+                  .map((r) => (
+                    <div key={r.uid} className="flex items-center gap-3 py-2.5">
+                      {r.photoURL ? (
+                        <img src={r.photoURL} alt={r.displayName} className="w-10 h-10 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm font-bold text-white">{(r.displayName || 'U')[0].toUpperCase()}</span>
+                        </div>
+                      )}
+                      <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{r.displayName}</span>
+                      <span className="text-lg">{r.reaction}</span>
+                    </div>
+                  ))
+              )}
+            </div>
           </div>
         </div>
       )}

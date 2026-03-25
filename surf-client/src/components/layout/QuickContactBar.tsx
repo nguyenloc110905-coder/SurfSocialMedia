@@ -14,7 +14,7 @@ function getInitials(name: string) {
   return name.substring(0, 2).toUpperCase();
 }
 
-export default function QuickContactBar() {
+export default function QuickContactBar({ isShortVideo = false }: { isShortVideo?: boolean }) {
   const navigate = useNavigate();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [showSearch, setShowSearch] = useState(false);
@@ -42,7 +42,7 @@ export default function QuickContactBar() {
     : friends;
 
   return (
-    <div className="hidden lg:block fixed right-3 top-[72px] z-30">
+    <div className={`hidden lg:block fixed right-3 top-[72px] z-30 transition-opacity duration-300${isShortVideo ? ' opacity-20 hover:opacity-100' : ''}`}>
       <div className="flex items-start gap-2">
         {/* ── Slide-in search panel ── */}
         <div

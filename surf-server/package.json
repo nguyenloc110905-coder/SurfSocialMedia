@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "lint": "eslint src --max-warnings=0",
     "lint:fix": "eslint src --fix",
-    "seed:test-users": "tsx scripts/seed-test-users.ts"
+    "seed:test-users": "tsx scripts/seed-test-users.ts",
+    "backfill:has-video": "tsx scripts/backfill-has-video.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

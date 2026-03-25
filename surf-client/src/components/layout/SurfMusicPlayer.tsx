@@ -58,6 +58,7 @@ export default function SurfMusicPlayer() {
   const [searchResults, setSearchResults] = useState<VideoItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [ytReady, setYtReady] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [volume, setVolume] = useState(80);
   const [isMuted, setIsMuted] = useState(false);
@@ -78,6 +79,7 @@ export default function SurfMusicPlayer() {
       const script = document.createElement('script');
       script.id = 'yt-iframe-api';
       script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = () => setApiKeyMissing(true); // YouTube blocked / DNS failure
       document.head.appendChild(script);
     }
   }, []);
@@ -85,15 +87,20 @@ export default function SurfMusicPlayer() {
   // ── Create / destroy YT.Player ───────────────────────────────────────────
   useEffect(() => {
     if (!ytReady || !playerContainerRef.current) return;
+    setPlayerReady(false);
     if (playerRef.current) {
       playerRef.current.destroy();
       playerRef.current = null;
     }
-    playerRef.current = new window.YT.Player(playerContainerRef.current, {
+    new window.YT.Player(playerContainerRef.current, {
       height: '0',
       width: '0',
       playerVars: { autoplay: 0, controls: 0, rel: 0, modestbranding: 1 },
       events: {
+        onReady: (e: { target: YTPlayer }) => {
+          playerRef.current = e.target;
+          setPlayerReady(true);
+        },
         onStateChange: (e: { data: number }) => {
           // 1 = playing, 2 = paused, 0 = ended
           if (e.data === 1) {
@@ -108,7 +115,7 @@ export default function SurfMusicPlayer() {
           }
         },
       },
-    }) as unknown as YTPlayer;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ytReady]);
 
@@ -129,12 +136,12 @@ export default function SurfMusicPlayer() {
 
   // ── Load video when track changes ────────────────────────────────────────
   useEffect(() => {
-    if (!current || !playerRef.current) return;
+    if (!current || !playerRef.current || !playerReady) return;
     playerRef.current.loadVideoById(current.id);
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(true);
-  }, [currentIndex, current?.id]);
+  }, [currentIndex, current?.id, playerReady]);
 
   // ── Controls ─────────────────────────────────────────────────────────────
   const togglePlay = () => {

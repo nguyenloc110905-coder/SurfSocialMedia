@@ -1,8 +1,19 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { io } from '../index.js';
 
 const router = Router();
+
+/** Returns true if any URL in the array is a video (Cloudinary or by extension) */
+function detectHasVideo(urls: string[]): boolean {
+  return Array.isArray(urls) && urls.some(
+    (u) => typeof u === 'string' && (
+      u.includes('/video/upload/') ||
+      /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u)
+    )
+  );
+}
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -43,6 +54,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       likeCount: 0,
       replyCount: 0,
       likedBy: [],
+      hasVideo: detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []),
     });
     const created = await docRef.get();
     res.status(201).json({ id: created.id, ...created.data() });
@@ -108,7 +120,10 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
       editedAt: new Date(),
     };
     if (content !== undefined) update.content = content;
-    if (mediaUrls !== undefined) update.mediaUrls = mediaUrls;
+    if (mediaUrls !== undefined) {
+      update.mediaUrls = mediaUrls;
+      update.hasVideo = detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []);
+    }
     if (privacy !== undefined) update.privacy = privacy;
     if (feeling !== undefined) update.feeling = feeling ?? null;
     if (location !== undefined) update.location = location ?? null;
@@ -203,7 +218,47 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
       updatedAt: new Date(),
     });
     const updated = await ref.get();
-    res.json({ id: updated.id, ...updated.data() });
+    const responseData = { id: updated.id, ...updated.data() };
+    // RT-3: notify all clients viewing this post about the updated reaction count
+    io.to(`post:${req.params.id}`).emit('post:reacted', {
+      postId: req.params.id,
+      likeCount: likedBy.length,
+      likedBy,
+      reactions,
+    });
+    res.json(responseData);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// GET /:id/reactions — list of users who reacted with their display info
+router.get('/:id/reactions', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const doc = await db.collection('posts').doc(req.params.id).get();
+    if (!doc.exists) { res.status(404).json({ error: 'Post not found' }); return; }
+
+    const reactions: Record<string, string> = doc.data()?.reactions ?? {};
+    const uids = Object.keys(reactions);
+    if (!uids.length) { res.json([]); return; }
+
+    // Batch fetch user profiles (Firebase Auth getUsers supports up to 100)
+    const { getAuth } = await import('firebase-admin/auth');
+    const { users } = await getAuth().getUsers(uids.map((uid) => ({ uid })));
+    const userMap: Record<string, { displayName: string; photoURL: string | null }> = {};
+    for (const u of users) {
+      userMap[u.uid] = { displayName: u.displayName ?? 'Unknown', photoURL: u.photoURL ?? null };
+    }
+
+    const result = uids.map((uid) => ({
+      uid,
+      displayName: userMap[uid]?.displayName ?? 'Unknown',
+      photoURL: userMap[uid]?.photoURL ?? null,
+      reaction: reactions[uid],
+    }));
+
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
