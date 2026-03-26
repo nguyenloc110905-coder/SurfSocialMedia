@@ -6,27 +6,26 @@ import { io } from '../index.js';
 
 const router = Router();
 
-// Get comments for a post
+// Get comments for a post — returns all comments sorted in-memory (no composite index needed)
 router.get('/:postId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const commentsRef = db.collection('comments');
-    
-    console.log(`📥 GET /api/comments/${req.params.postId} - Fetching comments...`);
-    
-    const commentsSnap = await commentsRef
+
+    const snap = await commentsRef
       .where('postId', '==', req.params.postId)
-      .orderBy('createdAt', 'asc')
+      .limit(500)
       .get();
-    
-    const comments = commentsSnap.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    
-    console.log(`✅ Found ${comments.length} comments for post ${req.params.postId}`);
-    
-    res.json({ comments });
+
+    type CommentDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
+    const comments = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as CommentDoc[])
+      .sort((a, b) => {
+        const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
+        const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
+        return aT - bT;
+      });
+
+    res.json({ comments, nextCursor: null, total: comments.length });
   } catch (e) {
     console.error('❌ Error getting comments:', e);
     res.status(500).json({ error: (e as Error).message });
@@ -254,6 +253,29 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
     });
   } catch (e) {
     console.error('Error reacting to comment:', e);
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// GET /:postId/:commentId/reactions — list of users who reacted to a comment
+router.get('/:postId/:commentId/reactions', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const commentDoc = await db.collection('comments').doc(req.params.commentId).get();
+    if (!commentDoc.exists) { res.status(404).json({ error: 'Comment not found' }); return; }
+    const reactions: Record<string, string> = commentDoc.data()?.reactions ?? {};
+    const uids = Object.keys(reactions);
+    if (uids.length === 0) { res.json([]); return; }
+    const usersSnap = await db.collection('users').get();
+    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, d.data()]));
+    const result = uids.map((uid) => ({
+      uid,
+      displayName: usersMap.get(uid)?.displayName ?? 'User',
+      photoURL: usersMap.get(uid)?.photoURL ?? null,
+      reaction: reactions[uid],
+    }));
+    res.json(result);
+  } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
 });

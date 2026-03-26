@@ -452,22 +452,25 @@ router.post(
 
 // ─── Sub-collection routes (phải đặt trước /:uid GET) ──────────────────────
 
-/** GET /api/users/:uid/posts — lọc theo mối quan hệ */
+/** GET /api/users/:uid/posts — lọc theo mối quan hệ, bao gồm cả bài chia sẻ */
 router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
     const targetUid = req.params.uid;
     const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
+    // Fetch all posts authored by this user, filter deleted/replies in memory.
+    // No orderBy here — compound index not guaranteed; sorting done in memory below.
     const snap = await getDb()
       .collection('posts')
       .where('authorId', '==', targetUid)
-      .where('parentId', '==', null)
-      .orderBy('createdAt', 'desc')
       .limit(limitNum)
       .get();
 
     let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Record<string, unknown>);
+
+    // Filter out deleted posts and reply posts (parentId set) — only top-level posts and shares
+    posts = posts.filter((p) => !p.deleted && !p.parentId);
 
     if (viewerUid !== targetUid) {
       const { isFriend } = await getRelationship(viewerUid, targetUid);
@@ -478,6 +481,15 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
         return true; // public / custom → ai cũng thấy
       });
     }
+
+    // Sort by createdAt desc (Firestore compound query may change order)
+    posts.sort((a, b) => {
+      const aTime = (a.createdAt as { _seconds?: number; seconds?: number })?._seconds
+        ?? (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      const bTime = (b.createdAt as { _seconds?: number; seconds?: number })?._seconds
+        ?? (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      return bTime - aTime;
+    });
 
     res.json({ posts });
   } catch (e) {

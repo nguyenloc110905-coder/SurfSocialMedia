@@ -287,7 +287,7 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
 
-    const { content = '' } = req.body;
+    const { content = '', reaction } = req.body;
 
     const sharedPostRef = postsRef.doc();
     await sharedPostRef.set({
@@ -303,7 +303,8 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
       likeCount: 0,
       replyCount: 0,
       shareCount: 0,
-      likedBy: [],
+      likedBy: reaction ? [req.uid] : [],
+      reactions: reaction ? { [req.uid!]: reaction } : {},
       hasVideo: false,
       sharedFrom: {
         id: req.params.id,

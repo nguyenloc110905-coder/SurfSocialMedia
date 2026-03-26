@@ -119,11 +119,29 @@ export default function Profile() {
       | null;
     likeCount: number;
     replyCount: number;
+    shareCount?: number;
     likedBy: string[];
+    reactions?: Record<string, string>;
     feeling?: string;
     location?: string;
     taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
+    isEdited?: boolean;
+    sharedFrom?: {
+      id: string;
+      authorId?: string;
+      authorDisplayName: string;
+      authorPhotoURL: string | null;
+      content: string;
+      mediaUrls: string[];
+      createdAt:
+        | import('firebase/firestore').Timestamp
+        | { _seconds: number }
+        | { seconds: number }
+        | string
+        | number
+        | null;
+    };
   }
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
@@ -1343,9 +1361,14 @@ export default function Profile() {
               {!postsLoading && !postsError && posts.length > 0 && viewMode === 'grid' && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {posts.map((post) => {
-                    const firstImage = post.mediaUrls?.find((u) => !isVideoUrl(u));
-                    const firstVideo = post.mediaUrls?.find((u) => isVideoUrl(u));
-                    const hasMedia = post.mediaUrls && post.mediaUrls.length > 0;
+                    // For shared posts, also check sharedFrom media as fallback
+                    const allMediaUrls = post.mediaUrls?.length
+                      ? post.mediaUrls
+                      : (post.sharedFrom?.mediaUrls ?? []);
+                    const firstImage = allMediaUrls.find((u) => !isVideoUrl(u));
+                    const firstVideo = allMediaUrls.find((u) => isVideoUrl(u));
+                    const hasMedia = allMediaUrls.length > 0;
+                    const isShared = !!post.sharedFrom;
 
                     return (
                       <article
@@ -1385,13 +1408,23 @@ export default function Profile() {
                                 <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" />
                               </svg>
                               <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                                {post.content}
+                                {post.content || post.sharedFrom?.content || ''}
                               </p>
                             </div>
                           )}
+                          {/* Multiple media badge */}
                           {post.mediaUrls && post.mediaUrls.length > 1 && (
                             <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-sm text-white text-xs font-medium">
                               +{post.mediaUrls.length - 1}
+                            </div>
+                          )}
+                          {/* Shared post badge */}
+                          {isShared && (
+                            <div className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-green-600/80 backdrop-blur-sm text-white text-xs font-medium flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                              </svg>
+                              Đã chia sẻ
                             </div>
                           )}
                         </div>
