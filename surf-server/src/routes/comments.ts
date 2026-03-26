@@ -209,4 +209,53 @@ router.post('/:postId/:commentId/like', requireAuth, async (req: AuthRequest, re
   }
 });
 
+// React to a comment with emoji (POST /:postId/:commentId/react)
+router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const commentsRef = db.collection('comments');
+
+    const commentDoc = await commentsRef.doc(req.params.commentId).get();
+    if (!commentDoc.exists) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    const data = commentDoc.data()!;
+    const likedBy: string[] = data.likedBy ?? [];
+    const reactions: Record<string, string> = data.reactions ?? {};
+    const { reaction = '❤️' } = req.body;
+
+    const idx = likedBy.indexOf(req.uid!);
+    if (idx === -1) {
+      // Not yet reacted — add reaction
+      likedBy.push(req.uid!);
+      reactions[req.uid!] = reaction as string;
+    } else if (reactions[req.uid!] === reaction) {
+      // Same reaction — toggle off
+      likedBy.splice(idx, 1);
+      delete reactions[req.uid!];
+    } else {
+      // Different reaction — switch emoji, keep in likedBy
+      reactions[req.uid!] = reaction as string;
+    }
+
+    await commentsRef.doc(req.params.commentId).update({
+      likedBy,
+      likeCount: likedBy.length,
+      reactions,
+      updatedAt: new Date(),
+    });
+
+    res.json({
+      liked: likedBy.includes(req.uid!),
+      likeCount: likedBy.length,
+      reactions,
+    });
+  } catch (e) {
+    console.error('Error reacting to comment:', e);
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 export default router;

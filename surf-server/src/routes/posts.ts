@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { FieldValue } from 'firebase-admin/firestore';
 import { io } from '../index.js';
 
 const router = Router();
@@ -264,6 +265,66 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
       reactions,
     });
     res.json(responseData);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/share — chia sẻ bài viết (tạo post mới với sharedFrom ref)
+router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const postsRef = db.collection('posts');
+    const usersRef = db.collection('users');
+
+    const originalDoc = await postsRef.doc(req.params.id).get();
+    if (!originalDoc.exists || originalDoc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    const original = originalDoc.data()!;
+    const userDoc = await usersRef.doc(req.uid!).get();
+    const user = userDoc.data();
+
+    const { content = '' } = req.body;
+
+    const sharedPostRef = postsRef.doc();
+    await sharedPostRef.set({
+      authorId: req.uid,
+      authorDisplayName: user?.displayName ?? 'Anonymous',
+      authorPhotoURL: user?.photoURL ?? null,
+      content: (content as string).trim(),
+      mediaUrls: [],
+      privacy: 'public',
+      parentId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      likeCount: 0,
+      replyCount: 0,
+      shareCount: 0,
+      likedBy: [],
+      hasVideo: false,
+      sharedFrom: {
+        id: req.params.id,
+        authorId: original.authorId ?? null,
+        authorDisplayName: original.authorDisplayName ?? 'Unknown',
+        authorPhotoURL: original.authorPhotoURL ?? null,
+        content: original.content ?? '',
+        mediaUrls: original.mediaUrls ?? [],
+        createdAt: original.createdAt ?? null,
+      },
+    });
+
+    // Increment shareCount on original post
+    await postsRef.doc(req.params.id).update({
+      shareCount: FieldValue.increment(1),
+    });
+
+    const created = await sharedPostRef.get();
+    // Emit real-time update for share count
+    io.emit('post:shared', { postId: req.params.id });
+    res.status(201).json({ id: created.id, ...created.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
