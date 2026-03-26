@@ -22,6 +22,14 @@ async function getRelationship(viewerUid: string, targetUid: string) {
 
 // ─── Static routes (phải đặt trước /:uid) ─────────────────────────────────
 
+/** Bỏ dấu tiếng Việt & chuyển thường để so sánh không phân biệt dấu */
+function normalize(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
 /** GET /api/users/search?q=... */
 router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -40,14 +48,14 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       myUserDoc.exists ? ((myUserDoc.data()?.blockedBy ?? []) as string[]) : []
     );
     const blockedByMe = new Set<string>(blockedByMeSnap.docs.map((d) => d.id));
-    const lower = q.toLowerCase();
+    const normQ = normalize(q);
     type UserDoc = { id: string; displayName?: string; photoURL?: string };
     const matched = snap.docs
       .filter((d) => d.id !== uid && !blockedByOthers.has(d.id) && !blockedByMe.has(d.id))
       .map((d) => ({ id: d.id, ...d.data() }) as UserDoc)
       .filter((u) => {
-        const words = (u.displayName ?? '').toLowerCase().split(/\s+/);
-        return words.some((w) => w.startsWith(lower));
+        const words = normalize(u.displayName ?? '').split(/\s+/);
+        return words.some((w) => w.startsWith(normQ));
       })
       .slice(0, 20);
 

@@ -63,6 +63,43 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/** Bỏ dấu tiếng Việt & chuyển thường để so sánh không phân biệt dấu */
+function normalizePost(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+// GET /search?q=&type= — tìm kiếm bài viết (phải đặt trước /:id)
+router.get('/search', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const raw = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const type = typeof req.query.type === 'string' ? req.query.type : 'posts';
+    if (!raw) {
+      res.json({ posts: [] });
+      return;
+    }
+    const normQ = normalizePost(raw);
+    const snap = await getDb().collection('posts').get();
+    type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; [key: string]: unknown };
+    let posts = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
+      .filter((p) => !p.deleted && p.privacy !== 'only-me')
+      .filter((p) => normalizePost(p.content ?? '').includes(normQ));
+
+    if (type === 'videos') {
+      posts = posts.filter((p) => p.hasVideo === true);
+    } else {
+      posts = posts.filter((p) => !p.hasVideo);
+    }
+
+    res.json({ posts: posts.slice(0, 30) });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 // GET /trash — danh sách bài viết trong thùng rác của user
 router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
   try {

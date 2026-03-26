@@ -14,6 +14,7 @@ import Modal from '@/components/ui/Modal';
 import { api } from '@/lib/api';
 import PostCard from '@/components/feed/PostCard';
 import ProfileAbout from './ProfileAbout';
+import { isVideoUrl } from '@/lib/cloudinary';
 
 const TABS: { id: string; label: string; hasArrow?: boolean }[] = [
   { id: 'posts', label: 'Bài viết' },
@@ -153,6 +154,9 @@ export default function Profile() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [photosError, setPhotosError] = useState<string | null>(null);
+
+  // Selected post for detail overlay (grid view click)
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
   // Trigger count-up when data loads
   useEffect(() => {
@@ -1339,12 +1343,14 @@ export default function Profile() {
               {!postsLoading && !postsError && posts.length > 0 && viewMode === 'grid' && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {posts.map((post) => {
-                    const firstImage = post.mediaUrls?.[0];
+                    const firstImage = post.mediaUrls?.find((u) => !isVideoUrl(u));
+                    const firstVideo = post.mediaUrls?.find((u) => isVideoUrl(u));
                     const hasMedia = post.mediaUrls && post.mediaUrls.length > 0;
 
                     return (
                       <article
                         key={post.id}
+                        onClick={() => setSelectedPost(post)}
                         className="surf-card-hover rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 overflow-hidden cursor-pointer group shadow-sm"
                       >
                         <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 flex items-center justify-center overflow-hidden relative">
@@ -1354,6 +1360,21 @@ export default function Profile() {
                               alt=""
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
+                          ) : hasMedia && firstVideo ? (
+                            <>
+                              <video
+                                src={firstVideo}
+                                className="w-full h-full object-cover"
+                                muted
+                                playsInline
+                                preload="metadata"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                                  <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </div>
+                              </div>
+                            </>
                           ) : (
                             <div className="text-center p-4">
                               <svg
@@ -2098,6 +2119,31 @@ export default function Profile() {
           </div>
         </div>
       </Modal>
+
+      {/* ── Post detail overlay (grid view click) ── */}
+      {selectedPost && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedPost(null)}
+        >
+          <div
+            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedPost(null)}
+              className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+              aria-label="Đóng"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <PostCard post={selectedPost} currentUserId={user?.uid} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
