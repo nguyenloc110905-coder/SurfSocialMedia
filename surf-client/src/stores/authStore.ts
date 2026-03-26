@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth';
 import { subscribeAuth } from '@/lib/firebase/auth';
 import { syncUserProfile } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
+import { musicStore } from '@/lib/musicStore';
 
 interface AuthState {
   user: User | null;
@@ -50,9 +51,11 @@ subscribeAuth((user) => {
   if (user) {
     connectSocket(user.uid);
     startTokenRefresh(user);
+    musicStore.setUserId(user.uid);
   } else {
     disconnectSocket();
     stopTokenRefresh();
+    musicStore.setUserId(null);
   }
 
   // Chỉ auto-sync lần đầu khi app load và phát hiện user đã đăng nhập
