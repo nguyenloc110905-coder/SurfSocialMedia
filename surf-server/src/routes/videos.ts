@@ -160,12 +160,15 @@ router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
 
     // Merge, sort newest-first, paginate
     const all = [...clipItems, ...postItems].sort(
-      (a, b) => toMs((b as { createdAt: unknown }).createdAt) - toMs((a as { createdAt: unknown }).createdAt)
+      (a, b) =>
+        toMs((b as { createdAt: unknown }).createdAt) -
+        toMs((a as { createdAt: unknown }).createdAt)
     );
 
     const hasMore = all.length > limit;
     const items = all.slice(0, limit);
-    const nextCursor = items.length > 0 ? toMs((items[items.length - 1] as { createdAt: unknown }).createdAt) : null;
+    const nextCursor =
+      items.length > 0 ? toMs((items[items.length - 1] as { createdAt: unknown }).createdAt) : null;
 
     res.json({ videos: items, hasMore, nextCursor });
   } catch (e) {
