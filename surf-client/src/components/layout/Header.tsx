@@ -6,6 +6,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import SettingsPrivacy from './SettingsPrivacy';
 import HelpSupport from './HelpSupport';
 import SearchBox from './SearchBox';
+import NotificationBell from './NotificationBell';
 
 type Panel = 'main' | 'settings' | 'help' | 'display';
 
@@ -133,15 +134,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
             <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z" />
           </svg>
         </button>
-        <button
-          type="button"
-          className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
-          title="Thông báo"
-        >
-          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
-            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
-          </svg>
-        </button>
+        <NotificationBell />
         <button
           type="button"
           onClick={() => {

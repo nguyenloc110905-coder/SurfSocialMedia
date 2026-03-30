@@ -1,4 +1,4 @@
-POSTMAN CHECKLIST - MESSAGING
+POSTMAN CHECKLIST - MESSAGING / GROUPS / NOTIFICATIONS
 
 1. Login Firebase to get token
 POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyBZHa66RZZlUIsSoW3WNpPRoseA3bLpvm8
@@ -146,4 +146,169 @@ Expected:
 - unread badge currently increases correctly
 - no mark-as-read endpoint yet
 - badge will not reset to 0 until read flow is implemented
+
+11. GRP-1 Create public group
+POST http://localhost:4000/api/groups
+Authorization: Bearer TOKEN_A
+Header: Content-Type: application/json
+Body:
+{
+  "name": "Surf Public Group",
+  "description": "Public group for testing",
+  "coverImageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e",
+  "category": "tech",
+  "privacy": "public"
+}
+
+Expected:
+- 201 Created
+- response has item:
+  - id
+  - name = "Surf Public Group"
+  - privacy = "public"
+  - ownerId = UID_A
+  - adminIds includes UID_A
+  - memberIds includes UID_A
+  - memberCount = 1
+
+12. GRP-1 Create private group
+POST http://localhost:4000/api/groups
+Authorization: Bearer TOKEN_A
+Header: Content-Type: application/json
+Body:
+{
+  "name": "Surf Private Group",
+  "description": "Private group for testing",
+  "coverImageUrl": "",
+  "category": "study",
+  "privacy": "private"
+}
+
+Expected:
+- 201 Created
+- response has item.privacy = "private"
+- save returned id -> PRIVATE_GROUP_ID
+
+13. GRP-2 List groups (discover)
+GET http://localhost:4000/api/groups?limit=20
+Authorization: Bearer TOKEN_B
+
+Expected:
+- 200 OK
+- items array only contains public groups
+- each item has:
+  - id
+  - name
+  - description
+  - coverImageUrl
+  - category
+  - privacy
+  - memberCount
+  - membershipStatus
+
+Search by name:
+GET http://localhost:4000/api/groups?q=surf&limit=20
+Authorization: Bearer TOKEN_B
+
+Filter by category:
+GET http://localhost:4000/api/groups?category=tech&limit=20
+Authorization: Bearer TOKEN_B
+
+Expected:
+- q filters by group name
+- category filters by exact category
+
+14. GRP-3 Join public group
+POST http://localhost:4000/api/groups/<PUBLIC_GROUP_ID>/join
+Authorization: Bearer TOKEN_B
+
+Expected:
+- 200 OK
+- response:
+{
+  "status": "joined",
+  "item": {
+    "id": "<PUBLIC_GROUP_ID>"
+  }
+}
+- item.memberIds includes UID_B
+- item.memberCount increases
+
+Conflict cases:
+- join same group again -> 409 Already a member of this group
+
+15. GRP-3 Join private group
+POST http://localhost:4000/api/groups/<PRIVATE_GROUP_ID>/join
+Authorization: Bearer TOKEN_B
+
+Expected:
+- 202 Accepted
+- response:
+{
+  "status": "pending",
+  "item": {
+    "id": "<PRIVATE_GROUP_ID>"
+  }
+}
+- second same call -> 409 Join request is already pending
+
+Firestore check:
+- collection group_join_requests has doc:
+  - groupId = PRIVATE_GROUP_ID
+  - userId = UID_B
+  - status = "pending"
+
+16. RT-6 Notification bell APIs
+Check unread badge for admin A after user B joins / requests join:
+GET http://localhost:4000/api/notifications/unread-count
+Authorization: Bearer TOKEN_A
+
+Expected:
+- count increases after GRP-3 public join or private join request
+
+Open dropdown list data:
+GET http://localhost:4000/api/notifications?limit=10
+Authorization: Bearer TOKEN_A
+
+Expected:
+- latest item message is one of:
+  - "<actorName> đã tham gia nhóm <groupName>."
+  - "<actorName> đã yêu cầu tham gia nhóm <groupName>."
+- item.entityType = "group"
+- item.entityId = group id
+
+Mark one read:
+PATCH http://localhost:4000/api/notifications/<NOTIFICATION_ID>/read
+Authorization: Bearer TOKEN_A
+
+Expected:
+- 200 OK
+- count decremented
+
+Mark all read:
+PATCH http://localhost:4000/api/notifications/read-all
+Authorization: Bearer TOKEN_A
+
+Expected:
+- 200 OK
+- unread count resets to 0
+
+17. RT-6 Notification bell realtime
+Open surf-client as admin A.
+In browser console:
+const { getSocket } = await import('/src/lib/socket.ts');
+const socket = getSocket();
+socket.off('notification:new');
+socket.off('notification:unread-count');
+socket.on('notification:new', (payload) => console.log('notification:new', payload));
+socket.on('notification:unread-count', (payload) => console.log('notification:unread-count', payload));
+
+Then use TOKEN_B to:
+- join public group owned by A, or
+- request join private group owned by A
+
+Expected:
+- browser A receives notification:new immediately
+- browser A receives notification:unread-count immediately
+- clicking bell in header opens dropdown list
 

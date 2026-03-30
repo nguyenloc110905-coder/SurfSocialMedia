@@ -17,6 +17,7 @@ import momentsRoutes from './routes/moments.js';
 import musicRoutes from './routes/music.js';
 import videosRoutes from './routes/videos.js';
 import conversationsRoutes from './routes/conversations.js';
+import groupsRoutes from './routes/groups.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 
 const app = express();
@@ -108,6 +109,7 @@ app.use('/api/moments', momentsRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/videos', videosRoutes);
 app.use('/api/conversations', conversationsRoutes);
+app.use('/api/groups', groupsRoutes);
 
 initRedis()
   .then(() => initSocketRedisAdapter(io))
