@@ -51,29 +51,8 @@ export default function NotificationBell() {
       setNotifications((prev) => [notif, ...prev]);
     };
     socket.on('notification:new', handler);
-    // friendRequestReceived is also a notification type (emitted separately by Friends route)
-    // We also listen to the legacy event and convert it so the bell badge updates
-    const friendReqHandler = (data: { id: string; fromUid: string; name: string; avatarUrl?: string }) => {
-      const notif: Notification = {
-        id: `fr-${data.id}`,
-        type: 'friend_request',
-        actorId: data.fromUid,
-        actorName: data.name,
-        actorPhoto: data.avatarUrl ?? null,
-        requestId: data.id,
-        read: false,
-        createdAt: new Date().toISOString(),
-      };
-      setNotifications((prev) => {
-        // Avoid duplicate if notification:new already added it
-        if (prev.some((n) => n.requestId === data.id || n.id === `fr-${data.id}`)) return prev;
-        return [notif, ...prev];
-      });
-    };
-    socket.on('friendRequestReceived', friendReqHandler);
     return () => {
       socket.off('notification:new', handler);
-      socket.off('friendRequestReceived', friendReqHandler);
     };
   }, [user]);
 

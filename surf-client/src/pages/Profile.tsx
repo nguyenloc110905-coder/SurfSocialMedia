@@ -12,6 +12,7 @@ import { updateUserProfile } from '@/lib/firebase/auth';
 import { resizeAvatar, resizeCover } from '@/lib/utils/image';
 import Modal from '@/components/ui/Modal';
 import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 import PostCard from '@/components/feed/PostCard';
 import ProfileAbout from './ProfileAbout';
 import { isVideoUrl } from '@/lib/cloudinary';
@@ -202,6 +203,19 @@ export default function Profile() {
   const [friendStatus, setFriendStatus] = useState<FriendStatus>('loading');
   const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showUnfriendConfirm, setShowUnfriendConfirm] = useState(false);
+
+  // Clips state
+  interface Clip {
+    url: string;
+    postId: string;
+    content: string;
+    createdAt: unknown;
+  }
+  const [clips, setClips] = useState<Clip[]>([]);
+  const [clipsLoading, setClipsLoading] = useState(false);
+  const [clipsError, setClipsError] = useState<string | null>(null);
+  const [selectedClip, setSelectedClip] = useState<Clip | null>(null);
 
   // Follow state
   const [isFollowing, setIsFollowing] = useState(false);
@@ -209,6 +223,20 @@ export default function Profile() {
   const [isBlocking, setIsBlocking] = useState(false);
   const [isBlockedBy, setIsBlockedBy] = useState(false);
   const [blockActionLoading, setBlockActionLoading] = useState(false);
+
+  // Real-time: friend request accepted by the other side → update status immediately
+  useEffect(() => {
+    if (!uid || !user) return;
+    const socket = getSocket();
+    const handler = (data: { byUid: string }) => {
+      if (data.byUid === uid) {
+        setFriendStatus('friends');
+        setFriendRequestId(null);
+      }
+    };
+    socket.on('friendAccepted', handler);
+    return () => { socket.off('friendAccepted', handler); };
+  }, [uid, user]);
 
   // Load profile
   useEffect(() => {
@@ -346,7 +374,27 @@ export default function Profile() {
     };
   }, [uid, activeTab]);
 
-  // Kiểm tra trạng thái bạn bè khi xem trang người khác
+  // Load clips
+  useEffect(() => {
+    if (!uid || activeTab !== 'reels') return;
+    let cancelled = false;
+    const loadClips = async () => {
+      try {
+        setClipsLoading(true);
+        setClipsError(null);
+        const response = await api.get<{ clips: Clip[] }>(`/api/users/${uid}/clips`);
+        if (!cancelled) setClips(response.clips || []);
+      } catch {
+        if (!cancelled) { setClipsError('Không thể tải video.'); setClips([]); }
+      } finally {
+        if (!cancelled) setClipsLoading(false);
+      }
+    };
+    loadClips();
+    return () => { cancelled = true; };
+  }, [uid, activeTab]);
+
+  // Kểm tra trạng thái bạn bè khi xem trang người khác
   useEffect(() => {
     if (!uid || isOwnProfile) {
       setFriendStatus('self');
@@ -614,6 +662,20 @@ export default function Profile() {
       setFriendRequestId(null);
     } catch (e) {
       setError((e as Error).message || 'Không thể từ chối lời mời.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnfriend = async () => {
+    if (!uid) return;
+    setActionLoading(true);
+    try {
+      await api.delete(`/api/friends/${uid}`);
+      setFriendStatus('stranger');
+      setFriendRequestId(null);
+    } catch (e) {
+      setError((e as Error).message || 'Không thể hủy kết bạn.');
     } finally {
       setActionLoading(false);
     }
@@ -1094,18 +1156,60 @@ export default function Profile() {
                   </>
                 )}
                 {friendStatus === 'friends' && !isBlocking && !isBlockedBy && (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 h-10 px-6 rounded-2xl bg-surf-primary/10 dark:bg-surf-primary/20 text-surf-primary text-sm font-bold hover:bg-surf-primary/20 dark:hover:bg-surf-primary/30 transition-colors"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                    </svg>
-                    Bạn bè
-                    <svg className="w-3.5 h-3.5 opacity-60" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M7 10l5 5 5-5z" />
-                    </svg>
-                  </button>
+                  <div className="relative group/unfriend-btn">
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => setShowUnfriendConfirm(true)}
+                      className="inline-flex items-center gap-2 h-10 px-6 rounded-2xl bg-surf-primary/10 dark:bg-surf-primary/20 text-surf-primary text-sm font-bold transition-all duration-150 disabled:opacity-60 group-hover/unfriend-btn:bg-red-500 group-hover/unfriend-btn:text-white"
+                    >
+                      {actionLoading ? (
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 group-hover/unfriend-btn:hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>
+                          <svg className="w-4 h-4 hidden group-hover/unfriend-btn:block" viewBox="0 0 24 24" fill="currentColor"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                        </>
+                      )}
+                      <span className="group-hover/unfriend-btn:hidden">Bạn bè</span>
+                      <span className="hidden group-hover/unfriend-btn:inline">Hủy kết bạn</span>
+                    </button>
+                  </div>
+                )}
+                {/* Unfriend confirmation modal */}
+                {showUnfriendConfirm && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowUnfriendConfirm(false)}>
+                    <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-6 w-[340px] mx-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-col items-center text-center gap-4">
+                        <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                          <svg className="w-7 h-7 text-red-500" viewBox="0 0 24 24" fill="currentColor"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 dark:text-white text-base">Hủy kết bạn?</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Bạn có chắc muốn hủy kết bạn với <span className="font-semibold text-gray-700 dark:text-gray-300">{profile?.displayName ?? 'người này'}</span> không?
+                          </p>
+                        </div>
+                        <div className="flex gap-3 w-full">
+                          <button
+                            type="button"
+                            onClick={() => setShowUnfriendConfirm(false)}
+                            className="flex-1 h-10 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            Không
+                          </button>
+                          <button
+                            type="button"
+                            disabled={actionLoading}
+                            onClick={() => { setShowUnfriendConfirm(false); handleUnfriend(); }}
+                            className="flex-1 h-10 rounded-2xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors disabled:opacity-60"
+                          >
+                            {actionLoading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : 'Hủy kết bạn'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
                 {friendStatus !== 'loading' && friendStatus !== 'blocked' && (
                   <button
@@ -1627,26 +1731,101 @@ export default function Profile() {
 
           {/* TAB: Reels - Surf Clips */}
           {activeTab === 'reels' && (
-            <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
-              <svg
-                className="w-20 h-20 mx-auto mb-4 text-gray-300 dark:text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
-              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium mb-2">
-                Surf Clips đang được phát triển
-              </p>
-              <p className="text-gray-400 dark:text-gray-500 text-sm">
-                Tính năng video ngắn sẽ sớm ra mắt!
-              </p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                  Surf Clips{clips.length > 0 && ` (${clips.length})`}
+                </h2>
+              </div>
+              {clipsLoading && (
+                <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
+                  <div className="inline-block w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">Đang tải video...</p>
+                </div>
+              )}
+              {!clipsLoading && clipsError && (
+                <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
+                  <p className="text-red-500 text-sm">{clipsError}</p>
+                </div>
+              )}
+              {!clipsLoading && !clipsError && clips.length === 0 && (
+                <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
+                  <svg
+                    className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
+                    Chưa có video nào
+                  </p>
+                </div>
+              )}
+              {!clipsLoading && !clipsError && clips.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {clips.map((clip, index) => (
+                    <div
+                      key={`${clip.postId}-${index}`}
+                      onClick={() => setSelectedClip(clip)}
+                      className="relative aspect-video rounded-2xl overflow-hidden bg-gray-900 cursor-pointer group"
+                    >
+                      <video
+                        src={clip.url}
+                        className="w-full h-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg
+                          className="w-12 h-12 text-white drop-shadow-lg"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {selectedClip && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+                  onClick={() => setSelectedClip(null)}
+                >
+                  <div
+                    className="relative max-w-2xl w-full mx-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedClip(null)}
+                      className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
+                    >
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <video
+                      src={selectedClip.url}
+                      className="w-full rounded-2xl"
+                      controls
+                      autoPlay
+                    />
+                    {selectedClip.content && (
+                      <p className="mt-3 text-white text-sm text-center">{selectedClip.content}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

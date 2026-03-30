@@ -526,22 +526,78 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
 router.get('/:uid/photos', requireAuth, async (req, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    // No orderBy — sort in memory to avoid needing a composite index
     const snap = await getDb()
       .collection('posts')
       .where('authorId', '==', req.params.uid)
-      .orderBy('createdAt', 'desc')
       .limit(limitNum)
       .get();
-    const photos: Array<{ url: string; postId: string; createdAt: Timestamp }> = [];
+    type Photo = { url: string; postId: string; createdAt: unknown };
+    const photos: Photo[] = [];
     snap.docs.forEach((doc) => {
       const data = doc.data();
+      if (data.deleted) return;
       if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
         data.mediaUrls.forEach((url: string) => {
-          photos.push({ url, postId: doc.id, createdAt: data.createdAt });
+          // images only (exclude Cloudinary video uploads and common video extensions)
+          const isVideo =
+            typeof url === 'string' &&
+            (url.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url));
+          if (!isVideo) {
+            photos.push({ url, postId: doc.id, createdAt: data.createdAt });
+          }
         });
       }
     });
-    res.json({ photos });
+    // Sort newest first in memory
+    photos.sort((a, b) => {
+      const ts = (c: unknown) => {
+        if (!c || typeof c !== 'object') return 0;
+        const o = c as { _seconds?: number; seconds?: number };
+        return (o._seconds ?? o.seconds ?? 0) * 1000;
+      };
+      return ts(b.createdAt) - ts(a.createdAt);
+    });
+    res.json({ photos: photos.slice(0, limitNum) });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** GET /api/users/:uid/clips — video posts (Surf Clips) */
+router.get('/:uid/clips', requireAuth, async (req, res) => {
+  try {
+    const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const snap = await getDb()
+      .collection('posts')
+      .where('authorId', '==', req.params.uid)
+      .limit(limitNum)
+      .get();
+    type Clip = { url: string; postId: string; content: string; createdAt: unknown };
+    const clips: Clip[] = [];
+    snap.docs.forEach((doc) => {
+      const data = doc.data();
+      if (data.deleted) return;
+      if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
+        data.mediaUrls.forEach((url: string) => {
+          const isVideo =
+            typeof url === 'string' &&
+            (url.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url));
+          if (isVideo) {
+            clips.push({ url, postId: doc.id, content: data.content ?? '', createdAt: data.createdAt });
+          }
+        });
+      }
+    });
+    clips.sort((a, b) => {
+      const ts = (c: unknown) => {
+        if (!c || typeof c !== 'object') return 0;
+        const o = c as { _seconds?: number; seconds?: number };
+        return (o._seconds ?? o.seconds ?? 0) * 1000;
+      };
+      return ts(b.createdAt) - ts(a.createdAt);
+    });
+    res.json({ clips: clips.slice(0, limitNum) });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

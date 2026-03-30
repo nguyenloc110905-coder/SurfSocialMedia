@@ -214,6 +214,8 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       batch.set(myRef, { friendIds: myIds }, { merge: true });
       batch.set(theirRef, { friendIds: theirIds }, { merge: true });
       await batch.commit();
+      // Notify the original sender that their request was accepted
+      io.to(`user:${fromUid}`).emit('friendAccepted', { byUid: uid });
     }
     res.json({ id, action });
   } catch (e) {
@@ -437,8 +439,39 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/* ======================================================================== */
-/*  NICKNAMES — biệt danh cá nhân, chỉ user tự thấy                       */
+/** DELETE /api/friends/:uid — huỷ kết bạn (unfriend) */
+router.delete('/:uid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const me = req.uid!;
+    const other = req.params.uid;
+    if (me === other) {
+      res.status(400).json({ error: 'Cannot unfriend yourself' });
+      return;
+    }
+    const batch = db().batch();
+    const myRef = db().collection('friends').doc(me);
+    const theirRef = db().collection('friends').doc(other);
+    const [myDoc, theirDoc] = await Promise.all([myRef.get(), theirRef.get()]);
+    const myIds: string[] = myDoc.exists ? (myDoc.data()?.friendIds ?? []) : [];
+    const theirIds: string[] = theirDoc.exists ? (theirDoc.data()?.friendIds ?? []) : [];
+    batch.set(myRef, { friendIds: myIds.filter((id) => id !== other) }, { merge: true });
+    batch.set(theirRef, { friendIds: theirIds.filter((id) => id !== me) }, { merge: true });
+    // Clean up any lingering friend_requests between them
+    const [req1, req2] = await Promise.all([
+      db().collection('friend_requests').where('fromUid', '==', me).where('toUid', '==', other).get(),
+      db().collection('friend_requests').where('fromUid', '==', other).where('toUid', '==', me).get(),
+    ]);
+    req1.docs.forEach((d) => batch.delete(d.ref));
+    req2.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/* ========================================================================
+   NICKNAMES — biệt danh cá nhân, chỉ user tự thấy                       */
 /*  Firestore: nicknames/{uid}  → { entries: { [friendUid]: string } }      */
 /* ======================================================================== */
 
