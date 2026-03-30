@@ -15,6 +15,7 @@ import commentsRoutes from './routes/comments.js';
 import momentsRoutes from './routes/moments.js';
 import musicRoutes from './routes/music.js';
 import videosRoutes from './routes/videos.js';
+import notificationsRoutes from './routes/notifications.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -103,6 +104,7 @@ app.use('/api/comments', commentsRoutes);
 app.use('/api/moments', momentsRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/videos', videosRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);

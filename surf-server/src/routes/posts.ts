@@ -58,6 +58,41 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       hasVideo: detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []),
     });
     const created = await docRef.get();
+
+    // Notify each tagged friend via Firestore + socket
+    if (Array.isArray(taggedFriends) && taggedFriends.length > 0) {
+      const notificationsRef = db.collection('notifications');
+      const notifyBatch = db.batch();
+      type TaggedFriendEntry = { uid: string; displayName?: string; photoURL?: string | null };
+      for (const friend of taggedFriends as TaggedFriendEntry[]) {
+        if (!friend?.uid || friend.uid === req.uid) continue;
+        const notifDoc = notificationsRef.doc();
+        notifyBatch.set(notifDoc, {
+          type: 'tag',
+          recipientId: friend.uid,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: docRef.id,
+          postSnippet: (content?.trim() ?? '').substring(0, 100),
+          read: false,
+          createdAt: new Date(),
+        });
+        io.to(`user:${friend.uid}`).emit('notification:new', {
+          id: notifDoc.id,
+          type: 'tag',
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: docRef.id,
+          postSnippet: (content?.trim() ?? '').substring(0, 100),
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      await notifyBatch.commit();
+    }
+
     res.status(201).json({ id: created.id, ...created.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -257,6 +292,32 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
     });
     const updated = await ref.get();
     const responseData = { id: updated.id, ...updated.data() };
+
+    // Notify post author when someone reacts (not when unreacting, not own post)
+    if (idx === -1 && data.authorId && data.authorId !== req.uid) {
+      const reactorDoc = await getDb().collection('users').doc(req.uid!).get();
+      const reactor = reactorDoc.data();
+      const notifRef = getDb().collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'reaction',
+        recipientId: data.authorId as string,
+        actorId: req.uid,
+        actorName: reactor?.displayName ?? 'Ai đó',
+        actorPhoto: reactor?.photoURL ?? null,
+        postId: req.params.id,
+        postSnippet: (data.content as string ?? '').substring(0, 100),
+        reaction,
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      io.to(`user:${data.authorId as string}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
     // RT-3: notify all clients viewing this post about the updated reaction count
     io.to(`post:${req.params.id}`).emit('post:reacted', {
       postId: req.params.id,

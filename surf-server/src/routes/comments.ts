@@ -93,6 +93,30 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     // RT-4: broadcast new comment to all users viewing this post
     io.to(`post:${req.params.postId}`).emit('comment:new', responseData);
 
+    // Notify post author about new comment (skip if commenting on own post)
+    if (postDoc.data()?.authorId && postDoc.data()?.authorId !== req.uid) {
+      const authorId = postDoc.data()!.authorId as string;
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'comment',
+        recipientId: authorId,
+        actorId: req.uid,
+        actorName: user?.displayName ?? 'Ai đó',
+        actorPhoto: user?.photoURL ?? null,
+        postId: req.params.postId,
+        postSnippet: (postDoc.data()?.content as string ?? '').substring(0, 100),
+        commentSnippet: content.trim().substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      io.to(`user:${authorId}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
     res.status(201).json(responseData);
   } catch (e) {
     console.error('Error creating comment:', e);

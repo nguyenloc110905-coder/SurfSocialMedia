@@ -149,6 +149,25 @@ router.post(
       console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
       io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
 
+      // Write notification doc + emit notification:new so the bell updates
+      const notifRef = db().collection('notifications').doc();
+      const notifPayload = {
+        id: notifRef.id,
+        type: 'friend_request',
+        recipientId: toUid,
+        actorId: fromUid,
+        actorName: fromData?.displayName ?? 'Ai đó',
+        actorPhoto: fromData?.photoURL ?? null,
+        requestId: ref.id,
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifPayload).catch(() => {});
+      io.to(`user:${toUid}`).emit('notification:new', {
+        ...notifPayload,
+        createdAt: new Date().toISOString(),
+      });
+
       res.status(201).json({ id: ref.id, toUid, status: 'pending' });
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
