@@ -7,6 +7,7 @@ import AuthPage from './pages/AuthPage';
 import ForgotPassword from './pages/ForgotPassword';
 import Feed from './pages/Feed';
 import Profile from './pages/Profile';
+import PostPage from './pages/PostPage';
 import ShortVideo from './pages/ShortVideo';
 import Friends from './pages/Friends';
 import Groups from './pages/Groups';
@@ -119,6 +120,7 @@ export default function App() {
           <Route index element={<Feed />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="profile/:uid" element={<Profile />} />
+          <Route path="post/:postId" element={<PostPage />} />
           <Route path="short-video" element={<ShortVideo />} />
           <Route path="friends" element={<Friends />} />
           <Route path="friends/requests" element={<Friends />} />

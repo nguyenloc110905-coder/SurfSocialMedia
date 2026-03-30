@@ -40,7 +40,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
     
-    const { content } = req.body;
+    const { content, parentId } = req.body;
     
     if (!content?.trim()) {
       res.status(400).json({ error: 'Comment content is required' });
@@ -53,6 +53,15 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
+
+    // If parentId given, verify parent comment exists and belongs to this post
+    if (parentId) {
+      const parentDoc = await commentsRef.doc(parentId).get();
+      if (!parentDoc.exists || parentDoc.data()?.postId !== req.params.postId) {
+        res.status(404).json({ error: 'Parent comment not found' });
+        return;
+      }
+    }
     
     // Get user info
     const userDoc = await usersRef.doc(req.uid!).get();
@@ -60,7 +69,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     
     // Create comment
     const commentRef = commentsRef.doc();
-    const commentData = {
+    const commentData: Record<string, unknown> = {
       postId: req.params.postId,
       authorId: req.uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
@@ -71,6 +80,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       likeCount: 0,
       likedBy: [],
     };
+    if (parentId) commentData.parentId = parentId;
     
     console.log(`📝 Creating comment for post ${req.params.postId} by ${req.uid}`);
     
@@ -93,14 +103,14 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     // RT-4: broadcast new comment to all users viewing this post
     io.to(`post:${req.params.postId}`).emit('comment:new', responseData);
 
-    // Notify post author about new comment (skip if commenting on own post)
-    if (postDoc.data()?.authorId && postDoc.data()?.authorId !== req.uid) {
-      const authorId = postDoc.data()!.authorId as string;
+    const postAuthorId = postDoc.data()?.authorId as string | undefined;
+    // Notify post author about new top-level comment (skip own post, skip replies — handled below)
+    if (!parentId && postAuthorId && postAuthorId !== req.uid) {
       const notifRef = db.collection('notifications').doc();
       const notifData = {
         id: notifRef.id,
         type: 'comment',
-        recipientId: authorId,
+        recipientId: postAuthorId,
         actorId: req.uid,
         actorName: user?.displayName ?? 'Ai đó',
         actorPhoto: user?.photoURL ?? null,
@@ -111,10 +121,57 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      io.to(`user:${authorId}`).emit('notification:new', {
+      io.to(`user:${postAuthorId}`).emit('notification:new', {
         ...notifData,
         createdAt: new Date().toISOString(),
       });
+    }
+
+    // Notify parent comment author when someone replies (skip self, skip if same as post author — already notified)
+    if (parentId) {
+      const parentDoc = await commentsRef.doc(parentId).get();
+      const parentAuthorId = parentDoc.data()?.authorId as string | undefined;
+      if (parentAuthorId && parentAuthorId !== req.uid && parentAuthorId !== postAuthorId) {
+        const notifRef = db.collection('notifications').doc();
+        const notifData = {
+          id: notifRef.id,
+          type: 'reply',
+          recipientId: parentAuthorId,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: req.params.postId,
+          commentSnippet: content.trim().substring(0, 80),
+          read: false,
+          createdAt: new Date(),
+        };
+        notifRef.set(notifData).catch(() => {});
+        io.to(`user:${parentAuthorId}`).emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      // Also notify post author about the reply if they're not the parent author (already above)
+      if (postAuthorId && postAuthorId !== req.uid && postAuthorId !== parentAuthorId) {
+        const notifRef = db.collection('notifications').doc();
+        const notifData = {
+          id: notifRef.id,
+          type: 'reply',
+          recipientId: postAuthorId,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: req.params.postId,
+          commentSnippet: content.trim().substring(0, 80),
+          read: false,
+          createdAt: new Date(),
+        };
+        notifRef.set(notifData).catch(() => {});
+        io.to(`user:${postAuthorId}`).emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
+      }
     }
 
     res.status(201).json(responseData);
@@ -263,12 +320,42 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
       reactions[req.uid!] = reaction as string;
     }
 
+    const wasAdding = idx === -1 || reactions[req.uid!] !== reaction;
+
     await commentsRef.doc(req.params.commentId).update({
       likedBy,
       likeCount: likedBy.length,
       reactions,
       updatedAt: new Date(),
     });
+
+    // Notify comment author when someone reacts (only when adding, not removing; skip own)
+    if (wasAdding && likedBy.includes(req.uid!) && data.authorId && data.authorId !== req.uid) {
+      const commentAuthorId = data.authorId as string;
+      const usersRef = db.collection('users');
+      const actorDoc = await usersRef.doc(req.uid!).get();
+      const actor = actorDoc.data();
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'comment_reaction',
+        recipientId: commentAuthorId,
+        actorId: req.uid,
+        actorName: actor?.displayName ?? 'Ai đó',
+        actorPhoto: actor?.photoURL ?? null,
+        postId: req.params.postId,
+        commentId: req.params.commentId,
+        reaction: likedBy.includes(req.uid!) ? reactions[req.uid!] : reaction,
+        commentSnippet: (data.content as string ?? '').substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      io.to(`user:${commentAuthorId}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     res.json({
       liked: likedBy.includes(req.uid!),

@@ -169,9 +169,14 @@ router.get('/:id', requireAuth, async (req, res) => {
     const post = { id: postDoc.id, ...postDoc.data() };
     const repliesSnap = await postsRef
       .where('parentId', '==', req.params.id)
-      .orderBy('createdAt', 'asc')
       .get();
-    const replies = repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    type RDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
+    const replies = (repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as RDoc[])
+      .sort((a, b) => {
+        const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
+        const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
+        return aT - bT;
+      });
     res.json({ ...post, replies });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

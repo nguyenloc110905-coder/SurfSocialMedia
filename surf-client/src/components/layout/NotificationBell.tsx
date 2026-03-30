@@ -94,8 +94,20 @@ export default function NotificationBell() {
   const handleNotifClick = async (notif: Notification) => {
     if (!notif.read) await markRead(notif.id);
     setOpen(false);
-    if (notif.type === 'friend_request') navigate('/feed/friends');
-    else if (notif.postId) navigate('/feed');
+    switch (notif.type) {
+      case 'friend_request':
+        navigate('/feed/friends/requests');
+        break;
+      case 'tag':
+      case 'reaction':
+      case 'comment':
+      case 'reply':
+      case 'comment_reaction':
+        if (notif.postId) navigate(`/feed/post/${notif.postId}`);
+        break;
+      default:
+        navigate('/feed');
+    }
   };
 
   const formatTime = (createdAt: Notification['createdAt']) => {
@@ -127,6 +139,8 @@ export default function NotificationBell() {
     if (n.type === 'friend_request') return <>{name}{' đã gửi lời mời kết bạn với bạn'}</>;
     if (n.type === 'reaction') return <>{name}{` đã bày tỏ cảm xúc ${n.reaction ?? '❤️'} với bài viết của bạn`}{snippet}</>;
     if (n.type === 'comment') return <>{name}{' đã bình luận về bài viết của bạn'}{snippet}</>;
+    if (n.type === 'reply') return <>{name}{' đã trả lời bình luận của bạn'}{snippet}</>;
+    if (n.type === 'comment_reaction') return <>{name}{` đã thả ${n.reaction ?? '❤️'} vào bình luận của bạn`}{snippet}</>;
     return <>{name}{' đã thông báo cho bạn'}</>;
   };
 
