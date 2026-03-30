@@ -1,8 +1,18 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
-import { createOrGetDmConversation, toApiConversation } from '../services/conversations.js';
+import {
+  createOrGetDmConversation,
+  listConversationsForUser,
+  toApiConversation,
+} from '../services/conversations.js';
 
 const router = Router();
+
+const parseIntSafe = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'string') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -27,6 +37,18 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       created: result.created,
       item: toApiConversation(result.item),
     });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.get('/', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const limit = Math.min(parseIntSafe(req.query.limit, 20), 50);
+
+    const items = await listConversationsForUser(uid, limit);
+    res.json({ items });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

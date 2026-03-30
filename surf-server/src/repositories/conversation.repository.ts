@@ -34,7 +34,7 @@ export const conversationRepository = {
     uidA: string,
     uidB: string
   ): Promise<{ item: ConservationDoc; created: boolean }> {
-    const memberIds = [uidA, uidB];
+    const memberIds = [uidA, uidB].sort();
     const pairKey = [uidA, uidB].sort().join('__');
     const conversationId = buildDmConversationId(pairKey);
     const ref = col().doc(conversationId);
@@ -65,5 +65,17 @@ export const conversationRepository = {
     );
 
     return { item, created };
+  },
+
+  async listByMember(userId: string, limit = 20): Promise<ConservationDoc[]> {
+    const snap = await col()
+      .where('memberIds', 'array-contains', userId)
+      .orderBy('lastMessageAt', 'desc')
+      .limit(limit)
+      .get();
+
+    return snap.docs.map((d) =>
+      mapConservationDoc(d.id, (d.data() ?? {}) as Record<string, unknown>)
+    );
   },
 };

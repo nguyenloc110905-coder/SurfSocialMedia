@@ -17,6 +17,19 @@ export type ApiConversation = Omit<ConservationDoc, 'createdAt' | 'updatedAt' | 
   lastMessageAt: string | null;
 };
 
+type UserLite = {
+  displayName?: string;
+  photoURL?: string | null;
+};
+
+export type ApiConversationListItem = {
+  id: string;
+  type: ConservationDoc['type'];
+  peer: { uid: string; name: string; avatarUrl: string | null } | null;
+  lastMessagePreview: string | null;
+  lastMessageAt: string | null;
+};
+
 export const toApiConversation = (item: ConservationDoc): ApiConversation => ({
   ...item,
   createdAt: item.createdAt.toISOString(),
@@ -51,4 +64,47 @@ export const createOrGetDmConversation = async (
   const result = await conversationRepository.findOrCreateDm(actorUid, peerUid);
   await redis?.set(dmCacheKey(pairKey), result.item.id, { EX: DM_CACHE_TTL_SEC });
   return { ok: true, created: result.created, item: result.item };
+};
+
+export const listConversationsForUser = async (
+  userId: string,
+  limit = 20
+): Promise<ApiConversationListItem[]> => {
+  const docs = await conversationRepository.listByMember(userId, limit);
+
+  const peerIds = Array.from(
+    new Set(
+      docs
+        .map((d) => d.memberIds.find((id) => id !== userId))
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+
+  const peerSnaps =
+    peerIds.length > 0
+      ? await getDb().getAll(...peerIds.map((id) => getDb().collection('users').doc(id)))
+      : [];
+
+  const peerMap = new Map<string, UserLite>(
+    peerSnaps.map((s) => [s.id, (s.data() ?? {}) as UserLite])
+  );
+
+  return docs.map((d) => {
+    const peerUid = d.memberIds.find((id) => id !== userId) ?? null;
+    const peerData = peerUid ? peerMap.get(peerUid) : undefined;
+
+    return {
+      id: d.id,
+      type: d.type,
+      peer: peerUid
+        ? {
+            uid: peerUid,
+            name: peerData?.displayName ?? 'Unknown',
+            avatarUrl: peerData?.photoURL ?? null,
+          }
+        : null,
+      lastMessagePreview: d.lastMessagePreview ?? null,
+      lastMessageAt: d.lastMessageAt ? d.lastMessageAt.toISOString() : null,
+    };
+  });
 };
