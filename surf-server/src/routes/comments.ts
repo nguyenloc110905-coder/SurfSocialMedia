@@ -3,6 +3,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { io } from '../index.js';
+import { logger } from '../config/logger.js';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ router.get('/:postId', requireAuth, async (req, res) => {
 
     res.json({ comments, nextCursor: null, total: comments.length });
   } catch (e) {
-    console.error('❌ Error getting comments:', e);
+    logger.error('❌ Error getting comments:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -176,7 +177,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
 
     res.status(201).json(responseData);
   } catch (e) {
-    console.error('Error creating comment:', e);
+    logger.error('Error creating comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -209,7 +210,7 @@ router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) =
 
     res.json({ id: req.params.commentId, ...commentDoc.data(), ...updated });
   } catch (e) {
-    console.error('Error editing comment:', e);
+    logger.error('Error editing comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -246,7 +247,7 @@ router.delete('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) 
     
     res.json({ message: 'Comment deleted' });
   } catch (e) {
-    console.error('Error deleting comment:', e);
+    logger.error('Error deleting comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -284,7 +285,7 @@ router.post('/:postId/:commentId/like', requireAuth, async (req: AuthRequest, re
       res.json({ liked: true });
     }
   } catch (e) {
-    console.error('Error liking comment:', e);
+    logger.error('Error liking comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -363,7 +364,7 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
       reactions,
     });
   } catch (e) {
-    console.error('Error reacting to comment:', e);
+    logger.error('Error reacting to comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
