@@ -1,9 +1,14 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
+import { io } from '../index.js';
 import {
   createOrGetDmConversation,
+  getUnreadConversationCount,
   listConversationsForUser,
+  sendTextMessage,
   toApiConversation,
+  toApiMessage,
+  toRealtimeMessagePayload,
 } from '../services/conversations.js';
 
 const router = Router();
@@ -49,6 +54,76 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 
     const items = await listConversationsForUser(uid, limit);
     res.json({ items });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const count = await getUnreadConversationCount(uid);
+    res.json({ count });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const senderId = req.uid!;
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+
+    const result = await sendTextMessage({
+      conversationId: req.params.id,
+      senderId,
+      text,
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'invalid_text') {
+        res.status(400).json({ error: 'Message text is invalid' });
+        return;
+      }
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      if (result.reason === 'forbidden') {
+        res.status(403).json({ error: 'You are not a member of this conversation' });
+        return;
+      }
+
+      res.status(403).json({
+        error: 'Blocked users cannot interact',
+        code: 'USER_BLOCKED',
+      });
+      return;
+    }
+
+    const payload = toRealtimeMessagePayload(result.item);
+
+    result.recipientIds.forEach((uid) => {
+      io.to(`user:${uid}`).emit('message:new', payload);
+    });
+
+    io.to(`user:${senderId}`).emit('message:new', payload);
+
+    const recipientCounts = await Promise.all(
+      result.recipientIds.map(async (uid) => ({
+        uid,
+        count: await getUnreadConversationCount(uid),
+      }))
+    );
+
+    recipientCounts.forEach(({ uid, count }) => {
+      io.to(`user:${uid}`).emit('message:unread-count', { count });
+    });
+
+    const senderCount = await getUnreadConversationCount(senderId);
+    io.to(`user:${senderId}`).emit('message:unread-count', { count: senderCount });
+
+    res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

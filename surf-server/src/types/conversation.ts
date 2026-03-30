@@ -5,6 +5,7 @@ export type ConservationDoc = {
   type: ConversationType;
   memberIds: string[];
   memberPairKey?: string;
+  unreadCountByUser?: Record<string, number>;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;

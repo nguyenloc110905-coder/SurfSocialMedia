@@ -1,0 +1,149 @@
+POSTMAN CHECKLIST - MESSAGING
+
+1. Login Firebase to get token
+POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyBZHa66RZZlUIsSoW3WNpPRoseA3bLpvm8
+Header: Content-Type: application/json
+Body:
+{
+  "email": "user_a@gmail.com",
+  "password": "123456",
+  "returnSecureToken": true
+}
+
+Response fields to save:
+- idToken -> TOKEN_A
+- localId -> UID_A
+
+Repeat for:
+- user_b@gmail.com -> TOKEN_B, UID_B
+- user_c@gmail.com -> TOKEN_C, UID_C
+
+2. Verify token
+GET http://localhost:4000/api/auth/me
+Authorization: Bearer TOKEN_A
+
+Expected:
+- 200 OK
+- response has uid
+
+3. MSG-1 Create conversation / DM
+POST http://localhost:4000/api/conversations
+Authorization: Bearer TOKEN_A
+Header: Content-Type: application/json
+Body:
+{
+  "peerUid": "UID_B"
+}
+
+Expected:
+- first call -> 201, created = true
+- second same call -> 200, created = false
+- item.id stays the same
+
+4. MSG-2 List conversations
+GET http://localhost:4000/api/conversations?limit=20
+Authorization: Bearer TOKEN_A
+
+Expected:
+- 200 OK
+- items array
+- each item has:
+  - id
+  - type
+  - peer.uid
+  - peer.name
+  - peer.avatarUrl
+  - lastMessagePreview
+  - lastMessageAt
+  - unreadCount
+
+If Firestore returns FAILED_PRECONDITION:
+- open the index creation link from response
+- create index for conversations
+- wait until Enabled
+
+5. MSG-3 Send message
+POST http://localhost:4000/api/conversations/<CONVERSATION_ID>/messages
+Authorization: Bearer TOKEN_A
+Header: Content-Type: application/json
+Body:
+{
+  "text": "hello from A"
+}
+
+Expected:
+- 201 OK
+- response has:
+  - item.id
+  - item.conversationId
+  - item.senderId
+  - item.text
+  - item.createdAt
+  - conversation.id
+  - conversation.lastMessagePreview
+  - conversation.lastMessageAt
+
+6. Firestore check after send message
+Check:
+- conversations/<CONVERSATION_ID>
+- conversations/<CONVERSATION_ID>/messages/<MESSAGE_ID>
+
+Expected:
+- parent conversation updated:
+  - lastMessagePreview
+  - lastMessageAt
+  - unreadCountByUser
+- messages subcollection has new message doc
+
+7. MSG-4 Realtime message delivery
+Open surf-client in browser for user B and login.
+In browser console:
+const { getSocket } = await import('/src/lib/socket.ts');
+const socket = getSocket();
+socket.off('message:new');
+socket.on('message:new', (payload) => console.log('message:new', payload));
+
+Then send another message from A using Postman.
+
+Expected:
+- browser B receives message:new immediately
+- payload has:
+  - message
+  - conversation.lastMessagePreview
+  - conversation.lastMessageAt
+
+8. MSG-8 Unread badge endpoint
+GET http://localhost:4000/api/conversations/unread-count
+Authorization: Bearer TOKEN_B
+
+Expected:
+- 200 OK
+- response:
+{
+  "count": 1
+}
+
+Send more messages from A to B:
+- count should increase
+
+9. MSG-8 Realtime unread badge
+In browser B console:
+const { getSocket } = await import('/src/lib/socket.ts');
+const socket = getSocket();
+socket.off('message:unread-count');
+socket.on('message:unread-count', (payload) => console.log('message:unread-count', payload));
+
+Then send another message from A to B.
+
+Expected:
+- browser B receives message:unread-count
+- payload example:
+{
+  "count": 2
+}
+
+10. Current limitation
+- unread badge currently increases correctly
+- no mark-as-read endpoint yet
+- badge will not reset to 0 until read flow is implemented
+

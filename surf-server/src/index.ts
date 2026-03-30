@@ -17,7 +17,7 @@ import momentsRoutes from './routes/moments.js';
 import musicRoutes from './routes/music.js';
 import videosRoutes from './routes/videos.js';
 import conversationsRoutes from './routes/conversations.js';
-import { initRedis } from './config/redis.js';
+import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -109,9 +109,11 @@ app.use('/api/music', musicRoutes);
 app.use('/api/videos', videosRoutes);
 app.use('/api/conversations', conversationsRoutes);
 
-initRedis().catch((err) => {
-  console.error('Failed to initialize Redis:', err);
-});
+initRedis()
+  .then(() => initSocketRedisAdapter(io))
+  .catch((err) => {
+    console.error('Failed to initialize Redis:', err);
+  });
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);

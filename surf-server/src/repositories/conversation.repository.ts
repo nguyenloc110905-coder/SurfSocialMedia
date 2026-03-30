@@ -16,6 +16,15 @@ const mapConservationDoc = (id: string, data: Record<string, unknown>): Conserva
   type: (data.type as ConservationDoc['type']) ?? 'dm',
   memberIds: Array.isArray(data.memberIds) ? (data.memberIds as string[]) : [],
   memberPairKey: data.memberPairKey as string | undefined,
+  unreadCountByUser:
+    data.unreadCountByUser && typeof data.unreadCountByUser === 'object'
+      ? Object.fromEntries(
+          Object.entries(data.unreadCountByUser as Record<string, unknown>).map(([uid, count]) => [
+            uid,
+            typeof count === 'number' ? count : 0,
+          ])
+        )
+      : undefined,
   createdBy: (data.createdBy as string) ?? '',
   createdAt: toDate(data.createdAt) ?? new Date(),
   updatedAt: toDate(data.updatedAt) ?? new Date(),
@@ -50,6 +59,7 @@ export const conversationRepository = {
         type: 'dm',
         memberIds,
         memberPairKey: pairKey,
+        unreadCountByUser: Object.fromEntries(memberIds.map((uid) => [uid, 0])),
         createdBy: uidA,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -73,6 +83,14 @@ export const conversationRepository = {
       .orderBy('lastMessageAt', 'desc')
       .limit(limit)
       .get();
+
+    return snap.docs.map((d) =>
+      mapConservationDoc(d.id, (d.data() ?? {}) as Record<string, unknown>)
+    );
+  },
+
+  async listByMemberForUnread(userId: string): Promise<ConservationDoc[]> {
+    const snap = await col().where('memberIds', 'array-contains', userId).get();
 
     return snap.docs.map((d) =>
       mapConservationDoc(d.id, (d.data() ?? {}) as Record<string, unknown>)
