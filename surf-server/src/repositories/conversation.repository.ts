@@ -96,4 +96,11 @@ export const conversationRepository = {
       mapConservationDoc(d.id, (d.data() ?? {}) as Record<string, unknown>)
     );
   },
+
+  async markReadByUser(conversationId: string, userId: string): Promise<void> {
+    await col().doc(conversationId).update({
+      [`unreadCountByUser.${userId}`]: 0,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  },
 };

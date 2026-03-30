@@ -15,6 +15,7 @@ import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
+import Waves from './pages/Waves';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -147,12 +148,7 @@ export default function App() {
           />
           <Route
             path="waves"
-            element={
-              <PlaceholderPage
-                title="Waves"
-                description="Nhắn tin nhanh — công cụ trò chuyện của Surf."
-              />
-            }
+            element={<Waves />}
           />
           <Route
             path="explore"

@@ -4,7 +4,9 @@ import { io } from '../index.js';
 import {
   createOrGetDmConversation,
   getUnreadConversationCount,
+  listMessagesForConversation,
   listConversationsForUser,
+  markConversationRead,
   sendTextMessage,
   toApiConversation,
   toApiMessage,
@@ -17,6 +19,12 @@ const parseIntSafe = (value: unknown, fallback: number): number => {
   if (typeof value !== 'string') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+};
+
+const parseCursorSafe = (value: unknown): string | undefined => {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
@@ -64,6 +72,53 @@ router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
     const uid = req.uid!;
     const count = await getUnreadConversationCount(uid);
     res.json({ count });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const limit = Math.min(parseIntSafe(req.query.limit, 10), 20);
+    const cursor = parseCursorSafe(req.query.cursor);
+
+    const result = await listMessagesForConversation(uid, req.params.id, limit, cursor);
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    res.json({ items: result.items.map(toApiMessage), nextCursor: result.nextCursor });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const result = await markConversationRead(uid, req.params.id);
+
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    const count = await getUnreadConversationCount(uid);
+    io.to(`user:${uid}`).emit('message:unread-count', { count });
+
+    res.json({ ok: true, count });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

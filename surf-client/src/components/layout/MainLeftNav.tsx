@@ -73,18 +73,59 @@ const SHORTCUTS_MAX = 7;
 /** Lối tắt: lấy từ store/API (nhóm/trang vào nhiều hoặc gần nhất). Chưa có thì truyền []. */
 export type ShortcutItem = { type: 'group' | 'page'; id: string; name: string; href: string };
 
-type MainLeftNavProps = { shortcuts?: ShortcutItem[] };
+type MainLeftNavProps = {
+  shortcuts?: ShortcutItem[];
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+};
 
 function getShortcutIconPath(item: ShortcutItem): string {
   return item.type === 'group' ? GROUP_ICON : PAGE_ICON;
 }
 
 /** Cột trái 25% — nav chính + Lối tắt của bạn (nhóm/trang đã truy cập). */
-export default function MainLeftNav({ shortcuts = [] }: MainLeftNavProps) {
+export default function MainLeftNav({
+  shortcuts = [],
+  collapsed = false,
+  onToggleCollapse,
+}: MainLeftNavProps) {
   const list = shortcuts.slice(0, SHORTCUTS_MAX);
 
   return (
     <aside className="hidden md:flex flex-col w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
+      {onToggleCollapse && (
+        <div className="sticky top-0 z-10 border-b border-gray-100 bg-white/90 px-3 py-3 backdrop-blur dark:border-gray-700/80 dark:bg-gray-900/85">
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>
+            {!collapsed && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-400 dark:text-gray-500">
+                  Menu
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Điều hướng
+                </p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/80 text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:bg-gray-800"
+              title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+              aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className={`h-4 w-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M15.41 16.59 10.83 12l4.58-4.59L14 6l-6 6 6 6z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       <nav className="p-3 space-y-1" aria-label="Điều hướng chính">
         {MAIN_NAV_ITEMS.map(({ to, title, path }, i) => (
           <NavLink
@@ -94,13 +135,13 @@ export default function MainLeftNav({ shortcuts = [] }: MainLeftNavProps) {
             title={title}
             className={({ isActive }) =>
               [
-                'main-left-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors',
+                'flex items-center px-3 py-2.5 rounded-xl text-left transition-colors',
+                collapsed ? 'justify-center gap-0' : 'gap-3',
                 isActive
                   ? 'bg-surf-primary/15 dark:bg-surf-primary/25 text-surf-primary dark:text-surf-secondary font-medium'
                   : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/80',
               ].join(' ')
             }
-            style={{ animationDelay: `${i * 50}ms`, opacity: 0 }}
           >
             {({ isActive }) => (
               <>
@@ -120,8 +161,8 @@ export default function MainLeftNav({ shortcuts = [] }: MainLeftNavProps) {
                     <path d={path} />
                   </svg>
                 </span>
-                <span className="text-sm truncate flex-1 min-w-0">{title}</span>
-                {isActive && (
+                {!collapsed && <span className="text-sm truncate flex-1 min-w-0">{title}</span>}
+                {!collapsed && isActive && (
                   <span
                     className="w-1.5 h-1.5 rounded-full bg-surf-primary dark:bg-surf-secondary flex-shrink-0"
                     aria-hidden
@@ -134,39 +175,41 @@ export default function MainLeftNav({ shortcuts = [] }: MainLeftNavProps) {
       </nav>
 
       {/* Lối tắt của bạn — nhóm/trang vào nhiều hoặc gần nhất; trống thì báo. */}
-      <div className="flex-shrink-0 pt-2 pb-3 px-3 border-t border-gray-100 dark:border-gray-700/80">
-        <h3 className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Lối tắt của bạn
-        </h3>
-        {list.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">
-            Chưa có lối tắt. Truy cập Nhóm hoặc Trang để thấy lối tắt xuất hiện ở đây.
-          </p>
-        ) : (
-          <ul className="mt-1 space-y-0.5">
-            {list.map((item) => (
-              <li key={item.id}>
-                <Link
-                  to={item.href}
-                  className="flex items-center gap-3 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
-                >
-                  <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700/80 flex items-center justify-center">
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="w-4 h-4"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path d={getShortcutIconPath(item)} />
-                    </svg>
-                  </span>
-                  <span className="text-sm truncate flex-1 min-w-0">{item.name}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {!collapsed && (
+        <div className="flex-shrink-0 pt-2 pb-3 px-3 border-t border-gray-100 dark:border-gray-700/80">
+          <h3 className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Lối tắt của bạn
+          </h3>
+          {list.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">
+              Chưa có lối tắt. Truy cập Nhóm hoặc Trang để thấy lối tắt xuất hiện ở đây.
+            </p>
+          ) : (
+            <ul className="mt-1 space-y-0.5">
+              {list.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    to={item.href}
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/80 transition-colors"
+                  >
+                    <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700/80 flex items-center justify-center">
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="w-4 h-4"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path d={getShortcutIconPath(item)} />
+                      </svg>
+                    </span>
+                    <span className="text-sm truncate flex-1 min-w-0">{item.name}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </aside>
   );
 }

@@ -52,6 +52,14 @@ export type SendTextMessageResult =
   | { ok: true; item: MessageDoc; recipientIds: string[] }
   | { ok: false; reason: 'invalid_text' | 'not_found' | 'forbidden' | 'blocked' };
 
+export type ListMessagesResult =
+  | { ok: true; items: MessageDoc[]; nextCursor: string | null }
+  | { ok: false; reason: 'not_found' | 'forbidden' };
+
+export type MarkConversationReadResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'forbidden' };
+
 export const toApiConversation = (item: ConservationDoc): ApiConversation => ({
   ...item,
   createdAt: item.createdAt.toISOString(),
@@ -133,6 +141,40 @@ export const sendTextMessage = async (
   );
 
   return { ok: true, item, recipientIds };
+};
+
+export const listMessagesForConversation = async (
+  userId: string,
+  conversationId: string,
+  limit = 10,
+  beforeCursor?: string
+): Promise<ListMessagesResult> => {
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+  if (!conversation.memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const page = await messageRepository.listByConversation({
+    conversationId,
+    limit,
+    beforeCursor,
+  });
+  return { ok: true, items: page.items, nextCursor: page.nextCursor };
+};
+
+export const markConversationRead = async (
+  userId: string,
+  conversationId: string
+): Promise<MarkConversationReadResult> => {
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+  if (!conversation.memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  await conversationRepository.markReadByUser(conversationId, userId);
+  return { ok: true };
 };
 
 export const getUnreadConversationCount = async (userId: string): Promise<number> => {

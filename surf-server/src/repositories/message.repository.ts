@@ -28,7 +28,48 @@ export const buildMessagePreview = (text: string): string => {
   return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
 };
 
+type ListConversationMessagesInput = {
+  conversationId: string;
+  limit: number;
+  beforeCursor?: string;
+};
+
+type ListConversationMessagesResult = {
+  items: MessageDoc[];
+  nextCursor: string | null;
+};
+
 export const messageRepository = {
+  async listByConversation(
+    input: ListConversationMessagesInput
+  ): Promise<ListConversationMessagesResult> {
+    let query = messagesCol(input.conversationId)
+      .orderBy('createdAt', 'desc')
+      .limit(input.limit + 1);
+
+    if (input.beforeCursor) {
+      const cursorDate = new Date(input.beforeCursor);
+      if (!Number.isNaN(cursorDate.getTime())) {
+        query = query.startAfter(cursorDate);
+      }
+    }
+
+    const snap = await query.get();
+    const mapped = snap.docs.map((doc) =>
+      mapMessageDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>)
+    );
+
+    const hasMore = mapped.length > input.limit;
+    const page = hasMore ? mapped.slice(0, input.limit) : mapped;
+    const ascending = [...page].reverse();
+    const nextCursor = hasMore ? ascending[0]?.createdAt.toISOString() ?? null : null;
+
+    return {
+      items: ascending,
+      nextCursor,
+    };
+  },
+
   async createTextMessage(
     conversationId: string,
     senderId: string,

@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import Header from './Header';
 import BottomNav from './BottomNav';
 import MainLeftNav from './MainLeftNav';
@@ -31,9 +32,19 @@ export default function Layout() {
   const location = useLocation();
   const isProfile = location.pathname.startsWith('/feed/profile/');
   const isSettings = location.pathname === '/feed/settings';
+  const isWaves = location.pathname === '/feed/waves';
   const useThreeColumn = isMainPage(location.pathname);
   const showFriendsLeftNav = isFriendsSection(location.pathname);
   const isShortVideo = location.pathname === '/feed/short-video';
+  const [mainNavCollapsed, setMainNavCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('surf:main-left-nav-collapsed') === '1';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('surf:main-left-nav-collapsed', mainNavCollapsed ? '1' : '0');
+  }, [mainNavCollapsed]);
 
   return (
     <div
@@ -58,18 +69,40 @@ export default function Layout() {
                 <Outlet />
               </div>
             ) : (
-              <div className="flex-1 min-h-0 w-full grid grid-cols-1 md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%] gap-1 md:gap-2 overflow-hidden lg:pr-[90px]">
+              <div
+                className={[
+                  'flex-1 min-h-0 w-full grid grid-cols-1 gap-1 md:gap-2 overflow-hidden lg:pr-[90px] transition-[grid-template-columns] duration-300 ease-out',
+                  showFriendsLeftNav
+                    ? 'md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%]'
+                    : isWaves
+                      ? mainNavCollapsed
+                        ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr]'
+                        : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr]'
+                      : mainNavCollapsed
+                        ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr_22%]'
+                        : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr_22%]',
+                ].join(' ')}
+              >
                 <div className="min-h-0 overflow-hidden">
-                  {showFriendsLeftNav ? <FriendsLeftNav /> : <MainLeftNav />}
+                  {showFriendsLeftNav ? (
+                    <FriendsLeftNav />
+                  ) : (
+                    <MainLeftNav
+                      collapsed={mainNavCollapsed}
+                      onToggleCollapse={() => setMainNavCollapsed((current) => !current)}
+                    />
+                  )}
                 </div>
                 <div id="main-feed-scroll" className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
                   <div className="flex-1 w-full">
                     <Outlet />
                   </div>
                 </div>
-                <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
-                  <MainRightSidebar />
-                </div>
+                {!isWaves && (
+                  <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
+                    <MainRightSidebar />
+                  </div>
+                )}
               </div>
             )}
           </>
