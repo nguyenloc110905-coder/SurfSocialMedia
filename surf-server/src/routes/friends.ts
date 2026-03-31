@@ -9,6 +9,11 @@ import {
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { io } from '../index.js';
+import {
+  createNotification,
+  getUnreadNotificationCount,
+  toApiNotification,
+} from '../services/notifications.js';
 
 const router = Router();
 const db = () => getDb();
@@ -149,6 +154,23 @@ router.post(
       console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
       io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
 
+      // Tạo notification lưu DB + push realtime cho chuông thông báo.
+      try {
+        const notification = await createNotification({
+          userId: toUid,
+          type: 'friend_request',
+          actorId: fromUid,
+          entityType: 'friend_request',
+          entityId: ref.id,
+          message: `${fromData?.displayName ?? 'Unknown'} đã gửi lời mời kết bạn cho bạn.`,
+        });
+        const unreadCount = await getUnreadNotificationCount(toUid);
+        io.to(`user:${toUid}`).emit('notification:new', toApiNotification(notification));
+        io.to(`user:${toUid}`).emit('notification:unread-count', { count: unreadCount });
+      } catch (notifyError) {
+        console.warn('⚠️ Không tạo được notification friend_request:', notifyError);
+      }
+
       res.status(201).json({ id: ref.id, toUid, status: 'pending' });
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
@@ -195,6 +217,25 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       batch.set(myRef, { friendIds: myIds }, { merge: true });
       batch.set(theirRef, { friendIds: theirIds }, { merge: true });
       await batch.commit();
+
+      // Tạo notification cho người đã gửi lời mời: yêu cầu đã được chấp nhận.
+      try {
+        const acceptorDoc = await db().collection('users').doc(uid).get();
+        const acceptorName = acceptorDoc.data()?.displayName ?? 'Unknown';
+        const notification = await createNotification({
+          userId: fromUid,
+          type: 'friend_accept',
+          actorId: uid,
+          entityType: 'friend_request',
+          entityId: id,
+          message: `${acceptorName} đã chấp nhận lời mời kết bạn của bạn.`,
+        });
+        const unreadCount = await getUnreadNotificationCount(fromUid);
+        io.to(`user:${fromUid}`).emit('notification:new', toApiNotification(notification));
+        io.to(`user:${fromUid}`).emit('notification:unread-count', { count: unreadCount });
+      } catch (notifyError) {
+        console.warn('⚠️ Không tạo được notification friend_accept:', notifyError);
+      }
     }
     res.json({ id, action });
   } catch (e) {

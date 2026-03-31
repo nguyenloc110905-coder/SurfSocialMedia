@@ -34,3 +34,5 @@ Thumbs.db
 npm-debug.log*
 
 serviceAccountKey.json
+docs/plans/*
+!docs/plans/postman.txt

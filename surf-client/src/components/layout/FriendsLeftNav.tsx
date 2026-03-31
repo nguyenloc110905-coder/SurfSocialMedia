@@ -74,13 +74,12 @@ export default function FriendsLeftNav() {
             title={label}
             className={({ isActive }) =>
               [
-                'main-left-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors',
                 isActive
                   ? 'bg-surf-primary/15 dark:bg-surf-primary/25 text-surf-primary dark:text-surf-secondary font-medium'
                   : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/80',
               ].join(' ')
             }
-            style={{ animationDelay: `${i * 40}ms`, opacity: 0 }}
           >
             {({ isActive }) => (
               <>
