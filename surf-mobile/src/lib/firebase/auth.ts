@@ -1,5 +1,8 @@
 import {
+  initializeAuth,
   getAuth,
+  // @ts-ignore — chỉ available trong React Native bundler, không thấy trong Node
+  getReactNativePersistence,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail as fbSendPasswordResetEmail,
@@ -10,9 +13,19 @@ import {
   signInWithCredential,
   User,
 } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { app } from './config';
 
-export const auth = getAuth(app);
+// initializeAuth một lần, fallback getAuth nếu đã init rồi
+let auth: ReturnType<typeof getAuth>;
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  });
+} catch {
+  auth = getAuth(app);
+}
+export { auth };
 
 export async function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);

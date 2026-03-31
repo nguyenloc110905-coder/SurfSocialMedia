@@ -4,14 +4,21 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '@/stores/authStore';
 import LoginScreen from '@/screens/LoginScreen';
 import RegisterScreen from '@/screens/RegisterScreen';
-import FeedScreen from '@/screens/FeedScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
+import AIScreen from '@/screens/AIScreen';
+import MessagesScreen from '@/screens/MessagesScreen';
+import SplashScreen from '@/screens/SplashScreen';
+import MainTabsScreen from '@/screens/MainTabsScreen';
 
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
+  MainTabs: undefined;
+  Home: undefined;
   Feed: undefined;
   Profile: { userId?: string };
+  AI: undefined;
+  Messages: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -19,15 +26,18 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function Navigation() {
   const { user, loading } = useAuthStore();
 
-  if (loading) return null;
+  // Chỉ hiện splash khi Firebase đang kiểm tra auth (~200-500ms thực tế)
+  if (loading) return <SplashScreen />;
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>
-            <Stack.Screen name="Feed" component={FeedScreen} />
+            <Stack.Screen name="MainTabs" component={MainTabsScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="AI" component={AIScreen} />
+            <Stack.Screen name="Messages" component={MessagesScreen} />
           </>
         ) : (
           <>
