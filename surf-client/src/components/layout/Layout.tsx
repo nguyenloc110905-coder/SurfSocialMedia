@@ -93,8 +93,15 @@ export default function Layout() {
                     />
                   )}
                 </div>
-                <div id="main-feed-scroll" className="min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide">
-                  <div className="flex-1 w-full">
+                <div
+                  id="main-feed-scroll"
+                  className={
+                    isWaves
+                      ? 'min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden'
+                      : 'min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide'
+                  }
+                >
+                  <div className={isWaves ? 'flex h-full min-h-0 min-w-0 w-full flex-1' : 'flex-1 w-full'}>
                     <Outlet />
                   </div>
                 </div>
