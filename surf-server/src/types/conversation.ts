@@ -3,6 +3,7 @@ export type ConversationType = 'dm' | 'group';
 export type ConservationDoc = {
   id: string;
   type: ConversationType;
+  title?: string;
   memberIds: string[];
   memberPairKey?: string;
   unreadCountByUser?: Record<string, number>;

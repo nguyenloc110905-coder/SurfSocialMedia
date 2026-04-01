@@ -2,7 +2,10 @@ import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
 import { io } from '../index.js';
 import {
+  addMembersToGroup,
+  createGroupConversation,
   createOrGetDmConversation,
+  getGroupMembers,
   getUnreadConversationCount,
   listMessagesForConversation,
   listConversationsForUser,
@@ -119,6 +122,82 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
     io.to(`user:${uid}`).emit('message:unread-count', { count });
 
     res.json({ ok: true, count });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.post('/group', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const actorUid = req.uid!;
+    const { title, memberIds } = req.body as { title?: string; memberIds?: string[] };
+
+    const result = await createGroupConversation(
+      actorUid,
+      title ?? '',
+      Array.isArray(memberIds) ? memberIds : []
+    );
+
+    if (!result.ok) {
+      if (result.reason === 'invalid_title') {
+        res.status(400).json({ error: 'Group title is required' });
+        return;
+      }
+      res.status(400).json({ error: 'At least one other member is required' });
+      return;
+    }
+
+    res.status(201).json({ item: toApiConversation(result.item) });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.get('/:id/members', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const result = await getGroupMembers(uid, req.params.id);
+
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    res.json({ members: result.members });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.post('/:id/members', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const actorUid = req.uid!;
+    const { memberIds } = req.body as { memberIds?: string[] };
+
+    const result = await addMembersToGroup(
+      actorUid,
+      req.params.id,
+      Array.isArray(memberIds) ? memberIds : []
+    );
+
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      if (result.reason === 'not_group') {
+        res.status(400).json({ error: 'Can only add members to group conversations' });
+        return;
+      }
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    res.json({ addedIds: result.addedIds });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

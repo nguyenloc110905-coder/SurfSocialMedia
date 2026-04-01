@@ -18,6 +18,8 @@ import musicRoutes from './routes/music.js';
 import videosRoutes from './routes/videos.js';
 import conversationsRoutes from './routes/conversations.js';
 import groupsRoutes from './routes/groups.js';
+import presenceRoutes from './routes/presence.js';
+import { markOnline, markOffline, refreshPresence, getUserIdBySocket } from './services/presence.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 
 const app = express();
@@ -60,11 +62,21 @@ io.on('connection', (socket) => {
   console.log('🔌 Client connected:', socket.id);
 
   // Join room theo userId để nhận notifications riêng
-  socket.on('join', (userId: string) => {
+  socket.on('join', async (userId: string) => {
     socket.join(`user:${userId}`);
     const room = io.sockets.adapter.rooms.get(`user:${userId}`);
     const roomSize = room ? room.size : 0;
     console.log(`👤 User ${userId} joined their room (${roomSize} clients in room)`);
+
+    // Mark online & broadcast to friends
+    await markOnline(userId, socket.id);
+    socket.to(`user:${userId}`).emit('presence:online', { userId });
+    socket.broadcast.emit('presence:online', { userId });
+  });
+
+  // Heartbeat — client sends every 30s to keep presence TTL alive
+  socket.on('presence:heartbeat', async (userId: string) => {
+    await refreshPresence(userId);
   });
 
   // RT-4: join/leave room để nhận comment:new real-time
@@ -76,8 +88,15 @@ io.on('connection', (socket) => {
     socket.leave(`post:${postId}`);
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log('🔌 Client disconnected:', socket.id);
+    const userId = getUserIdBySocket(socket.id);
+    if (userId) {
+      const lastSeen = await markOffline(userId, socket.id);
+      if (lastSeen !== null) {
+        socket.broadcast.emit('presence:offline', { userId, lastSeen });
+      }
+    }
   });
 });
 
@@ -110,6 +129,7 @@ app.use('/api/music', musicRoutes);
 app.use('/api/videos', videosRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/groups', groupsRoutes);
+app.use('/api/presence', presenceRoutes);
 
 initRedis()
   .then(() => initSocketRedisAdapter(io))

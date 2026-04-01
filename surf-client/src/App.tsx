@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useThemeStore } from './stores/themeStore';
+import { usePresence } from './hooks/usePresence';
 import Layout from './components/layout/Layout';
 import AuthPage from './pages/AuthPage';
 import ForgotPassword from './pages/ForgotPassword';
@@ -48,6 +49,7 @@ function ThemeInit() {
 
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
+  usePresence();
   const loading = useAuthStore((s) => s.loading);
   const location = useLocation();
 

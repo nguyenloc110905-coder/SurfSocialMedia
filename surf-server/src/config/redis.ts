@@ -11,7 +11,7 @@ const createRedisConnection = (): AppRedisClient | null => {
   if (!url) return null;
 
   const client = createClient({ url });
-  client.on('error', (err) => console.error('Redis Client Error', err));
+  client.on('error', (err: Error) => console.error('Redis Client Error', err));
   return client;
 };
 
@@ -47,7 +47,7 @@ export const initSocketRedisAdapter = async (io: Server): Promise<void> => {
   }
 
   const subClient = pubClient.duplicate();
-  subClient.on('error', (err) => console.error('Redis Sub Client Error', err));
+  subClient.on('error', (err: Error) => console.error('Redis Sub Client Error', err));
   await subClient.connect();
 
   io.adapter(createAdapter(pubClient, subClient));

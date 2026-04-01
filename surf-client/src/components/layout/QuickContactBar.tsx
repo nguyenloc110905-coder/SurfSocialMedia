@@ -2,7 +2,44 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import SurfMusicPlayer from './SurfMusicPlayer';
+import MiniChatPanel from './MiniChatPanel';
 import { musicStore, type TrackItem, type Playlist } from '../../lib/musicStore';
+import { usePresenceStore } from '../../stores/presenceStore';
+import { formatLastSeen } from '../../lib/utils/lastSeen';
+
+/** Renders the presence indicator overlaid on an avatar corner */
+function PresenceBadge({ uid, size = 'md' }: { uid: string; size?: 'sm' | 'md' }) {
+  const isOnline = usePresenceStore((s) => s.onlineUsers.has(uid));
+  const lastSeenTs = usePresenceStore((s) => s.lastSeen.get(uid));
+
+  if (isOnline) {
+    const dotSize = size === 'sm' ? 'w-2.5 h-2.5' : 'w-3 h-3';
+    return (
+      <span
+        className={`absolute bottom-0 right-0 ${dotSize} rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800`}
+      />
+    );
+  }
+
+  if (lastSeenTs == null) return null;
+
+  const { label, gray } = formatLastSeen(lastSeenTs);
+
+  if (gray) {
+    const dotSize = size === 'sm' ? 'w-2.5 h-2.5' : 'w-3 h-3';
+    return (
+      <span
+        className={`absolute bottom-0 right-0 ${dotSize} rounded-full bg-gray-400 dark:bg-slate-500 border-2 border-white dark:border-slate-800`}
+      />
+    );
+  }
+
+  return (
+    <span className="absolute -bottom-1 -right-1 bg-gray-700 dark:bg-slate-600 text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-full border border-white dark:border-slate-800 whitespace-nowrap">
+      {label}
+    </span>
+  );
+}
 
 interface Friend {
   id: string;
@@ -38,10 +75,21 @@ function HeartIcon({ filled, className }: { filled: boolean; className?: string 
 
 export default function QuickContactBar({ isShortVideo = false }: { isShortVideo?: boolean }) {
   const navigate = useNavigate();
+  const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const [friends, setFriends] = useState<Friend[]>([]);
+
+  // Sort: online first, then offline (stable order within each group)
+  const sortedFriends = [...friends].sort((a, b) => {
+    const aOnline = onlineUsers.has(a.id) ? 0 : 1;
+    const bOnline = onlineUsers.has(b.id) ? 0 : 1;
+    return aOnline - bOnline;
+  });
+
   const [showSearch, setShowSearch] = useState(false);
   const [showMusic, setShowMusic] = useState(false);
   const [showYoutube, setShowYoutube] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -157,7 +205,16 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
 
   return (
     <div className={`hidden lg:block fixed right-3 top-[72px] z-30 transition-opacity duration-300${isShortVideo ? ' opacity-20 hover:opacity-100' : ''}`}>
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1">
+        {/* ── Mini Chat panel ── */}
+        <div
+          className={`transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0 ${
+            showChat ? 'w-[320px] opacity-100' : 'w-0 opacity-0 pointer-events-none'
+          }`}
+        >
+          <MiniChatPanel onClose={() => setShowChat(false)} />
+        </div>
+
         {/* ── YouTube panel ── */}
         <div
           className={`transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0 ${
@@ -713,25 +770,26 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors text-left"
                   >
-                    <span className="relative flex-shrink-0 w-9 h-9 rounded-full overflow-hidden">
-                      {friend.avatarUrl ? (
-                        <img
-                          src={friend.avatarUrl}
-                          alt={friend.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-xs font-bold">
-                          {getInitials(friend.name)}
-                        </span>
-                      )}
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800" />
+                    <span className="relative flex-shrink-0 w-9 h-9 rounded-full overflow-visible">
+                      <span className="w-9 h-9 rounded-full overflow-hidden block">
+                        {friend.avatarUrl ? (
+                          <img
+                            src={friend.avatarUrl}
+                            alt={friend.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-xs font-bold">
+                            {getInitials(friend.name)}
+                          </span>
+                        )}
+                      </span>
+                      <PresenceBadge uid={friend.id} size="sm" />
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
                         {friend.name}
                       </p>
-                      <p className="text-xs text-emerald-500">Đang hoạt động</p>
                     </div>
                   </button>
                 ))
@@ -741,119 +799,138 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
         </div>
 
         {/* ── Icon bar ── */}
-        <div className="flex flex-col items-center gap-3 py-3 px-2.5 rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/10 max-h-[calc(100vh-100px)] overflow-y-hidden hover:overflow-y-auto transition-all duration-200 scrollbar-hide">
+        <div
+          style={{ width: sidebarExpanded ? '13rem' : '68px' }}
+          className="flex flex-col gap-2 py-3 px-2 rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/10 max-h-[calc(100vh-100px)] overflow-y-hidden hover:overflow-y-auto transition-[width] duration-300 ease-in-out scrollbar-hide"
+        >
+
+          {/* Toggle expand button */}
+          <button
+            onClick={() => setSidebarExpanded((v) => !v)}
+            title={sidebarExpanded ? 'Thu gọn' : 'Mở rộng'}
+            className="flex items-center w-full px-1 py-1 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors flex-shrink-0 group"
+          >
+            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-slate-600 transition-colors">
+              <svg
+                className={`w-4 h-4 transition-transform duration-300 ${sidebarExpanded ? 'rotate-0' : 'rotate-180'}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+            <span className={`text-sm font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100 ml-2.5' : 'max-w-0 opacity-0'}`}>
+              Thu gọn
+            </span>
+          </button>
+
           {/* 0. YouTube — toggles youtube panel */}
           <button
             onClick={() => { setShowYoutube((v) => !v); setShowMusic(false); setShowSearch(false); }}
             title="YouTube"
-            className={`relative w-12 h-12 rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-all duration-200 flex-shrink-0 ${
-              showYoutube
-                ? 'bg-gradient-to-br from-red-600 to-red-500 shadow-red-500/40 scale-110'
-                : 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/30'
-            }`}
+            className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showYoutube ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
-            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M21.543 6.498C22 8.28 22 12 22 12s0 3.72-.457 5.502c-.254.985-.997 1.76-1.938 2.022C17.896 20 12 20 12 20s-5.893 0-7.605-.476c-.945-.266-1.687-1.04-1.938-2.022C2 15.72 2 12 2 12s0-3.72.457-5.502c.254-.985.997-1.76 1.938-2.022C6.107 4 12 4 12 4s5.896 0 7.605.476c.945.266 1.687 1.04 1.938 2.022zM10 15.5l6-3.5-6-3.5v7z" />
-            </svg>
+            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-red-500 to-red-600 shadow-sm shadow-red-500/30">
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21.543 6.498C22 8.28 22 12 22 12s0 3.72-.457 5.502c-.254.985-.997 1.76-1.938 2.022C17.896 20 12 20 12 20s-5.893 0-7.605-.476c-.945-.266-1.687-1.04-1.938-2.022C2 15.72 2 12 2 12s0-3.72.457-5.502c.254-.985.997-1.76 1.938-2.022C6.107 4 12 4 12 4s5.896 0 7.605.476c.945.266 1.687 1.04 1.938 2.022zM10 15.5l6-3.5-6-3.5v7z" />
+              </svg>
+            </span>
+            <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
+              YouTube
+            </span>
           </button>
 
           {/* 1. Music — toggles music panel */}
           <button
             onClick={() => { setShowMusic((v) => !v); setShowSearch(false); setShowYoutube(false); }}
             title="Surf Music"
-            className={`relative w-12 h-12 rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-all duration-200 flex-shrink-0 ${
-              showMusic
-                ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-emerald-500/30 scale-110'
-                : 'bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-emerald-500/30'
-            }`}
+            className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showMusic ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
-            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" />
-            </svg>
+            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-emerald-400 to-cyan-500 shadow-sm shadow-emerald-500/30">
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" />
+              </svg>
+            </span>
+            <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
+              Surf Music
+            </span>
           </button>
 
-          {/* 1. Message */}
+          {/* Message */}
           <button
-            onClick={() => navigate('/feed/waves')}
+            onClick={() => { setShowChat((v) => !v); setShowMusic(false); setShowSearch(false); setShowYoutube(false); }}
             title="Tin nhắn"
-            className="relative w-12 h-12 rounded-full flex items-center justify-center bg-gradient-to-br from-cyan-400 to-blue-500 shadow-md shadow-cyan-500/30 hover:scale-110 transition-transform duration-200 flex-shrink-0"
+            className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showChat ? 'bg-cyan-50 dark:bg-cyan-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
-            <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
-            </svg>
+            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-cyan-400 to-blue-500 shadow-sm shadow-cyan-500/30">
+              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+              </svg>
+            </span>
+            <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
+              Tin nhắn
+            </span>
           </button>
 
-          {/* 2. Search — toggles panel */}
+          {/* Search — toggles panel */}
           <button
             onClick={() => { setShowSearch((v) => !v); setShowMusic(false); setShowYoutube(false); }}
             title="Tìm kiếm"
-            className={`relative w-12 h-12 rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-all duration-200 flex-shrink-0 ${
-              showSearch
-                ? 'bg-gradient-to-br from-pink-500 to-purple-600 shadow-purple-500/30 scale-110'
-                : 'bg-gradient-to-br from-purple-400 to-pink-500 shadow-purple-500/30'
-            }`}
+            className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showSearch ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
-            <svg
-              className="w-6 h-6 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth="2.5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"
-              />
-            </svg>
+            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-purple-400 to-pink-500 shadow-sm shadow-purple-500/30">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+              </svg>
+            </span>
+            <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
+              Tìm kiếm
+            </span>
           </button>
 
           {/* Divider */}
-          <div className="w-7 h-px bg-gray-200 dark:bg-slate-600 flex-shrink-0" />
+          <div className="mx-1 h-px bg-gray-200 dark:bg-slate-600 flex-shrink-0" />
 
           {/* Online friends */}
           {friends.length === 0 && (
-            <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 opacity-40">
-              <svg
-                className="w-5 h-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                />
-              </svg>
+            <div className="flex items-center gap-2.5 px-1 py-1 opacity-40 flex-shrink-0">
+              <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-slate-700">
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </span>
             </div>
           )}
 
-          {friends.map((friend) => (
+          {sortedFriends.map((friend) => (
             <button
               key={friend.id}
               onClick={() => navigate(`/feed/profile/${friend.id}`)}
               title={friend.name}
-              className="relative w-12 h-12 rounded-full flex-shrink-0 hover:scale-110 transition-transform duration-200 group"
+              className="relative flex items-center gap-2.5 w-full px-1 py-1 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors duration-150 flex-shrink-0 group"
             >
-              <span className="w-12 h-12 rounded-full overflow-hidden block ring-2 ring-white dark:ring-slate-800 shadow-sm">
-                {friend.avatarUrl ? (
-                  <img
-                    src={friend.avatarUrl}
-                    alt={friend.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-sm font-bold">
-                    {getInitials(friend.name)}
-                  </span>
-                )}
+              <span className="relative flex-shrink-0">
+                <span className="w-9 h-9 rounded-full overflow-hidden block ring-2 ring-white dark:ring-slate-800 shadow-sm">
+                  {friend.avatarUrl ? (
+                    <img src={friend.avatarUrl} alt={friend.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-sm font-bold">
+                      {getInitials(friend.name)}
+                    </span>
+                  )}
+                </span>
+                <PresenceBadge uid={friend.id} />
               </span>
-              <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800" />
-              <span className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-gray-900/90 text-white text-xs px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
+              <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 truncate overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
                 {friend.name}
               </span>
+              {!sidebarExpanded && (
+                <span className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-gray-900/90 text-white text-xs px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
+                  {friend.name}
+                </span>
+              )}
             </button>
           ))}
         </div>

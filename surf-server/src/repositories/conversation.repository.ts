@@ -14,6 +14,7 @@ const toDate = (value: unknown): Date | undefined => {
 const mapConservationDoc = (id: string, data: Record<string, unknown>): ConservationDoc => ({
   id,
   type: (data.type as ConservationDoc['type']) ?? 'dm',
+  title: (data.title as string) ?? undefined,
   memberIds: Array.isArray(data.memberIds) ? (data.memberIds as string[]) : [],
   memberPairKey: data.memberPairKey as string | undefined,
   unreadCountByUser:
@@ -102,5 +103,40 @@ export const conversationRepository = {
       [`unreadCountByUser.${userId}`]: 0,
       updatedAt: FieldValue.serverTimestamp(),
     });
+  },
+
+  async createGroup(
+    createdBy: string,
+    title: string,
+    memberIds: string[]
+  ): Promise<ConservationDoc> {
+    const ref = col().doc();
+    const unreadCountByUser = Object.fromEntries(memberIds.map((uid) => [uid, 0]));
+
+    await ref.set({
+      type: 'group',
+      title,
+      memberIds,
+      unreadCountByUser,
+      createdBy,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      lastMessageAt: null,
+      lastMessagePreview: null,
+    });
+
+    const snap = await ref.get();
+    return mapConservationDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+  },
+
+  async addMembers(conversationId: string, newMemberIds: string[]): Promise<void> {
+    const updates: Record<string, unknown> = {
+      memberIds: FieldValue.arrayUnion(...newMemberIds),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    for (const uid of newMemberIds) {
+      updates[`unreadCountByUser.${uid}`] = 0;
+    }
+    await col().doc(conversationId).update(updates);
   },
 };

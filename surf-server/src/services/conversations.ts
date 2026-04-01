@@ -42,7 +42,10 @@ type UserLite = {
 export type ApiConversationListItem = {
   id: string;
   type: ConservationDoc['type'];
+  title?: string;
   peer: { uid: string; name: string; avatarUrl: string | null } | null;
+  members?: { uid: string; name: string; avatarUrl: string | null }[];
+  memberCount?: number;
   unreadCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
@@ -177,6 +180,74 @@ export const markConversationRead = async (
   return { ok: true };
 };
 
+export type CreateGroupResult =
+  | { ok: true; item: ConservationDoc }
+  | { ok: false; reason: 'invalid_title' | 'too_few_members' };
+
+export const createGroupConversation = async (
+  actorUid: string,
+  title: string,
+  memberUids: string[]
+): Promise<CreateGroupResult> => {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) return { ok: false, reason: 'invalid_title' };
+
+  const uniqueMembers = Array.from(new Set([actorUid, ...memberUids]));
+  if (uniqueMembers.length < 2) return { ok: false, reason: 'too_few_members' };
+
+  const item = await conversationRepository.createGroup(actorUid, trimmedTitle, uniqueMembers);
+  return { ok: true, item };
+};
+
+export type AddMembersResult =
+  | { ok: true; addedIds: string[] }
+  | { ok: false; reason: 'not_found' | 'forbidden' | 'not_group' };
+
+export const addMembersToGroup = async (
+  actorUid: string,
+  conversationId: string,
+  newMemberIds: string[]
+): Promise<AddMembersResult> => {
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+  if (conversation.type !== 'group') return { ok: false, reason: 'not_group' };
+  if (!conversation.memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
+
+  const toAdd = newMemberIds.filter((id) => !conversation.memberIds.includes(id));
+  if (toAdd.length === 0) return { ok: true, addedIds: [] };
+
+  await conversationRepository.addMembers(conversationId, toAdd);
+  return { ok: true, addedIds: toAdd };
+};
+
+export type GetGroupMembersResult =
+  | { ok: true; members: { uid: string; name: string; avatarUrl: string | null }[] }
+  | { ok: false; reason: 'not_found' | 'forbidden' };
+
+export const getGroupMembers = async (
+  actorUid: string,
+  conversationId: string
+): Promise<GetGroupMembersResult> => {
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+  if (!conversation.memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
+
+  const snaps = conversation.memberIds.length > 0
+    ? await getDb().getAll(...conversation.memberIds.map((id) => getDb().collection('users').doc(id)))
+    : [];
+
+  const members = snaps.map((s) => {
+    const data = (s.data() ?? {}) as UserLite;
+    return {
+      uid: s.id,
+      name: data.displayName ?? 'Unknown',
+      avatarUrl: data.photoURL ?? null,
+    };
+  });
+
+  return { ok: true, members };
+};
+
 export const getUnreadConversationCount = async (userId: string): Promise<number> => {
   const docs = await conversationRepository.listByMemberForUnread(userId);
 
@@ -189,37 +260,49 @@ export const listConversationsForUser = async (
 ): Promise<ApiConversationListItem[]> => {
   const docs = await conversationRepository.listByMember(userId, limit);
 
-  const peerIds = Array.from(
-    new Set(
-      docs
-        .map((d) => d.memberIds.find((id) => id !== userId))
-        .filter((v): v is string => Boolean(v))
-    )
+  const allMemberIds = Array.from(
+    new Set(docs.flatMap((d) => d.memberIds).filter((id) => id !== userId))
   );
 
-  const peerSnaps =
-    peerIds.length > 0
-      ? await getDb().getAll(...peerIds.map((id) => getDb().collection('users').doc(id)))
+  const memberSnaps =
+    allMemberIds.length > 0
+      ? await getDb().getAll(...allMemberIds.map((id) => getDb().collection('users').doc(id)))
       : [];
 
-  const peerMap = new Map<string, UserLite>(
-    peerSnaps.map((s) => [s.id, (s.data() ?? {}) as UserLite])
+  const memberMap = new Map<string, UserLite>(
+    memberSnaps.map((s) => [s.id, (s.data() ?? {}) as UserLite])
   );
 
-  return docs.map((d) => {
-    const peerUid = d.memberIds.find((id) => id !== userId) ?? null;
-    const peerData = peerUid ? peerMap.get(peerUid) : undefined;
+  const toMember = (uid: string) => {
+    const data = memberMap.get(uid);
+    return {
+      uid,
+      name: data?.displayName ?? 'Unknown',
+      avatarUrl: data?.photoURL ?? null,
+    };
+  };
 
+  return docs.map((d) => {
+    if (d.type === 'group') {
+      const otherIds = d.memberIds.filter((id) => id !== userId);
+      return {
+        id: d.id,
+        type: d.type,
+        title: d.title,
+        peer: null,
+        members: otherIds.map(toMember),
+        memberCount: d.memberIds.length,
+        unreadCount: d.unreadCountByUser?.[userId] ?? 0,
+        lastMessagePreview: d.lastMessagePreview ?? null,
+        lastMessageAt: d.lastMessageAt ? d.lastMessageAt.toISOString() : null,
+      };
+    }
+
+    const peerUid = d.memberIds.find((id) => id !== userId) ?? null;
     return {
       id: d.id,
       type: d.type,
-      peer: peerUid
-        ? {
-            uid: peerUid,
-            name: peerData?.displayName ?? 'Unknown',
-            avatarUrl: peerData?.photoURL ?? null,
-          }
-        : null,
+      peer: peerUid ? toMember(peerUid) : null,
       unreadCount: d.unreadCountByUser?.[userId] ?? 0,
       lastMessagePreview: d.lastMessagePreview ?? null,
       lastMessageAt: d.lastMessageAt ? d.lastMessageAt.toISOString() : null,

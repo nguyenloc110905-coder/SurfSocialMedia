@@ -7,7 +7,10 @@ import { useAuthStore } from '@/stores/authStore';
 type ConversationItem = {
   id: string;
   type: 'dm' | 'group';
+  title?: string;
   peer: { uid: string; name: string; avatarUrl: string | null } | null;
+  members?: { uid: string; name: string; avatarUrl: string | null }[];
+  memberCount?: number;
   unreadCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
@@ -143,7 +146,7 @@ export default function Waves() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showInfo, setShowInfo] = useState(true);
+  const [showInfo, setShowInfo] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
@@ -161,6 +164,11 @@ export default function Waves() {
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [showFriendDirectory, setShowFriendDirectory] = useState(false);
   const [openingFriendId, setOpeningFriendId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'groups'>('all');
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupTitle, setNewGroupTitle] = useState('');
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const deferredQuery = useDeferredValue(query);
   const activeConversationIdRef = useRef<string | null>(null);
   const messagesBottomRef = useRef<HTMLDivElement | null>(null);
@@ -168,10 +176,16 @@ export default function Waves() {
   const suppressAutoScrollRef = useRef(false);
 
   const filteredConversations = useMemo(() => {
+    let result = conversations;
+    if (activeTab === 'unread') result = result.filter((item) => item.unreadCount > 0);
+    else if (activeTab === 'groups') result = result.filter((item) => item.type === 'group');
     const keyword = deferredQuery.trim().toLowerCase();
-    if (!keyword) return conversations;
-    return conversations.filter((item) => `${item.peer?.name ?? ''} ${item.lastMessagePreview ?? ''}`.toLowerCase().includes(keyword));
-  }, [conversations, deferredQuery]);
+    if (!keyword) return result;
+    return result.filter((item) => {
+      const name = item.type === 'group' ? (item.title ?? '') : (item.peer?.name ?? '');
+      return `${name} ${item.lastMessagePreview ?? ''}`.toLowerCase().includes(keyword);
+    });
+  }, [conversations, deferredQuery, activeTab]);
 
   const filteredFriends = useMemo(() => {
     const keyword = deferredQuery.trim().toLowerCase();
@@ -485,6 +499,43 @@ export default function Waves() {
     }
   };
 
+  const handleCreateGroup = async () => {
+    if (!newGroupTitle.trim() || selectedGroupMembers.length === 0) return;
+    try {
+      setCreatingGroup(true);
+      setError(null);
+      const created = await api.post<{ item: { id: string } }>('/api/conversations/group', {
+        title: newGroupTitle.trim(),
+        memberIds: selectedGroupMembers,
+      });
+      const data = await api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30');
+      const items = sortConversations(data.items ?? []);
+      setConversations(items);
+      setShowCreateGroup(false);
+      setNewGroupTitle('');
+      setSelectedGroupMembers([]);
+      setActiveTab('groups');
+      setActiveConversationId(created.item.id ?? null);
+      setMobileView('thread');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
+
+  const handleInviteMembers = async (memberIds: string[]) => {
+    if (!activeConversationId || memberIds.length === 0) return;
+    try {
+      setError(null);
+      await api.post(`/api/conversations/${activeConversationId}/members`, { memberIds });
+      const data = await api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30');
+      setConversations(sortConversations(data.items ?? []));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const toggleSection = (key: SectionKey) => {
     setInfoSections((current) => ({ ...current, [key]: !current[key] }));
   };
@@ -498,7 +549,7 @@ export default function Waves() {
             <div className="shrink-0 border-b border-cyan-100/80 bg-white/90 px-5 py-5 backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/90">
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-600/80 dark:text-cyan-300">Waves</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">Messages</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{totalUnread > 0 ? `${totalUnread} tin nhắn chưa đọc` : 'Realtime chat của Surf'}</p>
+              {totalUnread > 0 && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{totalUnread} tin nhắn chưa đọc</p>}
               <div className="mt-4 flex items-center gap-3 rounded-2xl border border-cyan-100 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/50">
                 {showFriendDirectory && (
                   <button
@@ -524,6 +575,28 @@ export default function Waves() {
                   placeholder={showFriendDirectory ? 'Tìm trong danh bạ bạn bè' : 'Search messages'}
                   className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100"
                 />
+              </div>
+              <div className="mt-3 flex items-center gap-1">
+                {([['all', 'Tất cả'], ['unread', 'Chưa đọc'], ['groups', 'Nhóm']] as const).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => { setActiveTab(tab); setShowFriendDirectory(false); }}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${activeTab === tab ? 'bg-gradient-to-r from-surf-primary to-cyan-500 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {activeTab === 'groups' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateGroup(true)}
+                    className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-r from-surf-primary to-cyan-500 text-white shadow-sm transition hover:opacity-90"
+                    title="Tạo nhóm mới"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" /></svg>
+                  </button>
+                )}
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -601,19 +674,30 @@ export default function Waves() {
                     </div>
                   )}
                   <div className="space-y-2">
-                    {filteredConversations.map((conversation) => (
+                    {filteredConversations.map((conversation) => {
+                      const displayName = conversation.type === 'group' ? (conversation.title ?? 'Nhóm') : (conversation.peer?.name ?? 'Unknown Wave');
+                      const avatarSrc = conversation.type === 'group' ? undefined : conversation.peer?.avatarUrl;
+                      return (
                       <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={`flex w-full items-center gap-3 rounded-[26px] border px-4 py-4 text-left transition ${conversation.id === activeConversationId ? 'border-cyan-200 bg-gradient-to-r from-cyan-50 via-white to-white shadow-[0_20px_40px_-30px_rgba(8,145,178,0.4)] dark:border-cyan-900/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900' : 'border-transparent bg-white/80 hover:border-cyan-100 hover:bg-cyan-50/60 dark:bg-slate-900/70 dark:hover:border-slate-700 dark:hover:bg-slate-900'}`}>
-                        <WaveAvatar src={conversation.peer?.avatarUrl} name={conversation.peer?.name} className="h-14 w-14 rounded-2xl object-cover" fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white" />
+                        {conversation.type === 'group' ? (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 text-sm font-semibold text-white">
+                            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg>
+                          </div>
+                        ) : (
+                          <WaveAvatar src={avatarSrc} name={displayName} className="h-14 w-14 rounded-2xl object-cover" fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white" />
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-3">
-                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{conversation.peer?.name ?? 'Unknown Wave'}</p>
+                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{displayName}</p>
+                            {conversation.type === 'group' && conversation.memberCount && <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">{conversation.memberCount}</span>}
                             <span className="ml-auto shrink-0 text-xs font-medium text-slate-400 dark:text-slate-500">{formatListTime(conversation.lastMessageAt)}</span>
                           </div>
                           <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{conversation.lastMessagePreview ?? 'Bắt đầu cuộc trò chuyện mới'}</p>
                         </div>
                         {conversation.unreadCount > 0 && <span className="shrink-0 rounded-full bg-surf-primary px-2 py-1 text-[11px] font-semibold text-white">{conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}</span>}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -624,10 +708,18 @@ export default function Waves() {
               <>
                 <div className="flex shrink-0 items-center gap-3 border-b border-cyan-100/80 bg-white/70 px-4 py-4 backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/40 sm:px-6">
                   <button type="button" onClick={() => setMobileView('list')} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-200 bg-white text-slate-600 md:hidden"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M15.41 16.59 10.83 12l4.58-4.59L14 6l-6 6 6 6z" /></svg></button>
-                  <WaveAvatar src={activeConversation.peer?.avatarUrl} name={activeConversation.peer?.name} className="h-12 w-12 rounded-2xl object-cover" fallbackClassName="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white" />
+                  {activeConversation.type === 'group' ? (
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg>
+                    </div>
+                  ) : (
+                    <WaveAvatar src={activeConversation.peer?.avatarUrl} name={activeConversation.peer?.name} className="h-12 w-12 rounded-2xl object-cover" fallbackClassName="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white" />
+                  )}
                   <div className="min-w-0 flex-1">
-                    <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{activeConversation.peer?.name ?? 'Unknown Wave'}</h2>
-                    <p className="truncate text-sm text-slate-500 dark:text-slate-400">Direct message · cập nhật realtime trên Surf Waves</p>
+                    <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{activeConversation.type === 'group' ? (activeConversation.title ?? 'Nhóm') : (activeConversation.peer?.name ?? 'Unknown Wave')}</h2>
+                    {activeConversation.type === 'group' && activeConversation.memberCount && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{activeConversation.memberCount} thành viên</p>
+                    )}
                   </div>
                   <button type="button" onClick={() => setShowInfo((current) => !current)} className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/80 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zM12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Z" /></svg></button>
                 </div>
@@ -665,11 +757,14 @@ export default function Waves() {
                           )}
                           {activeMessages.map((message) => {
                             const outgoing = message.senderId === user?.uid;
+                            const senderMember = activeConversation.type === 'group' ? activeConversation.members?.find((m) => m.uid === message.senderId) : null;
+                            const senderName = activeConversation.type === 'group' ? (senderMember?.name ?? 'Unknown') : activeConversation.peer?.name;
+                            const senderAvatar = activeConversation.type === 'group' ? (senderMember?.avatarUrl ?? undefined) : activeConversation.peer?.avatarUrl;
                             return (
                               <div key={message.id} className={`flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}>
-                                {!outgoing && <WaveAvatar src={activeConversation.peer?.avatarUrl} name={activeConversation.peer?.name} className="h-10 w-10 rounded-2xl object-cover" fallbackClassName="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white" />}
+                                {!outgoing && <WaveAvatar src={senderAvatar} name={senderName} className="h-10 w-10 rounded-2xl object-cover" fallbackClassName="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white" />}
                                 <div className={`max-w-[82%] rounded-[26px] px-4 py-3 shadow-sm lg:max-w-[46rem] ${outgoing ? 'bg-gradient-to-r from-surf-primary to-cyan-500 text-white' : 'border border-cyan-100/80 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'}`}>
-                                  {!outgoing && <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-600 dark:text-cyan-300">{activeConversation.peer?.name}</p>}
+                                  {!outgoing && <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-600 dark:text-cyan-300">{senderName}</p>}
                                   <p className="whitespace-pre-wrap text-sm leading-6">{message.text}</p>
                                   <div className={`mt-2 text-[11px] ${outgoing ? 'text-cyan-50/90' : 'text-slate-400 dark:text-slate-500'}`}>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.createdAt))}</div>
                                 </div>
@@ -680,18 +775,46 @@ export default function Waves() {
                         </div>
                       )}
                     </div>
-                    {showInfo && activeConversation.peer && (
+                    {showInfo && (activeConversation.peer || activeConversation.type === 'group') && (
                       <aside className="hidden w-[320px] shrink-0 border-l border-cyan-100/80 bg-white/92 2xl:w-[340px] xl:flex xl:flex-col">
                         <div className="border-b border-cyan-100 px-6 py-5"><h3 className="text-xl font-semibold text-slate-900">Thông tin hội thoại</h3></div>
                         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
-                          <WaveAvatar src={activeConversation.peer.avatarUrl} name={activeConversation.peer.name} className="mx-auto h-24 w-24 rounded-full border border-cyan-100 object-cover" fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white" />
-                          <h4 className="mt-4 text-center text-3xl font-semibold text-slate-900">{activeConversation.peer.name}</h4>
-                          <p className="mt-2 text-center text-sm text-slate-500">Direct message · Surf Waves</p>
+                          {activeConversation.type === 'group' ? (
+                            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+                              <svg viewBox="0 0 24 24" className="h-10 w-10" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg>
+                            </div>
+                          ) : (
+                            <WaveAvatar src={activeConversation.peer!.avatarUrl} name={activeConversation.peer!.name} className="mx-auto h-24 w-24 rounded-full border border-cyan-100 object-cover" fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white" />
+                          )}
+                          <h4 className="mt-4 text-center text-3xl font-semibold text-slate-900">{activeConversation.type === 'group' ? (activeConversation.title ?? 'Nhóm') : activeConversation.peer!.name}</h4>
+                          {activeConversation.type === 'group' && activeConversation.memberCount && (
+                            <p className="mt-1 text-center text-sm text-slate-500">{activeConversation.memberCount} thành viên</p>
+                          )}
+
                           <div className="mt-6 grid grid-cols-3 gap-3">
                             <button type="button" onClick={() => setMuteConversation((current) => !current)} className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 text-center hover:bg-cyan-100/70"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-cyan-600 shadow-sm"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9h2a7 7 0 1 1 7 7v2a9 9 0 0 0 0-18Zm1 5h-2v5.41l3.3 3.3 1.4-1.42-2.7-2.7Z" /></svg></div><p className="mt-2 text-xs font-medium text-slate-700">{muteConversation ? 'Bật thông báo' : 'Tắt thông báo'}</p></button>
                             <button type="button" className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 text-center hover:bg-cyan-100/70"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-cyan-600 shadow-sm"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="m16 3 5 5-9 9H7v-5Zm-1.4 2.8L9 11.4V15h3.6l5.6-5.6Z" /></svg></div><p className="mt-2 text-xs font-medium text-slate-700">Ghim hội thoại</p></button>
-                            <button type="button" className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 text-center hover:bg-cyan-100/70"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-cyan-600 shadow-sm"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M15 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm8 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm-8 0c-.34 0-.72.02-1.12.06C4.01 14.28 1 15.44 1 18v2h4v-2c0-1.18.56-2.18 1.54-3A8.72 8.72 0 0 1 7 14Z" /></svg></div><p className="mt-2 text-xs font-medium text-slate-700">Tạo nhóm trò chuyện</p></button>
+                            {activeConversation.type === 'group' ? (
+                              <button type="button" onClick={() => setShowCreateGroup(true)} className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 text-center hover:bg-cyan-100/70"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2Zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg></div><p className="mt-2 text-xs font-medium text-slate-700">Mời thành viên</p></button>
+                            ) : (
+                              <button type="button" className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 text-center hover:bg-cyan-100/70"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-cyan-600 shadow-sm"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M15 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm8 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm-8 0c-.34 0-.72.02-1.12.06C4.01 14.28 1 15.44 1 18v2h4v-2c0-1.18.56-2.18 1.54-3A8.72 8.72 0 0 1 7 14Z" /></svg></div><p className="mt-2 text-xs font-medium text-slate-700">Tạo nhóm trò chuyện</p></button>
+                            )}
                           </div>
+
+                          {activeConversation.type === 'group' && activeConversation.members && (
+                            <div className="mt-6 rounded-3xl border border-cyan-100 bg-white/95 p-5 shadow-[0_16px_36px_-28px_rgba(8,145,178,0.28)]">
+                              <p className="text-sm font-semibold text-slate-700">Thành viên ({activeConversation.memberCount})</p>
+                              <div className="mt-3 space-y-2">
+                                {activeConversation.members.map((member) => (
+                                  <div key={member.uid} className="flex items-center gap-3">
+                                    <WaveAvatar src={member.avatarUrl} name={member.name} className="h-9 w-9 rounded-full object-cover" fallbackClassName="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white" />
+                                    <p className="truncate text-sm text-slate-700">{member.name}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           <div className="mt-6 space-y-4">
                             <div className="rounded-3xl border border-cyan-100 bg-white/95 p-5 shadow-[0_16px_36px_-28px_rgba(8,145,178,0.28)]">
                               <div className="flex items-center justify-between text-sm text-slate-600"><span>Danh sách nhắc hẹn</span><span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500">0</span></div>
@@ -755,7 +878,7 @@ export default function Waves() {
                 <form onSubmit={handleSend} className="shrink-0 border-t border-cyan-100/80 bg-white/90 px-4 py-4 dark:border-slate-700/80 dark:bg-slate-900/90 sm:px-6">
                   <div className="flex items-center gap-3 rounded-[28px] border border-cyan-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950">
                     <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 hover:bg-cyan-50 hover:text-surf-primary dark:hover:bg-slate-800 dark:hover:text-cyan-300"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 22a10 10 0 1 1 10-10 10 10 0 0 1-10 10Zm-4-8a4 4 0 0 0 8 0Zm1-4a1 1 0 1 0-1-1 1 1 0 0 0 1 1Zm6 0a1 1 0 1 0-1-1 1 1 0 0 0 1 1Z" /></svg></button>
-                    <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Nhắn cho ${activeConversation.peer?.name ?? 'wave'}...`} className="h-12 w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100" />
+                    <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Nhắn cho ${activeConversation.type === 'group' ? (activeConversation.title ?? 'nhóm') : (activeConversation.peer?.name ?? 'wave')}...`} className="h-12 w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100" />
                     <button type="submit" disabled={sending || !draft.trim()} className="inline-flex h-12 items-center justify-center rounded-2xl bg-gradient-to-r from-surf-primary to-cyan-500 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{sending ? 'Sending...' : 'Send'}</button>
                   </div>
                 </form>
@@ -766,6 +889,84 @@ export default function Waves() {
           </section>
         </div>
       </div>
+
+      {showCreateGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => { setShowCreateGroup(false); setNewGroupTitle(''); setSelectedGroupMembers([]); }}>
+          <div className="w-full max-w-md rounded-[28px] border border-cyan-100 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            {activeConversation?.type === 'group' && activeTab !== 'groups' ? (
+              <>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Mời thành viên vào {activeConversation.title}</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Chọn bạn bè để thêm vào nhóm</p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Tạo nhóm mới</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Đặt tên và chọn thành viên ban đầu</p>
+                <input
+                  value={newGroupTitle}
+                  onChange={(e) => setNewGroupTitle(e.target.value)}
+                  placeholder="Tên nhóm..."
+                  className="mt-4 w-full rounded-2xl border border-cyan-100 bg-slate-50/80 px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-cyan-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </>
+            )}
+
+            <div className="mt-4 max-h-60 space-y-1 overflow-y-auto">
+              {friends.filter((f) => {
+                if (activeConversation?.type === 'group' && activeTab !== 'groups') {
+                  return !activeConversation.members?.some((m) => m.uid === f.id);
+                }
+                return true;
+              }).map((friend) => {
+                const selected = selectedGroupMembers.includes(friend.id);
+                return (
+                  <button
+                    key={friend.id}
+                    type="button"
+                    onClick={() => setSelectedGroupMembers((current) => selected ? current.filter((id) => id !== friend.id) : [...current, friend.id])}
+                    className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${selected ? 'bg-cyan-50 ring-1 ring-cyan-300 dark:bg-slate-800 dark:ring-cyan-700' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  >
+                    <WaveAvatar src={friend.avatarUrl} name={friend.name} className="h-10 w-10 rounded-full object-cover" fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white" />
+                    <span className="flex-1 truncate text-sm font-medium text-slate-700 dark:text-slate-200">{friend.name}</span>
+                    <div className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${selected ? 'border-cyan-500 bg-cyan-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                      {selected && <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => { setShowCreateGroup(false); setNewGroupTitle(''); setSelectedGroupMembers([]); }}
+                className="rounded-2xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Hủy
+              </button>
+              {activeConversation?.type === 'group' && activeTab !== 'groups' ? (
+                <button
+                  type="button"
+                  disabled={selectedGroupMembers.length === 0}
+                  onClick={() => { void handleInviteMembers(selectedGroupMembers).then(() => { setShowCreateGroup(false); setSelectedGroupMembers([]); }); }}
+                  className="rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  Mời ({selectedGroupMembers.length})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={creatingGroup || !newGroupTitle.trim() || selectedGroupMembers.length === 0}
+                  onClick={() => { void handleCreateGroup(); }}
+                  className="rounded-2xl bg-gradient-to-r from-surf-primary to-cyan-500 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  {creatingGroup ? 'Đang tạo...' : `Tạo nhóm (${selectedGroupMembers.length})`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
