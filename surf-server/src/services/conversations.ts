@@ -4,7 +4,7 @@ import { hasBlockRelation } from '../middleware/auth.js';
 import { conversationRepository } from '../repositories/conversation.repository.js';
 import { buildMessagePreview, messageRepository } from '../repositories/message.repository.js';
 import { buildDmPairKey, ConservationDoc } from '../types/conversation.js';
-import type { MessageDoc, SendTextMessageInput } from '../types/message.js';
+import type { MessageDoc, SendTextMessageInput, SendMediaMessageInput } from '../types/message.js';
 
 const DM_CACHE_TTL_SEC = 60 * 60 * 24 * 30;
 const dmCacheKey = (pairKey: string) => `dm:${pairKey}`;
@@ -55,6 +55,10 @@ export type SendTextMessageResult =
   | { ok: true; item: MessageDoc; recipientIds: string[] }
   | { ok: false; reason: 'invalid_text' | 'not_found' | 'forbidden' | 'blocked' };
 
+export type SendMediaMessageResult =
+  | { ok: true; item: MessageDoc; recipientIds: string[] }
+  | { ok: false; reason: 'invalid_media' | 'not_found' | 'forbidden' | 'blocked' };
+
 export type ListMessagesResult =
   | { ok: true; items: MessageDoc[]; nextCursor: string | null }
   | { ok: false; reason: 'not_found' | 'forbidden' };
@@ -77,12 +81,14 @@ export const toApiMessage = (item: MessageDoc): ApiMessage => ({
 
 export const toRealtimeMessagePayload = (item: MessageDoc): RealtimeMessagePayload => {
   const message = toApiMessage(item);
+  const previewMap: Record<string, string> = { image: '📷 Hình ảnh', file: '📎 Tệp đính kèm', audio: '🎤 Tin nhắn thoại' };
+  const preview = item.type === 'text' ? buildMessagePreview(item.text) : (item.text ? buildMessagePreview(item.text) : (previewMap[item.type] ?? '📎 Tệp'));
 
   return {
     message,
     conversation: {
       id: item.conversationId,
-      lastMessagePreview: buildMessagePreview(item.text),
+      lastMessagePreview: preview,
       lastMessageAt: message.createdAt,
     },
   };
@@ -141,6 +147,37 @@ export const sendTextMessage = async (
     input.senderId,
     text,
     recipientIds
+  );
+
+  return { ok: true, item, recipientIds };
+};
+
+export const sendMediaMessage = async (
+  input: SendMediaMessageInput
+): Promise<SendMediaMessageResult> => {
+  if (!input.mediaUrl) return { ok: false, reason: 'invalid_media' };
+
+  const conversation = await conversationRepository.getById(input.conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+  if (!conversation.memberIds.includes(input.senderId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const recipientIds = conversation.memberIds.filter((id) => id !== input.senderId);
+  const peerUid = recipientIds[0];
+
+  if (peerUid && (await hasBlockRelation(input.senderId, peerUid))) {
+    return { ok: false, reason: 'blocked' };
+  }
+
+  const item = await messageRepository.createMediaMessage(
+    input.conversationId,
+    input.senderId,
+    input.type,
+    input.mediaUrl,
+    recipientIds,
+    input.fileName,
+    input.text
   );
 
   return { ok: true, item, recipientIds };

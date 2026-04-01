@@ -89,6 +89,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
   const [showMusic, setShowMusic] = useState(false);
   const [showYoutube, setShowYoutube] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [openChats, setOpenChats] = useState<string[]>([]);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -204,6 +205,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
   const tracks = activeTab === 'history' ? history : favorites;
 
   return (
+    <>
     <div className={`hidden lg:block fixed right-3 top-[72px] z-30 transition-opacity duration-300${isShortVideo ? ' opacity-20 hover:opacity-100' : ''}`}>
       <div className="flex items-start gap-1">
         {/* ── Mini Chat panel ── */}
@@ -212,7 +214,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
             showChat ? 'w-[320px] opacity-100' : 'w-0 opacity-0 pointer-events-none'
           }`}
         >
-          <MiniChatPanel onClose={() => setShowChat(false)} />
+          <MiniChatPanel key="sidebar-list" onClose={() => { setShowChat(false); }} />
         </div>
 
         {/* ── YouTube panel ── */}
@@ -801,7 +803,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
         {/* ── Icon bar ── */}
         <div
           style={{ width: sidebarExpanded ? '13rem' : '68px' }}
-          className="flex flex-col gap-2 py-3 px-2 rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/10 max-h-[calc(100vh-100px)] overflow-y-hidden hover:overflow-y-auto transition-[width] duration-300 ease-in-out scrollbar-hide"
+          className="flex flex-col gap-2 py-3 px-2 rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/10 h-[calc(100vh-88px)] overflow-y-hidden hover:overflow-y-auto transition-[width] duration-300 ease-in-out scrollbar-hide"
         >
 
           {/* Toggle expand button */}
@@ -907,7 +909,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
           {sortedFriends.map((friend) => (
             <button
               key={friend.id}
-              onClick={() => navigate(`/feed/profile/${friend.id}`)}
+              onClick={() => { setOpenChats((prev) => prev.includes(friend.id) ? prev : [...prev, friend.id].slice(-3)); setShowMusic(false); setShowSearch(false); setShowYoutube(false); }}
               title={friend.name}
               className="relative flex items-center gap-2.5 w-full px-1 py-1 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors duration-150 flex-shrink-0 group"
             >
@@ -936,5 +938,20 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
         </div>
       </div>
     </div>
+
+    {/* ── Bottom-right compact chat panels (up to 3) ── */}
+    {openChats.length > 0 && (
+      <div className="hidden lg:flex fixed bottom-4 right-[86px] z-40 items-end gap-2">
+        {openChats.map((peerId) => (
+          <MiniChatPanel
+            key={peerId}
+            compact
+            initialPeerId={peerId}
+            onClose={() => setOpenChats((prev) => prev.filter((id) => id !== peerId))}
+          />
+        ))}
+      </div>
+    )}
+    </>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../lib/api';
+import { uploadImage } from '../../lib/cloudinary';
 import { getSocket } from '../../lib/socket';
 import { useAuthStore } from '../../stores/authStore';
 import { usePresenceStore } from '../../stores/presenceStore';
@@ -7,7 +9,11 @@ import { formatLastSeen } from '../../lib/utils/lastSeen';
 
 interface ConversationItem {
   id: string;
+  type?: 'dm' | 'group';
+  title?: string;
   peer: { uid: string; name: string; avatarUrl: string | null } | null;
+  members?: { uid: string; name: string; avatarUrl: string | null }[];
+  memberCount?: number;
   unreadCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
@@ -17,7 +23,10 @@ interface UiMessage {
   id: string;
   conversationId: string;
   senderId: string;
+  type?: 'text' | 'image' | 'file' | 'audio';
   text: string;
+  mediaUrl?: string;
+  fileName?: string;
   createdAt: string;
   optimistic?: boolean;
 }
@@ -36,6 +45,23 @@ function getInitials(name: string) {
 function formatTime(iso: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(d);
+}
+
+async function downloadFile(url: string, fileName: string) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, '_blank');
+  }
 }
 
 function Avatar({ src, name, size = 'md' }: { src?: string | null; name?: string | null; size?: 'sm' | 'md' }) {
@@ -76,9 +102,11 @@ function ConvPresenceBadge({ uid }: { uid: string }) {
 
 interface Props {
   onClose: () => void;
+  initialPeerId?: string | null;
+  compact?: boolean;
 }
 
-export default function MiniChatPanel({ onClose }: Props) {
+export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props) {
   const user = useAuthStore((s) => s.user);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,8 +115,15 @@ export default function MiniChatPanel({ onClose }: Props) {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
 
@@ -96,10 +131,32 @@ export default function MiniChatPanel({ onClose }: Props) {
   useEffect(() => {
     api
       .get<{ items: ConversationItem[] }>('/api/conversations?limit=30')
-      .then((data) => setConversations(data.items ?? []))
+      .then((data) => {
+        const items = data.items ?? [];
+        setConversations(items);
+        // Auto-open conversation with initial peer
+        if (initialPeerId) {
+          const existing = items.find((c) => c.peer?.uid === initialPeerId);
+          if (existing) {
+            setActiveId(existing.id);
+          } else {
+            // Create DM then open
+            api
+              .post<{ item: { id: string } }>('/api/conversations', { peerUid: initialPeerId })
+              .then((created) => {
+                // Reload list to get full item
+                return api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30').then((fresh) => {
+                  setConversations(fresh.items ?? []);
+                  setActiveId(created.item.id);
+                });
+              })
+              .catch(() => {});
+          }
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialPeerId]);
 
   // Load messages when conversation selected
   useEffect(() => {
@@ -197,12 +254,65 @@ export default function MiniChatPanel({ onClose }: Props) {
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeId || uploading) return;
+    e.target.value = '';
+    setUploading(true);
+    try {
+      const url = await uploadImage(file, { folder: 'surf_chat' });
+      await api.post(`/api/conversations/${activeId}/messages`, { mediaUrl: url, mediaType: 'image' });
+    } catch { /* ignore */ }
+    finally { setUploading(false); }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeId || uploading) return;
+    e.target.value = '';
+    setUploading(true);
+    try {
+      const url = await uploadImage(file, { folder: 'surf_chat_files' });
+      await api.post(`/api/conversations/${activeId}/messages`, { mediaUrl: url, mediaType: 'file', fileName: file.name });
+    } catch { /* ignore */ }
+    finally { setUploading(false); }
+  };
+
+  const toggleRecording = async () => {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    if (!activeId) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (blob.size === 0) return;
+        setUploading(true);
+        try {
+          const url = await uploadImage(blob, { folder: 'surf_chat_audio' });
+          await api.post(`/api/conversations/${activeId}/messages`, { mediaUrl: url, mediaType: 'audio' });
+        } catch { /* ignore */ }
+        finally { setUploading(false); }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch { /* mic permission denied */ }
+  };
+
   return (
-    <div className="w-[320px] h-[480px] bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-2xl border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/15 flex flex-col overflow-hidden">
+    <div className={`${compact ? 'w-[280px] h-[380px]' : 'w-[320px] h-[480px]'} bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-2xl border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/15 flex flex-col overflow-hidden`}>
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-slate-700/50 flex-shrink-0">
-        {activeId ? (
+      <div className={`flex items-center gap-2 ${compact ? 'px-3 py-2' : 'px-4 py-3'} border-b border-gray-100 dark:border-slate-700/50 flex-shrink-0`}>
+        {activeId && !compact ? (
           <button
             onClick={() => setActiveId(null)}
             className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400 transition-colors flex-shrink-0"
@@ -216,9 +326,15 @@ export default function MiniChatPanel({ onClose }: Props) {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {activeConv ? (
             <>
-              <Avatar src={activeConv.peer?.avatarUrl} name={activeConv.peer?.name} size="sm" />
+              {activeConv.type === 'group' ? (
+                <span className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg>
+                </span>
+              ) : (
+                <Avatar src={activeConv.peer?.avatarUrl} name={activeConv.peer?.name} size="sm" />
+              )}
               <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                {activeConv.peer?.name ?? 'Chat'}
+                {activeConv.type === 'group' ? (activeConv.title ?? 'Nhóm') : (activeConv.peer?.name ?? 'Chat')}
               </span>
             </>
           ) : (
@@ -242,7 +358,7 @@ export default function MiniChatPanel({ onClose }: Props) {
       </div>
 
       {/* Body */}
-      {!activeId ? (
+      {!activeId && !compact ? (
         /* ── Conversation list ── */
         <div className="flex-1 overflow-y-auto scrollbar-hide">
           {loading ? (
@@ -255,14 +371,22 @@ export default function MiniChatPanel({ onClose }: Props) {
               <p className="text-sm text-gray-500 dark:text-slate-400">Chưa có cuộc trò chuyện nào</p>
             </div>
           ) : (
-            conversations.map((conv) => (
+            conversations.map((conv) => {
+              const convName = conv.type === 'group' ? (conv.title ?? 'Nhóm') : (conv.peer?.name ?? 'Unknown');
+              return (
               <button
                 key={conv.id}
                 onClick={() => setActiveId(conv.id)}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors text-left"
               >
                 <div className="relative flex-shrink-0">
-                  <Avatar src={conv.peer?.avatarUrl} name={conv.peer?.name} />
+                  {conv.type === 'group' ? (
+                    <span className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg>
+                    </span>
+                  ) : (
+                    <Avatar src={conv.peer?.avatarUrl} name={conv.peer?.name} />
+                  )}
                   {conv.unreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-cyan-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white">
                       {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
@@ -275,7 +399,7 @@ export default function MiniChatPanel({ onClose }: Props) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
                     <span className={`text-sm truncate ${conv.unreadCount > 0 ? 'font-semibold text-gray-900 dark:text-white' : 'font-medium text-gray-800 dark:text-gray-200'}`}>
-                      {conv.peer?.name ?? 'Unknown'}
+                      {convName}
                     </span>
                     {conv.lastMessageAt && (
                       <span className="text-[10px] text-gray-400 dark:text-slate-500 flex-shrink-0">
@@ -288,7 +412,8 @@ export default function MiniChatPanel({ onClose }: Props) {
                   </p>
                 </div>
               </button>
-            ))
+              );
+            })
           )}
         </div>
       ) : (
@@ -304,6 +429,7 @@ export default function MiniChatPanel({ onClose }: Props) {
             ) : (
               messages.map((msg) => {
                 const outgoing = msg.senderId === user?.uid;
+                const msgType = msg.type ?? 'text';
                 return (
                   <div key={msg.id} className={`flex items-end gap-2 ${outgoing ? 'justify-end' : 'justify-start'}`}>
                     {!outgoing && (
@@ -313,7 +439,19 @@ export default function MiniChatPanel({ onClose }: Props) {
                       ? 'bg-gradient-to-br from-surf-primary to-cyan-500 text-white rounded-br-sm'
                       : 'bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-white rounded-bl-sm'
                     } ${msg.optimistic ? 'opacity-60' : ''}`}>
-                      <p className="text-sm leading-5 break-words">{msg.text}</p>
+                      {msgType === 'image' && msg.mediaUrl ? (
+                        <img src={msg.mediaUrl} alt="image" className="max-w-full rounded-lg cursor-pointer" onClick={() => setLightboxUrl(msg.mediaUrl!)} />
+                      ) : msgType === 'audio' && msg.mediaUrl ? (
+                        <audio controls src={msg.mediaUrl} className="max-w-full h-8" />
+                      ) : msgType === 'file' && msg.mediaUrl ? (
+                        <button type="button" onClick={() => downloadFile(msg.mediaUrl!, msg.fileName ?? 'file')} className={`flex items-center gap-1.5 text-sm underline ${outgoing ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                          {msg.fileName ?? 'Tệp đính kèm'}
+                        </button>
+                      ) : (
+                        <p className="text-sm leading-5 break-words">{msg.text}</p>
+                      )}
+                      {msg.text && msgType !== 'text' && <p className="text-sm leading-5 break-words mt-1">{msg.text}</p>}
                       <p className={`text-[10px] mt-1 text-right ${outgoing ? 'text-cyan-100/80' : 'text-gray-400 dark:text-slate-400'}`}>
                         {formatTime(msg.createdAt)}
                       </p>
@@ -328,8 +466,25 @@ export default function MiniChatPanel({ onClose }: Props) {
           {/* Input */}
           <form
             onSubmit={handleSend}
-            className="flex items-center gap-2 px-3 py-2.5 border-t border-gray-100 dark:border-slate-700/50 flex-shrink-0"
+            className={`flex items-center gap-1 ${compact ? 'px-2 py-1.5' : 'px-3 py-2.5'} border-t border-gray-100 dark:border-slate-700/50 flex-shrink-0`}
           >
+            {/* Media buttons */}
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
+            <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploading} title="Gửi ảnh"
+              className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full text-gray-400 hover:text-cyan-500 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            </button>
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Gửi tệp"
+              className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full text-gray-400 hover:text-cyan-500 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+            </button>
+            <button type="button" onClick={toggleRecording} disabled={uploading} title={recording ? 'Dừng ghi âm' : 'Ghi âm'}
+              className={`w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full transition-colors disabled:opacity-40 ${recording ? 'text-red-500 bg-red-50 dark:bg-red-900/30 animate-pulse' : 'text-gray-400 hover:text-cyan-500 hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-1.08A7.03 7.03 0 015 11H3a9.03 9.03 0 008 8.93V20a1 1 0 012 0v.93A9.03 9.03 0 0021 11h-2a7.03 7.03 0 01-6 6.92V19a1 1 0 01-1 1z" /></svg>
+            </button>
+            {uploading && <span className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+
             <input
               ref={inputRef}
               value={draft}
@@ -349,6 +504,17 @@ export default function MiniChatPanel({ onClose }: Props) {
             </button>
           </form>
         </>
+      )}
+
+      {/* Image lightbox — portal to body so it's truly fullscreen */}
+      {lightboxUrl && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setLightboxUrl(null)}>
+          <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          <img src={lightboxUrl} alt="preview" className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1,6 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { uploadImage } from '@/lib/cloudinary';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -20,8 +22,10 @@ type ApiMessage = {
   id: string;
   conversationId: string;
   senderId: string;
-  type: 'text';
+  type: 'text' | 'image' | 'file' | 'audio';
   text: string;
+  mediaUrl?: string;
+  fileName?: string;
   createdAt: string;
 };
 
@@ -141,15 +145,39 @@ function InfoSection({ title, count, open, onToggle, children }: { title: string
   );
 }
 
+async function downloadFile(url: string, fileName: string) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, '_blank');
+  }
+}
+
 export default function Waves() {
   const user = useAuthStore((state) => state.user);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [wavesRecording, setWavesRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
+  const wavesImageInputRef = useRef<HTMLInputElement>(null);
+  const wavesFileInputRef = useRef<HTMLInputElement>(null);
+  const wavesRecorderRef = useRef<MediaRecorder | null>(null);
+  const wavesAudioChunksRef = useRef<Blob[]>([]);
+  const [wavesLightboxUrl, setWavesLightboxUrl] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [threads, setThreads] = useState<Record<string, UiMessage[]>>({});
   const [threadCursors, setThreadCursors] = useState<Record<string, string | null>>({});
@@ -499,6 +527,59 @@ export default function Waves() {
     }
   };
 
+  const handleWavesImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeConversationId || uploading) return;
+    e.target.value = '';
+    setUploading(true);
+    try {
+      const url = await uploadImage(file, { folder: 'surf_chat' });
+      await api.post(`/api/conversations/${activeConversationId}/messages`, { mediaUrl: url, mediaType: 'image' });
+    } catch { /* ignore */ }
+    finally { setUploading(false); }
+  };
+
+  const handleWavesFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeConversationId || uploading) return;
+    e.target.value = '';
+    setUploading(true);
+    try {
+      const url = await uploadImage(file, { folder: 'surf_chat_files' });
+      await api.post(`/api/conversations/${activeConversationId}/messages`, { mediaUrl: url, mediaType: 'file', fileName: file.name });
+    } catch { /* ignore */ }
+    finally { setUploading(false); }
+  };
+
+  const toggleWavesRecording = async () => {
+    if (wavesRecording) {
+      wavesRecorderRef.current?.stop();
+      setWavesRecording(false);
+      return;
+    }
+    if (!activeConversationId) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      wavesAudioChunksRef.current = [];
+      recorder.ondataavailable = (ev) => { if (ev.data.size > 0) wavesAudioChunksRef.current.push(ev.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(wavesAudioChunksRef.current, { type: 'audio/webm' });
+        if (blob.size === 0) return;
+        setUploading(true);
+        try {
+          const url = await uploadImage(blob, { folder: 'surf_chat_audio' });
+          await api.post(`/api/conversations/${activeConversationId}/messages`, { mediaUrl: url, mediaType: 'audio' });
+        } catch { /* ignore */ }
+        finally { setUploading(false); }
+      };
+      wavesRecorderRef.current = recorder;
+      recorder.start();
+      setWavesRecording(true);
+    } catch { /* mic permission denied */ }
+  };
+
   const handleCreateGroup = async () => {
     if (!newGroupTitle.trim() || selectedGroupMembers.length === 0) return;
     try {
@@ -765,7 +846,19 @@ export default function Waves() {
                                 {!outgoing && <WaveAvatar src={senderAvatar} name={senderName} className="h-10 w-10 rounded-2xl object-cover" fallbackClassName="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white" />}
                                 <div className={`max-w-[82%] rounded-[26px] px-4 py-3 shadow-sm lg:max-w-[46rem] ${outgoing ? 'bg-gradient-to-r from-surf-primary to-cyan-500 text-white' : 'border border-cyan-100/80 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'}`}>
                                   {!outgoing && <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-600 dark:text-cyan-300">{senderName}</p>}
-                                  <p className="whitespace-pre-wrap text-sm leading-6">{message.text}</p>
+                                  {message.type === 'image' && message.mediaUrl ? (
+                                    <img src={message.mediaUrl} alt="image" className="max-w-[300px] rounded-2xl cursor-pointer" onClick={() => setWavesLightboxUrl(message.mediaUrl!)} />
+                                  ) : message.type === 'audio' && message.mediaUrl ? (
+                                    <audio controls src={message.mediaUrl} className="max-w-full" />
+                                  ) : message.type === 'file' && message.mediaUrl ? (
+                                    <button type="button" onClick={() => downloadFile(message.mediaUrl!, message.fileName ?? 'file')} className={`flex items-center gap-2 underline ${outgoing ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                                      <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                      {message.fileName ?? 'Tệp đính kèm'}
+                                    </button>
+                                  ) : (
+                                    <p className="whitespace-pre-wrap text-sm leading-6">{message.text}</p>
+                                  )}
+                                  {message.text && message.type !== 'text' && <p className="whitespace-pre-wrap text-sm leading-6 mt-1">{message.text}</p>}
                                   <div className={`mt-2 text-[11px] ${outgoing ? 'text-cyan-50/90' : 'text-slate-400 dark:text-slate-500'}`}>{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.createdAt))}</div>
                                 </div>
                               </div>
@@ -877,7 +970,18 @@ export default function Waves() {
                 </div>
                 <form onSubmit={handleSend} className="shrink-0 border-t border-cyan-100/80 bg-white/90 px-4 py-4 dark:border-slate-700/80 dark:bg-slate-900/90 sm:px-6">
                   <div className="flex items-center gap-3 rounded-[28px] border border-cyan-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950">
-                    <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 hover:bg-cyan-50 hover:text-surf-primary dark:hover:bg-slate-800 dark:hover:text-cyan-300"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 22a10 10 0 1 1 10-10 10 10 0 0 1-10 10Zm-4-8a4 4 0 0 0 8 0Zm1-4a1 1 0 1 0-1-1 1 1 0 0 0 1 1Zm6 0a1 1 0 1 0-1-1 1 1 0 0 0 1 1Z" /></svg></button>
+                    <input ref={wavesImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleWavesImageUpload} />
+                    <input ref={wavesFileInputRef} type="file" className="hidden" onChange={handleWavesFileUpload} />
+                    <button type="button" onClick={() => wavesImageInputRef.current?.click()} disabled={uploading} title="Gửi ảnh" className="inline-flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 hover:bg-cyan-50 hover:text-surf-primary dark:hover:bg-slate-800 dark:hover:text-cyan-300 disabled:opacity-40">
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </button>
+                    <button type="button" onClick={() => wavesFileInputRef.current?.click()} disabled={uploading} title="Gửi tệp" className="inline-flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 hover:bg-cyan-50 hover:text-surf-primary dark:hover:bg-slate-800 dark:hover:text-cyan-300 disabled:opacity-40">
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                    </button>
+                    <button type="button" onClick={toggleWavesRecording} disabled={uploading} title={wavesRecording ? 'Dừng ghi âm' : 'Ghi âm'} className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl disabled:opacity-40 ${wavesRecording ? 'text-red-500 bg-red-50 dark:bg-red-900/30 animate-pulse' : 'text-slate-400 hover:bg-cyan-50 hover:text-surf-primary dark:hover:bg-slate-800 dark:hover:text-cyan-300'}`}>
+                      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-1.08A7.03 7.03 0 015 11H3a9.03 9.03 0 008 8.93V20a1 1 0 012 0v.93A9.03 9.03 0 0021 11h-2a7.03 7.03 0 01-6 6.92V19a1 1 0 01-1 1z" /></svg>
+                    </button>
+                    {uploading && <span className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
                     <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Nhắn cho ${activeConversation.type === 'group' ? (activeConversation.title ?? 'nhóm') : (activeConversation.peer?.name ?? 'wave')}...`} className="h-12 w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100" />
                     <button type="submit" disabled={sending || !draft.trim()} className="inline-flex h-12 items-center justify-center rounded-2xl bg-gradient-to-r from-surf-primary to-cyan-500 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{sending ? 'Sending...' : 'Send'}</button>
                   </div>
@@ -966,6 +1070,17 @@ export default function Waves() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Image lightbox — portal to body */}
+      {wavesLightboxUrl && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setWavesLightboxUrl(null)}>
+          <button onClick={() => setWavesLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          <img src={wavesLightboxUrl} alt="preview" className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+        </div>,
+        document.body
       )}
     </div>
   );

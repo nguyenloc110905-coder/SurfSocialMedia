@@ -20,6 +20,8 @@ const mapMessageDoc = (id: string, data: Record<string, unknown>): MessageDoc =>
   senderId: (data.senderId as string) ?? '',
   type: (data.type as MessageDoc['type']) ?? 'text',
   text: (data.text as string) ?? '',
+  ...(data.mediaUrl ? { mediaUrl: data.mediaUrl as string } : {}),
+  ...(data.fileName ? { fileName: data.fileName as string } : {}),
   createdAt: toDate(data.createdAt) ?? new Date(),
 });
 
@@ -89,6 +91,54 @@ export const messageRepository = {
       text,
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    const conversationUpdates: Record<string, unknown> = {
+      lastMessagePreview: preview,
+      lastMessageAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      [`unreadCountByUser.${senderId}`]: 0,
+    };
+
+    recipientIds.forEach((uid) => {
+      conversationUpdates[`unreadCountByUser.${uid}`] = FieldValue.increment(1);
+    });
+
+    batch.update(conversationRef, conversationUpdates);
+
+    await batch.commit();
+
+    const snap = await messageRef.get();
+    return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+  },
+
+  async createMediaMessage(
+    conversationId: string,
+    senderId: string,
+    type: 'image' | 'file' | 'audio',
+    mediaUrl: string,
+    recipientIds: string[],
+    fileName?: string,
+    text?: string
+  ): Promise<MessageDoc> {
+    const conversationRef = conversationsCol().doc(conversationId);
+    const messageRef = messagesCol(conversationId).doc();
+
+    const previewMap: Record<string, string> = { image: '📷 Hình ảnh', file: '📎 Tệp đính kèm', audio: '🎤 Tin nhắn thoại' };
+    const preview = text ? buildMessagePreview(text) : (previewMap[type] ?? '📎 Tệp');
+
+    const batch = getDb().batch();
+
+    const msgData: Record<string, unknown> = {
+      conversationId,
+      senderId,
+      type,
+      text: text ?? '',
+      mediaUrl,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    if (fileName) msgData.fileName = fileName;
+
+    batch.set(messageRef, msgData);
 
     const conversationUpdates: Record<string, unknown> = {
       lastMessagePreview: preview,
