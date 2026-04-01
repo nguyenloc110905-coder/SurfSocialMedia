@@ -1,6 +1,6 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getDb } from '../config/firebase-admin.js';
-import type { MessageDoc } from '../types/message.js';
+import type { CreateCallLogInput, MessageDoc } from '../types/message.js';
 
 const conversationsCol = () => getDb().collection('conversations');
 
@@ -21,11 +21,48 @@ const mapMessageDoc = (id: string, data: Record<string, unknown>): MessageDoc =>
   type: (data.type as MessageDoc['type']) ?? 'text',
   text: (data.text as string) ?? '',
   createdAt: toDate(data.createdAt) ?? new Date(),
+  callMode: data.callMode as MessageDoc['callMode'],
+  callOutcome: data.callOutcome as MessageDoc['callOutcome'],
+  durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : undefined,
 });
 
 export const buildMessagePreview = (text: string): string => {
   const normalized = text.replace(/\s+/g, ' ').trim();
   return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
+};
+
+const formatCallDuration = (durationSeconds?: number) => {
+  if (!durationSeconds || durationSeconds <= 0) return '0 giây';
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+
+  if (minutes > 0 && seconds > 0) return `${minutes} phút ${seconds} giây`;
+  if (minutes > 0) return `${minutes} phút`;
+  return `${seconds} giây`;
+};
+
+export const buildCallLogText = (
+  mode: NonNullable<MessageDoc['callMode']>,
+  outcome: NonNullable<MessageDoc['callOutcome']>,
+  durationSeconds?: number
+) => {
+  const modeLabel = mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại';
+
+  switch (outcome) {
+    case 'completed':
+      return `${modeLabel} • ${formatCallDuration(durationSeconds)}`;
+    case 'missed':
+      return `${modeLabel} nhỡ`;
+    case 'declined':
+      return `${modeLabel} bị từ chối`;
+    case 'busy':
+      return `${modeLabel} khi đối phương đang bận`;
+    case 'failed':
+      return `${modeLabel} không thể kết nối`;
+    default:
+      return `${modeLabel} đã kết thúc`;
+  }
 };
 
 type ListConversationMessagesInput = {
@@ -98,6 +135,43 @@ export const messageRepository = {
     };
 
     recipientIds.forEach((uid) => {
+      conversationUpdates[`unreadCountByUser.${uid}`] = FieldValue.increment(1);
+    });
+
+    batch.update(conversationRef, conversationUpdates);
+
+    await batch.commit();
+
+    const snap = await messageRef.get();
+    return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+  },
+
+  async createCallLogMessage(input: CreateCallLogInput): Promise<MessageDoc> {
+    const conversationRef = conversationsCol().doc(input.conversationId);
+    const messageRef = messagesCol(input.conversationId).doc();
+    const text = buildCallLogText(input.mode, input.outcome, input.durationSeconds);
+
+    const batch = getDb().batch();
+
+    batch.set(messageRef, {
+      conversationId: input.conversationId,
+      senderId: input.actorId,
+      type: 'call_log',
+      text,
+      callMode: input.mode,
+      callOutcome: input.outcome,
+      durationSeconds: input.durationSeconds ?? null,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    const conversationUpdates: Record<string, unknown> = {
+      lastMessagePreview: text,
+      lastMessageAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      [`unreadCountByUser.${input.actorId}`]: 0,
+    };
+
+    input.recipientIds.forEach((uid) => {
       conversationUpdates[`unreadCountByUser.${uid}`] = FieldValue.increment(1);
     });
 

@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
-import { io } from '../index.js';
 import { getDb } from '../config/firebase-admin.js';
 import { createNotification, getUnreadNotificationCount, toApiNotification } from '../services/notifications.js';
 import { createGroup, joinGroup, listDiscoverGroups, toApiGroup } from '../services/groups.js';
+import {
+  emitNotificationNew,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 
@@ -101,8 +104,8 @@ router.post('/:id/join', requireAuth, async (req: AuthRequest, res) => {
         });
 
         const unreadCount = await getUnreadNotificationCount(adminId);
-        io.to(`user:${adminId}`).emit('notification:new', toApiNotification(notification));
-        io.to(`user:${adminId}`).emit('notification:unread-count', { count: unreadCount });
+        emitNotificationNew(adminId, toApiNotification(notification));
+        emitNotificationUnreadCount(adminId, unreadCount);
       })
     );
 

@@ -1,4 +1,8 @@
-export type MessageType = 'text';
+export type MessageType = 'text' | 'call_log';
+
+export type CallLogMode = 'audio' | 'video';
+
+export type CallLogOutcome = 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended';
 
 export type MessageDoc = {
   id: string;
@@ -7,10 +11,22 @@ export type MessageDoc = {
   type: MessageType;
   text: string;
   createdAt: Date;
+  callMode?: CallLogMode;
+  callOutcome?: CallLogOutcome;
+  durationSeconds?: number;
 };
 
 export type SendTextMessageInput = {
   conversationId: string;
   senderId: string;
   text: string;
+};
+
+export type CreateCallLogInput = {
+  conversationId: string;
+  actorId: string;
+  recipientIds: string[];
+  mode: CallLogMode;
+  outcome: CallLogOutcome;
+  durationSeconds?: number;
 };

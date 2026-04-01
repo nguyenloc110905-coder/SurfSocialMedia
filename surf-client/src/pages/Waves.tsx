@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { useGlobalCall } from '@/components/call/GlobalCallProvider';
 
 type ConversationItem = {
   id: string;
@@ -17,9 +18,12 @@ type ApiMessage = {
   id: string;
   conversationId: string;
   senderId: string;
-  type: 'text';
+  type: 'text' | 'call_log';
   text: string;
   createdAt: string;
+  callMode?: 'audio' | 'video';
+  callOutcome?: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended';
+  durationSeconds?: number;
 };
 
 type UiMessage = ApiMessage & {
@@ -41,6 +45,65 @@ type FriendDirectoryItem = {
   name: string;
   avatarUrl?: string | null;
   mutualCount?: number;
+};
+
+type CallMode = 'audio' | 'video';
+
+type CallInvitePayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  mode: CallMode;
+};
+
+type CallAcceptedPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  mode: CallMode;
+};
+
+type CallSignalPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  mode: CallMode;
+  signal:
+    | { type: 'offer' | 'answer'; sdp: RTCSessionDescriptionInit }
+    | { type: 'ice'; candidate: RTCIceCandidateInit };
+};
+
+type CallEndPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  reason?: string;
+};
+
+type IncomingCall = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  mode: CallMode;
+};
+
+type ActiveCall = {
+  callId: string;
+  conversationId: string;
+  peerId: string;
+  peerName: string;
+  peerAvatarUrl: string | null;
+  mode: CallMode;
+  isOutgoing: boolean;
+  status: 'outgoing' | 'connecting' | 'connected';
 };
 
 type SharedLink = { url: string; hostname: string; label: string };
@@ -67,6 +130,68 @@ const formatListTime = (value?: string | null) => {
 const formatFullTime = (value?: string | null) => {
   if (!value) return 'Chưa có hoạt động';
   return new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(value));
+};
+
+const formatDuration = (durationSeconds?: number) => {
+  if (!durationSeconds || durationSeconds <= 0) return '0 giây';
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+
+  if (minutes > 0 && seconds > 0) return `${minutes} phút ${seconds} giây`;
+  if (minutes > 0) return `${minutes} phút`;
+  return `${seconds} giây`;
+};
+
+const getCallMetaLabel = (message: ApiMessage) => {
+  const modeLabel = message.callMode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại';
+  if (message.callOutcome === 'completed') {
+    return `${modeLabel} • ${formatDuration(message.durationSeconds)}`;
+  }
+
+  return modeLabel;
+};
+
+const getCallDisplayTitle = (message: ApiMessage, outgoing: boolean) => {
+  const modeLabel = message.callMode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại';
+
+  switch (message.callOutcome) {
+    case 'completed':
+      return outgoing ? `${modeLabel} đi` : `${modeLabel} đến`;
+    case 'missed':
+      return outgoing ? `${modeLabel} không được bắt máy` : 'Bạn bị nhỡ';
+    case 'declined':
+      return outgoing ? `${modeLabel} bị từ chối` : 'Bạn đã từ chối cuộc gọi';
+    case 'busy':
+      return outgoing ? 'Đối phương đang bận' : `${modeLabel} khi bạn đang bận`;
+    case 'failed':
+      return 'Không thể kết nối cuộc gọi';
+    default:
+      return outgoing ? `${modeLabel} đi` : `${modeLabel} đến`;
+  }
+};
+
+const getCallToneClasses = (message: ApiMessage) => {
+  if (message.callOutcome === 'missed' || message.callOutcome === 'declined' || message.callOutcome === 'failed') {
+    return {
+      iconWrap: 'bg-red-50 text-red-500',
+      title: 'text-red-500',
+      iconVariant: 'hangup' as const,
+      iconPath: '',
+      iconClassName: '',
+    };
+  }
+
+  return {
+    iconWrap: 'bg-cyan-50 text-cyan-600',
+    title: 'text-slate-900',
+    iconVariant: message.callMode === 'video' ? ('video' as const) : ('audio' as const),
+    iconPath:
+      message.callMode === 'video'
+        ? 'M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z'
+        : 'M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24 11.7 11.7 0 0 0 3.68.59 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.48a1 1 0 0 1 1 1 11.7 11.7 0 0 0 .59 3.68 1 1 0 0 1-.25 1.01Z',
+    iconClassName: '',
+  };
 };
 
 const unique = <T,>(items: T[]) => Array.from(new Set(items));
@@ -166,6 +291,7 @@ export default function Waves() {
   const messagesBottomRef = useRef<HTMLDivElement | null>(null);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const suppressAutoScrollRef = useRef(false);
+  const { startCall, isBusy: isCallBusy } = useGlobalCall();
 
   const filteredConversations = useMemo(() => {
     const keyword = deferredQuery.trim().toLowerCase();
@@ -629,6 +755,46 @@ export default function Waves() {
                     <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{activeConversation.peer?.name ?? 'Unknown Wave'}</h2>
                     <p className="truncate text-sm text-slate-500 dark:text-slate-400">Direct message · cập nhật realtime trên Surf Waves</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeConversation.peer) return;
+                      startCall({
+                        conversationId: activeConversation.id,
+                        peerId: activeConversation.peer.uid,
+                        peerName: activeConversation.peer.name,
+                        peerAvatarUrl: activeConversation.peer.avatarUrl,
+                        mode: 'audio',
+                      });
+                    }}
+                    disabled={!activeConversation.peer || isCallBusy}
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/80 bg-white text-slate-600 transition hover:border-cyan-300 hover:text-surf-primary disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    title="Gọi thoại"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                      <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24 11.7 11.7 0 0 0 3.68.59 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.48a1 1 0 0 1 1 1 11.7 11.7 0 0 0 .59 3.68 1 1 0 0 1-.25 1.01Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeConversation.peer) return;
+                      startCall({
+                        conversationId: activeConversation.id,
+                        peerId: activeConversation.peer.uid,
+                        peerName: activeConversation.peer.name,
+                        peerAvatarUrl: activeConversation.peer.avatarUrl,
+                        mode: 'video',
+                      });
+                    }}
+                    disabled={!activeConversation.peer || isCallBusy}
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/80 bg-white text-slate-600 transition hover:border-cyan-300 hover:text-surf-primary disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    title="Gọi video"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                      <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z" />
+                    </svg>
+                  </button>
                   <button type="button" onClick={() => setShowInfo((current) => !current)} className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/80 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zM12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Z" /></svg></button>
                 </div>
                 <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -665,6 +831,88 @@ export default function Waves() {
                           )}
                           {activeMessages.map((message) => {
                             const outgoing = message.senderId === user?.uid;
+                            const callTone = getCallToneClasses(message);
+
+                            if (message.type === 'call_log') {
+                              return (
+                                <div
+                                  key={message.id}
+                                  className={`flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
+                                >
+                                  {!outgoing && (
+                                    <WaveAvatar
+                                      src={activeConversation.peer?.avatarUrl}
+                                      name={activeConversation.peer?.name}
+                                      className="h-10 w-10 rounded-2xl object-cover"
+                                      fallbackClassName="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white"
+                                    />
+                                  )}
+                                  <div
+                                    className={`w-full max-w-[16.5rem] rounded-[22px] border px-3.5 py-2.5 shadow-[0_16px_40px_-32px_rgba(8,145,178,0.45)] ${
+                                      outgoing
+                                        ? 'border-cyan-200 bg-cyan-50/95'
+                                        : 'border-slate-200 bg-white'
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${callTone.iconWrap}`}>
+                                        {callTone.iconVariant === 'hangup' ? (
+                                          <svg
+                                            viewBox="0 0 24 24"
+                                            className="h-[18px] w-[18px]"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2.2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                          >
+                                            <path d="M4.5 15.5c4.7-3.2 10.3-3.2 15 0" />
+                                            <path d="M7.2 15.2 6 18" />
+                                            <path d="M16.8 15.2 18 18" />
+                                          </svg>
+                                        ) : (
+                                          <svg viewBox="0 0 24 24" className={`h-[18px] w-[18px] ${callTone.iconClassName ?? ''}`} fill="currentColor">
+                                            <path d={callTone.iconPath} />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className={`text-[15px] font-semibold leading-6 ${callTone.title}`}>
+                                          {getCallDisplayTitle(message, outgoing)}
+                                        </p>
+                                        <p className="mt-0.5 text-sm text-slate-500">{getCallMetaLabel(message)}</p>
+                                        <div className="mt-2 border-t border-slate-100 pt-2 text-xs font-medium text-slate-400">
+                                          {new Intl.DateTimeFormat('vi-VN', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            day: '2-digit',
+                                            month: '2-digit',
+                                          }).format(new Date(message.createdAt))}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!activeConversation.peer || isCallBusy) return;
+                                            startCall({
+                                              conversationId: activeConversation.id,
+                                              peerId: activeConversation.peer.uid,
+                                              peerName: activeConversation.peer.name,
+                                              peerAvatarUrl: activeConversation.peer.avatarUrl,
+                                              mode: message.callMode ?? 'audio',
+                                            });
+                                          }}
+                                          disabled={!activeConversation.peer || isCallBusy}
+                                          className="mt-2 inline-flex h-9 items-center justify-center rounded-2xl border border-cyan-200 bg-cyan-50 px-3.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          Gọi lại
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             return (
                               <div key={message.id} className={`flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!outgoing && <WaveAvatar src={activeConversation.peer?.avatarUrl} name={activeConversation.peer?.name} className="h-10 w-10 rounded-2xl object-cover" fallbackClassName="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white" />}

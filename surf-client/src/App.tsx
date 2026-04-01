@@ -16,6 +16,7 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
 import Waves from './pages/Waves';
+import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -93,7 +94,7 @@ function HomeOrRedirect() {
 
 export default function App() {
   return (
-    <>
+    <GlobalCallProvider>
       <ThemeInit />
       <Routes>
         <Route path="/" element={<HomeOrRedirect />} />
@@ -178,6 +179,6 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </GlobalCallProvider>
   );
 }

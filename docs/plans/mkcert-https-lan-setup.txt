@@ -1,0 +1,170 @@
+MKCERT + HTTPS LAN SETUP FOR SURF CLIENT
+
+Mục tiêu:
+- mở `surf-client` bằng HTTPS trên mạng LAN
+- tránh lỗi mic/camera khi gọi audio/video
+- tránh mixed-content giữa frontend HTTPS và backend HTTP
+- vẫn giữ backend local ở `http://localhost:4000`
+
+Những gì project đã hỗ trợ sẵn:
+- `surf-client/vite.config.ts` và `surf-client/vite.config.js` đã support HTTPS nếu tồn tại:
+  - `surf-client/certs/dev-key.pem`
+  - `surf-client/certs/dev-cert.pem`
+- Vite dev server đã proxy:
+  - `/api` -> `http://localhost:4000`
+  - `/socket.io` -> `http://localhost:4000`
+- `surf-client/src/lib/api.ts` dùng same-origin trong dev nếu `VITE_API_URL` đang là localhost
+- `surf-client/src/lib/socket.ts` dùng same-origin + path `/socket.io` trong dev
+
+1. Cài mkcert trên máy host
+PowerShell:
+```
+winget install FiloSottile.mkcert
+```
+
+Đóng PowerShell cũ, mở PowerShell mới.
+
+2. Cài local CA vào máy host
+PowerShell ở root project:
+```
+mkcert -install
+```
+
+3. Tạo thư mục cert cho frontend
+PowerShell ở root project:
+```
+New-Item -ItemType Directory -Force surf-client\certs
+```
+
+4. Tạo cert cho localhost + IP LAN hiện tại
+Ví dụ IP LAN của máy host là `192.168.1.66`
+PowerShell ở root project:
+```
+mkcert -key-file surf-client\certs\dev-key.pem -cert-file surf-client\certs\dev-cert.pem localhost 127.0.0.1 ::1 192.168.1.66
+```
+
+Nếu IP LAN đổi, phải chạy lại lệnh trên với IP mới.
+
+5. Chạy backend
+PowerShell:
+```
+cd surf-server
+npm run dev
+```
+
+Backend vẫn chạy HTTP bình thường ở:
+```
+http://localhost:4000
+```
+
+6. Chạy frontend
+PowerShell:
+```
+cd surf-client
+npm run dev
+```
+
+Không cần thêm `--host`, vì `vite.config` đã có:
+```
+server.host = true
+```
+
+7. Mở app từ máy host
+```
+https://192.168.1.66:5173
+```
+
+8. Verify backend còn hoạt động
+Trên máy host:
+```
+http://localhost:4000/api/health
+```
+
+Trên máy khác cùng mạng:
+```
+http://192.168.1.66:4000/api/health
+```
+
+9. Trust cert trên máy thứ 2
+Trên máy host:
+```
+mkcert -CAROOT
+```
+
+Mở thư mục đó và copy file:
+```
+rootCA.pem
+```
+
+KHÔNG copy file:
+```
+rootCA-key.pem
+```
+
+Trên máy thứ 2:
+- `Win + R`
+- gõ `certmgr.msc`
+- vào `Trusted Root Certification Authorities -> Certificates`
+- `All Tasks -> Import`
+- import file `rootCA.pem`
+- import đúng vào store `Trusted Root Certification Authorities`
+
+Sau đó đóng/mở lại browser trên máy thứ 2.
+
+10. Mở app từ máy thứ 2
+```
+https://192.168.1.66:5173
+```
+
+11. Firebase Google Login
+Vì app đang mở bằng LAN IP, phải add domain này trong Firebase:
+- Firebase Console
+- Authentication
+- Settings
+- Authorized domains
+- add:
+```
+192.168.1.66
+```
+
+Chỉ nhập domain/IP, không nhập:
+- `http://`
+- `https://`
+- `:5173`
+
+12. Lưu ý về IP LAN
+Nếu IP LAN đổi:
+- generate lại cert với IP mới
+- add IP mới vào Firebase Authorized domains
+
+Muốn ổn định lâu dài:
+- dùng DHCP reservation trên router
+- hoặc đặt static IPv4 trên Windows
+
+13. Nếu vẫn lỗi mic/camera khi gọi
+Check:
+- trang đang mở bằng `https://...`, không phải `http://...`
+- browser đã Allow:
+  - Microphone
+  - Camera
+- refresh lại tab sau khi import CA
+
+Test nhanh trong DevTools console:
+```
+await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+```
+
+14. Nếu browser vẫn báo Not secure
+Check:
+- đã import `rootCA.pem` vào máy đang mở browser chưa
+- cert đã generate đúng IP đang dùng chưa
+- đang mở đúng URL `https://192.168.1.66:5173`
+- đã restart Vite sau khi tạo cert chưa
+
+15. File liên quan trong project
+- `surf-client/vite.config.ts`
+- `surf-client/vite.config.js`
+- `surf-client/src/lib/api.ts`
+- `surf-client/src/lib/socket.ts`
+- `surf-client/.env.example`
+

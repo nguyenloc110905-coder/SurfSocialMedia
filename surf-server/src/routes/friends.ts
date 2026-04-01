@@ -8,12 +8,16 @@ import {
 } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
-import { io } from '../index.js';
 import {
   createNotification,
   getUnreadNotificationCount,
   toApiNotification,
 } from '../services/notifications.js';
+import { emitFriendRequestReceived } from '../realtime/emitters/friend.emitter.js';
+import {
+  emitNotificationNew,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 const db = () => getDb();
@@ -152,7 +156,7 @@ router.post(
         avatarUrl: fromData?.photoURL,
       };
       console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
-      io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
+      emitFriendRequestReceived(toUid, requestData);
 
       // Tạo notification lưu DB + push realtime cho chuông thông báo.
       try {
@@ -165,8 +169,8 @@ router.post(
           message: `${fromData?.displayName ?? 'Unknown'} đã gửi lời mời kết bạn cho bạn.`,
         });
         const unreadCount = await getUnreadNotificationCount(toUid);
-        io.to(`user:${toUid}`).emit('notification:new', toApiNotification(notification));
-        io.to(`user:${toUid}`).emit('notification:unread-count', { count: unreadCount });
+        emitNotificationNew(toUid, toApiNotification(notification));
+        emitNotificationUnreadCount(toUid, unreadCount);
       } catch (notifyError) {
         console.warn('⚠️ Không tạo được notification friend_request:', notifyError);
       }
@@ -231,8 +235,8 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
           message: `${acceptorName} đã chấp nhận lời mời kết bạn của bạn.`,
         });
         const unreadCount = await getUnreadNotificationCount(fromUid);
-        io.to(`user:${fromUid}`).emit('notification:new', toApiNotification(notification));
-        io.to(`user:${fromUid}`).emit('notification:unread-count', { count: unreadCount });
+        emitNotificationNew(fromUid, toApiNotification(notification));
+        emitNotificationUnreadCount(fromUid, unreadCount);
       } catch (notifyError) {
         console.warn('⚠️ Không tạo được notification friend_accept:', notifyError);
       }

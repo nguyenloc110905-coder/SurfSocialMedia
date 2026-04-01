@@ -17,6 +17,20 @@ function loadEnvFile(dir: string): Record<string, string> {
 
 export default defineConfig(() => {
   const env = loadEnvFile(path.resolve(__dirname));
+  const defaultHttpsKeyPath = path.resolve(__dirname, 'certs/dev-key.pem');
+  const defaultHttpsCertPath = path.resolve(__dirname, 'certs/dev-cert.pem');
+  const httpsKeyPath = path.resolve(
+    __dirname,
+    env.VITE_DEV_HTTPS_KEY_FILE ?? defaultHttpsKeyPath,
+  );
+  const httpsCertPath = path.resolve(
+    __dirname,
+    env.VITE_DEV_HTTPS_CERT_FILE ?? defaultHttpsCertPath,
+  );
+  const httpsEnabled = Boolean(
+    fs.existsSync(httpsKeyPath) && fs.existsSync(httpsCertPath),
+  );
+
   return {
     plugins: [react()],
     resolve: {
@@ -28,9 +42,21 @@ export default defineConfig(() => {
       'import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET': JSON.stringify(env.VITE_CLOUDINARY_UPLOAD_PRESET ?? ''),
     },
     server: {
+      host: true,
       port: 5173,
+      https: httpsEnabled
+        ? {
+            key: fs.readFileSync(httpsKeyPath!, 'utf-8'),
+            cert: fs.readFileSync(httpsCertPath!, 'utf-8'),
+          }
+        : undefined,
       proxy: {
         '/api': { target: 'http://localhost:4000', changeOrigin: true },
+        '/socket.io': {
+          target: 'http://localhost:4000',
+          changeOrigin: true,
+          ws: true,
+        },
       },
       headers: {
         'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',

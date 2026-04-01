@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
-import { io } from '../index.js';
 import {
   getUnreadNotificationCount,
   listNotifications,
@@ -8,6 +7,11 @@ import {
   markNotificationRead,
   toApiNotification,
 } from '../services/notifications.js';
+import {
+  emitNotificationRead,
+  emitNotificationReadAll,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 
@@ -59,8 +63,8 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const count = await getUnreadNotificationCount(uid);
-    io.to(`user:${uid}`).emit('notification:read', { id: req.params.id });
-    io.to(`user:${uid}`).emit('notification:unread-count', { count });
+    emitNotificationRead(uid, req.params.id);
+    emitNotificationUnreadCount(uid, count);
 
     res.json({ ok: true, count });
   } catch (e) {
@@ -73,8 +77,8 @@ router.patch('/read-all', requireAuth, async (req: AuthRequest, res) => {
     const uid = req.uid!;
     const ids = await markAllNotificationsRead(uid);
     const count = await getUnreadNotificationCount(uid);
-    io.to(`user:${uid}`).emit('notification:read-all', { ids });
-    io.to(`user:${uid}`).emit('notification:unread-count', { count });
+    emitNotificationReadAll(uid, ids);
+    emitNotificationUnreadCount(uid, count);
     res.json({ ok: true, updated: ids.length, count });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

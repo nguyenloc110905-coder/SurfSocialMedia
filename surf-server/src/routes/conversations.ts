@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
-import { io } from '../index.js';
 import {
   createOrGetDmConversation,
   getUnreadConversationCount,
@@ -12,6 +11,7 @@ import {
   toApiMessage,
   toRealtimeMessagePayload,
 } from '../services/conversations.js';
+import { emitMessageNew, emitMessageUnreadCount } from '../realtime/emitters/message.emitter.js';
 
 const router = Router();
 
@@ -116,7 +116,7 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const count = await getUnreadConversationCount(uid);
-    io.to(`user:${uid}`).emit('message:unread-count', { count });
+    emitMessageUnreadCount(uid, count);
 
     res.json({ ok: true, count });
   } catch (e) {
@@ -159,10 +159,10 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     const payload = toRealtimeMessagePayload(result.item);
 
     result.recipientIds.forEach((uid) => {
-      io.to(`user:${uid}`).emit('message:new', payload);
+      emitMessageNew(uid, payload);
     });
 
-    io.to(`user:${senderId}`).emit('message:new', payload);
+    emitMessageNew(senderId, payload);
 
     const recipientCounts = await Promise.all(
       result.recipientIds.map(async (uid) => ({
@@ -172,11 +172,11 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     );
 
     recipientCounts.forEach(({ uid, count }) => {
-      io.to(`user:${uid}`).emit('message:unread-count', { count });
+      emitMessageUnreadCount(uid, count);
     });
 
     const senderCount = await getUnreadConversationCount(senderId);
-    io.to(`user:${senderId}`).emit('message:unread-count', { count: senderCount });
+    emitMessageUnreadCount(senderId, senderCount);
 
     res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
   } catch (e) {

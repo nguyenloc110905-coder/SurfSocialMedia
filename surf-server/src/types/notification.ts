@@ -5,6 +5,7 @@ export type NotificationType =
   | 'comment'
   | 'mention'
   | 'share'
+  | 'missed_call'
   | 'system';
 
 export type NotificationIconKey =
@@ -14,6 +15,7 @@ export type NotificationIconKey =
   | 'message-circle'
   | 'at-sign'
   | 'repeat'
+  | 'phone-missed'
   | 'info';
 
 export const NOTIFICATION_ICON_BY_TYPE: Record<NotificationType, NotificationIconKey> = {
@@ -23,6 +25,7 @@ export const NOTIFICATION_ICON_BY_TYPE: Record<NotificationType, NotificationIco
   comment: 'message-circle',
   mention: 'at-sign',
   share: 'repeat',
+  missed_call: 'phone-missed',
   system: 'info',
 };
 

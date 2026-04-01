@@ -3,7 +3,6 @@ import { getDb } from './config/firebase-admin.js';
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
 import cors from 'cors';
 import { requireAuth, ensureUser } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
@@ -19,10 +18,13 @@ import videosRoutes from './routes/videos.js';
 import conversationsRoutes from './routes/conversations.js';
 import groupsRoutes from './routes/groups.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
+import { initIo } from './realtime/io.js';
+import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
 
 const app = express();
 const httpServer = createServer(app);
 const PORT = Number(process.env.PORT) || 4000;
+const lanOriginPattern = /^https?:\/\/(?:localhost|127\.0\.0\.1|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?$/;
 
 // Allowed CORS origins
 const allowedOrigins = [
@@ -46,40 +48,23 @@ if (frontendUrl) {
   });
 }
 
-const corsOrigin = allowedOrigins;
+const isAllowedOrigin = (origin?: string) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  return lanOriginPattern.test(origin);
+};
 
-// Setup Socket.io
-export const io = new Server(httpServer, {
-  cors: {
-    origin: corsOrigin,
-    credentials: true,
-  },
-});
+const corsOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  if (isAllowedOrigin(origin)) {
+    callback(null, true);
+    return;
+  }
 
-io.on('connection', (socket) => {
-  console.log('🔌 Client connected:', socket.id);
+  callback(new Error(`Origin ${origin ?? 'unknown'} is not allowed by CORS`));
+};
 
-  // Join room theo userId để nhận notifications riêng
-  socket.on('join', (userId: string) => {
-    socket.join(`user:${userId}`);
-    const room = io.sockets.adapter.rooms.get(`user:${userId}`);
-    const roomSize = room ? room.size : 0;
-    console.log(`👤 User ${userId} joined their room (${roomSize} clients in room)`);
-  });
-
-  // RT-4: join/leave room để nhận comment:new real-time
-  socket.on('post:join', (postId: string) => {
-    socket.join(`post:${postId}`);
-  });
-
-  socket.on('post:leave', (postId: string) => {
-    socket.leave(`post:${postId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('🔌 Client disconnected:', socket.id);
-  });
-});
+const io = initIo(httpServer, corsOrigin as never);
+registerSocketHandlers(io);
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
