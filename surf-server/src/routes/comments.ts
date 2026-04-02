@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
-import { io } from '../index.js';
+import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
 
 const router = Router();
 
@@ -92,7 +92,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     console.log(`📤 Sending response:`, responseData);
 
     // RT-4: broadcast new comment to all users viewing this post
-    io.to(`post:${req.params.postId}`).emit('comment:new', responseData);
+    emitCommentNew(req.params.postId, responseData);
 
     res.status(201).json(responseData);
   } catch (e) {

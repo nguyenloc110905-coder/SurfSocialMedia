@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
-import { io } from '../index.js';
+import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
 
 const router = Router();
 
@@ -220,7 +220,7 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
     const updated = await ref.get();
     const responseData = { id: updated.id, ...updated.data() };
     // RT-3: notify all clients viewing this post about the updated reaction count
-    io.to(`post:${req.params.id}`).emit('post:reacted', {
+    emitPostReacted(req.params.id, {
       postId: req.params.id,
       likeCount: likedBy.length,
       likedBy,

@@ -1,9 +1,40 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const runtimeHost =
+  typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+
+const resolveSocketUrl = () => {
+  const envBase = import.meta.env.VITE_API_URL;
+  const useDevProxy =
+    import.meta.env.DEV &&
+    (!envBase || envBase.includes('localhost') || envBase.includes('127.0.0.1'));
+
+  if (useDevProxy) {
+    return typeof window !== 'undefined' ? window.location.origin : undefined;
+  }
+
+  if (!envBase) return `http://${runtimeHost}:4000`;
+
+  try {
+    const parsed = new URL(envBase);
+    const isLocalDevHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    const isRemoteClient = runtimeHost !== 'localhost' && runtimeHost !== '127.0.0.1';
+
+    if (isLocalDevHost && isRemoteClient) {
+      parsed.hostname = runtimeHost;
+      return parsed.toString().replace(/\/$/, '');
+    }
+
+    return envBase;
+  } catch {
+    return envBase;
+  }
+};
+
+const SOCKET_URL = resolveSocketUrl();
 
 let socket: Socket | null = null;
-let _joinedUserId: string | null = null; // remember userId for reconnects
+let currentUserId: string | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
@@ -11,15 +42,15 @@ export const getSocket = (): Socket => {
       autoConnect: false, // Manual connection khi user login
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: 5,
+      path: '/socket.io',
     });
 
     socket.on('connect', () => {
       console.log('🔌 Socket connected:', socket?.id);
-      // Re-emit join on every connect/reconnect so server keeps presence up-to-date
-      if (_joinedUserId) {
-        socket!.emit('join', _joinedUserId);
-        console.log('🔌 Re-joined user room after (re)connect:', _joinedUserId);
+      if (currentUserId) {
+        socket?.emit('join', currentUserId);
+        console.log('🔌 Joined user room:', currentUserId);
       }
     });
 
@@ -36,18 +67,20 @@ export const getSocket = (): Socket => {
 };
 
 export const connectSocket = (userId: string) => {
-  _joinedUserId = userId;
+  // _joinedUserId = userId;
   const socket = getSocket();
+  currentUserId = userId;
 
   if (socket.connected) {
     socket.emit('join', userId);
     console.log('🔌 Joined user room:', userId);
   } else {
-    socket.connect(); // 'connect' event will emit join via the listener above
+    socket.connect();
   }
 };
 
 export const disconnectSocket = () => {
+  currentUserId = null;
   if (socket?.connected) {
     socket.disconnect();
     console.log('🔌 Socket disconnected manually');
