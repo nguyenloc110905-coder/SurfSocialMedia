@@ -469,7 +469,15 @@ export default function Waves() {
 
   useEffect(() => {
     const socket = getSocket();
+    const notifAudio = new Audio('/notification-message.mp3');
+    notifAudio.volume = 0.5;
     const onMessageNew = (payload: RealtimePayload) => {
+      // Phát chuông nếu tin nhắn từ người khác
+      if (payload.message.senderId !== user?.uid) {
+        notifAudio.currentTime = 0;
+        notifAudio.play().catch(() => {});
+      }
+
       setThreads((current) => ({
         ...current,
         [payload.message.conversationId]: replaceOptimisticMessage(

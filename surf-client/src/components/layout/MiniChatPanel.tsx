@@ -189,8 +189,15 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
   // Realtime socket
   useEffect(() => {
     const socket = getSocket();
+    const notifAudio = new Audio('/notification-message.mp3');
+    notifAudio.volume = 0.5;
     const handler = (payload: RealtimePayload) => {
       const { message, conversation } = payload;
+      // Phát chuông nếu tin nhắn từ người khác
+      if (message.senderId !== user?.uid) {
+        notifAudio.currentTime = 0;
+        notifAudio.play().catch(() => {});
+      }
       // Update messages if in this conversation
       if (message.conversationId === activeId) {
         setMessages((prev) => {
