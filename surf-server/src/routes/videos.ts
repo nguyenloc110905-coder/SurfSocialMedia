@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { logger } from '../config/logger.js';
 
 const router = Router();
 
@@ -59,7 +60,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const ref = await db.collection('videos').add(videoData);
     res.status(201).json({ id: ref.id, ...videoData });
   } catch (e) {
-    console.error('Error creating video:', e);
+    logger.error('Error creating video:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });

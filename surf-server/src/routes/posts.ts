@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
+import { FieldValue } from 'firebase-admin/firestore';
+import { getIo } from '../realtime/io.js';
 
 const router = Router();
 
@@ -57,7 +59,79 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       hasVideo: detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []),
     });
     const created = await docRef.get();
+
+    // Notify each tagged friend via Firestore + socket
+    if (Array.isArray(taggedFriends) && taggedFriends.length > 0) {
+      const notificationsRef = db.collection('notifications');
+      const notifyBatch = db.batch();
+      type TaggedFriendEntry = { uid: string; displayName?: string; photoURL?: string | null };
+      for (const friend of taggedFriends as TaggedFriendEntry[]) {
+        if (!friend?.uid || friend.uid === req.uid) continue;
+        const notifDoc = notificationsRef.doc();
+        notifyBatch.set(notifDoc, {
+          type: 'tag',
+          recipientId: friend.uid,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: docRef.id,
+          postSnippet: (content?.trim() ?? '').substring(0, 100),
+          read: false,
+          createdAt: new Date(),
+        });
+        getIo().to(`user:${friend.uid}`).emit('notification:new', {
+          id: notifDoc.id,
+          type: 'tag',
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: docRef.id,
+          postSnippet: (content?.trim() ?? '').substring(0, 100),
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      await notifyBatch.commit();
+    }
+
     res.status(201).json({ id: created.id, ...created.data() });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** Bỏ dấu tiếng Việt & chuyển thường để so sánh không phân biệt dấu */
+function normalizePost(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+// GET /search?q=&type= — tìm kiếm bài viết (phải đặt trước /:id)
+router.get('/search', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const raw = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const type = typeof req.query.type === 'string' ? req.query.type : 'posts';
+    if (!raw) {
+      res.json({ posts: [] });
+      return;
+    }
+    const normQ = normalizePost(raw);
+    const snap = await getDb().collection('posts').get();
+    type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; [key: string]: unknown };
+    let posts = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
+      .filter((p) => !p.deleted && p.privacy !== 'only-me')
+      .filter((p) => normalizePost(p.content ?? '').includes(normQ));
+
+    if (type === 'videos') {
+      posts = posts.filter((p) => p.hasVideo === true);
+    } else {
+      posts = posts.filter((p) => !p.hasVideo);
+    }
+
+    res.json({ posts: posts.slice(0, 30) });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -85,6 +159,62 @@ router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// GET /saved — bài viết đã lưu của user đang đăng nhập
+router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const snap = await getDb()
+      .collection('posts')
+      .where('savedBy', 'array-contains', req.uid!)
+      .get();
+    const posts = snap.docs
+      .filter((d) => !d.data().deleted)
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+        const getTs = (v: unknown): number => {
+          if (!v) return 0;
+          if (typeof v === 'object' && '_seconds' in (v as object)) return (v as { _seconds: number })._seconds;
+          if (typeof v === 'object' && 'seconds' in (v as object)) return (v as { seconds: number }).seconds;
+          if (typeof v === 'number') return v;
+          return 0;
+        };
+        return getTs(b.createdAt) - getTs(a.createdAt);
+      });
+    res.json({ posts });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/save — lưu bài viết; gọi lại để bỏ lưu
+router.post('/:id/save', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = getDb().collection('posts').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    const savedBy: string[] = doc.data()?.savedBy ?? [];
+    if (!savedBy.includes(req.uid!)) {
+      await ref.update({ savedBy: FieldValue.arrayUnion(req.uid!) });
+    }
+    res.json({ saved: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// DELETE /:id/save — bỏ lưu bài viết
+router.delete('/:id/save', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = getDb().collection('posts').doc(req.params.id);
+    await ref.update({ savedBy: FieldValue.arrayRemove(req.uid!) });
+    res.json({ saved: false });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const postsRef = getDb().collection('posts');
@@ -96,9 +226,14 @@ router.get('/:id', requireAuth, async (req, res) => {
     const post = { id: postDoc.id, ...postDoc.data() };
     const repliesSnap = await postsRef
       .where('parentId', '==', req.params.id)
-      .orderBy('createdAt', 'asc')
       .get();
-    const replies = repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    type RDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
+    const replies = (repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as RDoc[])
+      .sort((a, b) => {
+        const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
+        const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
+        return aT - bT;
+      });
     res.json({ ...post, replies });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -219,6 +354,32 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
     });
     const updated = await ref.get();
     const responseData = { id: updated.id, ...updated.data() };
+
+    // Notify post author when someone reacts (not when unreacting, not own post)
+    if (idx === -1 && data.authorId && data.authorId !== req.uid) {
+      const reactorDoc = await getDb().collection('users').doc(req.uid!).get();
+      const reactor = reactorDoc.data();
+      const notifRef = getDb().collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'reaction',
+        recipientId: data.authorId as string,
+        actorId: req.uid,
+        actorName: reactor?.displayName ?? 'Ai đó',
+        actorPhoto: reactor?.photoURL ?? null,
+        postId: req.params.id,
+        postSnippet: (data.content as string ?? '').substring(0, 100),
+        reaction,
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${data.authorId as string}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
     // RT-3: notify all clients viewing this post about the updated reaction count
     emitPostReacted(req.params.id, {
       postId: req.params.id,
@@ -227,6 +388,67 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
       reactions,
     });
     res.json(responseData);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/share — chia sẻ bài viết (tạo post mới với sharedFrom ref)
+router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const postsRef = db.collection('posts');
+    const usersRef = db.collection('users');
+
+    const originalDoc = await postsRef.doc(req.params.id).get();
+    if (!originalDoc.exists || originalDoc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    const original = originalDoc.data()!;
+    const userDoc = await usersRef.doc(req.uid!).get();
+    const user = userDoc.data();
+
+    const { content = '', reaction } = req.body;
+
+    const sharedPostRef = postsRef.doc();
+    await sharedPostRef.set({
+      authorId: req.uid,
+      authorDisplayName: user?.displayName ?? 'Anonymous',
+      authorPhotoURL: user?.photoURL ?? null,
+      content: (content as string).trim(),
+      mediaUrls: [],
+      privacy: 'public',
+      parentId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      likeCount: 0,
+      replyCount: 0,
+      shareCount: 0,
+      likedBy: reaction ? [req.uid] : [],
+      reactions: reaction ? { [req.uid!]: reaction } : {},
+      hasVideo: false,
+      sharedFrom: {
+        id: req.params.id,
+        authorId: original.authorId ?? null,
+        authorDisplayName: original.authorDisplayName ?? 'Unknown',
+        authorPhotoURL: original.authorPhotoURL ?? null,
+        content: original.content ?? '',
+        mediaUrls: original.mediaUrls ?? [],
+        createdAt: original.createdAt ?? null,
+      },
+    });
+
+    // Increment shareCount on original post
+    await postsRef.doc(req.params.id).update({
+      shareCount: FieldValue.increment(1),
+    });
+
+    const created = await sharedPostRef.get();
+    // Emit real-time update for share count
+    getIo().emit('post:shared', { postId: req.params.id });
+    res.status(201).json({ id: created.id, ...created.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

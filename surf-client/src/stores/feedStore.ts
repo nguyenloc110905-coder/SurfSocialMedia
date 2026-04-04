@@ -11,13 +11,24 @@ export interface FeedPost {
   createdAt: Timestamp | { _seconds: number } | { seconds: number } | string | number | null;
   likeCount: number;
   replyCount: number;
+  shareCount?: number;
   likedBy: string[];
+  reactions?: Record<string, string>;
   feeling?: string;
   location?: string;
   taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
   isEdited?: boolean;
   _discover?: boolean;
+  sharedFrom?: {
+    id: string;
+    authorId?: string;
+    authorDisplayName: string;
+    authorPhotoURL: string | null;
+    content: string;
+    mediaUrls: string[];
+    createdAt: Timestamp | { _seconds: number } | { seconds: number } | string | number | null;
+  };
 }
 
 interface FeedState {

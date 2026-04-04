@@ -1,7 +1,9 @@
 import { getDb } from './config/firebase-admin.js';
+import { logger } from './config/logger.js';
 
 import 'dotenv/config';
-import express from 'express';
+import express, { NextFunction, Request, Response } from 'express';
+import morgan from 'morgan';
 import { createServer } from 'http';
 import cors from 'cors';
 import { requireAuth, ensureUser } from './middleware/auth.js';
@@ -71,6 +73,7 @@ registerSocketHandlers(io);
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(morgan('dev', { stream: { write: (msg) => logger.http(msg.trimEnd()) } }));
 
 // Health check — trước app.use('/api', requireAuth) để không cần auth
 app.get('/api/health', (_, res) => {
@@ -133,9 +136,16 @@ async function cleanupTrash() {
       console.log(`[Trash cleanup] Đã xóa vĩnh viễn ${count} bài viết.`);
     }
   } catch (e) {
-    console.error('[Trash cleanup] Lỗi:', e);
+    logger.error('[Trash cleanup] Lỗi', { stack: e instanceof Error ? e.stack : String(e) });
   }
 }
+
+// Global error handler — phải đặt sau tất cả routes
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error(err.message, { stack: err.stack });
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // Chạy ngay khi khởi động server, sau đó mỗi giờ một lần
 cleanupTrash();

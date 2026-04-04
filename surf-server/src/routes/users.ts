@@ -22,6 +22,14 @@ async function getRelationship(viewerUid: string, targetUid: string) {
 
 // ─── Static routes (phải đặt trước /:uid) ─────────────────────────────────
 
+/** Bỏ dấu tiếng Việt & chuyển thường để so sánh không phân biệt dấu */
+function normalize(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
 /** GET /api/users/search?q=... */
 router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -40,14 +48,14 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       myUserDoc.exists ? ((myUserDoc.data()?.blockedBy ?? []) as string[]) : []
     );
     const blockedByMe = new Set<string>(blockedByMeSnap.docs.map((d) => d.id));
-    const lower = q.toLowerCase();
+    const normQ = normalize(q);
     type UserDoc = { id: string; displayName?: string; photoURL?: string };
     const matched = snap.docs
       .filter((d) => d.id !== uid && !blockedByOthers.has(d.id) && !blockedByMe.has(d.id))
       .map((d) => ({ id: d.id, ...d.data() }) as UserDoc)
       .filter((u) => {
-        const words = (u.displayName ?? '').toLowerCase().split(/\s+/);
-        return words.some((w) => w.startsWith(lower));
+        const words = normalize(u.displayName ?? '').split(/\s+/);
+        return words.some((w) => w.startsWith(normQ));
       })
       .slice(0, 20);
 
@@ -444,22 +452,25 @@ router.post(
 
 // ─── Sub-collection routes (phải đặt trước /:uid GET) ──────────────────────
 
-/** GET /api/users/:uid/posts — lọc theo mối quan hệ */
+/** GET /api/users/:uid/posts — lọc theo mối quan hệ, bao gồm cả bài chia sẻ */
 router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
     const targetUid = req.params.uid;
     const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
+    // Fetch all posts authored by this user, filter deleted/replies in memory.
+    // No orderBy here — compound index not guaranteed; sorting done in memory below.
     const snap = await getDb()
       .collection('posts')
       .where('authorId', '==', targetUid)
-      .where('parentId', '==', null)
-      .orderBy('createdAt', 'desc')
       .limit(limitNum)
       .get();
 
     let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Record<string, unknown>);
+
+    // Filter out deleted posts and reply posts (parentId set) — only top-level posts and shares
+    posts = posts.filter((p) => !p.deleted && !p.parentId);
 
     if (viewerUid !== targetUid) {
       const { isFriend } = await getRelationship(viewerUid, targetUid);
@@ -470,6 +481,15 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
         return true; // public / custom → ai cũng thấy
       });
     }
+
+    // Sort by createdAt desc (Firestore compound query may change order)
+    posts.sort((a, b) => {
+      const aTime = (a.createdAt as { _seconds?: number; seconds?: number })?._seconds
+        ?? (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      const bTime = (b.createdAt as { _seconds?: number; seconds?: number })?._seconds
+        ?? (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      return bTime - aTime;
+    });
 
     res.json({ posts });
   } catch (e) {
@@ -506,22 +526,78 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
 router.get('/:uid/photos', requireAuth, async (req, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    // No orderBy — sort in memory to avoid needing a composite index
     const snap = await getDb()
       .collection('posts')
       .where('authorId', '==', req.params.uid)
-      .orderBy('createdAt', 'desc')
       .limit(limitNum)
       .get();
-    const photos: Array<{ url: string; postId: string; createdAt: Timestamp }> = [];
+    type Photo = { url: string; postId: string; createdAt: unknown };
+    const photos: Photo[] = [];
     snap.docs.forEach((doc) => {
       const data = doc.data();
+      if (data.deleted) return;
       if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
         data.mediaUrls.forEach((url: string) => {
-          photos.push({ url, postId: doc.id, createdAt: data.createdAt });
+          // images only (exclude Cloudinary video uploads and common video extensions)
+          const isVideo =
+            typeof url === 'string' &&
+            (url.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url));
+          if (!isVideo) {
+            photos.push({ url, postId: doc.id, createdAt: data.createdAt });
+          }
         });
       }
     });
-    res.json({ photos });
+    // Sort newest first in memory
+    photos.sort((a, b) => {
+      const ts = (c: unknown) => {
+        if (!c || typeof c !== 'object') return 0;
+        const o = c as { _seconds?: number; seconds?: number };
+        return (o._seconds ?? o.seconds ?? 0) * 1000;
+      };
+      return ts(b.createdAt) - ts(a.createdAt);
+    });
+    res.json({ photos: photos.slice(0, limitNum) });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** GET /api/users/:uid/clips — video posts (Surf Clips) */
+router.get('/:uid/clips', requireAuth, async (req, res) => {
+  try {
+    const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const snap = await getDb()
+      .collection('posts')
+      .where('authorId', '==', req.params.uid)
+      .limit(limitNum)
+      .get();
+    type Clip = { url: string; postId: string; content: string; createdAt: unknown };
+    const clips: Clip[] = [];
+    snap.docs.forEach((doc) => {
+      const data = doc.data();
+      if (data.deleted) return;
+      if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
+        data.mediaUrls.forEach((url: string) => {
+          const isVideo =
+            typeof url === 'string' &&
+            (url.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url));
+          if (isVideo) {
+            clips.push({ url, postId: doc.id, content: data.content ?? '', createdAt: data.createdAt });
+          }
+        });
+      }
+    });
+    clips.sort((a, b) => {
+      const ts = (c: unknown) => {
+        if (!c || typeof c !== 'object') return 0;
+        const o = c as { _seconds?: number; seconds?: number };
+        return (o._seconds ?? o.seconds ?? 0) * 1000;
+      };
+      return ts(b.createdAt) - ts(a.createdAt);
+    });
+    res.json({ clips: clips.slice(0, limitNum) });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
