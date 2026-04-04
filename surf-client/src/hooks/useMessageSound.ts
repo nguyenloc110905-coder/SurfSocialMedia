@@ -7,7 +7,6 @@ type MessageNewPayload = {
 };
 
 export function useMessageSound() {
-  alert('useMessageSound mounted!');
   const user = useAuthStore((s) => s.user);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const unlockedRef = useRef(false);
@@ -41,7 +40,6 @@ export function useMessageSound() {
     const socket = getSocket();
     console.log('[sound] registering handler, socket connected:', socket.connected);
     const handler = (payload: MessageNewPayload) => {
-      alert('message:new received from ' + payload.message.senderId);
       if (payload.message.senderId === userRef.current?.uid) return;
       const audio = audioRef.current;
       if (!audio) return;

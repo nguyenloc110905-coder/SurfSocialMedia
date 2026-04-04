@@ -107,6 +107,7 @@ initRedis()
   .catch((err) => {
     console.error('Failed to initialize Redis:', err);
   });
+app.use('/api/notifications', notificationsRoutes);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);
