@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { logger } from '../config/logger.js';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get('/search', async (req, res) => {
     const response = await fetch(url.toString());
     if (!response.ok) {
       const errText = await response.text();
-      console.error('[music/search] YouTube API error:', errText);
+      logger.error('[music/search] YouTube API error:', { detail: errText });
       res.status(502).json({ error: 'YouTube API error' });
       return;
     }
@@ -62,7 +63,7 @@ router.get('/search', async (req, res) => {
 
     res.json({ videos });
   } catch (err) {
-    console.error('[music/search]', err);
+    logger.error('[music/search]', { stack: err instanceof Error ? err.stack : String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

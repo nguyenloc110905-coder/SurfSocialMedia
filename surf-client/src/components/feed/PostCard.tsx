@@ -53,6 +53,7 @@ interface PostCardProps {
     taggedFriends?: Array<{ uid: string; displayName: string }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
+    savedBy?: string[];
     sharedFrom?: {
       id: string;
       authorId?: string;
@@ -306,7 +307,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [shareReaction, setShareReaction] = useState<string | null>(null);
   const [showShareReactionPicker, setShowShareReactionPicker] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [isSaved, setIsSaved] = useState(
+    currentUserId ? (post.savedBy?.includes(currentUserId) ?? false) : false
+  );
   const [showReactions, setShowReactions] = useState(false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(
     initialReaction ?? (initialLiked ? '❤️' : null)

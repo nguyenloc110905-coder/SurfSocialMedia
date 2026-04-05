@@ -158,6 +158,62 @@ router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// GET /saved — bài viết đã lưu của user đang đăng nhập
+router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const snap = await getDb()
+      .collection('posts')
+      .where('savedBy', 'array-contains', req.uid!)
+      .get();
+    const posts = snap.docs
+      .filter((d) => !d.data().deleted)
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+        const getTs = (v: unknown): number => {
+          if (!v) return 0;
+          if (typeof v === 'object' && '_seconds' in (v as object)) return (v as { _seconds: number })._seconds;
+          if (typeof v === 'object' && 'seconds' in (v as object)) return (v as { seconds: number }).seconds;
+          if (typeof v === 'number') return v;
+          return 0;
+        };
+        return getTs(b.createdAt) - getTs(a.createdAt);
+      });
+    res.json({ posts });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/save — lưu bài viết; gọi lại để bỏ lưu
+router.post('/:id/save', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = getDb().collection('posts').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    const savedBy: string[] = doc.data()?.savedBy ?? [];
+    if (!savedBy.includes(req.uid!)) {
+      await ref.update({ savedBy: FieldValue.arrayUnion(req.uid!) });
+    }
+    res.json({ saved: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// DELETE /:id/save — bỏ lưu bài viết
+router.delete('/:id/save', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = getDb().collection('posts').doc(req.params.id);
+    await ref.update({ savedBy: FieldValue.arrayRemove(req.uid!) });
+    res.json({ saved: false });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const postsRef = getDb().collection('posts');

@@ -7,8 +7,9 @@ interface QuickAccessSectionProps {
 export default function QuickAccessSection({ onSelectDetail }: QuickAccessSectionProps) {
   const handleQuickAccess = (label: string) => {
     if (!onSelectDetail) return;
-    if (label === 'Chặn') onSelectDetail('block-list');
-    if (label === 'Nhật ký hoạt động') onSelectDetail('activity-log');
+    if (label === 'Danh sách chặn') onSelectDetail('block-list');
+    if (label === 'Bảo mật tài khoản') onSelectDetail('account-security');
+    if (label === 'Thông báo') onSelectDetail('notifications');
   };
 
   return (
@@ -31,14 +32,14 @@ export default function QuickAccessSection({ onSelectDetail }: QuickAccessSectio
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
                   </svg>
                 )}
-                {item.icon === 'list' && (
+                {item.icon === 'shield' && (
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" />
+                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
                   </svg>
                 )}
-                {item.icon === 'moon' && (
+                {item.icon === 'bell' && (
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
                   </svg>
                 )}
               </span>

@@ -16,6 +16,7 @@ import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
+import SavedPage from './pages/SavedPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -131,12 +132,7 @@ export default function App() {
           <Route path="friends/blocked" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
           <Route path="market" element={<MarketPage />} />
-          <Route
-            path="saved"
-            element={
-              <PlaceholderPage title="Đã lưu" description="Bài viết và nội dung bạn đã lưu." />
-            }
-          />
+          <Route path="saved" element={<SavedPage />} />
           <Route
             path="events"
             element={

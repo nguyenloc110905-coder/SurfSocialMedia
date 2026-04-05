@@ -23,6 +23,7 @@ const TABS: { id: string; label: string; hasArrow?: boolean }[] = [
   { id: 'friends', label: 'Bạn bè' },
   { id: 'photos', label: 'Ảnh' },
   { id: 'reels', label: 'Surf Clips' },
+  { id: 'saved', label: 'Đã lưu' },
   { id: 'more', label: 'Xem thêm', hasArrow: true },
 ];
 
@@ -128,6 +129,7 @@ export default function Profile() {
     taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
+    savedBy?: string[];
     sharedFrom?: {
       id: string;
       authorId?: string;
@@ -176,6 +178,11 @@ export default function Profile() {
 
   // Selected post for detail overlay (grid view click)
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+
+  // Saved posts state (only loaded for own profile)
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
+  const [savedPostsLoading, setSavedPostsLoading] = useState(false);
+  const [savedPostsError, setSavedPostsError] = useState<string | null>(null);
 
   // Trigger count-up when data loads
   useEffect(() => {
@@ -393,6 +400,20 @@ export default function Profile() {
     loadClips();
     return () => { cancelled = true; };
   }, [uid, activeTab]);
+
+  // Load saved posts (own profile only)
+  useEffect(() => {
+    if (!isOwnProfile || activeTab !== 'saved') return;
+    let cancelled = false;
+    setSavedPostsLoading(true);
+    setSavedPostsError(null);
+    api
+      .get<{ posts: Post[] }>('/api/posts/saved')
+      .then((r) => { if (!cancelled) setSavedPosts(r.posts ?? []); })
+      .catch(() => { if (!cancelled) setSavedPostsError('Không thể tải bài đã lưu.'); })
+      .finally(() => { if (!cancelled) setSavedPostsLoading(false); });
+    return () => { cancelled = true; };
+  }, [isOwnProfile, activeTab]);
 
   // Kểm tra trạng thái bạn bè khi xem trang người khác
   useEffect(() => {
@@ -1292,7 +1313,7 @@ export default function Profile() {
         {/* Tab navigation — underline style */}
         <nav className="border-t border-gray-100 dark:border-gray-800/80" aria-label="Hồ sơ">
           <div className="flex overflow-x-auto scrollbar-hide px-2 sm:px-6">
-            {TABS.map((tab) => (
+            {TABS.filter((tab) => tab.id !== 'saved' || isOwnProfile).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -1824,6 +1845,49 @@ export default function Profile() {
                       <p className="mt-3 text-white text-sm text-center">{selectedClip.content}</p>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: Saved — only visible to own profile */}
+          {activeTab === 'saved' && isOwnProfile && (
+            <div className="space-y-4">
+              <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                Bài viết đã lưu {!savedPostsLoading && savedPosts.length > 0 && `(${savedPosts.length})`}
+              </h2>
+              {savedPostsLoading && (
+                <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-8 text-center shadow-sm">
+                  <div className="inline-block w-8 h-8 border-2 border-surf-primary border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">Đang tải...</p>
+                </div>
+              )}
+              {!savedPostsLoading && savedPostsError && (
+                <div className="rounded-3xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/50 p-6 text-center">
+                  <p className="text-red-600 dark:text-red-400 text-sm">{savedPostsError}</p>
+                </div>
+              )}
+              {!savedPostsLoading && !savedPostsError && savedPosts.length === 0 && (
+                <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
+                  <svg className="w-14 h-14 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Chưa lưu bài viết nào</p>
+                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Nhấn biểu tượng lưu trên bài viết để lưu lại.</p>
+                </div>
+              )}
+              {!savedPostsLoading && !savedPostsError && savedPosts.length > 0 && (
+                <div className="space-y-4">
+                  {savedPosts.map((post) => (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      currentUserId={user?.uid}
+                      onPostUpdated={(updated) =>
+                        setSavedPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+                      }
+                    />
+                  ))}
                 </div>
               )}
             </div>
