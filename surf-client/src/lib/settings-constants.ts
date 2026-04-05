@@ -34,6 +34,7 @@ export const SETTINGS_DETAIL_SECTIONS: {
     items: [
       { label: 'Kiểm tra quyền riêng tư', icon: 'lock', key: 'privacy-checkup' },
       { label: 'Đối tượng xem mặc định', icon: 'gear', key: 'default-audience' },
+      { label: 'Cài đặt quyền riêng tư nội dung', icon: 'shield', key: 'privacy-settings' },
       { label: 'Bảo vệ trang cá nhân', icon: 'shield', key: 'profile-protection' },
       { label: 'Thông tin công khai', icon: 'person', key: 'public-info' },
       { label: 'Tìm kiếm & Kết nối', icon: 'people', key: 'search-connect' },
