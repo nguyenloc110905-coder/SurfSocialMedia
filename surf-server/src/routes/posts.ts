@@ -4,6 +4,7 @@ import { getDb } from '../config/firebase-admin.js';
 import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getIo } from '../realtime/io.js';
+import { moderatePost } from '../services/aiModeration.js';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ function detectHasVideo(urls: string[]): boolean {
 }
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
+  console.log('[POST /api/posts] Request received, content:', req.body?.content?.substring(0, 50));
   try {
     const db = getDb();
     const postsRef = db.collection('posts');
@@ -34,6 +36,26 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
     if (!content?.trim() && mediaUrls.length === 0) {
       res.status(400).json({ error: 'Content or media is required' });
+      return;
+    }
+
+    // Kiểm duyệt nội dung bằng AI trước khi lưu
+    const moderation = await moderatePost(content?.trim() ?? '', Array.isArray(mediaUrls) ? mediaUrls : []);
+    if (!moderation.allowed) {
+      // Lưu log vi phạm vào Firestore
+      try {
+        await db.collection('moderation_logs').add({
+          userId: req.uid,
+          contentSnippet: (content?.trim() ?? '').substring(0, 200),
+          mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : [],
+          reason: moderation.reason ?? 'Nội dung không phù hợp',
+          type: 'post',
+          createdAt: new Date(),
+        });
+      } catch {
+        // Không để lỗi log chặn response
+      }
+      res.status(422).json({ error: `Bài đăng vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
     }
 

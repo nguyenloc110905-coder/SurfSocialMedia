@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { getSocket } from '../../lib/socket';
+import { useAuthStore } from '../../stores/authStore';
 import SurfMusicPlayer from './SurfMusicPlayer';
 import MiniChatPanel from './MiniChatPanel';
 import { musicStore, type TrackItem, type Playlist } from '../../lib/musicStore';
@@ -75,8 +77,10 @@ function HeartIcon({ filled, className }: { filled: boolean; className?: string 
 
 export default function QuickContactBar({ isShortVideo = false }: { isShortVideo?: boolean }) {
   const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [unreadByFriend, setUnreadByFriend] = useState<Record<string, number>>({});
 
   // Sort: online first, then offline (stable order within each group)
   const sortedFriends = [...friends].sort((a, b) => {
@@ -120,6 +124,34 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
       .then((data) => setFriends(data.friends ?? []))
       .catch(() => {});
   }, []);
+
+  // Load initial unread counts from conversations
+  useEffect(() => {
+    api
+      .get<{ items: Array<{ id: string; peer: { uid: string } | null; unreadCount: number }> }>('/api/conversations?limit=50')
+      .then((data) => {
+        const map: Record<string, number> = {};
+        for (const conv of data.items ?? []) {
+          if (conv.peer && conv.unreadCount > 0) {
+            map[conv.peer.uid] = (map[conv.peer.uid] ?? 0) + conv.unreadCount;
+          }
+        }
+        setUnreadByFriend(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Listen for incoming messages → increment badge
+  useEffect(() => {
+    const socket = getSocket();
+    const handler = (payload: { conversationId: string; message: { senderId: string } }) => {
+      const senderId = payload.message?.senderId;
+      if (!senderId || senderId === currentUser?.uid) return;
+      setUnreadByFriend((prev) => ({ ...prev, [senderId]: (prev[senderId] ?? 0) + 1 }));
+    };
+    socket.on('message:new', handler);
+    return () => { socket.off('message:new', handler); };
+  }, [currentUser?.uid]);
 
   useEffect(() => musicStore.subscribe(() => rerender((t) => t + 1)), []);
 
@@ -909,7 +941,11 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
           {sortedFriends.map((friend) => (
             <button
               key={friend.id}
-              onClick={() => { setOpenChats((prev) => prev.includes(friend.id) ? prev : [...prev, friend.id].slice(-3)); setShowMusic(false); setShowSearch(false); setShowYoutube(false); }}
+              onClick={() => {
+                setOpenChats((prev) => prev.includes(friend.id) ? prev : [...prev, friend.id].slice(-3));
+                setShowMusic(false); setShowSearch(false); setShowYoutube(false);
+                setUnreadByFriend((prev) => { const next = { ...prev }; delete next[friend.id]; return next; });
+              }}
               title={friend.name}
               className="relative flex items-center gap-2.5 w-full px-1 py-1 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors duration-150 flex-shrink-0 group"
             >
@@ -924,6 +960,11 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                   )}
                 </span>
                 <PresenceBadge uid={friend.id} />
+                {(unreadByFriend[friend.id] ?? 0) > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-0.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold leading-none border border-white dark:border-slate-800 shadow">
+                    {unreadByFriend[friend.id] > 99 ? '99+' : unreadByFriend[friend.id]}
+                  </span>
+                )}
               </span>
               <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 truncate overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
                 {friend.name}

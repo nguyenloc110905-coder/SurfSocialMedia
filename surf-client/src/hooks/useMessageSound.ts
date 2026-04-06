@@ -38,7 +38,6 @@ export function useMessageSound() {
 
   useEffect(() => {
     const socket = getSocket();
-    console.log('[sound] registering handler, socket connected:', socket.connected);
     const handler = (payload: MessageNewPayload) => {
       if (payload.message.senderId === userRef.current?.uid) return;
       const audio = audioRef.current;

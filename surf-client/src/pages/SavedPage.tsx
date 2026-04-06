@@ -74,9 +74,8 @@ export default function SavedPage() {
             <PostCard
               key={post.id}
               post={post}
-              currentUserId={user?.uid ?? null}
+              currentUserId={user?.uid ?? undefined}
               onPostUpdated={handlePostUpdated}
-              onPostDeleted={handlePostDeleted}
             />
           ))}
         </div>

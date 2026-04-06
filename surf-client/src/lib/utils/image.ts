@@ -54,3 +54,8 @@ export function resizeAvatar(file: File): Promise<Blob> {
 export function resizeCover(file: File): Promise<Blob> {
   return resizeImage(file, 1200, 630, 0.85);
 }
+
+/** Ảnh bài đăng: tối đa 1920px, nén 0.85 */
+export function resizePostImage(file: File): Promise<Blob> {
+  return resizeImage(file, 1920, 1920, 0.85);
+}

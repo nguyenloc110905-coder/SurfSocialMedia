@@ -5,6 +5,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
 import { getIo } from '../realtime/io.js';
 import { logger } from '../config/logger.js';
+import { moderateText } from '../services/aiModeration.js';
 
 const router = Router();
 
@@ -49,11 +50,25 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
-    // Check if post exists
-    const postDoc = await postsRef.doc(req.params.postId).get();
-    if (!postDoc.exists) {
-      res.status(404).json({ error: 'Post not found' });
+    // Kiểm duyệt nội dung bình luận
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
+    }
+
+    // Check if post or video exists
+    const postDoc = await postsRef.doc(req.params.postId).get();
+    const videosRef = db.collection('videos');
+    let isVideo = false;
+    let videoDoc: FirebaseFirestore.DocumentSnapshot | undefined;
+    if (!postDoc.exists) {
+      videoDoc = await videosRef.doc(req.params.postId).get();
+      if (!videoDoc.exists) {
+        res.status(404).json({ error: 'Post not found' });
+        return;
+      }
+      isVideo = true;
     }
 
     // If parentId given, verify parent comment exists and belongs to this post
@@ -90,10 +105,12 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
 
     console.log(`✅ Comment created with ID: ${commentRef.id}`);
 
-    // Update post's replyCount
-    await postsRef.doc(req.params.postId).update({
-      replyCount: FieldValue.increment(1),
-    });
+    // Update comment count on post or video
+    if (isVideo) {
+      await videosRef.doc(req.params.postId).update({ commentCount: FieldValue.increment(1) });
+    } else {
+      await postsRef.doc(req.params.postId).update({ replyCount: FieldValue.increment(1) });
+    }
 
     const responseData = {
       id: commentRef.id,
@@ -105,7 +122,11 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     // RT-4: broadcast new comment to all users viewing this post
     emitCommentNew(req.params.postId, responseData);
 
-    const postAuthorId = postDoc.data()?.authorId as string | undefined;
+    const contentDoc = isVideo ? videoDoc! : postDoc;
+    const postAuthorId = contentDoc.data()?.authorId as string | undefined;
+    const postSnippet = isVideo
+      ? (contentDoc.data()?.title as string ?? '').substring(0, 100)
+      : (contentDoc.data()?.content as string ?? '').substring(0, 100);
     // Notify post author about new top-level comment (skip own post, skip replies — handled below)
     if (!parentId && postAuthorId && postAuthorId !== req.uid) {
       const notifRef = db.collection('notifications').doc();
@@ -117,7 +138,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         actorName: user?.displayName ?? 'Ai đó',
         actorPhoto: user?.photoURL ?? null,
         postId: req.params.postId,
-        postSnippet: (postDoc.data()?.content as string ?? '').substring(0, 100),
+        postSnippet,
         commentSnippet: content.trim().substring(0, 80),
         read: false,
         createdAt: new Date(),
@@ -192,6 +213,13 @@ router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) =
     const { content } = req.body;
     if (!content?.trim()) {
       res.status(400).json({ error: 'Content is required' });
+      return;
+    }
+
+    // Kiểm duyệt nội dung chỉnh sửa
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
     }
 

@@ -218,6 +218,17 @@ function FeedVideo({
           </div>
           {/* Buttons */}
           <div className="flex items-center gap-3">
+            {/* Rewind 5s */}
+            <button
+              className="text-white hover:text-white/70 transition-colors"
+              onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.max(0, el.currentTime - 5); }}
+              title="Tua lùi 5 giây"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                <text x="8.5" y="14.5" fontSize="5.5" fontWeight="bold" fill="currentColor" textAnchor="middle">5</text>
+              </svg>
+            </button>
             {/* Play / Pause */}
             <button
               className="text-white hover:text-white/70 transition-colors"
@@ -232,6 +243,17 @@ function FeedVideo({
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 </svg>
               )}
+            </button>
+            {/* Forward 5s */}
+            <button
+              className="text-white hover:text-white/70 transition-colors"
+              onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5); }}
+              title="Tua tới 5 giây"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
+                <text x="15.5" y="14.5" fontSize="5.5" fontWeight="bold" fill="currentColor" textAnchor="middle">5</text>
+              </svg>
             </button>
             {/* Mute */}
             <button
@@ -319,6 +341,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [sharingPost, setSharingPost] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [loadingComments, setLoadingComments] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
@@ -542,6 +565,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
 
   const handleSubmitComment = async () => {
     if (!commentText.trim() || submittingComment) return;
+    setCommentError(null);
 
     try {
       setSubmittingComment(true);
@@ -556,7 +580,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       setCommentText('');
     } catch (error) {
       console.error('❌ Error submitting comment:', error);
-      alert('Không thể gửi bình luận. Vui lòng thử lại.');
+      const msg = error instanceof Error ? error.message : '';
+      setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
     } finally {
       setSubmittingComment(false);
     }
@@ -677,8 +702,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       setReplyTexts((prev) => ({ ...prev, [parentId]: '' }));
       setReplyingToId(null);
       setExpandedReplies((prev) => ({ ...prev, [parentId]: true }));
-    } catch {
-      alert('Không thể gửi trả lời. Vui lòng thử lại.');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '';
+      setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
     } finally {
       setSubmittingReply(null);
     }
@@ -983,6 +1009,18 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
 
   const hasMedia = post.mediaUrls && post.mediaUrls.length > 0;
 
+  // Sắp xếp lại: video lên trước (nếu có), ảnh theo sau — giữ nguyên thứ tự trong từng nhóm
+  const displayMedia: { url: string; originalIndex: number }[] = hasMedia
+    ? [
+        ...post.mediaUrls
+          .map((url, i) => ({ url, originalIndex: i }))
+          .filter((m) => isVideoUrl(m.url)),
+        ...post.mediaUrls
+          .map((url, i) => ({ url, originalIndex: i }))
+          .filter((m) => !isVideoUrl(m.url)),
+      ]
+    : [];
+
   return (
     <>
       {/* Edit post modal */}
@@ -1188,20 +1226,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             <div className="relative overflow-hidden rounded-2xl">
               {/* ── 1 image: full width, natural aspect ── */}
               {post.mediaUrls.length === 1 &&
-                (isVideoUrl(post.mediaUrls[0]) ? (
+                (isVideoUrl(displayMedia[0].url) ? (
                   <FeedVideo
-                    src={post.mediaUrls[0]}
+                    src={displayMedia[0].url}
                     fill={false}
                     style={{ maxHeight: '520px' }}
-                    onExpand={() => openLightbox(0)}
+                    onExpand={() => openLightbox(displayMedia[0].originalIndex)}
                   />
                 ) : (
                   <img
-                    src={post.mediaUrls[0]}
+                    src={displayMedia[0].url}
                     alt="Post media"
                     className="w-full block object-cover cursor-pointer"
                     style={{ maxHeight: '520px' }}
-                    onClick={() => openLightbox(0)}
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   />
                 ))}
 
@@ -1211,23 +1249,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   className="grid gap-0.5"
                   style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
                 >
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-                    {isVideoUrl(post.mediaUrls[0]) ? (
-                      <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[0].originalIndex)}>
+                    {isVideoUrl(displayMedia[0].url) ? (
+                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[0]}
+                        src={displayMedia[0].url}
                         alt="Post media 1"
                         className="w-full h-full object-cover"
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                    {isVideoUrl(post.mediaUrls[1]) ? (
-                      <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[1].originalIndex)}>
+                    {isVideoUrl(displayMedia[1].url) ? (
+                      <FeedVideo src={displayMedia[1].url} onExpand={() => openLightbox(displayMedia[1].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[1]}
+                        src={displayMedia[1].url}
                         alt="Post media 2"
                         className="w-full h-full object-cover"
                       />
@@ -1241,35 +1279,35 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
                   <div
                     className="overflow-hidden row-span-2 cursor-pointer"
-                    onClick={() => openLightbox(0)}
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   >
-                    {isVideoUrl(post.mediaUrls[0]) ? (
-                      <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                    {isVideoUrl(displayMedia[0].url) ? (
+                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[0]}
+                        src={displayMedia[0].url}
                         alt="Post media 1"
                         className="w-full h-full object-cover"
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                    {isVideoUrl(post.mediaUrls[1]) ? (
-                      <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[1].originalIndex)}>
+                    {isVideoUrl(displayMedia[1].url) ? (
+                      <FeedVideo src={displayMedia[1].url} onExpand={() => openLightbox(displayMedia[1].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[1]}
+                        src={displayMedia[1].url}
                         alt="Post media 2"
                         className="w-full h-full object-cover"
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
-                    {isVideoUrl(post.mediaUrls[2]) ? (
-                      <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[2].originalIndex)}>
+                    {isVideoUrl(displayMedia[2].url) ? (
+                      <FeedVideo src={displayMedia[2].url} onExpand={() => openLightbox(displayMedia[2].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[2]}
+                        src={displayMedia[2].url}
                         alt="Post media 3"
                         className="w-full h-full object-cover"
                       />
@@ -1285,13 +1323,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   <div
                     className="overflow-hidden cursor-pointer"
                     style={{ height: '260px' }}
-                    onClick={() => openLightbox(0)}
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   >
-                    {isVideoUrl(post.mediaUrls[0]) ? (
-                      <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                    {isVideoUrl(displayMedia[0].url) ? (
+                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[0]}
+                        src={displayMedia[0].url}
                         alt="Post media 1"
                         className="w-full h-full object-cover"
                       />
@@ -1299,7 +1337,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   </div>
                   {/* All secondaries — equal-width flex strip, scrolls if too many */}
                   <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
-                    {post.mediaUrls.slice(1).map((url, i) => (
+                    {displayMedia.slice(1).map((m, i) => (
                       <div
                         key={i}
                         className="flex-none overflow-hidden cursor-pointer"
@@ -1307,13 +1345,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                           width: `calc((100% - ${(post.mediaUrls.length - 2) * 2}px) / ${post.mediaUrls.length - 1})`,
                           minWidth: '60px',
                         }}
-                        onClick={() => openLightbox(i + 1)}
+                        onClick={() => openLightbox(m.originalIndex)}
                       >
-                        {isVideoUrl(url) ? (
-                          <FeedVideo src={url} onExpand={() => openLightbox(i + 1)} />
+                        {isVideoUrl(m.url) ? (
+                          <FeedVideo src={m.url} onExpand={() => openLightbox(m.originalIndex)} />
                         ) : (
                           <img
-                            src={url}
+                            src={m.url}
                             alt={`Post media ${i + 2}`}
                             className="w-full h-full object-cover"
                           />
@@ -2504,11 +2542,18 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     </div>
                   )}
                   <div className="flex-1 relative">
+                    {commentError && (
+                      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/50 rounded-xl text-sm text-red-600 dark:text-red-400">
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                        <span className="flex-1">{commentError}</span>
+                        <button type="button" onClick={() => setCommentError(null)} className="shrink-0 hover:text-red-700">×</button>
+                      </div>
+                    )}
                     <input
                       ref={commentInputRef}
                       type="text"
                       value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
+                      onChange={(e) => { setCommentText(e.target.value); setCommentError(null); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
                       placeholder="Viết bình luận của bạn..."
                       disabled={submittingComment}

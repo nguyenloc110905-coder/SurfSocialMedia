@@ -32,8 +32,8 @@ interface UiMessage {
 }
 
 interface RealtimePayload {
+  conversationId: string;
   message: UiMessage;
-  conversation: { id: string; lastMessagePreview: string; lastMessageAt: string };
 }
 
 function getInitials(name: string) {
@@ -186,18 +186,11 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     if (activeId) setTimeout(() => inputRef.current?.focus(), 100);
   }, [activeId]);
 
-  // Realtime socket
+  // Realtime socket — sound is handled globally by useMessageSound in App.tsx
   useEffect(() => {
     const socket = getSocket();
-    const notifAudio = new Audio('/notification-message.mp3');
-    notifAudio.volume = 0.5;
     const handler = (payload: RealtimePayload) => {
-      const { message, conversation } = payload;
-      // Phát chuông nếu tin nhắn từ người khác
-      if (message.senderId !== user?.uid) {
-        notifAudio.currentTime = 0;
-        notifAudio.play().catch(() => {});
-      }
+      const { conversationId, message } = payload;
       // Update messages if in this conversation
       if (message.conversationId === activeId) {
         setMessages((prev) => {
@@ -209,11 +202,11 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
       // Update conversation preview
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === conversation.id
+          c.id === conversationId
             ? {
                 ...c,
-                lastMessagePreview: conversation.lastMessagePreview,
-                lastMessageAt: conversation.lastMessageAt,
+                lastMessagePreview: message.text,
+                lastMessageAt: message.createdAt,
                 unreadCount: c.id === activeId ? 0 : c.unreadCount + 1,
               }
             : c
@@ -241,7 +234,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     setDraft('');
     setSending(true);
     try {
-      const data = await api.post<{ item: UiMessage; conversation: RealtimePayload['conversation'] }>(
+      const data = await api.post<{ item: UiMessage }>(
         `/api/conversations/${activeId}/messages`,
         { text }
       );
@@ -249,7 +242,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
       setConversations((prev) =>
         prev.map((c) =>
           c.id === activeId
-            ? { ...c, lastMessagePreview: data.conversation.lastMessagePreview, lastMessageAt: data.conversation.lastMessageAt }
+            ? { ...c, lastMessagePreview: text, lastMessageAt: new Date().toISOString() }
             : c
         )
       );
