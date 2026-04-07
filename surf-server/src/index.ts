@@ -20,7 +20,7 @@ import videosRoutes from './routes/videos.js';
 import conversationsRoutes from './routes/conversations.js';
 import groupsRoutes from './routes/groups.js';
 import presenceRoutes from './routes/presence.js';
-import { markOnline, markOffline, refreshPresence, getUserIdBySocket } from './services/presence.js';
+import callsRoutes from './routes/calls.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 import { initIo } from './realtime/io.js';
 import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
@@ -58,7 +58,10 @@ const isAllowedOrigin = (origin?: string) => {
   return lanOriginPattern.test(origin);
 };
 
-const corsOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+const corsOrigin = (
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void
+) => {
   if (isAllowedOrigin(origin)) {
     callback(null, true);
     return;
@@ -101,6 +104,7 @@ app.use('/api/videos', videosRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/groups', groupsRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/calls', callsRoutes);
 
 initRedis()
   .then(() => initSocketRedisAdapter(io))

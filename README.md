@@ -105,6 +105,62 @@ Build pass chỉ đảm bảo **code biên dịch được**, không đảm bả
 
 Khi test local ổn (đăng nhập, gợi ý, tìm tên, gửi/chấp nhận lời mời đều đúng) → hãy **push** (API) và **firebase deploy** (client).
 
+### 4.3. Cấu hình call khi deploy (LiveKit + fallback)
+
+Project đã tích hợp sẵn flow gọi theo thứ tự:
+
+- Ưu tiên LiveKit Cloud cho in-app call
+- Nếu LiveKit thiếu config hoặc gần/qua quota, tự chuyển qua fallback URL (mặc định Jitsi)
+
+**Backend (`surf-server`) cần env:**
+
+```env
+LIVEKIT_URL=wss://<your-project>.livekit.cloud
+LIVEKIT_API_KEY=<your_api_key>
+LIVEKIT_API_SECRET=<your_api_secret>
+LIVEKIT_TOKEN_TTL=1h
+
+LIVEKIT_USAGE_PERCENT=
+LIVEKIT_USAGE_API_URL=
+LIVEKIT_USAGE_API_KEY=
+LIVEKIT_USAGE_API_AUTH_MODE=bearer
+LIVEKIT_USAGE_API_HEADER_NAME=
+LIVEKIT_USAGE_JSON_PATH=usagePercent
+LIVEKIT_USAGE_VALUE_TYPE=percent
+LIVEKIT_USAGE_API_TIMEOUT_MS=3000
+LIVEKIT_USAGE_CACHE_MS=120000
+LIVEKIT_FALLBACK_SOFT_LIMIT_PERCENT=80
+LIVEKIT_FALLBACK_HARD_LIMIT_PERCENT=90
+LIVEKIT_FORCE_FALLBACK=false
+
+CALL_FALLBACK_PROVIDER=jitsi
+CALL_JITSI_BASE_URL=https://meet.jit.si
+```
+
+**Frontend (`surf-client`) cần env:**
+
+```env
+VITE_CALL_PROVIDER=livekit
+VITE_CALL_VIDEO_PROFILE=480p
+VITE_CALL_VIDEO_FPS=30
+VITE_CALL_FALLBACK_BASE_URL=https://meet.jit.si
+```
+
+Ví dụ endpoint quota tự động (`LIVEKIT_USAGE_API_URL`) nên trả JSON có field theo `LIVEKIT_USAGE_JSON_PATH`, mặc định:
+
+```json
+{
+  "usagePercent": 72.5
+}
+```
+
+Lưu ý:
+
+- UI call có nút đổi nhanh 480p/720p trong lúc gọi video.
+- FPS sẽ bị giới hạn tối đa ở mức ổn định cho browser/camera web (để tránh giật hoặc rớt track khi đặt quá cao).
+- Nếu muốn kiểm soát fallback thủ công tạm thời, đặt `LIVEKIT_FORCE_FALLBACK=true` ở backend.
+- `LIVEKIT_USAGE_PERCENT` là override thủ công; nếu để trống, server sẽ tự gọi `LIVEKIT_USAGE_API_URL` và đọc trường theo `LIVEKIT_USAGE_JSON_PATH` (cache theo `LIVEKIT_USAGE_CACHE_MS`).
+
 ### 5. Chia sẻ link cho bất kỳ ai — đăng ký và kết bạn (không cần cùng WiFi)
 
 Để **ai có link cũng có thể đăng ký và kết bạn**, không bắt buộc cùng mạng Wi‑Fi, dùng một trong hai cách:
