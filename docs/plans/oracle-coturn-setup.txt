@@ -1,0 +1,191 @@
+ORACLE ALWAYS FREE + COTURN SETUP FOR SURF WEBRTC
+
+Mục tiêu:
+- có TURN server free để call audio/video giữa 2 máy khác nhau ổn định hơn
+- dùng được khi deploy web lên online, không chỉ local
+- nối thẳng vào env hiện có của `surf-client`
+
+Kiến trúc đề xuất:
+- deploy frontend/backend như bình thường
+- dựng 1 VM riêng trên Oracle Cloud Always Free
+- cài `coturn` trên VM đó
+- mở port TURN cần thiết
+- lấy `host / username / password`
+- điền vào `surf-client/.env`
+
+1. Tạo Oracle Cloud Always Free VM
+- vào Oracle Cloud Free Tier
+- tạo 1 Compute Instance dạng Always Free
+- chọn Ubuntu
+- attach public IPv4
+
+Tên gợi ý:
+```
+surf-turn
+```
+
+2. SSH vào VM
+Ví dụ:
+```bash
+ssh ubuntu@YOUR_ORACLE_PUBLIC_IP
+```
+
+3. Cài coturn
+Ubuntu:
+```bash
+sudo apt update
+sudo apt install -y coturn
+```
+
+4. Bật service coturn
+Mở file:
+```bash
+sudo nano /etc/default/coturn
+```
+
+Đặt:
+```bash
+TURNSERVER_ENABLED=1
+```
+
+5. Cấu hình coturn
+Mở file:
+```bash
+sudo nano /etc/turnserver.conf
+```
+
+Dùng cấu hình tối thiểu này:
+```conf
+listening-port=3478
+tls-listening-port=5349
+
+fingerprint
+use-auth-secret=0
+lt-cred-mech
+
+realm=surf-turn
+server-name=surf-turn
+
+user=surf:CHANGE_THIS_STRONG_PASSWORD
+
+total-quota=100
+stale-nonce=600
+no-multicast-peers
+
+listening-ip=0.0.0.0
+external-ip=YOUR_ORACLE_PUBLIC_IP
+```
+
+Ghi chú:
+- `CHANGE_THIS_STRONG_PASSWORD`: đổi thành mật khẩu mạnh thật
+- `YOUR_ORACLE_PUBLIC_IP`: IP public của VM Oracle
+
+6. Khởi động lại coturn
+```bash
+sudo systemctl restart coturn
+sudo systemctl enable coturn
+sudo systemctl status coturn
+```
+
+7. Mở firewall / ingress trên Oracle
+Cần mở ít nhất:
+- UDP 3478
+- TCP 3478
+
+Khuyến nghị thêm nếu muốn relay ổn định hơn:
+- UDP range relay, ví dụ:
+```txt
+49152-65535
+```
+
+Nếu không mở relay UDP range, nhiều case video/audio vẫn có thể fail.
+
+8. Verify port từ ngoài
+Từ máy local có thể test thô:
+```powershell
+Test-NetConnection YOUR_ORACLE_PUBLIC_IP -Port 3478
+```
+
+9. Điền env cho `surf-client`
+Mở file:
+```txt
+surf-client/.env
+```
+
+Thêm:
+```env
+VITE_WEBRTC_STUN_URLS=stun:stun.l.google.com:19302
+VITE_WEBRTC_TURN_URLS=turn:YOUR_ORACLE_PUBLIC_IP:3478?transport=udp,turn:YOUR_ORACLE_PUBLIC_IP:3478?transport=tcp
+VITE_WEBRTC_TURN_USERNAME=surf
+VITE_WEBRTC_TURN_CREDENTIAL=CHANGE_THIS_STRONG_PASSWORD
+```
+
+10. Restart frontend
+```powershell
+cd surf-client
+npm run dev
+```
+
+Hoặc sau khi deploy thì redeploy frontend với đúng env trên.
+
+11. Cách project đang dùng TURN
+`surf-client/src/components/call/GlobalCallProvider.tsx` đã đọc sẵn:
+- `VITE_WEBRTC_STUN_URLS`
+- `VITE_WEBRTC_TURN_URLS`
+- `VITE_WEBRTC_TURN_USERNAME`
+- `VITE_WEBRTC_TURN_CREDENTIAL`
+
+Nếu không điền TURN, project sẽ fallback về:
+```txt
+stun:stun.l.google.com:19302
+```
+
+12. Điều kiện để call 2 máy khác nhau hoạt động
+Phải đủ:
+- frontend chạy bằng HTTPS
+- browser 2 bên allow microphone/camera
+- signaling socket hoạt động
+- TURN server hoạt động
+
+Thiếu TURN:
+- có thể đổ chuông được
+- nhưng audio/video không qua được
+
+13. Nếu deploy production
+Có 2 cách set `VITE_WEBRTC_TURN_URLS`:
+
+A. dùng thẳng public IP:
+```env
+VITE_WEBRTC_TURN_URLS=turn:YOUR_ORACLE_PUBLIC_IP:3478?transport=udp,turn:YOUR_ORACLE_PUBLIC_IP:3478?transport=tcp
+```
+
+B. tốt hơn: trỏ domain riêng, ví dụ:
+```env
+VITE_WEBRTC_TURN_URLS=turn:turn.yourdomain.com:3478?transport=udp,turn:turn.yourdomain.com:3478?transport=tcp
+```
+
+14. Khuyến nghị thêm
+- frontend/backend app vẫn deploy ở chỗ riêng
+- TURN nên để trên VM riêng hoặc ít nhất là service riêng
+- không nên host TURN trên các platform chỉ hợp HTTP app như Vercel/Netlify
+
+15. Checklist nhanh sau khi xong
+- [ ] Oracle VM chạy được
+- [ ] `coturn` active
+- [ ] port 3478 mở
+- [ ] relay UDP range mở
+- [ ] `.env` frontend đã điền TURN
+- [ ] frontend restart/redeploy
+- [ ] 2 máy khác nhau gọi video/audio được
+
+16. Nếu vẫn lỗi
+Check theo thứ tự:
+- browser còn `Not secure` không
+- máy bên nhận có allow mic/camera không
+- `coturn` có chạy không
+- Oracle ingress có mở đúng port/range không
+- console frontend có log:
+```txt
+WebRTC ICE failed. TURN is likely missing or unreachable.
+```
+

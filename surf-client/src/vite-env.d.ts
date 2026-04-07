@@ -2,6 +2,10 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_URL: string;
+  readonly VITE_CALL_PROVIDER?: 'livekit' | 'webrtc';
+  readonly VITE_CALL_VIDEO_PROFILE?: '480p' | '720p';
+  readonly VITE_CALL_VIDEO_FPS?: string;
+  readonly VITE_CALL_FALLBACK_BASE_URL?: string;
   readonly VITE_FIREBASE_API_KEY: string;
   readonly VITE_FIREBASE_AUTH_DOMAIN: string;
   readonly VITE_FIREBASE_PROJECT_ID: string;
