@@ -189,7 +189,7 @@ router.post(
         createdAt: new Date(),
       };
       notifRef.set(notifPayload).catch(() => {});
-      io.to(`user:${toUid}`).emit('notification:new', {
+      emitNotificationNew(toUid, {
         ...notifPayload,
         createdAt: new Date().toISOString(),
       });
