@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomInt } from 'crypto';
+import { logger } from '../config/logger.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { sendLoginNotification, sendWelcomeEmail, sendOtpEmail } from '../services/email.js';
 import { getAuth } from '../config/firebase-admin.js';
@@ -22,11 +23,11 @@ router.post('/notify-login', requireAuth, async (req: AuthRequest, res) => {
     const name = fbUser.displayName ?? fbUser.email.split('@')[0];
     // Gửi email bất đồng bộ, không chặn response
     sendLoginNotification(fbUser.email, name).catch((err) =>
-      console.error('❌ Gửi email login thất bại:', err.message)
+      logger.error('❌ Gửi email login thất bại:', { stack: err instanceof Error ? err.stack : String(err) })
     );
     res.json({ sent: true });
   } catch (e) {
-    console.error('❌ notify-login error:', e);
+    logger.error('❌ notify-login error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -41,11 +42,11 @@ router.post('/notify-register', requireAuth, async (req: AuthRequest, res) => {
     }
     const name = fbUser.displayName ?? fbUser.email.split('@')[0];
     sendWelcomeEmail(fbUser.email, name).catch((err) =>
-      console.error('❌ Gửi email welcome thất bại:', err.message)
+      logger.error('❌ Gửi email welcome thất bại:', { stack: err instanceof Error ? err.stack : String(err) })
     );
     res.json({ sent: true });
   } catch (e) {
-    console.error('❌ notify-register error:', e);
+    logger.error('❌ notify-register error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -90,7 +91,7 @@ router.post('/send-otp', requireAuth, async (req: AuthRequest, res) => {
 
     res.json({ sent: true });
   } catch (e) {
-    console.error('❌ send-otp error:', e);
+    logger.error('❌ send-otp error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -118,7 +119,7 @@ router.post('/verify-otp', requireAuth, async (req: AuthRequest, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    console.error('❌ verify-otp error:', e);
+    logger.error('❌ verify-otp error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -134,7 +135,7 @@ router.post('/change-password', requireAuth, async (req: AuthRequest, res) => {
     await getAuth().updateUser(req.uid!, { password: String(newPassword) });
     res.json({ success: true });
   } catch (e) {
-    console.error('❌ change-password error:', e);
+    logger.error('❌ change-password error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -145,7 +146,7 @@ router.delete('/account', requireAuth, async (req: AuthRequest, res) => {
     await getAuth().deleteUser(req.uid!);
     res.json({ success: true });
   } catch (e) {
-    console.error('❌ delete-account error:', e);
+    logger.error('❌ delete-account error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });

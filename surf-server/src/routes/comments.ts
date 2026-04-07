@@ -3,32 +3,34 @@ import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
+import { getIo } from '../realtime/io.js';
+import { logger } from '../config/logger.js';
+import { moderateText } from '../services/aiModeration.js';
 
 const router = Router();
 
-// Get comments for a post
+// Get comments for a post — returns all comments sorted in-memory (no composite index needed)
 router.get('/:postId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const commentsRef = db.collection('comments');
 
-    console.log(`📥 GET /api/comments/${req.params.postId} - Fetching comments...`);
-
-    const commentsSnap = await commentsRef
+    const snap = await commentsRef
       .where('postId', '==', req.params.postId)
-      .orderBy('createdAt', 'asc')
+      .limit(500)
       .get();
 
-    const comments = commentsSnap.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    type CommentDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
+    const comments = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as CommentDoc[])
+      .sort((a, b) => {
+        const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
+        const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
+        return aT - bT;
+      });
 
-    console.log(`✅ Found ${comments.length} comments for post ${req.params.postId}`);
-
-    res.json({ comments });
+    res.json({ comments, nextCursor: null, total: comments.length });
   } catch (e) {
-    console.error('❌ Error getting comments:', e);
+    logger.error('❌ Error getting comments:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -40,28 +42,51 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const commentsRef = db.collection('comments');
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
-
-    const { content } = req.body;
-
+    
+    const { content, parentId } = req.body;
+    
     if (!content?.trim()) {
       res.status(400).json({ error: 'Comment content is required' });
       return;
     }
 
-    // Check if post exists
-    const postDoc = await postsRef.doc(req.params.postId).get();
-    if (!postDoc.exists) {
-      res.status(404).json({ error: 'Post not found' });
+    // Kiểm duyệt nội dung bình luận
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
     }
 
+    // Check if post or video exists
+    const postDoc = await postsRef.doc(req.params.postId).get();
+    const videosRef = db.collection('videos');
+    let isVideo = false;
+    let videoDoc: FirebaseFirestore.DocumentSnapshot | undefined;
+    if (!postDoc.exists) {
+      videoDoc = await videosRef.doc(req.params.postId).get();
+      if (!videoDoc.exists) {
+        res.status(404).json({ error: 'Post not found' });
+        return;
+      }
+      isVideo = true;
+    }
+
+    // If parentId given, verify parent comment exists and belongs to this post
+    if (parentId) {
+      const parentDoc = await commentsRef.doc(parentId).get();
+      if (!parentDoc.exists || parentDoc.data()?.postId !== req.params.postId) {
+        res.status(404).json({ error: 'Parent comment not found' });
+        return;
+      }
+    }
+    
     // Get user info
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
 
     // Create comment
     const commentRef = commentsRef.doc();
-    const commentData = {
+    const commentData: Record<string, unknown> = {
       postId: req.params.postId,
       authorId: req.uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
@@ -72,17 +97,20 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       likeCount: 0,
       likedBy: [],
     };
-
+    if (parentId) commentData.parentId = parentId;
+    
     console.log(`📝 Creating comment for post ${req.params.postId} by ${req.uid}`);
 
     await commentRef.set(commentData);
 
     console.log(`✅ Comment created with ID: ${commentRef.id}`);
 
-    // Update post's replyCount
-    await postsRef.doc(req.params.postId).update({
-      replyCount: FieldValue.increment(1),
-    });
+    // Update comment count on post or video
+    if (isVideo) {
+      await videosRef.doc(req.params.postId).update({ commentCount: FieldValue.increment(1) });
+    } else {
+      await postsRef.doc(req.params.postId).update({ replyCount: FieldValue.increment(1) });
+    }
 
     const responseData = {
       id: commentRef.id,
@@ -94,9 +122,84 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     // RT-4: broadcast new comment to all users viewing this post
     emitCommentNew(req.params.postId, responseData);
 
+    const contentDoc = isVideo ? videoDoc! : postDoc;
+    const postAuthorId = contentDoc.data()?.authorId as string | undefined;
+    const postSnippet = isVideo
+      ? (contentDoc.data()?.title as string ?? '').substring(0, 100)
+      : (contentDoc.data()?.content as string ?? '').substring(0, 100);
+    // Notify post author about new top-level comment (skip own post, skip replies — handled below)
+    if (!parentId && postAuthorId && postAuthorId !== req.uid) {
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'comment',
+        recipientId: postAuthorId,
+        actorId: req.uid,
+        actorName: user?.displayName ?? 'Ai đó',
+        actorPhoto: user?.photoURL ?? null,
+        postId: req.params.postId,
+        postSnippet,
+        commentSnippet: content.trim().substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${postAuthorId}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Notify parent comment author when someone replies (skip self, skip if same as post author — already notified)
+    if (parentId) {
+      const parentDoc = await commentsRef.doc(parentId).get();
+      const parentAuthorId = parentDoc.data()?.authorId as string | undefined;
+      if (parentAuthorId && parentAuthorId !== req.uid && parentAuthorId !== postAuthorId) {
+        const notifRef = db.collection('notifications').doc();
+        const notifData = {
+          id: notifRef.id,
+          type: 'reply',
+          recipientId: parentAuthorId,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: req.params.postId,
+          commentSnippet: content.trim().substring(0, 80),
+          read: false,
+          createdAt: new Date(),
+        };
+        notifRef.set(notifData).catch(() => {});
+        getIo().to(`user:${parentAuthorId}`).emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      // Also notify post author about the reply if they're not the parent author (already above)
+      if (postAuthorId && postAuthorId !== req.uid && postAuthorId !== parentAuthorId) {
+        const notifRef = db.collection('notifications').doc();
+        const notifData = {
+          id: notifRef.id,
+          type: 'reply',
+          recipientId: postAuthorId,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: req.params.postId,
+          commentSnippet: content.trim().substring(0, 80),
+          read: false,
+          createdAt: new Date(),
+        };
+        notifRef.set(notifData).catch(() => {});
+        getIo().to(`user:${postAuthorId}`).emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+
     res.status(201).json(responseData);
   } catch (e) {
-    console.error('Error creating comment:', e);
+    logger.error('Error creating comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -110,6 +213,13 @@ router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) =
     const { content } = req.body;
     if (!content?.trim()) {
       res.status(400).json({ error: 'Content is required' });
+      return;
+    }
+
+    // Kiểm duyệt nội dung chỉnh sửa
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
     }
 
@@ -129,7 +239,7 @@ router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) =
 
     res.json({ id: req.params.commentId, ...commentDoc.data(), ...updated });
   } catch (e) {
-    console.error('Error editing comment:', e);
+    logger.error('Error editing comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -166,7 +276,7 @@ router.delete('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) 
 
     res.json({ message: 'Comment deleted' });
   } catch (e) {
-    console.error('Error deleting comment:', e);
+    logger.error('Error deleting comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -204,7 +314,109 @@ router.post('/:postId/:commentId/like', requireAuth, async (req: AuthRequest, re
       res.json({ liked: true });
     }
   } catch (e) {
-    console.error('Error liking comment:', e);
+    logger.error('Error liking comment:', { stack: e instanceof Error ? e.stack : String(e) });
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// React to a comment with emoji (POST /:postId/:commentId/react)
+router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const commentsRef = db.collection('comments');
+
+    const commentDoc = await commentsRef.doc(req.params.commentId).get();
+    if (!commentDoc.exists) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    const data = commentDoc.data()!;
+    const likedBy: string[] = data.likedBy ?? [];
+    const reactions: Record<string, string> = data.reactions ?? {};
+    const { reaction = '❤️' } = req.body;
+
+    const idx = likedBy.indexOf(req.uid!);
+    if (idx === -1) {
+      // Not yet reacted — add reaction
+      likedBy.push(req.uid!);
+      reactions[req.uid!] = reaction as string;
+    } else if (reactions[req.uid!] === reaction) {
+      // Same reaction — toggle off
+      likedBy.splice(idx, 1);
+      delete reactions[req.uid!];
+    } else {
+      // Different reaction — switch emoji, keep in likedBy
+      reactions[req.uid!] = reaction as string;
+    }
+
+    const wasAdding = idx === -1 || reactions[req.uid!] !== reaction;
+
+    await commentsRef.doc(req.params.commentId).update({
+      likedBy,
+      likeCount: likedBy.length,
+      reactions,
+      updatedAt: new Date(),
+    });
+
+    // Notify comment author when someone reacts (only when adding, not removing; skip own)
+    if (wasAdding && likedBy.includes(req.uid!) && data.authorId && data.authorId !== req.uid) {
+      const commentAuthorId = data.authorId as string;
+      const usersRef = db.collection('users');
+      const actorDoc = await usersRef.doc(req.uid!).get();
+      const actor = actorDoc.data();
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'comment_reaction',
+        recipientId: commentAuthorId,
+        actorId: req.uid,
+        actorName: actor?.displayName ?? 'Ai đó',
+        actorPhoto: actor?.photoURL ?? null,
+        postId: req.params.postId,
+        commentId: req.params.commentId,
+        reaction: likedBy.includes(req.uid!) ? reactions[req.uid!] : reaction,
+        commentSnippet: (data.content as string ?? '').substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${commentAuthorId}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      liked: likedBy.includes(req.uid!),
+      likeCount: likedBy.length,
+      reactions,
+    });
+  } catch (e) {
+    logger.error('Error reacting to comment:', { stack: e instanceof Error ? e.stack : String(e) });
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// GET /:postId/:commentId/reactions — list of users who reacted to a comment
+router.get('/:postId/:commentId/reactions', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const commentDoc = await db.collection('comments').doc(req.params.commentId).get();
+    if (!commentDoc.exists) { res.status(404).json({ error: 'Comment not found' }); return; }
+    const reactions: Record<string, string> = commentDoc.data()?.reactions ?? {};
+    const uids = Object.keys(reactions);
+    if (uids.length === 0) { res.json([]); return; }
+    const usersSnap = await db.collection('users').get();
+    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, d.data()]));
+    const result = uids.map((uid) => ({
+      uid,
+      displayName: usersMap.get(uid)?.displayName ?? 'User',
+      photoURL: usersMap.get(uid)?.photoURL ?? null,
+      reaction: reactions[uid],
+    }));
+    res.json(result);
+  } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
 });

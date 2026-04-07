@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { uploadImage, uploadVideo, isVideoUrl } from '../../lib/cloudinary';
+import { resizePostImage } from '../../lib/utils/image';
 import TagFriendsModal from './TagFriendsModal';
 
 interface TaggedFriend {
@@ -140,19 +141,33 @@ export default function EditPostModal({ post, onClose, onSaved }: EditPostModalP
     setKeepMediaUrls((prev) => prev.filter((u) => u !== url));
   };
 
-  const handleNewMediaSelect = (
+  const handleNewMediaSelect = async (
     e: React.ChangeEvent<HTMLInputElement>,
     type: 'image' | 'video'
   ) => {
     const files = Array.from(e.target.files ?? []);
-    const items: NewMediaItem[] = files.map((file) => ({
-      id: Math.random().toString(36),
-      url: URL.createObjectURL(file),
-      file,
-      type,
-    }));
-    setNewMedia((prev) => [...prev, ...items]);
     e.target.value = '';
+    const items: NewMediaItem[] = await Promise.all(
+      files.map(async (file) => {
+        if (type === 'image') {
+          const blob = await resizePostImage(file);
+          const resized = new File([blob], file.name, { type: 'image/jpeg' });
+          return {
+            id: Math.random().toString(36),
+            url: URL.createObjectURL(blob),
+            file: resized,
+            type,
+          };
+        }
+        return {
+          id: Math.random().toString(36),
+          url: URL.createObjectURL(file),
+          file,
+          type,
+        };
+      })
+    );
+    setNewMedia((prev) => [...prev, ...items]);
   };
 
   const removeNewMedia = (id: string) => {
@@ -177,7 +192,10 @@ export default function EditPostModal({ post, onClose, onSaved }: EditPostModalP
         )
       );
 
-      const mediaUrls = [...keepMediaUrls, ...uploadedUrls];
+      const mediaUrls = [
+        ...[...keepMediaUrls, ...uploadedUrls].filter((u) => isVideoUrl(u)),
+        ...[...keepMediaUrls, ...uploadedUrls].filter((u) => !isVideoUrl(u)),
+      ];
       const taggedFriendsData = taggedFriends
         .filter((f) => selectedFriendIds.includes(f.uid))
         .map((f) => ({ uid: f.uid, displayName: f.displayName, photoURL: f.photoURL ?? null }));

@@ -168,3 +168,35 @@ Check:
 - `surf-client/src/lib/socket.ts`
 - `surf-client/.env.example`
 
+16. Quan trọng: HTTPS chưa đủ để 2 máy gọi video ổn định
+`mkcert` chỉ giải quyết:
+- secure context cho mic/camera
+- tránh lỗi `Not secure`
+
+Nó KHÔNG giải quyết việc media phải đi qua NAT/router giữa 2 máy.
+
+Để 2 máy khác nhau gọi audio/video ổn định hơn, cần thêm TURN server.
+
+Project đã support sẵn các biến env này ở `surf-client/.env`:
+```
+VITE_WEBRTC_STUN_URLS=stun:stun.l.google.com:19302
+VITE_WEBRTC_TURN_URLS=turn:YOUR_TURN_HOST:3478?transport=udp,turn:YOUR_TURN_HOST:3478?transport=tcp
+VITE_WEBRTC_TURN_USERNAME=YOUR_TURN_USERNAME
+VITE_WEBRTC_TURN_CREDENTIAL=YOUR_TURN_PASSWORD
+```
+
+Nếu chưa có TURN:
+- gọi trong cùng 1 máy hoặc cùng mạng có thể vẫn hên xui chạy được
+- nhưng 2 máy khác nhau rất dễ có signaling OK mà không ra hình/âm
+
+17. Sau khi thêm TURN vào `.env`
+- restart `surf-client`
+- mở lại 2 máy bằng HTTPS
+- test call video lại
+
+Nếu vẫn lỗi, xem DevTools console của `surf-client`.
+Project sẽ log:
+```
+WebRTC ICE failed. TURN is likely missing or unreachable.
+```
+khi ICE bị fail.

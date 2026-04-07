@@ -4,7 +4,12 @@ import { hasBlockRelation } from '../middleware/auth.js';
 import { conversationRepository } from '../repositories/conversation.repository.js';
 import { buildMessagePreview, messageRepository } from '../repositories/message.repository.js';
 import { buildDmPairKey, ConservationDoc } from '../types/conversation.js';
-import type { MessageDoc, SendTextMessageInput, SendMediaMessageInput,CreateCallLogInput } from '../types/message.js';
+import type {
+  MessageDoc,
+  SendTextMessageInput,
+  SendMediaMessageInput,
+  CreateCallLogInput,
+} from '../types/message.js';
 
 const DM_CACHE_TTL_SEC = 60 * 60 * 24 * 30;
 const dmCacheKey = (pairKey: string) => `dm:${pairKey}`;
@@ -84,8 +89,17 @@ export const toApiMessage = (item: MessageDoc): ApiMessage => ({
 
 export const toRealtimeMessagePayload = (item: MessageDoc): RealtimeMessagePayload => {
   const message = toApiMessage(item);
-  const previewMap: Record<string, string> = { image: '📷 Hình ảnh', file: '📎 Tệp đính kèm', audio: '🎤 Tin nhắn thoại' };
-  const preview = item.type === 'text' ? buildMessagePreview(item.text) : (item.text ? buildMessagePreview(item.text) : (previewMap[item.type] ?? '📎 Tệp'));
+  const previewMap: Record<string, string> = {
+    image: '📷 Hình ảnh',
+    file: '📎 Tệp đính kèm',
+    audio: '🎤 Tin nhắn thoại',
+  };
+  const preview =
+    item.type === 'text'
+      ? buildMessagePreview(item.text)
+      : item.text
+        ? buildMessagePreview(item.text)
+        : (previewMap[item.type] ?? '📎 Tệp');
 
   return {
     message,
@@ -288,9 +302,12 @@ export const getGroupMembers = async (
   if (!conversation) return { ok: false, reason: 'not_found' };
   if (!conversation.memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
 
-  const snaps = conversation.memberIds.length > 0
-    ? await getDb().getAll(...conversation.memberIds.map((id) => getDb().collection('users').doc(id)))
-    : [];
+  const snaps =
+    conversation.memberIds.length > 0
+      ? await getDb().getAll(
+          ...conversation.memberIds.map((id) => getDb().collection('users').doc(id))
+        )
+      : [];
 
   const members = snaps.map((s) => {
     const data = (s.data() ?? {}) as UserLite;

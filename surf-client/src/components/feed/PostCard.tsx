@@ -23,7 +23,9 @@ interface Comment {
     | null;
   likeCount: number;
   likedBy: string[];
+  reactions?: Record<string, string>;
   isEdited?: boolean;
+  parentId?: string;
 }
 
 interface PostCardProps {
@@ -43,6 +45,7 @@ interface PostCardProps {
       | null;
     likeCount: number;
     replyCount: number;
+    shareCount?: number;
     likedBy: string[];
     reactions?: Record<string, string>;
     feeling?: string;
@@ -50,9 +53,26 @@ interface PostCardProps {
     taggedFriends?: Array<{ uid: string; displayName: string }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
+    savedBy?: string[];
+    sharedFrom?: {
+      id: string;
+      authorId?: string;
+      authorDisplayName: string;
+      authorPhotoURL: string | null;
+      content: string;
+      mediaUrls: string[];
+      createdAt:
+        | import('firebase/firestore').Timestamp
+        | { _seconds: number }
+        | { seconds: number }
+        | string
+        | number
+        | null;
+    };
   };
   currentUserId?: string;
   onPostUpdated?: (updated: PostCardProps['post']) => void;
+  defaultOpenComments?: boolean;
 }
 
 /** Plays video when ≥30% visible in the viewport; pauses when scrolled away. */
@@ -198,6 +218,17 @@ function FeedVideo({
           </div>
           {/* Buttons */}
           <div className="flex items-center gap-3">
+            {/* Rewind 5s */}
+            <button
+              className="text-white hover:text-white/70 transition-colors"
+              onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.max(0, el.currentTime - 5); }}
+              title="Tua lùi 5 giây"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                <text x="8.5" y="14.5" fontSize="5.5" fontWeight="bold" fill="currentColor" textAnchor="middle">5</text>
+              </svg>
+            </button>
             {/* Play / Pause */}
             <button
               className="text-white hover:text-white/70 transition-colors"
@@ -212,6 +243,17 @@ function FeedVideo({
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 </svg>
               )}
+            </button>
+            {/* Forward 5s */}
+            <button
+              className="text-white hover:text-white/70 transition-colors"
+              onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5); }}
+              title="Tua tới 5 giây"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
+                <text x="15.5" y="14.5" fontSize="5.5" fontWeight="bold" fill="currentColor" textAnchor="middle">5</text>
+              </svg>
             </button>
             {/* Mute */}
             <button
@@ -262,7 +304,7 @@ function FeedVideo({
   );
 }
 
-export default function PostCard({ post, currentUserId, onPostUpdated }: PostCardProps) {
+export default function PostCard({ post, currentUserId, onPostUpdated, defaultOpenComments }: PostCardProps) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const goToProfile = (uid?: string) => uid && navigate(`/feed/profile/${uid}`);
@@ -280,26 +322,49 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
     for (const v of vals) freq[v] = (freq[v] ?? 0) + 1;
     return Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
   }, [reactionsMap]);
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState(defaultOpenComments ?? false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareCaption, setShareCaption] = useState('');
+  const [shareReaction, setShareReaction] = useState<string | null>(null);
+  const [showShareReactionPicker, setShowShareReactionPicker] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [isSaved, setIsSaved] = useState(
+    currentUserId ? (post.savedBy?.includes(currentUserId) ?? false) : false
+  );
   const [showReactions, setShowReactions] = useState(false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(
     initialReaction ?? (initialLiked ? '❤️' : null)
   );
   const [commentCount, setCommentCount] = useState(post.replyCount || 0);
+  const [shareCount, setShareCount] = useState(post.shareCount || 0);
+  const [sharingPost, setSharingPost] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [loadingComments, setLoadingComments] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
+  const [commentReactions, setCommentReactions] = useState<Record<string, string | null>>({});
+  const [commentReactionPicker, setCommentReactionPicker] = useState<string | null>(null); // commentId that has picker open
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMoreComments, setLoadingMoreComments] = useState(false);
+  const [previewComments, setPreviewComments] = useState<Comment[]>([]);
+  const commentReactionHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [showReactorsModal, setShowReactorsModal] = useState(false);
   const [reactorFilter, setReactorFilter] = useState<string | null>(null); // null = all
   const [reactors, setReactors] = useState<{ uid: string; displayName: string; photoURL: string | null; reaction: string }[]>([]);
   const [loadingReactors, setLoadingReactors] = useState(false);
+  const [commentReactorsModal, setCommentReactorsModal] = useState<{ commentId: string; reactions: Record<string, string> } | null>(null);
+  const [commentReactors, setCommentReactors] = useState<{ uid: string; displayName: string; photoURL: string | null; reaction: string }[]>([]);
+  const [loadingCommentReactors, setLoadingCommentReactors] = useState(false);
+  const [commentReactorFilter, setCommentReactorFilter] = useState<string | null>(null);
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
+  const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
+  const [submittingReply, setSubmittingReply] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -368,19 +433,22 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
   const loadComments = useCallback(async () => {
     try {
       setLoadingComments(true);
-      console.log(`📥 Loading comments for post ${post.id}...`);
-      const response = await api.get<{ comments: Comment[] }>(`/api/comments/${post.id}`);
-      console.log(`✅ Loaded ${response.comments?.length || 0} comments:`, response.comments);
+      const response = await api.get<{ comments: Comment[]; nextCursor: string | null; total: number }>(
+        `/api/comments/${post.id}?limit=20`
+      );
       setComments(response.comments || []);
-      setCommentCount(response.comments?.length ?? 0);
-      // Initialize comment likes state
+      setNextCursor(response.nextCursor ?? null);
+      setCommentCount(response.total ?? response.comments?.length ?? 0);
       const likes: Record<string, boolean> = {};
+      const reactionsMap: Record<string, string | null> = {};
       response.comments?.forEach((comment) => {
         if (currentUserId) {
           likes[comment.id] = comment.likedBy?.includes(currentUserId) || false;
+          reactionsMap[comment.id] = comment.reactions?.[currentUserId] ?? null;
         }
       });
       setCommentLikes(likes);
+      setCommentReactions(reactionsMap);
     } catch (error) {
       console.error('❌ Error loading comments:', error);
     } finally {
@@ -397,6 +465,50 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
       }, 300);
     }
   }, [showComments, loadComments]);
+
+  // Load preview comments (first 3) in feed view
+  useEffect(() => {
+    if (commentCount > 0) {
+      void (async () => {
+        try {
+          const res = await api.get<{ comments: Comment[]; nextCursor: string | null; total: number }>(
+            `/api/comments/${post.id}?limit=3`
+          );
+          setPreviewComments((res.comments || []).slice(0, 3));
+        } catch {
+          // silently fail
+        }
+      })();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id]);
+
+  const loadMoreComments = useCallback(async () => {
+    if (!nextCursor || loadingMoreComments) return;
+    try {
+      setLoadingMoreComments(true);
+      const response = await api.get<{ comments: Comment[]; nextCursor: string | null; total: number }>(
+        `/api/comments/${post.id}?limit=20&after=${nextCursor}`
+      );
+      const newComments = response.comments || [];
+      setComments((prev) => [...prev, ...newComments]);
+      setNextCursor(response.nextCursor ?? null);
+      const newLikes: Record<string, boolean> = {};
+      const newReactionMap: Record<string, string | null> = {};
+      newComments.forEach((comment) => {
+        if (currentUserId) {
+          newLikes[comment.id] = comment.likedBy?.includes(currentUserId) || false;
+          newReactionMap[comment.id] = comment.reactions?.[currentUserId] ?? null;
+        }
+      });
+      setCommentLikes((prev) => ({ ...prev, ...newLikes }));
+      setCommentReactions((prev) => ({ ...prev, ...newReactionMap }));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingMoreComments(false);
+    }
+  }, [post.id, nextCursor, loadingMoreComments, currentUserId]);
 
   // RT-3: join post room on mount, listen for reaction count updates in real-time
   useEffect(() => {
@@ -424,6 +536,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
     socket.emit('post:join', post.id);
 
     const handleNewComment = (comment: Comment) => {
+      if ((comment as Comment & { postId?: string }).postId !== post.id) return;
       setComments((prev) => {
         if (prev.some((c) => c.id === comment.id)) return prev;
         return [...prev, comment];
@@ -452,6 +565,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
 
   const handleSubmitComment = async () => {
     if (!commentText.trim() || submittingComment) return;
+    setCommentError(null);
 
     try {
       setSubmittingComment(true);
@@ -466,7 +580,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
       setCommentText('');
     } catch (error) {
       console.error('❌ Error submitting comment:', error);
-      alert('Không thể gửi bình luận. Vui lòng thử lại.');
+      const msg = error instanceof Error ? error.message : '';
+      setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
     } finally {
       setSubmittingComment(false);
     }
@@ -481,17 +596,30 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
   const openReactorsModal = async () => {
     setShowReactorsModal(true);
     setReactorFilter(null);
-    if (reactors.length === 0) {
-      setLoadingReactors(true);
-      try {
-        type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
-        const data = (await api.get<Reactor[]>(`/api/posts/${post.id}/reactions`)) as Reactor[];
-        setReactors(data);
-      } catch (e) {
-        console.error('Failed to load reactors', e);
-      } finally {
-        setLoadingReactors(false);
-      }
+    setLoadingReactors(true);
+    try {
+      type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
+      const data = (await api.get<Reactor[]>(`/api/posts/${post.id}/reactions`)) as Reactor[];
+      setReactors(data);
+    } catch (e) {
+      console.error('Failed to load reactors', e);
+    } finally {
+      setLoadingReactors(false);
+    }
+  };
+
+  const openCommentReactorsModal = async (commentId: string, reactions: Record<string, string>) => {
+    setCommentReactorsModal({ commentId, reactions });
+    setCommentReactorFilter(null);
+    setLoadingCommentReactors(true);
+    try {
+      type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
+      const data = await api.get<Reactor[]>(`/api/comments/${post.id}/${commentId}/reactions`);
+      setCommentReactors(data);
+    } catch (e) {
+      console.error('Failed to load comment reactors', e);
+    } finally {
+      setLoadingCommentReactors(false);
     }
   };
 
@@ -522,49 +650,77 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
     }
   };
 
-  const handleLikeComment = async (commentId: string) => {
+  const handleReactComment = async (commentId: string, emoji: string) => {
+    const prevLiked = commentLikes[commentId] || false;
+    const prevReaction = commentReactions[commentId];
+    const isSameReaction = prevLiked && prevReaction === emoji;
+    const newLiked = !isSameReaction;
+
+    // Optimistic update
+    setCommentLikes((prev) => ({ ...prev, [commentId]: newLiked }));
+    setCommentReactions((prev) => ({ ...prev, [commentId]: newLiked ? emoji : null }));
+    setCommentReactionPicker(null);
+    setComments((prev) =>
+      prev.map((c) => {
+        if (c.id !== commentId) return c;
+        const delta = isSameReaction ? -1 : prevLiked ? 0 : 1;
+        return {
+          ...c,
+          likeCount: Math.max(0, c.likeCount + delta),
+          reactions: newLiked
+            ? { ...(c.reactions ?? {}), [currentUserId ?? '']: emoji }
+            : Object.fromEntries(Object.entries(c.reactions ?? {}).filter(([k]) => k !== currentUserId)),
+        };
+      })
+    );
+
     try {
-      const isCurrentlyLiked = commentLikes[commentId] || false;
-
-      // Optimistic update
-      setCommentLikes((prev) => ({ ...prev, [commentId]: !isCurrentlyLiked }));
+      await api.post(`/api/comments/${post.id}/${commentId}/react`, { reaction: emoji });
+    } catch {
+      // Revert
+      setCommentLikes((prev) => ({ ...prev, [commentId]: prevLiked }));
+      setCommentReactions((prev) => ({ ...prev, [commentId]: prevReaction ?? null }));
       setComments((prev) =>
         prev.map((c) => {
-          if (c.id === commentId) {
-            return {
-              ...c,
-              likeCount: isCurrentlyLiked ? c.likeCount - 1 : c.likeCount + 1,
-              likedBy: isCurrentlyLiked
-                ? c.likedBy.filter((uid) => uid !== currentUserId)
-                : [...c.likedBy, currentUserId || ''],
-            };
-          }
-          return c;
-        })
-      );
-
-      // API call
-      await api.post(`/api/comments/${post.id}/${commentId}/like`);
-    } catch (error) {
-      console.error('Error liking comment:', error);
-      // Revert on error
-      setCommentLikes((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
-      setComments((prev) =>
-        prev.map((c) => {
-          if (c.id === commentId) {
-            return {
-              ...c,
-              likeCount: commentLikes[commentId] ? c.likeCount + 1 : c.likeCount - 1,
-              likedBy: commentLikes[commentId]
-                ? [...c.likedBy, currentUserId || '']
-                : c.likedBy.filter((uid) => uid !== currentUserId),
-            };
-          }
-          return c;
+          if (c.id !== commentId) return c;
+          const delta = isSameReaction ? 1 : prevLiked ? 0 : -1;
+          return { ...c, likeCount: Math.max(0, c.likeCount + delta) };
         })
       );
     }
   };
+
+  const handleLikeComment = (commentId: string) => handleReactComment(commentId, '❤️');
+
+  const handleSubmitReply = async (parentId: string) => {
+    const text = (replyTexts[parentId] ?? '').trim();
+    if (!text || submittingReply === parentId) return;
+    setSubmittingReply(parentId);
+    try {
+      await api.post<Comment>(`/api/comments/${post.id}`, { content: text, parentId });
+      // Do NOT push to state here — the socket 'comment:new' event will add it (deduped)
+      setReplyTexts((prev) => ({ ...prev, [parentId]: '' }));
+      setReplyingToId(null);
+      setExpandedReplies((prev) => ({ ...prev, [parentId]: true }));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '';
+      setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
+    } finally {
+      setSubmittingReply(null);
+    }
+  };
+
+  const topLevelComments = useMemo(() => comments.filter((c) => !c.parentId), [comments]);
+
+  const repliesMap = useMemo(() => {
+    const map: Record<string, Comment[]> = {};
+    comments.filter((c) => c.parentId).forEach((c) => {
+      if (!map[c.parentId!]) map[c.parentId!] = [];
+      map[c.parentId!].push(c);
+    });
+    return map;
+  }, [comments]);
+
 
   // Reaction mapping
   const reactions: Record<
@@ -705,15 +861,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
 
   const handleLike = async () => {
     const newLiked = !isLiked;
+    const prevReactionsMap = reactionsMap;
     setIsLiked(newLiked);
     setSelectedReaction(newLiked ? '❤️' : null);
     setLikeCount((c) => (newLiked ? c + 1 : c - 1));
+    setReactionsMap((prev) => {
+      const next = { ...prev };
+      if (newLiked) { next[currentUserId ?? ''] = '❤️'; }
+      else { delete next[currentUserId ?? '']; }
+      return next;
+    });
     try {
       await api.post(`/api/posts/${post.id}/like`, { reaction: '❤️' });
     } catch {
       setIsLiked(!newLiked);
       setSelectedReaction(!newLiked ? '❤️' : null);
       setLikeCount((c) => (newLiked ? c - 1 : c + 1));
+      setReactionsMap(prevReactionsMap);
     }
   };
 
@@ -723,19 +887,25 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
     const prevLiked = isLiked;
     const prevReaction = selectedReaction;
     const prevCount = likeCount;
+    const prevReactionsMap = reactionsMap;
     setIsLiked(newLiked);
     setSelectedReaction(alreadyPicked ? null : emoji);
     setLikeCount((c) => (alreadyPicked ? c - 1 : prevLiked ? c : c + 1));
     setShowReactions(false);
+    // Optimistically update reactionsMap so top3Reactions rerenders immediately
+    setReactionsMap((prev) => {
+      const next = { ...prev };
+      if (newLiked) { next[currentUserId ?? ''] = emoji; }
+      else { delete next[currentUserId ?? '']; }
+      return next;
+    });
     try {
       if (alreadyPicked) {
-        // unlike
         await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
       } else if (!prevLiked) {
-        // was not liked, now like with new emoji
         await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
       } else {
-        // switching reaction: unlike old, then like with new emoji
+        // switching reaction: remove old then add new
         await api.post(`/api/posts/${post.id}/like`, { reaction: prevReaction });
         await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
       }
@@ -743,6 +913,27 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
       setIsLiked(prevLiked);
       setSelectedReaction(prevReaction);
       setLikeCount(prevCount);
+      setReactionsMap(prevReactionsMap);
+    }
+  };
+
+  const handleSharePost = async () => {
+    if (sharingPost) return;
+    try {
+      setSharingPost(true);
+      setShareCount((c) => c + 1);
+      setShowShareModal(false);
+      setShareCaption('');
+      setShareReaction(null);
+      await api.post(`/api/posts/${post.id}/share`, {
+        content: shareCaption.trim(),
+        reaction: shareReaction ?? undefined,
+      });
+    } catch {
+      setShareCount((c) => Math.max(0, c - 1));
+      alert('Không thể chia sẻ bài viết. Vui lòng thử lại.');
+    } finally {
+      setSharingPost(false);
     }
   };
 
@@ -818,6 +1009,18 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
 
   const hasMedia = post.mediaUrls && post.mediaUrls.length > 0;
 
+  // Sắp xếp lại: video lên trước (nếu có), ảnh theo sau — giữ nguyên thứ tự trong từng nhóm
+  const displayMedia: { url: string; originalIndex: number }[] = hasMedia
+    ? [
+        ...post.mediaUrls
+          .map((url, i) => ({ url, originalIndex: i }))
+          .filter((m) => isVideoUrl(m.url)),
+        ...post.mediaUrls
+          .map((url, i) => ({ url, originalIndex: i }))
+          .filter((m) => !isVideoUrl(m.url)),
+      ]
+    : [];
+
   return (
     <>
       {/* Edit post modal */}
@@ -838,6 +1041,128 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
             onPostUpdated?.(updated as PostCardProps['post']);
           }}
         />
+      )}
+
+      {/* Share post modal */}
+      {showShareModal && (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setShowShareModal(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Chia sẻ bài viết</h3>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Author row */}
+            <div className="flex items-center gap-3 px-5 pt-4">
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="You" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+              ) : (
+                <div className="w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                  <span className="text-sm font-bold text-white">
+                    {(user?.displayName?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                {user?.displayName ?? 'Bạn'}
+              </div>
+            </div>
+
+            {/* Caption input */}
+            <div className="px-5 pt-3 pb-2">
+              <textarea
+                autoFocus
+                value={shareCaption}
+                onChange={(e) => setShareCaption(e.target.value)}
+                placeholder="Nói điều gì đó về bài viết này..."
+                rows={3}
+                className="w-full resize-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 text-sm leading-relaxed outline-none"
+              />
+            </div>
+
+            {/* Reaction picker */}
+            {/* <div className="px-5 pb-3">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Cảm xúc của bạn:</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => setShareReaction((prev) => prev === emoji ? null : emoji)}
+                    className={`w-10 h-10 flex items-center justify-center text-xl rounded-full border-2 transition-all hover:scale-110 ${
+                      shareReaction === emoji
+                        ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/30 scale-110'
+                        : 'border-gray-200 dark:border-slate-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div> */}
+
+            {/* Original post preview */}
+            <div className="mx-5 mb-4 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 dark:bg-slate-800/60">
+                <div className="flex items-center gap-2 mb-1.5">
+                  {post.authorPhotoURL ? (
+                    <img src={post.authorPhotoURL} alt={post.authorDisplayName} className="w-7 h-7 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-white">{(post.authorDisplayName?.[0] ?? 'U').toUpperCase()}</span>
+                    </div>
+                  )}
+                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{post.authorDisplayName}</span>
+                </div>
+                {post.content && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">{post.content}</p>
+                )}
+              </div>
+              {post.mediaUrls?.length > 0 && (
+                <div className="overflow-hidden" style={{ maxHeight: '160px' }}>
+                  {isVideoUrl(post.mediaUrls[0]) ? (
+                    <video src={post.mediaUrls[0]} className="w-full object-cover" style={{ maxHeight: '160px' }} muted playsInline />
+                  ) : (
+                    <img src={post.mediaUrls[0]} alt="Preview" className="w-full object-cover" style={{ maxHeight: '160px' }} />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3 px-5 pb-5">
+              <button
+                onClick={() => void handleCopyLink()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Sao chép liên kết
+              </button>
+              <button
+                onClick={() => void handleSharePost()}
+                disabled={sharingPost}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sharingPost ? 'Đang chia sẻ...' : 'Chia sẻ ngay'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirm delete → trash modal */}
@@ -901,20 +1226,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
             <div className="relative overflow-hidden rounded-2xl">
               {/* ── 1 image: full width, natural aspect ── */}
               {post.mediaUrls.length === 1 &&
-                (isVideoUrl(post.mediaUrls[0]) ? (
+                (isVideoUrl(displayMedia[0].url) ? (
                   <FeedVideo
-                    src={post.mediaUrls[0]}
+                    src={displayMedia[0].url}
                     fill={false}
                     style={{ maxHeight: '520px' }}
-                    onExpand={() => openLightbox(0)}
+                    onExpand={() => openLightbox(displayMedia[0].originalIndex)}
                   />
                 ) : (
                   <img
-                    src={post.mediaUrls[0]}
+                    src={displayMedia[0].url}
                     alt="Post media"
                     className="w-full block object-cover cursor-pointer"
                     style={{ maxHeight: '520px' }}
-                    onClick={() => openLightbox(0)}
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   />
                 ))}
 
@@ -924,23 +1249,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                   className="grid gap-0.5"
                   style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
                 >
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-                    {isVideoUrl(post.mediaUrls[0]) ? (
-                      <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[0].originalIndex)}>
+                    {isVideoUrl(displayMedia[0].url) ? (
+                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[0]}
+                        src={displayMedia[0].url}
                         alt="Post media 1"
                         className="w-full h-full object-cover"
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                    {isVideoUrl(post.mediaUrls[1]) ? (
-                      <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[1].originalIndex)}>
+                    {isVideoUrl(displayMedia[1].url) ? (
+                      <FeedVideo src={displayMedia[1].url} onExpand={() => openLightbox(displayMedia[1].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[1]}
+                        src={displayMedia[1].url}
                         alt="Post media 2"
                         className="w-full h-full object-cover"
                       />
@@ -954,35 +1279,35 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                 <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
                   <div
                     className="overflow-hidden row-span-2 cursor-pointer"
-                    onClick={() => openLightbox(0)}
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   >
-                    {isVideoUrl(post.mediaUrls[0]) ? (
-                      <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                    {isVideoUrl(displayMedia[0].url) ? (
+                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[0]}
+                        src={displayMedia[0].url}
                         alt="Post media 1"
                         className="w-full h-full object-cover"
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                    {isVideoUrl(post.mediaUrls[1]) ? (
-                      <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[1].originalIndex)}>
+                    {isVideoUrl(displayMedia[1].url) ? (
+                      <FeedVideo src={displayMedia[1].url} onExpand={() => openLightbox(displayMedia[1].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[1]}
+                        src={displayMedia[1].url}
                         alt="Post media 2"
                         className="w-full h-full object-cover"
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
-                    {isVideoUrl(post.mediaUrls[2]) ? (
-                      <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} />
+                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[2].originalIndex)}>
+                    {isVideoUrl(displayMedia[2].url) ? (
+                      <FeedVideo src={displayMedia[2].url} onExpand={() => openLightbox(displayMedia[2].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[2]}
+                        src={displayMedia[2].url}
                         alt="Post media 3"
                         className="w-full h-full object-cover"
                       />
@@ -998,13 +1323,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                   <div
                     className="overflow-hidden cursor-pointer"
                     style={{ height: '260px' }}
-                    onClick={() => openLightbox(0)}
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   >
-                    {isVideoUrl(post.mediaUrls[0]) ? (
-                      <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                    {isVideoUrl(displayMedia[0].url) ? (
+                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
                     ) : (
                       <img
-                        src={post.mediaUrls[0]}
+                        src={displayMedia[0].url}
                         alt="Post media 1"
                         className="w-full h-full object-cover"
                       />
@@ -1012,7 +1337,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                   </div>
                   {/* All secondaries — equal-width flex strip, scrolls if too many */}
                   <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
-                    {post.mediaUrls.slice(1).map((url, i) => (
+                    {displayMedia.slice(1).map((m, i) => (
                       <div
                         key={i}
                         className="flex-none overflow-hidden cursor-pointer"
@@ -1020,13 +1345,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                           width: `calc((100% - ${(post.mediaUrls.length - 2) * 2}px) / ${post.mediaUrls.length - 1})`,
                           minWidth: '60px',
                         }}
-                        onClick={() => openLightbox(i + 1)}
+                        onClick={() => openLightbox(m.originalIndex)}
                       >
-                        {isVideoUrl(url) ? (
-                          <FeedVideo src={url} onExpand={() => openLightbox(i + 1)} />
+                        {isVideoUrl(m.url) ? (
+                          <FeedVideo src={m.url} onExpand={() => openLightbox(m.originalIndex)} />
                         ) : (
                           <img
-                            src={url}
+                            src={m.url}
                             alt={`Post media ${i + 2}`}
                             className="w-full h-full object-cover"
                           />
@@ -1554,6 +1879,65 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
               </div>
             )}
 
+            {/* Shared post embed */}
+            {post.sharedFrom && (
+              <div className="mb-4 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-4 pt-3 pb-2 bg-gray-50 dark:bg-slate-800/60">
+                  <div className="flex items-center gap-2 mb-2">
+                    {post.sharedFrom.authorPhotoURL ? (
+                      <img
+                        src={post.sharedFrom.authorPhotoURL}
+                        alt={post.sharedFrom.authorDisplayName}
+                        className="w-8 h-8 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-white">
+                          {(post.sharedFrom.authorDisplayName?.[0] ?? 'U').toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      <div
+                        onClick={() => goToProfile(post.sharedFrom!.authorId)}
+                        className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:underline"
+                      >
+                        {post.sharedFrom.authorDisplayName}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {formatTime(post.sharedFrom.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+                  {post.sharedFrom.content && (
+                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                      {post.sharedFrom.content}
+                    </p>
+                  )}
+                </div>
+                {post.sharedFrom.mediaUrls?.length > 0 && (
+                  <div className="overflow-hidden max-h-56">
+                    {isVideoUrl(post.sharedFrom.mediaUrls[0]) ? (
+                      <video
+                        src={post.sharedFrom.mediaUrls[0]}
+                        className="w-full object-cover"
+                        style={{ maxHeight: '224px' }}
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <img
+                        src={post.sharedFrom.mediaUrls[0]}
+                        alt="Shared media"
+                        className="w-full object-cover"
+                        style={{ maxHeight: '224px' }}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Media — edge-to-edge inside card */}
             {hasMedia && (
               <div className="-mx-5 sm:-mx-6 mb-4 overflow-hidden">
@@ -1688,7 +2072,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
             )}
 
             {/* Stats */}
-            {(likeCount > 0 || commentCount > 0) && (
+            {(likeCount > 0 || commentCount > 0 || shareCount > 0) && (
               <div className="flex items-center justify-between py-3 mb-3 border-b border-gray-200 dark:border-slate-700/50">
                 {likeCount > 0 && (
                   <button
@@ -1699,14 +2083,19 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                     <span className="font-medium">{likeCount}</span>
                   </button>
                 )}
-                {commentCount > 0 && (
-                  <button
-                    onClick={() => setShowComments(!showComments)}
-                    className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
-                  >
-                    {commentCount} bình luận
-                  </button>
-                )}
+                <div className="flex items-center gap-3 ml-auto text-sm text-gray-500 dark:text-gray-400">
+                  {commentCount > 0 && (
+                    <button
+                      onClick={() => setShowComments(!showComments)}
+                      className="hover:underline"
+                    >
+                      {commentCount} bình luận
+                    </button>
+                  )}
+                  {shareCount > 0 && (
+                    <span>{shareCount} lượt chia sẻ</span>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1789,7 +2178,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
               {/* Share */}
               <div className="relative flex-1" ref={shareRef}>
                 <button
-                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  onClick={() => { setShowShareModal(true); setShowShareMenu(false); }}
                   className="group w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs text-gray-700 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-600 dark:hover:text-green-400 border border-gray-200 dark:border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1800,31 +2189,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                       d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
                     />
                   </svg>
-                  <span>Chia sẻ</span>
+                  <span>Chia sẻ{shareCount > 0 ? ` (${shareCount})` : ''}</span>
                 </button>
-                {showShareMenu && (
-                  <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 py-2 z-20">
-                    <button
-                      onClick={() => void handleCopyLink()}
-                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Sao chép liên kết
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* Save */}
@@ -1848,6 +2214,50 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
               </button>
             </div>
 
+            {/* In-feed comment preview — first 3 comments, read-only */}
+            {!showComments && previewComments.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {previewComments.map((comment) => (
+                  <div key={comment.id} className="flex gap-2 items-start">
+                    {comment.authorPhotoURL ? (
+                      <img src={comment.authorPhotoURL} alt={comment.authorDisplayName} className="w-7 h-7 rounded-full flex-shrink-0 object-cover" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                        <span className="text-xs font-bold text-white">{(comment.authorDisplayName || 'U')[0].toUpperCase()}</span>
+                      </div>
+                    )}
+                    <div
+                      className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2 flex-1 min-w-0 cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-700/60 transition-colors"
+                      onClick={() => setShowComments(true)}
+                    >
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{comment.authorDisplayName}</span>
+                      <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 break-words">{comment.content}</p>
+                      {comment.likeCount > 0 && (
+                        <span className="text-xs text-gray-400 flex items-center gap-0.5 mt-1">
+                          {(() => {
+                            const vals = Object.values(comment.reactions ?? {});
+                            const freq: Record<string, number> = {};
+                            for (const v of vals) freq[v] = (freq[v] ?? 0) + 1;
+                            const top3 = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+                            if (top3.length === 0) top3.push('❤️');
+                            return <>{top3.map((e) => <span key={e}>{e}</span>)} {comment.likeCount}</>;
+                          })()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {commentCount > previewComments.length && (
+                  <button
+                    onClick={() => setShowComments(true)}
+                    className="text-sm text-gray-500 dark:text-gray-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-medium transition-colors"
+                  >
+                    Xem tất cả {commentCount} bình luận
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Comments Section */}
             {showComments && (
               <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
@@ -1861,7 +2271,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                   </div>
                 ) : (
                   <div className="space-y-3 mb-4">
-                    {comments.map((comment) => (
+                    {topLevelComments.map((comment) => (
                       <div key={comment.id} className="flex gap-2">
                         {comment.authorPhotoURL ? (
                           <img
@@ -1929,22 +2339,76 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                             </div>
                           )}
                           <div className="flex items-center gap-4 mt-1 px-3 text-xs font-semibold">
+                            {/* Reaction button with emoji picker */}
+                            <div className="relative">
+                              <button
+                                onMouseEnter={() => {
+                                  if (commentReactionHideTimeout.current) clearTimeout(commentReactionHideTimeout.current);
+                                  setCommentReactionPicker(comment.id);
+                                }}
+                                onMouseLeave={() => {
+                                  commentReactionHideTimeout.current = setTimeout(() => setCommentReactionPicker(null), 300);
+                                }}
+                                onClick={() => handleLikeComment(comment.id)}
+                                className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-600 dark:text-gray-400'}`}
+                              >
+                                {commentLikes[comment.id] && commentReactions[comment.id]
+                                  ? commentReactions[comment.id]
+                                  : 'Thích'}
+                              </button>
+                              {commentReactionPicker === comment.id && (
+                                <div
+                                  className="absolute bottom-full left-0 mb-1 z-30"
+                                  onMouseEnter={() => {
+                                    if (commentReactionHideTimeout.current) clearTimeout(commentReactionHideTimeout.current);
+                                    setCommentReactionPicker(comment.id);
+                                  }}
+                                  onMouseLeave={() => {
+                                    commentReactionHideTimeout.current = setTimeout(() => setCommentReactionPicker(null), 300);
+                                  }}
+                                >
+                                  <div className="bg-white dark:bg-slate-800 rounded-full shadow-2xl border border-gray-200 dark:border-slate-700 p-1.5 flex gap-0.5">
+                                    {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji) => (
+                                      <button
+                                        key={emoji}
+                                        onClick={(e) => { e.stopPropagation(); void handleReactComment(comment.id, emoji); }}
+                                        className="w-8 h-8 flex items-center justify-center text-lg transition-all hover:scale-150 hover:-translate-y-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                             <button
-                              onClick={() => handleLikeComment(comment.id)}
-                              className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-600 dark:text-gray-400'}`}
+                              className="text-gray-600 dark:text-gray-400 hover:underline"
+                              onClick={() => {
+                                setReplyingToId(replyingToId === comment.id ? null : comment.id);
+                                if (replyingToId !== comment.id) {
+                                  setReplyTexts((p) => ({ ...p, [comment.id]: `@${comment.authorDisplayName} ` }));
+                                }
+                              }}
                             >
-                              Thích
-                            </button>
-                            <button className="text-gray-600 dark:text-gray-400 hover:underline">
                               Trả lời
                             </button>
                             <span className="text-gray-500 font-normal">
                               {comment.createdAt && formatTime(comment.createdAt)}
                             </span>
                             {comment.likeCount > 0 && (
-                              <span className="text-gray-500 font-normal">
-                                {comment.likeCount} ❤️
-                              </span>
+                              <button
+                                onClick={() => void openCommentReactorsModal(comment.id, comment.reactions ?? {})}
+                                className="text-gray-500 font-normal flex items-center gap-0.5 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+                              >
+                                {(() => {
+                                  const reactionVals = Object.values(comment.reactions ?? {});
+                                  const freq: Record<string, number> = {};
+                                  for (const v of reactionVals) freq[v] = (freq[v] ?? 0) + 1;
+                                  const top3 = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+                                  if (top3.length === 0) top3.push('❤️');
+                                  return <>{top3.map((e) => <span key={e}>{e}</span>)} {comment.likeCount}</>;
+                                })()}
+                              </button>
                             )}
                             {currentUserId === comment.authorId && (
                               <>
@@ -1963,10 +2427,98 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                               </>
                             )}
                           </div>
+                          {/* Replies */}
+                          {(repliesMap[comment.id]?.length > 0 || replyingToId === comment.id) && (
+                            <div className="mt-2 ml-10 space-y-2">
+                              {repliesMap[comment.id]?.length > 0 && (
+                                <button
+                                  onClick={() => setExpandedReplies((p) => ({ ...p, [comment.id]: !p[comment.id] }))}
+                                  className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-1 hover:underline"
+                                >
+                                  <svg className={`w-3.5 h-3.5 transition-transform ${expandedReplies[comment.id] ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                                  {expandedReplies[comment.id] ? 'Ẩn trả lời' : `Xem ${repliesMap[comment.id].length} trả lời`}
+                                </button>
+                              )}
+                              {expandedReplies[comment.id] && repliesMap[comment.id]?.map((reply) => (
+                                <div key={reply.id} className="flex gap-2">
+                                  {reply.authorPhotoURL ? (
+                                    <img src={reply.authorPhotoURL} alt={reply.authorDisplayName} className="w-6 h-6 rounded-full flex-shrink-0 object-cover cursor-pointer" onClick={() => goToProfile(reply.authorId)} />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer" onClick={() => goToProfile(reply.authorId)}>
+                                      <span className="text-[10px] font-bold text-white">{(reply.authorDisplayName || 'U')[0].toUpperCase()}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-1.5">
+                                      <div className="font-semibold text-xs text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit" onClick={() => goToProfile(reply.authorId)}>
+                                        {reply.authorDisplayName}
+                                      </div>
+                                      <div className="text-xs text-gray-800 dark:text-gray-200 mt-0.5">{reply.content}</div>
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-0.5 px-2 text-[11px] font-semibold text-gray-500">
+                                      <span>{reply.createdAt && formatTime(reply.createdAt)}</span>
+                                      {currentUserId === reply.authorId && (
+                                        <button onClick={() => handleDeleteComment(reply.id)} className="hover:text-red-500 hover:underline">Xóa</button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {replyingToId === comment.id && (
+                                <div className="flex gap-2 items-center">
+                                  {user?.photoURL ? (
+                                    <img src={user.photoURL} alt="You" className="w-6 h-6 rounded-full flex-shrink-0 object-cover" />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                                      <span className="text-[10px] font-bold text-white">{((user?.displayName || user?.email || 'U')[0]).toUpperCase()}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex-1 relative">
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={replyTexts[comment.id] ?? ''}
+                                      onChange={(e) => setReplyTexts((p) => ({ ...p, [comment.id]: e.target.value }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') void handleSubmitReply(comment.id);
+                                        if (e.key === 'Escape') setReplyingToId(null);
+                                      }}
+                                      placeholder={`Trả lời ${comment.authorDisplayName}...`}
+                                      disabled={submittingReply === comment.id}
+                                      className="w-full bg-white dark:bg-slate-900/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 rounded-full px-3 py-1.5 pr-10 text-xs border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50"
+                                    />
+                                    <button
+                                      onClick={() => void handleSubmitReply(comment.id)}
+                                      disabled={!(replyTexts[comment.id] ?? '').trim() || submittingReply === comment.id}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-600 disabled:opacity-40"
+                                    >
+                                      {submittingReply === comment.id
+                                        ? <span className="w-3.5 h-3.5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin inline-block" />
+                                        : <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                                      }
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
+                )}
+                {/* Load more button */}
+                {nextCursor && (
+                  <button
+                    onClick={() => void loadMoreComments()}
+                    disabled={loadingMoreComments}
+                    className="w-full py-2 text-sm text-cyan-600 dark:text-cyan-400 font-medium hover:underline flex items-center justify-center gap-1.5 disabled:opacity-50 mb-2"
+                  >
+                    {loadingMoreComments && (
+                      <span className="inline-block w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {loadingMoreComments ? 'Đang tải...' : 'Xem thêm bình luận'}
+                  </button>
                 )}
                 {/* Comment Input */}
                 <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
@@ -1990,11 +2542,18 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
                     </div>
                   )}
                   <div className="flex-1 relative">
+                    {commentError && (
+                      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/50 rounded-xl text-sm text-red-600 dark:text-red-400">
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                        <span className="flex-1">{commentError}</span>
+                        <button type="button" onClick={() => setCommentError(null)} className="shrink-0 hover:text-red-700">×</button>
+                      </div>
+                    )}
                     <input
                       ref={commentInputRef}
                       type="text"
                       value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
+                      onChange={(e) => { setCommentText(e.target.value); setCommentError(null); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
                       placeholder="Viết bình luận của bạn..."
                       disabled={submittingComment}
@@ -2579,6 +3138,87 @@ export default function PostCard({ post, currentUserId, onPostUpdated }: PostCar
               ) : (
                 reactors
                   .filter((r) => reactorFilter === null || r.reaction === reactorFilter)
+                  .map((r) => (
+                    <div key={r.uid} className="flex items-center gap-3 py-2.5">
+                      {r.photoURL ? (
+                        <img src={r.photoURL} alt={r.displayName} className="w-10 h-10 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm font-bold text-white">{(r.displayName || 'U')[0].toUpperCase()}</span>
+                        </div>
+                      )}
+                      <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{r.displayName}</span>
+                      <span className="text-lg">{r.reaction}</span>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comment Reactors Modal */}
+      {commentReactorsModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setCommentReactorsModal(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-200 dark:border-slate-700">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Cảm xúc bình luận</h3>
+              <button
+                onClick={() => setCommentReactorsModal(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Top emoji filter tabs */}
+            {(() => {
+              const freq: Record<string, number> = {};
+              for (const v of Object.values(commentReactorsModal.reactions)) freq[v] = (freq[v] ?? 0) + 1;
+              const topEmojis = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+              const total = Object.keys(commentReactorsModal.reactions).length;
+              return (
+                <div className="flex gap-1 px-4 pt-3 pb-2">
+                  <button
+                    onClick={() => setCommentReactorFilter(null)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      commentReactorFilter === null
+                        ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    Tất cả {total}
+                  </button>
+                  {topEmojis.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => setCommentReactorFilter(emoji)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1 transition-colors ${
+                        commentReactorFilter === emoji
+                          ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300'
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{emoji}</span>
+                      <span>{freq[emoji]}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+            {/* List */}
+            <div className="max-h-72 overflow-y-auto px-4 pb-4">
+              {loadingCommentReactors ? (
+                <div className="py-8 text-center text-gray-400 text-sm">Đang tải...</div>
+              ) : (
+                commentReactors
+                  .filter((r) => commentReactorFilter === null || r.reaction === commentReactorFilter)
                   .map((r) => (
                     <div key={r.uid} className="flex items-center gap-3 py-2.5">
                       {r.photoURL ? (

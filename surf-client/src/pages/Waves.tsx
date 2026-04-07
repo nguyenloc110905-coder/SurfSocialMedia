@@ -38,8 +38,8 @@ type UiMessage = ApiMessage & {
 };
 
 type RealtimePayload = {
+  conversationId: string;
   message: ApiMessage;
-  conversation: { id: string; lastMessagePreview: string; lastMessageAt: string };
 };
 
 type MessagePage = {
@@ -481,12 +481,12 @@ export default function Waves() {
       setConversations((current) =>
         sortConversations(
           current.map((item) => {
-            if (item.id !== payload.conversation.id) return item;
+            if (item.id !== payload.conversationId) return item;
             const shouldIncreaseUnread = payload.message.senderId !== user?.uid && activeConversationIdRef.current !== item.id;
             return {
               ...item,
-              lastMessagePreview: payload.conversation.lastMessagePreview,
-              lastMessageAt: payload.conversation.lastMessageAt,
+              lastMessagePreview: payload.message.text,
+              lastMessageAt: payload.message.createdAt,
               unreadCount: shouldIncreaseUnread ? item.unreadCount + 1 : 0,
             };
           })
@@ -625,7 +625,7 @@ export default function Waves() {
       );
       setDraft('');
 
-      const data = await api.post<{ item: ApiMessage; conversation: RealtimePayload['conversation'] }>(`/api/conversations/${activeConversationId}/messages`, { text });
+      const data = await api.post<{ item: ApiMessage }>(`/api/conversations/${activeConversationId}/messages`, { text });
       setThreads((current) => ({
         ...current,
         [activeConversationId]: replaceOptimisticMessage(current[activeConversationId] ?? [], data.item),
@@ -634,7 +634,7 @@ export default function Waves() {
         sortConversations(
           current.map((item) =>
             item.id === activeConversationId
-              ? { ...item, lastMessagePreview: data.conversation.lastMessagePreview, lastMessageAt: data.conversation.lastMessageAt, unreadCount: 0 }
+              ? { ...item, lastMessagePreview: text, lastMessageAt: data.item.createdAt, unreadCount: 0 }
               : item
           )
         )

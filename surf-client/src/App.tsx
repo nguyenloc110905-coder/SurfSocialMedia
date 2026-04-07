@@ -8,6 +8,7 @@ import AuthPage from './pages/AuthPage';
 import ForgotPassword from './pages/ForgotPassword';
 import Feed from './pages/Feed';
 import Profile from './pages/Profile';
+import PostPage from './pages/PostPage';
 import ShortVideo from './pages/ShortVideo';
 import Friends from './pages/Friends';
 import Groups from './pages/Groups';
@@ -18,6 +19,8 @@ import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
 import Waves from './pages/Waves';
 import { GlobalCallProvider } from './components/call/GlobalCallProvider';
+import SavedPage from './pages/SavedPage';
+import { useMessageSound } from './hooks/useMessageSound';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -51,6 +54,7 @@ function ThemeInit() {
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
   usePresence();
+  useMessageSound();
   const loading = useAuthStore((s) => s.loading);
   const location = useLocation();
 
@@ -123,6 +127,7 @@ export default function App() {
           <Route index element={<Feed />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="profile/:uid" element={<Profile />} />
+          <Route path="post/:postId" element={<PostPage />} />
           <Route path="short-video" element={<ShortVideo />} />
           <Route path="friends" element={<Friends />} />
           <Route path="friends/requests" element={<Friends />} />
@@ -133,12 +138,7 @@ export default function App() {
           <Route path="friends/blocked" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
           <Route path="market" element={<MarketPage />} />
-          <Route
-            path="saved"
-            element={
-              <PlaceholderPage title="Đã lưu" description="Bài viết và nội dung bạn đã lưu." />
-            }
-          />
+          <Route path="saved" element={<SavedPage />} />
           <Route
             path="events"
             element={

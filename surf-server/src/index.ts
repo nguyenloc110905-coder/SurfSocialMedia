@@ -1,7 +1,9 @@
 import { getDb } from './config/firebase-admin.js';
+import { logger } from './config/logger.js';
 
 import 'dotenv/config';
-import express from 'express';
+import express, { NextFunction, Request, Response } from 'express';
+import morgan from 'morgan';
 import { createServer } from 'http';
 import cors from 'cors';
 import { requireAuth, ensureUser } from './middleware/auth.js';
@@ -18,7 +20,7 @@ import videosRoutes from './routes/videos.js';
 import conversationsRoutes from './routes/conversations.js';
 import groupsRoutes from './routes/groups.js';
 import presenceRoutes from './routes/presence.js';
-import { markOnline, markOffline, refreshPresence, getUserIdBySocket } from './services/presence.js';
+import callsRoutes from './routes/calls.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 import { initIo } from './realtime/io.js';
 import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
@@ -56,7 +58,10 @@ const isAllowedOrigin = (origin?: string) => {
   return lanOriginPattern.test(origin);
 };
 
-const corsOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+const corsOrigin = (
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void
+) => {
   if (isAllowedOrigin(origin)) {
     callback(null, true);
     return;
@@ -71,6 +76,7 @@ registerSocketHandlers(io);
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(morgan('dev', { stream: { write: (msg) => logger.http(msg.trimEnd()) } }));
 
 // Health check — trước app.use('/api', requireAuth) để không cần auth
 app.get('/api/health', (_, res) => {
@@ -98,12 +104,14 @@ app.use('/api/videos', videosRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/groups', groupsRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/calls', callsRoutes);
 
 initRedis()
   .then(() => initSocketRedisAdapter(io))
   .catch((err) => {
     console.error('Failed to initialize Redis:', err);
   });
+app.use('/api/notifications', notificationsRoutes);
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);
@@ -133,9 +141,16 @@ async function cleanupTrash() {
       console.log(`[Trash cleanup] Đã xóa vĩnh viễn ${count} bài viết.`);
     }
   } catch (e) {
-    console.error('[Trash cleanup] Lỗi:', e);
+    logger.error('[Trash cleanup] Lỗi', { stack: e instanceof Error ? e.stack : String(e) });
   }
 }
+
+// Global error handler — phải đặt sau tất cả routes
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error(err.message, { stack: err.stack });
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // Chạy ngay khi khởi động server, sau đó mỗi giờ một lần
 cleanupTrash();

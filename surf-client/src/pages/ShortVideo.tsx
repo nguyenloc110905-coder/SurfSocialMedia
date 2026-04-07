@@ -47,12 +47,103 @@ function ClipCard({
   const [toast, setToast] = useState<string | null>(null);
   const isCloudinary = video.videoUrl.includes('/video/upload/');
 
+  // Comments
+  type CommentItem = { id: string; authorId: string; authorDisplayName: string; authorPhotoURL?: string | null; content: string; createdAt?: { seconds?: number; _seconds?: number } | string };
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [commentCount, setCommentCount] = useState(video.commentCount ?? 0);
+  const [commentInput, setCommentInput] = useState('');
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const commentInputRef = useRef<HTMLInputElement>(null);
+
+  const openComments = async () => {
+    setShowComments(true);
+    if (comments.length === 0) {
+      setCommentLoading(true);
+      try {
+        const res = await api.get<{ comments: CommentItem[] }>(`/api/comments/${video.id}`);
+        setComments(res.comments ?? []);
+      } catch { /* ignore */ }
+      finally { setCommentLoading(false); }
+    }
+    setTimeout(() => commentInputRef.current?.focus(), 300);
+  };
+
+  const submitComment = async () => {
+    if (!commentInput.trim() || commentSubmitting) return;
+    setCommentSubmitting(true);
+    try {
+      const res = await api.post<CommentItem>(`/api/comments/${video.id}`, { content: commentInput.trim() });
+      setComments((prev) => [...prev, res]);
+      setCommentCount((c) => c + 1);
+      setCommentInput('');
+    } catch (e) {
+      showToast('\u274C ' + ((e as Error).message || 'Không thể gửi bình luận'));
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
+  // Share
+  type FriendItem = { id: string; name: string; avatarUrl: string | null };
+  const [showShare, setShowShare] = useState(false);
+  const [showFriendPicker, setShowFriendPicker] = useState(false);
+  const [friends, setFriends] = useState<FriendItem[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [shareSearch, setShareSearch] = useState('');
+  const [sharingSending, setShareSending] = useState<string | null>(null);
+
+  const openFriendPicker = async () => {
+    setShowShare(false);
+    setShowFriendPicker(true);
+    if (friends.length === 0) {
+      setFriendsLoading(true);
+      try {
+        const res = await api.get<{ friends: FriendItem[] }>('/api/friends');
+        setFriends(res.friends ?? []);
+      } catch { /* ignore */ }
+      finally { setFriendsLoading(false); }
+    }
+  };
+
+  const shareToFriend = async (friend: FriendItem) => {
+    if (sharingSending) return;
+    setShareSending(friend.id);
+    try {
+      let convId: string;
+      try {
+        const created = await api.post<{ item: { id: string } }>('/api/conversations', { peerUid: friend.id });
+        convId = created.item.id;
+      } catch {
+        const list = await api.get<{ items: { id: string; participants?: string[] }[] }>('/api/conversations?limit=50');
+        const found = list.items.find((c) => c.participants?.includes(friend.id));
+        if (!found) { showToast('\u274C Không thể mở cuộc trò chuyện'); return; }
+        convId = found.id;
+      }
+      const shareUrl = `${window.location.origin}/feed/clips`;
+      const text = `\ud83c\udfa5 ${video.title || 'Surf Clip'}: ${shareUrl}`;
+      await api.post(`/api/conversations/${convId}/messages`, { text });
+      showToast(`\u2705 Đã chia sẻ với ${friend.name}`);
+      setShowFriendPicker(false);
+    } catch {
+      showToast('\u274C Gửi thất bại');
+    } finally {
+      setShareSending(null);
+    }
+  };
+
   const videoSrc = applyCloudinaryQuality(video.videoUrl, quality);
+  const [hovered, setHovered] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
   };
+
+  const filteredFriends = friends.filter((f) =>
+    f.name.toLowerCase().includes(shareSearch.toLowerCase())
+  );
 
   // Autoplay + view tracking via IntersectionObserver
   useEffect(() => {
@@ -117,10 +208,15 @@ function ClipCard({
   return (
     <div
       ref={cardRef}
-      className="flex items-center justify-center bg-black snap-start flex-shrink-0"
+      className="relative flex flex-row items-center bg-black snap-start flex-shrink-0 overflow-hidden"
       style={{ height: 'calc(100vh - 88px)' }}
     >
-      <div className="relative h-full flex-shrink-0" style={{ aspectRatio: '9/16' }}>
+      {/* Video wrapper – flex-1 so it fills remaining space after comment panel */}
+      <div className="flex-1 flex items-center justify-center h-full min-w-0">
+      <div
+        className="relative h-full flex-shrink-0"
+        style={{ aspectRatio: '9/16' }}
+      >
       {/* Video element */}
       <video
         ref={videoRef}
@@ -130,8 +226,54 @@ function ClipCard({
         muted={muted}
         playsInline
         className="w-full h-full object-cover cursor-pointer"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         onClick={togglePlay}
       />
+
+      {/* Hover controls — rewind / play-pause / forward */}
+      <div
+        className={`absolute inset-0 flex items-center justify-center gap-6 transition-opacity duration-200 pointer-events-none ${hovered ? 'opacity-100' : 'opacity-0'}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{ pointerEvents: hovered ? 'auto' : 'none' }}
+      >
+        {/* Rewind 5s */}
+        <button
+          onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.max(0, el.currentTime - 5); }}
+          className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white hover:bg-black/70 active:scale-90 transition-all"
+        >
+          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+          </svg>
+          <span className="text-[10px] font-bold leading-none mt-0.5">5s</span>
+        </button>
+        {/* Play / Pause */}
+        <button
+          onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+          className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/70 active:scale-90 transition-all"
+        >
+          {playing ? (
+            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            </svg>
+          ) : (
+            <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          )}
+        </button>
+        {/* Forward 5s */}
+        <button
+          onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5); }}
+          className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white hover:bg-black/70 active:scale-90 transition-all"
+        >
+          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
+          </svg>
+          <span className="text-[10px] font-bold leading-none mt-0.5">5s</span>
+        </button>
+      </div>
 
       {/* Toast notification */}
       {toast && (
@@ -198,6 +340,16 @@ function ClipCard({
           <span className="text-white text-xs font-semibold drop-shadow">{likeCount.toLocaleString()}</span>
         </button>
 
+        {/* Comment button */}
+        <button onClick={() => void openComments()} className="flex flex-col items-center gap-1">
+          <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white active:scale-90 transition-transform">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
+            </svg>
+          </div>
+          <span className="text-white text-xs font-semibold drop-shadow">{commentCount.toLocaleString()}</span>
+        </button>
+
         {/* Mute / unmute */}
         <button onClick={() => setMuted((m) => !m)} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white">
@@ -213,25 +365,46 @@ function ClipCard({
           </div>
         </button>
 
-        {/* Share button */}
-        <button
-          onClick={() => {
-            const url = window.location.href;
-            if (navigator.share) {
-              void navigator.share({ title: video.title || 'Surf Clip', url });
-            } else {
-              navigator.clipboard.writeText(url).then(() => showToast('🔗 Đã sao chép link')).catch(() => {});
-            }
-          }}
-          className="flex flex-col items-center gap-1"
-        >
-          <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
-            </svg>
-          </div>
-          <span className="text-white text-xs drop-shadow">Chia sẻ</span>
-        </button>
+        {/* Share button with dropdown */}
+        <div className="relative flex flex-col items-center">
+          <button
+            onClick={() => { setShowShare((s) => !s); setShowOptions(false); }}
+            className="flex flex-col items-center gap-1"
+          >
+            <div className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white active:scale-90 transition-transform">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+              </svg>
+            </div>
+            <span className="text-white text-xs drop-shadow">Chia sẻ</span>
+          </button>
+          {showShare && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowShare(false)} />
+              <div className="absolute right-14 bottom-0 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl z-20 min-w-[200px] border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <button
+                  onClick={() => { setShowShare(false); void openFriendPicker(); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <span className="text-lg">🌊</span>
+                  Chia sẻ qua Waves
+                </button>
+                <div className="border-t border-slate-200 dark:border-slate-700" />
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/feed/clips`;
+                    navigator.clipboard.writeText(url).then(() => showToast('🔗 Đã sao chép link')).catch(() => {});
+                    setShowShare(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <span className="text-lg">🔗</span>
+                  Sao chép liên kết
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Options menu (3 chấm) — hiện cho tất cả user */}
         <div className="relative">
@@ -385,6 +558,136 @@ function ClipCard({
         )}
       </div>
       </div>
+      </div>
+      {/* ── END of 9/16 video box + wrapper ──────────────── */}
+
+      {/* ── Comment Panel — in-flow flex sibling, width animates 0→320px ── */}
+      <div
+        className="h-full bg-white dark:bg-slate-900 flex flex-col shadow-2xl transition-all duration-300 ease-in-out flex-shrink-0 overflow-hidden"
+        style={{ width: showComments ? 'clamp(260px, 25vw, 320px)' : '0px' }}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 px-3 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+          <button onClick={() => setShowComments(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 flex-shrink-0">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm">
+            Bình luận ({commentCount.toLocaleString()})
+          </span>
+        </div>
+
+        {/* Comment list */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          {commentLoading && (
+            <div className="flex justify-center py-6">
+              <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+          {!commentLoading && comments.length === 0 && (
+            <p className="text-center text-slate-400 dark:text-slate-500 text-sm py-6">Chưa có bình luận nào</p>
+          )}
+          {comments.map((c) => (
+            <div key={c.id} className="flex gap-3">
+              {c.authorPhotoURL ? (
+                <img src={c.authorPhotoURL} alt={c.authorDisplayName} className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
+              ) : (
+                <div className="w-8 h-8 rounded-full flex-shrink-0 bg-cyan-500 flex items-center justify-center text-white text-xs font-bold">
+                  {c.authorDisplayName?.[0]?.toUpperCase() ?? '?'}
+                </div>
+              )}
+              <div>
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{c.authorDisplayName}</span>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{c.content}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Input row */}
+        <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-700 flex gap-2 items-center flex-shrink-0">
+          <input
+            ref={commentInputRef}
+            type="text"
+            value={commentInput}
+            onChange={(e) => setCommentInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void submitComment(); }}
+            placeholder="Viết bình luận..."
+            className="flex-1 rounded-full border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-sm px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
+          />
+          <button
+            onClick={() => void submitComment()}
+            disabled={commentSubmitting || !commentInput.trim()}
+            className="w-9 h-9 rounded-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 flex items-center justify-center text-white flex-shrink-0 transition-colors"
+          >
+            {commentSubmitting ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405Z" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Friend Picker Modal ─────────────────────────────── */}
+      {showFriendPicker && (
+        <>
+          <div className="absolute inset-0 z-40 bg-black/50" onClick={() => setShowFriendPicker(false)} />
+          <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-50 bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-2xl flex flex-col max-h-[70%]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Chia sẻ qua Waves</span>
+              <button onClick={() => setShowFriendPicker(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Search */}
+            <input
+              type="text"
+              value={shareSearch}
+              onChange={(e) => setShareSearch(e.target.value)}
+              placeholder="Tìm bạn bè..."
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-sm px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
+            />
+
+            {/* Friend list */}
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {friendsLoading && (
+                <div className="flex justify-center py-4">
+                  <div className="w-5 h-5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {!friendsLoading && filteredFriends.length === 0 && (
+                <p className="text-center text-slate-400 text-sm py-4">Không tìm thấy bạn bè</p>
+              )}
+              {filteredFriends.map((f) => (
+                <div key={f.id} className="flex items-center gap-3 py-1">
+                  {f.avatarUrl ? (
+                    <img src={f.avatarUrl} alt={f.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-cyan-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                      {f.name[0]?.toUpperCase() ?? '?'}
+                    </div>
+                  )}
+                  <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{f.name}</span>
+                  <button
+                    onClick={() => void shareToFriend(f)}
+                    disabled={sharingSending === f.id}
+                    className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-white text-xs font-semibold rounded-full transition-colors"
+                  >
+                    {sharingSending === f.id ? 'Đang gửi...' : 'Gửi'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { logger } from '../config/logger.js';
 
 const router = Router();
 
@@ -358,7 +359,7 @@ router.get('/music/search', requireAuth, async (req: AuthRequest, res) => {
 
     res.json({ tracks });
   } catch (e) {
-    console.error('[music/search]', e);
+    logger.error('[moments/tracks]', { stack: e instanceof Error ? e.stack : String(e) });
     res.json({ tracks: [] });
   }
 });
