@@ -1,6 +1,17 @@
 import { auth } from '@/lib/firebase/auth';
+import Constants from 'expo-constants';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+// Tự lấy IP từ Metro bundler — không cần sửa khi đổi WiFi
+function getApiBase(): string {
+  const hostUri = Constants.expoConfig?.hostUri ?? Constants.manifest2?.extra?.expoGo?.debuggerHost;
+  if (hostUri) {
+    const host = hostUri.split(':')[0]; // chỉ lấy IP, bỏ port Metro
+    return `http://${host}:4000`;
+  }
+  return process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+}
+
+const API_BASE = getApiBase();
 
 type RequestOptions = {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';

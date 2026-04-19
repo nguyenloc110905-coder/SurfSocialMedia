@@ -1,6 +1,37 @@
 import { auth } from '@/lib/firebase/auth';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+const runtimeHost =
+  typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+
+const resolveApiBase = () => {
+  const envBase = import.meta.env.VITE_API_URL;
+  const useDevProxy =
+    import.meta.env.DEV &&
+    (!envBase || envBase.includes('localhost') || envBase.includes('127.0.0.1'));
+
+  if (useDevProxy) {
+    return '';
+  }
+
+  if (!envBase) return `http://${runtimeHost}:4000`;
+
+  try {
+    const parsed = new URL(envBase);
+    const isLocalDevHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    const isRemoteClient = runtimeHost !== 'localhost' && runtimeHost !== '127.0.0.1';
+
+    if (isLocalDevHost && isRemoteClient) {
+      parsed.hostname = runtimeHost;
+      return parsed.toString().replace(/\/$/, '');
+    }
+
+    return envBase;
+  } catch {
+    return envBase;
+  }
+};
+
+const API_BASE = resolveApiBase();
 
 type RequestOptions = {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
@@ -11,7 +42,7 @@ type RequestOptions = {
 };
 
 async function request<T>(path: string, options: RequestOptions): Promise<T> {
-  const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+  const url = path.startsWith('http') ? path : API_BASE ? `${API_BASE}${path}` : path;
   const headers = new Headers(options.headers);
 
   if (options.requireAuth !== false) {

@@ -1,73 +1,85 @@
 import { Router } from 'express';
-import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { getDb } from '../config/firebase-admin.js';
+import { AuthRequest, requireAuth } from '../middleware/auth.js';
+import {
+  getUnreadNotificationCount,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  toApiNotification,
+} from '../services/notifications.js';
+import {
+  emitNotificationRead,
+  emitNotificationReadAll,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 
-// GET /api/notifications — fetch current user's notifications, newest first
+const parseIntSafe = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'string') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const db = getDb();
-    // No orderBy to avoid requiring a composite index; sort in memory
-    const snap = await db
-      .collection('notifications')
-      .where('recipientId', '==', req.uid)
-      .limit(100)
-      .get();
+    const uid = req.uid!;
+    const limit = Math.min(parseIntSafe(req.query.limit, 20), 50);
+    const cursorMs = parseIntSafe(req.query.cursor, 0) || undefined;
 
-    type NotifDoc = { id: string; createdAt?: { _seconds?: number; seconds?: number } | string };
-    const notifications = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as NotifDoc[])
-      .sort((a, b) => {
-        const ts = (n: NotifDoc) => {
-          const c = n.createdAt;
-          if (!c) return 0;
-          if (typeof c === 'string') return new Date(c).getTime();
-          return ((c._seconds ?? c.seconds ?? 0) * 1000);
-        };
-        return ts(b) - ts(a);
-      })
-      .slice(0, 50);
+    const items = await listNotifications({ userId: uid, limit, cursorMs });
+    const nextCursor = items.length === limit ? items[items.length - 1].createdAt.getTime() : null;
 
-    res.json({ notifications });
+    res.json({
+      items: items.map(toApiNotification),
+      nextCursor,
+    });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
 });
 
-// PATCH /api/notifications/:id/read — mark single notification as read
+router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const count = await getUnreadNotificationCount(uid);
+    res.json({ count });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const db = getDb();
-    const ref = db.collection('notifications').doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists || doc.data()?.recipientId !== req.uid) {
-      res.status(404).json({ error: 'Not found' });
+    const uid = req.uid!;
+    const result = await markNotificationRead(uid, req.params.id);
+    if (!result.ok && result.reason === 'not_found') {
+      res.status(404).json({ error: 'Notification not found' });
       return;
     }
-    await ref.update({ read: true });
-    res.json({ ok: true });
+    if (!result.ok && result.reason === 'forbidden') {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const count = await getUnreadNotificationCount(uid);
+    emitNotificationRead(uid, req.params.id);
+    emitNotificationUnreadCount(uid, count);
+
+    res.json({ ok: true, count });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
 });
 
-// PATCH /api/notifications/read-all — mark all notifications as read
 router.patch('/read-all', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const db = getDb();
-    // Fetch all recipient's notifications, filter unread in memory (avoids composite index)
-    const snap = await db
-      .collection('notifications')
-      .where('recipientId', '==', req.uid)
-      .limit(200)
-      .get();
-    const unread = snap.docs.filter((d) => d.data().read === false);
-    if (unread.length > 0) {
-      const batch = db.batch();
-      unread.forEach((doc) => batch.update(doc.ref, { read: true }));
-      await batch.commit();
-    }
-    res.json({ ok: true });
+    const uid = req.uid!;
+    const ids = await markAllNotificationsRead(uid);
+    const count = await getUnreadNotificationCount(uid);
+    emitNotificationReadAll(uid, ids);
+    emitNotificationUnreadCount(uid, count);
+    res.json({ ok: true, updated: ids.length, count });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

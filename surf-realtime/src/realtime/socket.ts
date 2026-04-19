@@ -127,6 +127,13 @@ export const createSocketServer = async (app: FastifyInstance): Promise<Server> 
           lastMessageAt: message.createdAt.toISOString(),
         });
 
+        // Notify each non-sender member via their user room (for global notification sound)
+        for (const memberId of conversation.memberIds) {
+          if (memberId !== uid) {
+            io.to(roomForUser(memberId)).emit('message:notify', eventBody);
+          }
+        }
+
         ack?.({ ok: true, message: eventBody.message });
       } catch (error) {
         ack?.({ ok: false, error: (error as Error).message });

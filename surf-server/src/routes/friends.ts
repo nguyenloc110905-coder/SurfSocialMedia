@@ -8,7 +8,16 @@ import {
 } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
-import { io } from '../index.js';
+import {
+  createNotification,
+  getUnreadNotificationCount,
+  toApiNotification,
+} from '../services/notifications.js';
+import { emitFriendRequestReceived } from '../realtime/emitters/friend.emitter.js';
+import {
+  emitNotificationNew,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 const db = () => getDb();
@@ -147,7 +156,24 @@ router.post(
         avatarUrl: fromData?.photoURL,
       };
       console.log(`🔔 Emitting friendRequestReceived to user:${toUid}`, requestData);
-      io.to(`user:${toUid}`).emit('friendRequestReceived', requestData);
+      emitFriendRequestReceived(toUid, requestData);
+
+      // Tạo notification lưu DB + push realtime cho chuông thông báo.
+      try {
+        const notification = await createNotification({
+          userId: toUid,
+          type: 'friend_request',
+          actorId: fromUid,
+          entityType: 'friend_request',
+          entityId: ref.id,
+          message: `${fromData?.displayName ?? 'Unknown'} đã gửi lời mời kết bạn cho bạn.`,
+        });
+        const unreadCount = await getUnreadNotificationCount(toUid);
+        emitNotificationNew(toUid, toApiNotification(notification));
+        emitNotificationUnreadCount(toUid, unreadCount);
+      } catch (notifyError) {
+        console.warn('⚠️ Không tạo được notification friend_request:', notifyError);
+      }
 
       // Write notification doc + emit notification:new so the bell updates
       const notifRef = db().collection('notifications').doc();
@@ -214,8 +240,25 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
       batch.set(myRef, { friendIds: myIds }, { merge: true });
       batch.set(theirRef, { friendIds: theirIds }, { merge: true });
       await batch.commit();
-      // Notify the original sender that their request was accepted
-      io.to(`user:${fromUid}`).emit('friendAccepted', { byUid: uid });
+
+      // Tạo notification cho người đã gửi lời mời: yêu cầu đã được chấp nhận.
+      try {
+        const acceptorDoc = await db().collection('users').doc(uid).get();
+        const acceptorName = acceptorDoc.data()?.displayName ?? 'Unknown';
+        const notification = await createNotification({
+          userId: fromUid,
+          type: 'friend_accept',
+          actorId: uid,
+          entityType: 'friend_request',
+          entityId: id,
+          message: `${acceptorName} đã chấp nhận lời mời kết bạn của bạn.`,
+        });
+        const unreadCount = await getUnreadNotificationCount(fromUid);
+        emitNotificationNew(fromUid, toApiNotification(notification));
+        emitNotificationUnreadCount(fromUid, unreadCount);
+      } catch (notifyError) {
+        console.warn('⚠️ Không tạo được notification friend_accept:', notifyError);
+      }
     }
     res.json({ id, action });
   } catch (e) {

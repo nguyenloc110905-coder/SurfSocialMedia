@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
-import { io } from '../index.js';
+import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
+import { getIo } from '../realtime/io.js';
 import { logger } from '../config/logger.js';
+import { moderateText } from '../services/aiModeration.js';
 
 const router = Router();
 
@@ -47,12 +49,26 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       res.status(400).json({ error: 'Comment content is required' });
       return;
     }
-    
-    // Check if post exists
-    const postDoc = await postsRef.doc(req.params.postId).get();
-    if (!postDoc.exists) {
-      res.status(404).json({ error: 'Post not found' });
+
+    // Kiểm duyệt nội dung bình luận
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
+    }
+
+    // Check if post or video exists
+    const postDoc = await postsRef.doc(req.params.postId).get();
+    const videosRef = db.collection('videos');
+    let isVideo = false;
+    let videoDoc: FirebaseFirestore.DocumentSnapshot | undefined;
+    if (!postDoc.exists) {
+      videoDoc = await videosRef.doc(req.params.postId).get();
+      if (!videoDoc.exists) {
+        res.status(404).json({ error: 'Post not found' });
+        return;
+      }
+      isVideo = true;
     }
 
     // If parentId given, verify parent comment exists and belongs to this post
@@ -67,7 +83,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     // Get user info
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
-    
+
     // Create comment
     const commentRef = commentsRef.doc();
     const commentData: Record<string, unknown> = {
@@ -84,27 +100,33 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     if (parentId) commentData.parentId = parentId;
     
     console.log(`📝 Creating comment for post ${req.params.postId} by ${req.uid}`);
-    
+
     await commentRef.set(commentData);
-    
+
     console.log(`✅ Comment created with ID: ${commentRef.id}`);
-    
-    // Update post's replyCount
-    await postsRef.doc(req.params.postId).update({
-      replyCount: FieldValue.increment(1),
-    });
-    
-    const responseData = { 
-      id: commentRef.id, 
-      ...commentData 
+
+    // Update comment count on post or video
+    if (isVideo) {
+      await videosRef.doc(req.params.postId).update({ commentCount: FieldValue.increment(1) });
+    } else {
+      await postsRef.doc(req.params.postId).update({ replyCount: FieldValue.increment(1) });
+    }
+
+    const responseData = {
+      id: commentRef.id,
+      ...commentData,
     };
-    
+
     console.log(`📤 Sending response:`, responseData);
 
     // RT-4: broadcast new comment to all users viewing this post
-    io.to(`post:${req.params.postId}`).emit('comment:new', responseData);
+    emitCommentNew(req.params.postId, responseData);
 
-    const postAuthorId = postDoc.data()?.authorId as string | undefined;
+    const contentDoc = isVideo ? videoDoc! : postDoc;
+    const postAuthorId = contentDoc.data()?.authorId as string | undefined;
+    const postSnippet = isVideo
+      ? (contentDoc.data()?.title as string ?? '').substring(0, 100)
+      : (contentDoc.data()?.content as string ?? '').substring(0, 100);
     // Notify post author about new top-level comment (skip own post, skip replies — handled below)
     if (!parentId && postAuthorId && postAuthorId !== req.uid) {
       const notifRef = db.collection('notifications').doc();
@@ -116,13 +138,13 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         actorName: user?.displayName ?? 'Ai đó',
         actorPhoto: user?.photoURL ?? null,
         postId: req.params.postId,
-        postSnippet: (postDoc.data()?.content as string ?? '').substring(0, 100),
+        postSnippet,
         commentSnippet: content.trim().substring(0, 80),
         read: false,
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      io.to(`user:${postAuthorId}`).emit('notification:new', {
+      getIo().to(`user:${postAuthorId}`).emit('notification:new', {
         ...notifData,
         createdAt: new Date().toISOString(),
       });
@@ -147,7 +169,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           createdAt: new Date(),
         };
         notifRef.set(notifData).catch(() => {});
-        io.to(`user:${parentAuthorId}`).emit('notification:new', {
+        getIo().to(`user:${parentAuthorId}`).emit('notification:new', {
           ...notifData,
           createdAt: new Date().toISOString(),
         });
@@ -168,7 +190,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           createdAt: new Date(),
         };
         notifRef.set(notifData).catch(() => {});
-        io.to(`user:${postAuthorId}`).emit('notification:new', {
+        getIo().to(`user:${postAuthorId}`).emit('notification:new', {
           ...notifData,
           createdAt: new Date().toISOString(),
         });
@@ -191,6 +213,13 @@ router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) =
     const { content } = req.body;
     if (!content?.trim()) {
       res.status(400).json({ error: 'Content is required' });
+      return;
+    }
+
+    // Kiểm duyệt nội dung chỉnh sửa
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
     }
 
@@ -221,30 +250,30 @@ router.delete('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) 
     const db = getDb();
     const commentsRef = db.collection('comments');
     const postsRef = db.collection('posts');
-    
+
     const commentDoc = await commentsRef.doc(req.params.commentId).get();
-    
+
     if (!commentDoc.exists) {
       res.status(404).json({ error: 'Comment not found' });
       return;
     }
-    
+
     const commentData = commentDoc.data();
-    
+
     // Only the comment author can delete it
     if (commentData?.authorId !== req.uid) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
-    
+
     // Delete comment
     await commentsRef.doc(req.params.commentId).delete();
-    
+
     // Update post's replyCount
     await postsRef.doc(req.params.postId).update({
       replyCount: FieldValue.increment(-1),
     });
-    
+
     res.json({ message: 'Comment deleted' });
   } catch (e) {
     logger.error('Error deleting comment:', { stack: e instanceof Error ? e.stack : String(e) });
@@ -257,18 +286,18 @@ router.post('/:postId/:commentId/like', requireAuth, async (req: AuthRequest, re
   try {
     const db = getDb();
     const commentsRef = db.collection('comments');
-    
+
     const commentDoc = await commentsRef.doc(req.params.commentId).get();
-    
+
     if (!commentDoc.exists) {
       res.status(404).json({ error: 'Comment not found' });
       return;
     }
-    
+
     const commentData = commentDoc.data();
     const likedBy = commentData?.likedBy || [];
     const isLiked = likedBy.includes(req.uid);
-    
+
     if (isLiked) {
       // Unlike
       await commentsRef.doc(req.params.commentId).update({
@@ -352,7 +381,7 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      io.to(`user:${commentAuthorId}`).emit('notification:new', {
+      getIo().to(`user:${commentAuthorId}`).emit('notification:new', {
         ...notifData,
         createdAt: new Date().toISOString(),
       });

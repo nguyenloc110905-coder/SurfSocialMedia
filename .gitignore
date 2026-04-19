@@ -8,6 +8,7 @@ node_modules/
 
 # Generated from .env at dev/build
 surf-client/public/cloudinary-config.js
+surf-client/certs/
 
 # Build / output
 dist/
@@ -34,3 +35,7 @@ Thumbs.db
 npm-debug.log*
 
 serviceAccountKey.json
+docs/plans/*
+!docs/plans/postman.txt
+!docs/plans/mkcert-https-lan-setup.txt
+!docs/plans/oracle-coturn-setup.txt

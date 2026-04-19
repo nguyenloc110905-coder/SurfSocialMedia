@@ -19,10 +19,8 @@ export function useGoogleSignIn(onError?: (msg: string) => void) {
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   // Android và iOS yêu cầu client ID riêng. Khi chưa có, dùng webClientId làm fallback
   // để tránh crash trong Expo Go. Production cần tạo đủ client ID.
-  const androidClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || webClientId;
-  const iosClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || webClientId;
+  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || webClientId;
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || webClientId;
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     webClientId,
@@ -66,7 +64,7 @@ export function useFacebookSignIn(onError?: (msg: string) => void) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const [request, response, promptAsync] = Facebook.useAuthRequest({
+  const [request, response, promptAsync] = Facebook.use({
     clientId: process.env.EXPO_PUBLIC_FACEBOOK_APP_ID ?? '',
   });
 

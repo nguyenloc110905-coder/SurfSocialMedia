@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
 import { FieldValue } from 'firebase-admin/firestore';
-import { io } from '../index.js';
+import { getIo } from '../realtime/io.js';
+import { moderatePost } from '../services/aiModeration.js';
 
 const router = Router();
 
@@ -17,6 +19,7 @@ function detectHasVideo(urls: string[]): boolean {
 }
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
+  console.log('[POST /api/posts] Request received, content:', req.body?.content?.substring(0, 50));
   try {
     const db = getDb();
     const postsRef = db.collection('posts');
@@ -33,6 +36,26 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
     if (!content?.trim() && mediaUrls.length === 0) {
       res.status(400).json({ error: 'Content or media is required' });
+      return;
+    }
+
+    // Kiểm duyệt nội dung bằng AI trước khi lưu
+    const moderation = await moderatePost(content?.trim() ?? '', Array.isArray(mediaUrls) ? mediaUrls : []);
+    if (!moderation.allowed) {
+      // Lưu log vi phạm vào Firestore
+      try {
+        await db.collection('moderation_logs').add({
+          userId: req.uid,
+          contentSnippet: (content?.trim() ?? '').substring(0, 200),
+          mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : [],
+          reason: moderation.reason ?? 'Nội dung không phù hợp',
+          type: 'post',
+          createdAt: new Date(),
+        });
+      } catch {
+        // Không để lỗi log chặn response
+      }
+      res.status(422).json({ error: `Bài đăng vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
       return;
     }
 
@@ -78,7 +101,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
           read: false,
           createdAt: new Date(),
         });
-        io.to(`user:${friend.uid}`).emit('notification:new', {
+        getIo().to(`user:${friend.uid}`).emit('notification:new', {
           id: notifDoc.id,
           type: 'tag',
           actorId: req.uid,
@@ -373,14 +396,14 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      io.to(`user:${data.authorId as string}`).emit('notification:new', {
+      getIo().to(`user:${data.authorId as string}`).emit('notification:new', {
         ...notifData,
         createdAt: new Date().toISOString(),
       });
     }
 
     // RT-3: notify all clients viewing this post about the updated reaction count
-    io.to(`post:${req.params.id}`).emit('post:reacted', {
+    emitPostReacted(req.params.id, {
       postId: req.params.id,
       likeCount: likedBy.length,
       likedBy,
@@ -446,7 +469,7 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
 
     const created = await sharedPostRef.get();
     // Emit real-time update for share count
-    io.emit('post:shared', { postId: req.params.id });
+    getIo().emit('post:shared', { postId: req.params.id });
     res.status(201).json({ id: created.id, ...created.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

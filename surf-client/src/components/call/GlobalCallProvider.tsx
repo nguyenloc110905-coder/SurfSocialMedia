@@ -1,0 +1,1908 @@
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react';
+import { Room, RoomEvent, Track } from 'livekit-client';
+import {
+  buildDeterministicFallbackUrl,
+  defaultVideoProfile,
+  fetchLiveKitToken,
+  getVideoSpec,
+  isVideoFpsClamped,
+  targetVideoFps,
+  useLiveKitProvider,
+  type LiveKitTokenResponse,
+  type VideoProfile,
+} from '@/lib/livekit-call';
+import { getSocket } from '@/lib/socket';
+import { useAuthStore } from '@/stores/authStore';
+
+export type CallMode = 'audio' | 'video';
+
+type CallInvitePayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  mode: CallMode;
+};
+
+type CallAcceptedPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  mode: CallMode;
+};
+
+type CallSignalPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  mode: CallMode;
+  signal:
+    | { type: 'offer' | 'answer'; sdp: RTCSessionDescriptionInit }
+    | { type: 'ice'; candidate: RTCIceCandidateInit };
+};
+
+type CallEndPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  reason?: string;
+};
+
+type IncomingCall = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  mode: CallMode;
+};
+
+type ActiveCall = {
+  callId: string;
+  conversationId: string;
+  peerId: string;
+  peerName: string;
+  peerAvatarUrl: string | null;
+  mode: CallMode;
+  isOutgoing: boolean;
+  status: 'outgoing' | 'connecting' | 'connected';
+};
+
+type StartCallInput = {
+  conversationId: string;
+  peerId: string;
+  peerName: string;
+  peerAvatarUrl: string | null;
+  mode: CallMode;
+};
+
+type GlobalCallContextValue = {
+  startCall: (input: StartCallInput) => void;
+  activeCall: ActiveCall | null;
+  incomingCall: IncomingCall | null;
+  isBusy: boolean;
+};
+
+type CallToast = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+type CallQuotaState = {
+  usagePercent: number | null;
+  usageSource: 'manual' | 'api' | 'unavailable';
+  softLimitPercent: number;
+  hardLimitPercent: number;
+  fallbackRecommended: boolean;
+};
+
+type FallbackSessionState = {
+  peerName: string;
+  fallbackUrl: string;
+  reason: string;
+};
+
+type PendingCallAcceptPayload = IncomingCall & {
+  targetUserId: string;
+  createdAt: number;
+};
+
+const GlobalCallContext = createContext<GlobalCallContextValue | null>(null);
+
+const CALL_WINDOW_QUERY_KEY = 'callWindow';
+const PENDING_CALL_ACCEPT_STORAGE_KEY = 'surf:call:pending-accept';
+const PENDING_CALL_ACCEPT_MAX_AGE_MS = 1000 * 60 * 2;
+
+const parseRtcUrls = (value?: string) =>
+  value
+    ?.split(',')
+    .map((item) => item.trim())
+    .filter(Boolean) ?? [];
+
+const createIceServers = (): RTCIceServer[] => {
+  const stunUrls = parseRtcUrls(import.meta.env.VITE_WEBRTC_STUN_URLS).filter((url) =>
+    url.startsWith('stun:')
+  );
+  const turnUrls = parseRtcUrls(import.meta.env.VITE_WEBRTC_TURN_URLS).filter(
+    (url) => url.startsWith('turn:') || url.startsWith('turns:')
+  );
+  const turnUsername = import.meta.env.VITE_WEBRTC_TURN_USERNAME?.trim();
+  const turnCredential = import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL?.trim();
+
+  const servers: RTCIceServer[] = [];
+
+  if (stunUrls.length > 0) {
+    servers.push({
+      urls: stunUrls.length === 1 ? stunUrls[0] : stunUrls,
+    });
+  }
+
+  if (turnUrls.length > 0 && turnUsername && turnCredential) {
+    servers.push({
+      urls: turnUrls.length === 1 ? turnUrls[0] : turnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  }
+
+  if (servers.length === 0) {
+    servers.push({ urls: 'stun:stun.l.google.com:19302' });
+  }
+
+  return servers;
+};
+
+const WEBRTC_ICE_SERVERS = createIceServers();
+
+const buildCameraConstraints = (profile: VideoProfile): MediaTrackConstraints => {
+  const { resolution } = getVideoSpec(profile, targetVideoFps);
+
+  return {
+    width: {
+      min: 854,
+      ideal: resolution.width,
+    },
+    height: {
+      min: 480,
+      ideal: resolution.height,
+    },
+    frameRate: {
+      min: 30,
+      ideal: targetVideoFps,
+      max: targetVideoFps,
+    },
+  };
+};
+
+const getFallbackReason = (reason?: string) => {
+  if (reason === 'livekit_hard_quota_limit' || reason === 'livekit_forced_fallback') {
+    return 'LiveKit gần chạm quota nên hệ thống chuyển sang phòng dự phòng.';
+  }
+
+  if (reason === 'livekit_not_configured') {
+    return 'LiveKit chưa cấu hình đủ trên server nên hệ thống chuyển sang phòng dự phòng.';
+  }
+
+  return 'Không thể kết nối LiveKit, hệ thống đã mở phòng dự phòng.';
+};
+
+const initials = (value?: string | null) =>
+  value?.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'S';
+
+const formatCallDuration = (durationSec: number) => {
+  const hours = Math.floor(durationSec / 3600);
+  const minutes = Math.floor((durationSec % 3600) / 60);
+  const seconds = durationSec % 60;
+
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes
+      .toString()
+      .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+};
+
+function CallAvatar({
+  src,
+  name,
+  className,
+  fallbackClassName,
+}: {
+  src?: string | null;
+  name?: string | null;
+  className: string;
+  fallbackClassName: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return <div className={fallbackClassName}>{initials(name)}</div>;
+  }
+
+  return <img src={src} alt={name ?? 'Call avatar'} className={className} onError={() => setFailed(true)} />;
+}
+
+export function GlobalCallProvider({ children }: PropsWithChildren) {
+  const user = useAuthStore((state) => state.user);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
+  const [callToast, setCallToast] = useState<CallToast | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [acceptingCall, setAcceptingCall] = useState(false);
+  const [selectedVideoProfile, setSelectedVideoProfile] =
+    useState<VideoProfile>(defaultVideoProfile);
+  const [callQuotaState, setCallQuotaState] = useState<CallQuotaState | null>(null);
+  const [fallbackSession, setFallbackSession] = useState<FallbackSessionState | null>(null);
+  const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [hasRemoteVideoTrack, setHasRemoteVideoTrack] = useState(false);
+  const [isRemoteCameraMuted, setIsRemoteCameraMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [connectedAtMs, setConnectedAtMs] = useState<number | null>(null);
+  const [callDurationSec, setCallDurationSec] = useState(0);
+
+  const callWindowMode =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get(CALL_WINDOW_QUERY_KEY) === '1';
+
+  const activeCallRef = useRef<ActiveCall | null>(null);
+  const liveKitRoomRef = useRef<Room | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const callStageRef = useRef<HTMLDivElement | null>(null);
+  const callToastTimeoutRef = useRef<number | null>(null);
+  const ringtoneContextRef = useRef<AudioContext | null>(null);
+  const ringtoneIntervalRef = useRef<number | null>(null);
+  const outgoingTimeoutRef = useRef<number | null>(null);
+
+  const activeVideoSpec = getVideoSpec(selectedVideoProfile, targetVideoFps);
+
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+
+  useEffect(() => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreenState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+    }
+
+    if (!remoteStream) {
+      setHasRemoteVideoTrack(false);
+      setIsRemoteCameraMuted(false);
+      return;
+    }
+
+    const updateRemoteTrackState = () => {
+      const videoTracks = remoteStream.getVideoTracks();
+      const hasVideoTrack = videoTracks.some((track) => track.readyState === 'live');
+      setHasRemoteVideoTrack(hasVideoTrack);
+
+      if (!useLiveKitProvider) {
+        const allMuted =
+          hasVideoTrack &&
+          videoTracks.every(
+            (track) => track.readyState !== 'live' || track.muted || track.enabled === false
+          );
+        setIsRemoteCameraMuted(allMuted);
+      }
+    };
+
+    updateRemoteTrackState();
+
+    const videoTracks = remoteStream.getVideoTracks();
+    const cleanupFns: Array<() => void> = [];
+
+    videoTracks.forEach((track) => {
+      const onTrackChange = () => {
+        updateRemoteTrackState();
+      };
+
+      track.addEventListener('mute', onTrackChange);
+      track.addEventListener('unmute', onTrackChange);
+      track.addEventListener('ended', onTrackChange);
+
+      cleanupFns.push(() => {
+        track.removeEventListener('mute', onTrackChange);
+        track.removeEventListener('unmute', onTrackChange);
+        track.removeEventListener('ended', onTrackChange);
+      });
+    });
+
+    return () => {
+      cleanupFns.forEach((cleanup) => cleanup());
+    };
+  }, [remoteStream]);
+
+  useEffect(() => {
+    if (!activeCall) {
+      setConnectedAtMs(null);
+      setCallDurationSec(0);
+      return;
+    }
+
+    if (activeCall.status === 'connected') {
+      setConnectedAtMs((current) => current ?? Date.now());
+      return;
+    }
+
+    setConnectedAtMs(null);
+    setCallDurationSec(0);
+  }, [activeCall?.callId, activeCall?.status]);
+
+  useEffect(() => {
+    if (!connectedAtMs) return;
+
+    const updateDuration = () => {
+      setCallDurationSec(Math.max(0, Math.floor((Date.now() - connectedAtMs) / 1000)));
+    };
+
+    updateDuration();
+    const timer = window.setInterval(updateDuration, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [connectedAtMs]);
+
+  const resetCallControls = (mode: CallMode) => {
+    setIsMicEnabled(true);
+    setIsCameraEnabled(mode === 'video');
+  };
+
+  const toggleCallFullscreen = async () => {
+    const stage = callStageRef.current;
+    if (!stage) return;
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      if (!stage.requestFullscreen) {
+        pushToast('Trình duyệt chưa hỗ trợ', 'Thiết bị này chưa hỗ trợ chế độ toàn màn hình.');
+        return;
+      }
+
+      await stage.requestFullscreen();
+    } catch {
+      pushToast('Không thể toàn màn hình', 'Trình duyệt đã chặn yêu cầu toàn màn hình.');
+    }
+  };
+
+  const refreshRemoteVideoTrackState = () => {
+    const stream = remoteStreamRef.current;
+    if (!stream) {
+      setHasRemoteVideoTrack(false);
+      return;
+    }
+
+    const hasVideoTrack = stream.getVideoTracks().some((track) => track.readyState === 'live');
+    setHasRemoteVideoTrack(hasVideoTrack);
+  };
+
+  const pushToast = (title: string, description: string) => {
+    if (callToastTimeoutRef.current) {
+      window.clearTimeout(callToastTimeoutRef.current);
+    }
+
+    setCallToast({
+      id:
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      description,
+    });
+
+    callToastTimeoutRef.current = window.setTimeout(() => {
+      setCallToast(null);
+    }, 6000);
+  };
+
+  const buildCallWindowUrl = () => {
+    if (typeof window === 'undefined') return '';
+    const url = new URL(window.location.href);
+    url.searchParams.set(CALL_WINDOW_QUERY_KEY, '1');
+    return url.toString();
+  };
+
+  const queuePendingCallAccept = (call: IncomingCall, targetUserId: string) => {
+    if (typeof window === 'undefined') return;
+
+    const payload: PendingCallAcceptPayload = {
+      ...call,
+      targetUserId,
+      createdAt: Date.now(),
+    };
+
+    window.localStorage.setItem(PENDING_CALL_ACCEPT_STORAGE_KEY, JSON.stringify(payload));
+  };
+
+  const consumePendingCallAccept = (targetUserId: string): IncomingCall | null => {
+    if (typeof window === 'undefined') return null;
+
+    const raw = window.localStorage.getItem(PENDING_CALL_ACCEPT_STORAGE_KEY);
+    if (!raw) return null;
+
+    window.localStorage.removeItem(PENDING_CALL_ACCEPT_STORAGE_KEY);
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<PendingCallAcceptPayload>;
+
+      if (parsed.targetUserId !== targetUserId) return null;
+      if (typeof parsed.createdAt !== 'number') return null;
+      if (Date.now() - parsed.createdAt > PENDING_CALL_ACCEPT_MAX_AGE_MS) return null;
+
+      if (
+        typeof parsed.callId !== 'string' ||
+        typeof parsed.conversationId !== 'string' ||
+        typeof parsed.fromUserId !== 'string' ||
+        typeof parsed.fromName !== 'string' ||
+        (parsed.mode !== 'audio' && parsed.mode !== 'video')
+      ) {
+        return null;
+      }
+
+      return {
+        callId: parsed.callId,
+        conversationId: parsed.conversationId,
+        fromUserId: parsed.fromUserId,
+        fromName: parsed.fromName,
+        fromAvatarUrl: typeof parsed.fromAvatarUrl === 'string' ? parsed.fromAvatarUrl : null,
+        mode: parsed.mode,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const ensureStream = (scope: 'local' | 'remote') => {
+    if (scope === 'local') {
+      if (!localStreamRef.current) {
+        const stream = new MediaStream();
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+      }
+      return localStreamRef.current;
+    }
+
+    if (!remoteStreamRef.current) {
+      const stream = new MediaStream();
+      remoteStreamRef.current = stream;
+      setRemoteStream(stream);
+    }
+    return remoteStreamRef.current;
+  };
+
+  const upsertMediaTrack = (scope: 'local' | 'remote', mediaTrack?: MediaStreamTrack | null) => {
+    if (!mediaTrack) return;
+    const stream = ensureStream(scope);
+    const exists = stream.getTracks().some((track) => track.id === mediaTrack.id);
+    if (!exists) {
+      stream.addTrack(mediaTrack);
+    }
+  };
+
+  const removeMediaTrack = (scope: 'local' | 'remote', mediaTrack?: MediaStreamTrack | null) => {
+    if (!mediaTrack) return;
+
+    const stream = scope === 'local' ? localStreamRef.current : remoteStreamRef.current;
+    if (!stream) return;
+
+    stream.removeTrack(mediaTrack);
+    if (stream.getTracks().length === 0) {
+      if (scope === 'local') {
+        localStreamRef.current = null;
+        setLocalStream(null);
+      } else {
+        remoteStreamRef.current = null;
+        setRemoteStream(null);
+      }
+    }
+  };
+
+  const syncLiveKitLocalPreview = (room: Room) => {
+    const cameraPublication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const cameraMediaTrack = cameraPublication?.track?.mediaStreamTrack;
+
+    if (!cameraMediaTrack || cameraMediaTrack.kind !== 'video') {
+      localStreamRef.current = null;
+      setLocalStream(null);
+      return;
+    }
+
+    const nextPreviewStream = new MediaStream([cameraMediaTrack]);
+    localStreamRef.current = nextPreviewStream;
+    setLocalStream(nextPreviewStream);
+  };
+
+  const isRemotePeerParticipant = (identity?: string | null) => {
+    const peerId = activeCallRef.current?.peerId;
+    return Boolean(identity && peerId && identity === peerId);
+  };
+
+  const openFallbackRoom = (call: ActiveCall, fallbackUrl: string, reason: string) => {
+    setFallbackSession({
+      peerName: call.peerName,
+      fallbackUrl,
+      reason,
+    });
+
+    const popup = window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      setCallError(`Trình duyệt chặn popup. Mở thủ công: ${fallbackUrl}`);
+    }
+
+    pushToast('Chuyển sang phòng dự phòng', `${reason} (${call.peerName})`);
+  };
+
+  const reopenFallbackRoom = () => {
+    if (!fallbackSession) return;
+    const popup = window.open(fallbackSession.fallbackUrl, '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      setCallError(`Trình duyệt chặn popup. Mở thủ công: ${fallbackSession.fallbackUrl}`);
+    }
+  };
+
+  const connectLiveKitCall = async (call: ActiveCall) => {
+    let tokenResponse: LiveKitTokenResponse;
+
+    try {
+      tokenResponse = await fetchLiveKitToken({
+        callId: call.callId,
+        conversationId: call.conversationId,
+        peerId: call.peerId,
+        mode: call.mode,
+        quality: selectedVideoProfile,
+      });
+    } catch (error) {
+      const fallbackUrl = buildDeterministicFallbackUrl(call.conversationId, call.callId);
+      openFallbackRoom(call, fallbackUrl, getFallbackReason('livekit_not_configured'));
+      throw error;
+    }
+
+    const fallbackUrl =
+      tokenResponse.fallbackUrl ?? buildDeterministicFallbackUrl(call.conversationId, call.callId);
+
+    if (tokenResponse.provider === 'fallback') {
+      openFallbackRoom(call, fallbackUrl, getFallbackReason(tokenResponse.reason));
+      throw new Error(tokenResponse.reason ?? 'fallback');
+    }
+
+    if (!tokenResponse.serverUrl || !tokenResponse.token) {
+      openFallbackRoom(call, fallbackUrl, getFallbackReason('livekit_not_configured'));
+      throw new Error('Thiếu LiveKit server URL hoặc token');
+    }
+
+    setCallQuotaState({
+      usagePercent: tokenResponse.usagePercent ?? null,
+      usageSource: tokenResponse.usageSource ?? 'unavailable',
+      softLimitPercent: tokenResponse.softLimitPercent ?? 80,
+      hardLimitPercent: tokenResponse.hardLimitPercent ?? 90,
+      fallbackRecommended: Boolean(tokenResponse.fallbackRecommended),
+    });
+
+    liveKitRoomRef.current?.disconnect();
+
+    const room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      videoCaptureDefaults: {
+        resolution: {
+          ...activeVideoSpec.resolution,
+          frameRate: targetVideoFps,
+        },
+        frameRate: targetVideoFps,
+      },
+      publishDefaults: {
+        simulcast: true,
+        videoEncoding: activeVideoSpec.encoding,
+      },
+    });
+
+    room.on(RoomEvent.LocalTrackPublished, (publication) => {
+      if (
+        publication.source === Track.Source.Camera ||
+        publication.source === Track.Source.Microphone
+      ) {
+        syncLiveKitLocalPreview(room);
+        return;
+      }
+
+      upsertMediaTrack('local', publication.track?.mediaStreamTrack);
+    });
+
+    room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+      if (
+        publication.source === Track.Source.Camera ||
+        publication.source === Track.Source.Microphone
+      ) {
+        syncLiveKitLocalPreview(room);
+        return;
+      }
+
+      removeMediaTrack('local', publication.track?.mediaStreamTrack);
+    });
+
+    room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+      if (!isRemotePeerParticipant(participant?.identity)) return;
+      upsertMediaTrack('remote', track.mediaStreamTrack);
+      if (track.kind === Track.Kind.Video) {
+        setIsRemoteCameraMuted(track.isMuted);
+        setHasRemoteVideoTrack(true);
+      }
+      setActiveCall((current) =>
+        current && current.callId === call.callId ? { ...current, status: 'connected' } : current
+      );
+      setCallError(null);
+    });
+
+    room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+      if (!isRemotePeerParticipant(participant?.identity)) return;
+      removeMediaTrack('remote', track.mediaStreamTrack);
+      if (track.kind === Track.Kind.Video) {
+        setIsRemoteCameraMuted(true);
+        refreshRemoteVideoTrackState();
+      }
+    });
+
+    room.on(RoomEvent.TrackMuted, (publication, participant) => {
+      if (!isRemotePeerParticipant(participant?.identity)) return;
+      if (publication.source === Track.Source.Camera || publication.kind === Track.Kind.Video) {
+        setIsRemoteCameraMuted(true);
+      }
+    });
+
+    room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+      if (!isRemotePeerParticipant(participant?.identity)) return;
+      if (publication.source === Track.Source.Camera || publication.kind === Track.Kind.Video) {
+        setIsRemoteCameraMuted(false);
+        refreshRemoteVideoTrackState();
+      }
+    });
+
+    room.on(RoomEvent.ConnectionStateChanged, (state) => {
+      if (state === 'connected') {
+        setActiveCall((current) =>
+          current && current.callId === call.callId ? { ...current, status: 'connected' } : current
+        );
+        setCallError(null);
+      }
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      if (activeCallRef.current?.callId === call.callId) {
+        setCallError('Kết nối media đã bị ngắt.');
+        finishCall(false);
+      }
+    });
+
+    liveKitRoomRef.current = room;
+
+    await room.connect(tokenResponse.serverUrl, tokenResponse.token);
+    await room.localParticipant.setMicrophoneEnabled(true);
+    setIsMicEnabled(true);
+    setIsCameraEnabled(call.mode === 'video');
+
+    if (call.mode === 'video') {
+      await room.localParticipant.setCameraEnabled(
+        true,
+        {
+          resolution: activeVideoSpec.resolution,
+          frameRate: {
+            min: 30,
+            ideal: targetVideoFps,
+            max: targetVideoFps,
+          },
+        },
+        {
+          simulcast: true,
+          videoEncoding: activeVideoSpec.encoding,
+        }
+      );
+    }
+
+    syncLiveKitLocalPreview(room);
+
+    if (isVideoFpsClamped && targetVideoFps < 70) {
+      pushToast(
+        'FPS đã được giới hạn',
+        `Thiết lập 70fps không ổn định cho camera web, hệ thống đang dùng ${targetVideoFps}fps.`
+      );
+    }
+
+    if (tokenResponse.fallbackRecommended) {
+      pushToast(
+        'Quota LiveKit đang cao',
+        'Nếu call mới thất bại, hệ thống sẽ tự chuyển sang phòng dự phòng để không gián đoạn.'
+      );
+    }
+  };
+
+  const applyVideoProfile = async (nextProfile: VideoProfile) => {
+    setSelectedVideoProfile(nextProfile);
+
+    const currentCall = activeCallRef.current;
+    if (!currentCall || currentCall.mode !== 'video') return;
+
+    try {
+      if (useLiveKitProvider) {
+        const room = liveKitRoomRef.current;
+        if (!room) return;
+
+        const nextSpec = getVideoSpec(nextProfile, targetVideoFps);
+        const cameraPublication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+        const localVideoTrack = cameraPublication?.videoTrack;
+
+        if (localVideoTrack) {
+          await localVideoTrack.restartTrack({
+            resolution: nextSpec.resolution,
+            frameRate: {
+              min: 30,
+              ideal: targetVideoFps,
+              max: targetVideoFps,
+            },
+          });
+        } else {
+          await room.localParticipant.setCameraEnabled(
+            true,
+            {
+              resolution: nextSpec.resolution,
+              frameRate: {
+                min: 30,
+                ideal: targetVideoFps,
+                max: targetVideoFps,
+              },
+            },
+            {
+              simulcast: true,
+              videoEncoding: nextSpec.encoding,
+            }
+          );
+        }
+
+        // Ensure local corner preview always rebinds after camera track restart.
+        syncLiveKitLocalPreview(room);
+      } else {
+        const localTrack = localStreamRef.current?.getVideoTracks()[0];
+        if (localTrack) {
+          await localTrack.applyConstraints(buildCameraConstraints(nextProfile));
+        }
+
+        if (localStreamRef.current) {
+          setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+        }
+      }
+
+      pushToast(
+        'Đã đổi chất lượng video',
+        nextProfile === 'p720' ? 'Cuộc gọi đang dùng 720p.' : 'Cuộc gọi đang dùng 480p.'
+      );
+      setCallError(null);
+    } catch (error) {
+      setCallError((error as Error).message || 'Không thể đổi chất lượng video');
+    }
+  };
+
+  const toggleMicrophone = async () => {
+    const currentCall = activeCallRef.current;
+    if (!currentCall) return;
+
+    const nextState = !isMicEnabled;
+
+    try {
+      if (useLiveKitProvider) {
+        const room = liveKitRoomRef.current;
+        if (!room) return;
+        await room.localParticipant.setMicrophoneEnabled(nextState);
+        syncLiveKitLocalPreview(room);
+      } else {
+        const audioTracks = localStreamRef.current?.getAudioTracks() ?? [];
+        if (audioTracks.length === 0) {
+          setCallError('Microphone chưa sẵn sàng.');
+          return;
+        }
+
+        audioTracks.forEach((track) => {
+          track.enabled = nextState;
+        });
+      }
+
+      setIsMicEnabled(nextState);
+    } catch (error) {
+      setCallError((error as Error).message || 'Không thể bật/tắt microphone');
+    }
+  };
+
+  const toggleCamera = async () => {
+    const currentCall = activeCallRef.current;
+    if (!currentCall || currentCall.mode !== 'video') return;
+
+    const nextState = !isCameraEnabled;
+
+    try {
+      if (useLiveKitProvider) {
+        const room = liveKitRoomRef.current;
+        if (!room) return;
+
+        const cameraPublication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+        const localVideoTrack = cameraPublication?.videoTrack;
+
+        if (nextState) {
+          let enabled = false;
+
+          // Prefer unmuting the existing track to avoid mobile camera restart glitches.
+          if (localVideoTrack) {
+            try {
+              await localVideoTrack.unmute();
+              enabled = true;
+            } catch {
+              enabled = false;
+            }
+          }
+
+          if (!enabled) {
+            try {
+              await room.localParticipant.setCameraEnabled(
+                true,
+                {
+                  resolution: activeVideoSpec.resolution,
+                  frameRate: {
+                    ideal: targetVideoFps,
+                  },
+                },
+                {
+                  simulcast: true,
+                  videoEncoding: activeVideoSpec.encoding,
+                }
+              );
+              enabled = true;
+            } catch {
+              enabled = false;
+            }
+          }
+
+          if (!enabled) {
+            await room.localParticipant.setCameraEnabled(true);
+          }
+        } else {
+          if (localVideoTrack) {
+            await localVideoTrack.mute();
+          } else {
+            await room.localParticipant.setCameraEnabled(false);
+          }
+        }
+
+        syncLiveKitLocalPreview(room);
+      } else {
+        const videoTracks = localStreamRef.current?.getVideoTracks() ?? [];
+        if (videoTracks.length === 0) {
+          setCallError('Camera chưa sẵn sàng.');
+          return;
+        }
+
+        videoTracks.forEach((track) => {
+          track.enabled = nextState;
+        });
+      }
+
+      setIsCameraEnabled(nextState);
+      setCallError(null);
+    } catch (error) {
+      setCallError((error as Error).message || 'Không thể bật/tắt camera');
+    }
+  };
+
+  const clearOutgoingTimeout = () => {
+    if (outgoingTimeoutRef.current) {
+      window.clearTimeout(outgoingTimeoutRef.current);
+      outgoingTimeoutRef.current = null;
+    }
+  };
+
+  const stopRingtone = () => {
+    if (ringtoneIntervalRef.current) {
+      window.clearInterval(ringtoneIntervalRef.current);
+      ringtoneIntervalRef.current = null;
+    }
+
+    const context = ringtoneContextRef.current;
+    if (context) {
+      void context.close().catch(() => undefined);
+      ringtoneContextRef.current = null;
+    }
+  };
+
+  const playRingtoneBurst = async () => {
+    if (typeof window === 'undefined') return;
+
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextCtor) return;
+
+    if (!ringtoneContextRef.current) {
+      ringtoneContextRef.current = new AudioContextCtor();
+    }
+
+    const context = ringtoneContextRef.current;
+    if (context.state === 'suspended') {
+      await context.resume().catch(() => undefined);
+    }
+
+    const scheduleTone = (offset: number, frequency: number, duration: number) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const startAt = context.currentTime + offset;
+      const endAt = startAt + duration;
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.08, startAt + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, endAt);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start(startAt);
+      oscillator.stop(endAt);
+    };
+
+    scheduleTone(0, 880, 0.26);
+    scheduleTone(0.36, 740, 0.28);
+  };
+
+  const startRingtone = () => {
+    if (ringtoneIntervalRef.current) return;
+
+    void playRingtoneBurst();
+    ringtoneIntervalRef.current = window.setInterval(() => {
+      void playRingtoneBurst();
+    }, 2200);
+  };
+
+  const resetCallMedia = () => {
+    liveKitRoomRef.current?.disconnect();
+    liveKitRoomRef.current = null;
+
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    pendingIceCandidatesRef.current = [];
+
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
+    setLocalStream(null);
+
+    remoteStreamRef.current?.getTracks().forEach((track) => track.stop());
+    remoteStreamRef.current = null;
+    setRemoteStream(null);
+    setHasRemoteVideoTrack(false);
+    setIsRemoteCameraMuted(false);
+  };
+
+  const flushPendingIceCandidates = async (peer: RTCPeerConnection) => {
+    if (!peer.remoteDescription) return;
+    while (pendingIceCandidatesRef.current.length > 0) {
+      const candidate = pendingIceCandidatesRef.current.shift();
+      if (!candidate) continue;
+      await peer.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  };
+
+  const createPeerConnection = (call: ActiveCall) => {
+    const socket = getSocket();
+    const peer = new RTCPeerConnection({
+      iceServers: WEBRTC_ICE_SERVERS,
+    });
+
+    const nextRemoteStream = new MediaStream();
+    remoteStreamRef.current = nextRemoteStream;
+    setRemoteStream(nextRemoteStream);
+
+    peer.ontrack = (event) => {
+      const target = remoteStreamRef.current ?? new MediaStream();
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = target;
+        setRemoteStream(target);
+      }
+
+      event.streams[0]?.getTracks().forEach((track) => {
+        const exists = target.getTracks().some((current) => current.id === track.id);
+        if (!exists) target.addTrack(track);
+      });
+    };
+
+    peer.onicecandidate = (event) => {
+      if (!event.candidate || !user?.uid) return;
+      socket.emit('call:signal', {
+        callId: call.callId,
+        conversationId: call.conversationId,
+        fromUserId: user.uid,
+        toUserId: call.peerId,
+        mode: call.mode,
+        signal: {
+          type: 'ice',
+          candidate: event.candidate.toJSON(),
+        },
+      });
+    };
+
+    peer.oniceconnectionstatechange = () => {
+      if (peer.iceConnectionState === 'failed') {
+        console.error('WebRTC ICE failed. TURN is likely missing or unreachable.', {
+          callId: call.callId,
+          mode: call.mode,
+          iceServers: WEBRTC_ICE_SERVERS.map((server) => server.urls),
+        });
+      }
+    };
+
+    peer.onconnectionstatechange = () => {
+      if (peer.connectionState === 'connected') {
+        setActiveCall((current) =>
+          current && current.callId === call.callId ? { ...current, status: 'connected' } : current
+        );
+        setCallError(null);
+      }
+
+      if (
+        ['failed', 'closed', 'disconnected'].includes(peer.connectionState) &&
+        activeCallRef.current?.callId === call.callId
+      ) {
+        resetCallMedia();
+        setActiveCall(null);
+      }
+    };
+
+    peerConnectionRef.current = peer;
+    return peer;
+  };
+
+  const requestLocalStream = async (mode: CallMode) => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: mode === 'video' ? buildCameraConstraints(selectedVideoProfile) : false,
+    });
+    localStreamRef.current = stream;
+    setLocalStream(stream);
+    setIsMicEnabled(true);
+    setIsCameraEnabled(mode === 'video');
+    return stream;
+  };
+
+  const emitEndCall = (call: ActiveCall, reason?: string) => {
+    if (!user?.uid) return;
+    getSocket().emit('call:end', {
+      callId: call.callId,
+      conversationId: call.conversationId,
+      fromUserId: user.uid,
+      toUserId: call.peerId,
+      reason,
+    });
+  };
+
+  const finishCall = (
+    notifyPeer: boolean,
+    reason?: string,
+    options?: { keepFallbackSession?: boolean }
+  ) => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+
+    const current = activeCallRef.current;
+    if (notifyPeer && current) emitEndCall(current, reason);
+    clearOutgoingTimeout();
+    stopRingtone();
+    resetCallMedia();
+    setCallQuotaState(null);
+    setConnectedAtMs(null);
+    setCallDurationSec(0);
+    setIsMicEnabled(true);
+    setIsCameraEnabled(true);
+    if (!options?.keepFallbackSession) {
+      setFallbackSession(null);
+    }
+    setActiveCall(null);
+    setIncomingCall(null);
+    setAcceptingCall(false);
+  };
+
+  const handleIncomingSignal = async (payload: CallSignalPayload) => {
+    if (useLiveKitProvider) return;
+
+    const current = activeCallRef.current;
+    const peer = peerConnectionRef.current;
+    if (!current || current.callId !== payload.callId || !peer) return;
+
+    if (payload.signal.type === 'offer') {
+      await peer.setRemoteDescription(new RTCSessionDescription(payload.signal.sdp));
+      await flushPendingIceCandidates(peer);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+
+      if (!user?.uid) return;
+      getSocket().emit('call:signal', {
+        callId: current.callId,
+        conversationId: current.conversationId,
+        fromUserId: user.uid,
+        toUserId: current.peerId,
+        mode: current.mode,
+        signal: {
+          type: 'answer',
+          sdp: {
+            type: answer.type,
+            sdp: answer.sdp ?? undefined,
+          },
+        },
+      });
+      return;
+    }
+
+    if (payload.signal.type === 'answer') {
+      await peer.setRemoteDescription(new RTCSessionDescription(payload.signal.sdp));
+      await flushPendingIceCandidates(peer);
+      return;
+    }
+
+    if (payload.signal.type === 'ice') {
+      if (!peer.remoteDescription) {
+        pendingIceCandidatesRef.current.push(payload.signal.candidate);
+        return;
+      }
+      await peer.addIceCandidate(new RTCIceCandidate(payload.signal.candidate));
+    }
+  };
+
+  const startCall = (input: StartCallInput) => {
+    if (!user?.uid || activeCallRef.current || incomingCall) return;
+
+    const callId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setCallError(null);
+    setCallQuotaState(null);
+    setFallbackSession(null);
+    resetCallControls(input.mode);
+    setActiveCall({
+      callId,
+      conversationId: input.conversationId,
+      peerId: input.peerId,
+      peerName: input.peerName,
+      peerAvatarUrl: input.peerAvatarUrl,
+      mode: input.mode,
+      isOutgoing: true,
+      status: 'outgoing',
+    });
+
+    getSocket().emit('call:invite', {
+      callId,
+      conversationId: input.conversationId,
+      fromUserId: user.uid,
+      toUserId: input.peerId,
+      fromName: user.displayName ?? user.email?.split('@')[0] ?? 'Surf user',
+      fromAvatarUrl: user.photoURL ?? null,
+      mode: input.mode,
+    });
+  };
+
+  const acceptIncomingCallInternal = async (call: IncomingCall) => {
+    if (!user?.uid || activeCallRef.current) return;
+
+    try {
+      stopRingtone();
+      setAcceptingCall(true);
+      setCallError(null);
+      setCallQuotaState(null);
+      setFallbackSession(null);
+      resetCallControls(call.mode);
+
+      const nextCall: ActiveCall = {
+        callId: call.callId,
+        conversationId: call.conversationId,
+        peerId: call.fromUserId,
+        peerName: call.fromName,
+        peerAvatarUrl: call.fromAvatarUrl,
+        mode: call.mode,
+        isOutgoing: false,
+        status: 'connecting',
+      };
+
+      setActiveCall(nextCall);
+      getSocket().emit('call:accept', {
+        callId: call.callId,
+        conversationId: call.conversationId,
+        fromUserId: user.uid,
+        toUserId: call.fromUserId,
+        mode: call.mode,
+      });
+      setIncomingCall(null);
+
+      if (useLiveKitProvider) {
+        await connectLiveKitCall(nextCall);
+      } else {
+        const stream = await requestLocalStream(call.mode);
+        const peer = createPeerConnection(nextCall);
+        stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+      }
+    } catch (e) {
+      const rawMessage = (e as Error).message;
+      const fallbackMessage =
+        rawMessage.startsWith('livekit_') || rawMessage === 'fallback'
+          ? getFallbackReason(rawMessage)
+          : rawMessage;
+      setCallError(fallbackMessage || 'Không thể truy cập microphone/camera');
+      finishCall(true, 'fallback', { keepFallbackSession: true });
+    } finally {
+      setAcceptingCall(false);
+    }
+  };
+
+  const acceptIncomingCall = async () => {
+    if (!incomingCall || !user?.uid || activeCallRef.current) return;
+
+    if (!callWindowMode) {
+      try {
+        queuePendingCallAccept(incomingCall, user.uid);
+        const popup = window.open(buildCallWindowUrl(), '_blank', 'noopener,noreferrer');
+
+        if (popup) {
+          stopRingtone();
+          setIncomingCall(null);
+          setCallError(null);
+          pushToast('Đã mở cửa sổ cuộc gọi', 'Hãy chuyển sang tab mới để nghe/gọi.');
+          return;
+        }
+
+        // Popup bị chặn thì fallback về mở trực tiếp trong tab hiện tại.
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(PENDING_CALL_ACCEPT_STORAGE_KEY);
+        }
+      } catch {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(PENDING_CALL_ACCEPT_STORAGE_KEY);
+        }
+      }
+    }
+
+    await acceptIncomingCallInternal(incomingCall);
+  };
+
+  const declineIncomingCall = () => {
+    if (!incomingCall || !user?.uid) return;
+    stopRingtone();
+    getSocket().emit('call:decline', {
+      callId: incomingCall.callId,
+      conversationId: incomingCall.conversationId,
+      fromUserId: user.uid,
+      toUserId: incomingCall.fromUserId,
+      reason: 'declined',
+    });
+    setIncomingCall(null);
+  };
+
+  useEffect(() => {
+    if (incomingCall && !activeCall) {
+      startRingtone();
+      return;
+    }
+
+    stopRingtone();
+  }, [incomingCall, activeCall]);
+
+  useEffect(() => {
+    if (!callWindowMode || !user?.uid || activeCallRef.current || acceptingCall) return;
+
+    const pendingCall = consumePendingCallAccept(user.uid);
+    if (!pendingCall) return;
+
+    void acceptIncomingCallInternal(pendingCall);
+  }, [callWindowMode, user?.uid]);
+
+  useEffect(() => {
+    clearOutgoingTimeout();
+
+    if (!activeCall || !activeCall.isOutgoing || activeCall.status !== 'outgoing') {
+      return;
+    }
+
+    outgoingTimeoutRef.current = window.setTimeout(() => {
+      const current = activeCallRef.current;
+      if (!current || current.callId !== activeCall.callId || current.status !== 'outgoing') return;
+
+      pushToast('Không có phản hồi', `Cuộc gọi tới ${current.peerName} đã hết thời gian chờ.`);
+      finishCall(true, 'missed');
+    }, 30000);
+
+    return () => {
+      clearOutgoingTimeout();
+    };
+  }, [activeCall]);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onIncomingCall = (payload: CallInvitePayload) => {
+      if (payload.fromUserId === user?.uid) return;
+      if (activeCallRef.current) {
+        socket.emit('call:decline', {
+          callId: payload.callId,
+          conversationId: payload.conversationId,
+          fromUserId: user?.uid,
+          toUserId: payload.fromUserId,
+          reason: 'busy',
+        });
+        return;
+      }
+
+      setCallError(null);
+      setIncomingCall({
+        callId: payload.callId,
+        conversationId: payload.conversationId,
+        fromUserId: payload.fromUserId,
+        fromName: payload.fromName,
+        fromAvatarUrl: payload.fromAvatarUrl,
+        mode: payload.mode,
+      });
+    };
+
+    const onCallAccepted = async (payload: CallAcceptedPayload) => {
+      const current = activeCallRef.current;
+      if (!current || current.callId !== payload.callId || !current.isOutgoing || !user?.uid) return;
+
+      try {
+        clearOutgoingTimeout();
+        setCallError(null);
+        setActiveCall((call) =>
+          call && call.callId === payload.callId ? { ...call, status: 'connecting' } : call
+        );
+
+        if (useLiveKitProvider) {
+          await connectLiveKitCall({ ...current, status: 'connecting' });
+          return;
+        }
+
+        const stream = await requestLocalStream(current.mode);
+        const peer = createPeerConnection({ ...current, status: 'connecting' });
+        stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+
+        socket.emit('call:signal', {
+          callId: current.callId,
+          conversationId: current.conversationId,
+          fromUserId: user.uid,
+          toUserId: current.peerId,
+          mode: current.mode,
+          signal: {
+            type: 'offer',
+            sdp: {
+              type: offer.type,
+              sdp: offer.sdp ?? undefined,
+            },
+          },
+        });
+      } catch (e) {
+        const rawMessage = (e as Error).message;
+        const fallbackMessage =
+          rawMessage.startsWith('livekit_') || rawMessage === 'fallback'
+            ? getFallbackReason(rawMessage)
+            : rawMessage;
+        setCallError(fallbackMessage || 'Không thể bắt đầu cuộc gọi');
+        finishCall(true, 'fallback', { keepFallbackSession: true });
+      }
+    };
+
+    const onCallDeclined = (payload: CallEndPayload) => {
+      if (activeCallRef.current?.callId === payload.callId) {
+        const message =
+          payload.reason === 'busy'
+            ? 'Đối phương đang bận.'
+            : payload.reason === 'media_error'
+              ? 'Đối phương không thể truy cập microphone/camera.'
+              : 'Đối phương đã từ chối cuộc gọi.';
+        setCallError(message);
+        pushToast('Cuộc gọi kết thúc', message);
+        finishCall(false);
+      }
+
+      if (incomingCall?.callId === payload.callId) {
+        setIncomingCall(null);
+      }
+    };
+
+    const onCallEnded = (payload: CallEndPayload) => {
+      const currentIncoming = incomingCall;
+      const currentActive = activeCallRef.current;
+
+      if (currentIncoming?.callId === payload.callId) {
+        const description =
+          payload.reason === 'missed'
+            ? `${currentIncoming.fromName} đã kết thúc sau khi bạn chưa kịp bắt máy.`
+            : `${currentIncoming.fromName} đã kết thúc cuộc gọi.`;
+        pushToast('Cuộc gọi nhỡ', description);
+      } else if (currentActive?.callId === payload.callId && currentActive.isOutgoing && currentActive.status !== 'connected') {
+        pushToast('Cuộc gọi kết thúc', `Cuộc gọi tới ${currentActive.peerName} đã kết thúc.`);
+      }
+
+      if (currentActive?.callId === payload.callId || currentIncoming?.callId === payload.callId) {
+        finishCall(false);
+      }
+    };
+
+    const onCallSignal = (payload: CallSignalPayload) => {
+      void handleIncomingSignal(payload).catch((e) => {
+        setCallError((e as Error).message || 'Lỗi kết nối cuộc gọi');
+        finishCall(true);
+      });
+    };
+
+    socket.on('call:incoming', onIncomingCall);
+    socket.on('call:accepted', onCallAccepted);
+    socket.on('call:declined', onCallDeclined);
+    socket.on('call:ended', onCallEnded);
+    socket.on('call:signal', onCallSignal);
+
+    return () => {
+      socket.off('call:incoming', onIncomingCall);
+      socket.off('call:accepted', onCallAccepted);
+      socket.off('call:declined', onCallDeclined);
+      socket.off('call:ended', onCallEnded);
+      socket.off('call:signal', onCallSignal);
+    };
+  }, [incomingCall?.callId, user?.uid]);
+
+  useEffect(() => {
+    return () => {
+      stopRingtone();
+      clearOutgoingTimeout();
+      if (callToastTimeoutRef.current) {
+        window.clearTimeout(callToastTimeoutRef.current);
+      }
+      finishCall(false);
+    };
+  }, []);
+
+  const showRemoteVideoPlaceholder =
+    activeCall?.mode === 'video' && (!remoteStream || !hasRemoteVideoTrack || isRemoteCameraMuted);
+
+  return (
+    <GlobalCallContext.Provider
+      value={{
+        startCall,
+        activeCall,
+        incomingCall,
+        isBusy: Boolean(activeCall || incomingCall || fallbackSession),
+      }}
+    >
+      {children}
+      {callToast && (
+        <div className="pointer-events-none fixed right-6 top-6 z-[119] max-w-sm rounded-[28px] border border-cyan-100 bg-white/95 px-5 py-4 shadow-[0_26px_60px_-28px_rgba(8,145,178,0.45)] backdrop-blur">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-600">Surf Call</p>
+          <h4 className="mt-2 text-lg font-semibold text-slate-900">{callToast.title}</h4>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{callToast.description}</p>
+        </div>
+      )}
+      {(incomingCall || activeCall || fallbackSession) && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-sm sm:p-4 lg:p-6">
+          {incomingCall && !activeCall ? (
+            <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+              <CallAvatar
+                src={incomingCall.fromAvatarUrl}
+                name={incomingCall.fromName}
+                className="mx-auto h-24 w-24 rounded-full object-cover"
+                fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white"
+              />
+              <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600">
+                {incomingCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
+              </p>
+              <h3 className="mt-3 text-3xl font-semibold text-slate-900">{incomingCall.fromName}</h3>
+              <p className="mt-2 text-sm text-slate-500">Đang gọi cho bạn qua Surf Waves</p>
+              {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
+              <div className="mt-8 flex items-center justify-center gap-4">
+                <button
+                  type="button"
+                  onClick={declineIncomingCall}
+                  className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/30"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4.5 15.5c4.7-3.2 10.3-3.2 15 0" />
+                    <path d="M7.2 15.2 6 18" />
+                    <path d="M16.8 15.2 18 18" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void acceptIncomingCall();
+                  }}
+                  disabled={acceptingCall}
+                  className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 disabled:opacity-50"
+                >
+                  {acceptingCall ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+                  ) : incomingCall.mode === 'video' ? (
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                      <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                      <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24 11.7 11.7 0 0 0 3.68.59 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.48a1 1 0 0 1 1 1 11.7 11.7 0 0 0 .59 3.68 1 1 0 0 1-.25 1.01Z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : activeCall ? (
+            <div
+              ref={callStageRef}
+              className={`w-full bg-slate-950 shadow-2xl shadow-slate-950/40 ${
+                isFullscreen
+                  ? 'flex h-full max-h-none max-w-none items-center justify-center overflow-hidden rounded-none p-2 sm:p-4'
+                  : 'max-h-[calc(100dvh-1rem)] max-w-6xl overflow-hidden rounded-[30px] border border-cyan-300/10 ring-1 ring-white/5 sm:rounded-[36px]'
+              }`}
+            >
+              {!isFullscreen && (
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/8 via-transparent to-blue-500/8" />
+              )}
+              <div
+                className={`relative grid w-full min-h-[420px] grid-cols-1 lg:min-h-[520px] lg:grid-cols-[minmax(0,1fr)_300px] ${
+                  isFullscreen ? 'max-h-[calc(100dvh-1rem)] max-w-[1800px] overflow-hidden' : ''
+                }`}
+              >
+                <div className="relative flex min-h-[260px] items-center justify-center border-b border-white/10 bg-slate-950/90 sm:min-h-[340px] lg:min-h-[520px] lg:border-b-0">
+                  {activeCall.mode === 'video' ? (
+                    <div className="relative h-full w-full p-2 sm:p-3 lg:p-4">
+                      <video
+                        ref={remoteVideoRef}
+                        autoPlay
+                        playsInline
+                        className={`h-full w-full rounded-2xl border border-white/10 bg-black object-contain object-center shadow-[0_12px_32px_-20px_rgba(0,0,0,0.8)] transition-opacity duration-200 ${
+                          showRemoteVideoPlaceholder ? 'opacity-0' : 'opacity-100'
+                        }`}
+                      />
+                      {showRemoteVideoPlaceholder && (
+                        <div className="absolute inset-2 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black text-white sm:inset-3 lg:inset-4">
+                          <CallAvatar
+                            src={activeCall.peerAvatarUrl}
+                            name={activeCall.peerName}
+                            className="h-28 w-28 rounded-full object-cover"
+                            fallbackClassName="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-3xl font-semibold text-white"
+                          />
+                          <p className="text-lg font-semibold">{activeCall.peerName}</p>
+                          <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.12em] text-slate-200">
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                              <path d="M4.7 3.29a1 1 0 0 0-1.4 1.42l1.95 1.95A2 2 0 0 0 3 10v4a2 2 0 0 0 2 2h8.17l4.12 4.12a1 1 0 1 0 1.41-1.42L4.7 3.29ZM21.1 8.08a1 1 0 0 1 .9.98v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-.17.82l-1.6-1.6a1.98 1.98 0 0 0 .77-1.58V10a2 2 0 0 0-2-2H9.58l-1.9-1.9c.1-.06.21-.1.32-.1h6a2 2 0 0 1 2 2v.64l3.2-2.56a1 1 0 0 1 1.9.78Z" />
+                            </svg>
+                            {activeCall.status === 'connected'
+                              ? 'Người kia đã tắt camera'
+                              : 'Đang kết nối video...'}
+                          </div>
+                        </div>
+                      )}
+                      {isCameraEnabled && localStream ? (
+                        <video
+                          key={localStream.id}
+                          ref={localVideoRef}
+                          autoPlay
+                          muted
+                          playsInline
+                          className="absolute bottom-3 right-3 h-24 w-20 rounded-[18px] border border-white/10 bg-slate-900 object-cover shadow-xl sm:bottom-4 sm:right-4 sm:h-28 sm:w-24 lg:bottom-5 lg:right-5 lg:h-36 lg:w-28 lg:rounded-[24px]"
+                        />
+                      ) : (
+                        <div className="absolute bottom-3 right-3 flex h-24 w-20 items-center justify-center rounded-[18px] border border-white/10 bg-slate-900/95 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-200 shadow-xl sm:bottom-4 sm:right-4 sm:h-28 sm:w-24 lg:bottom-5 lg:right-5 lg:h-36 lg:w-28 lg:rounded-[24px]">
+                          Cam off
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-5 px-8 text-center text-white">
+                      <CallAvatar
+                        src={activeCall.peerAvatarUrl}
+                        name={activeCall.peerName}
+                        className="h-28 w-28 rounded-full object-cover"
+                        fallbackClassName="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-3xl font-semibold text-white"
+                      />
+                      <div>
+                        <p className="text-3xl font-semibold">{activeCall.peerName}</p>
+                        <p className="mt-2 text-sm text-slate-300">
+                          {activeCall.status === 'connected'
+                            ? 'Đang trong cuộc gọi thoại'
+                            : activeCall.status === 'outgoing'
+                              ? 'Đang đổ chuông...'
+                              : 'Đang kết nối...'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col justify-between overflow-y-auto border-white/10 bg-gradient-to-b from-slate-900/92 via-slate-900/88 to-slate-950/92 px-4 py-4 text-white backdrop-blur-sm lg:border-l sm:px-6 sm:py-6">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+                      {activeCall.mode === 'video' ? 'Video call' : 'Audio call'}
+                    </p>
+                    <h3 className="mt-3 text-2xl font-semibold">{activeCall.peerName}</h3>
+                    <p className="mt-2 text-sm text-slate-300">
+                      {activeCall.status === 'connected'
+                        ? 'Kết nối đã sẵn sàng'
+                        : activeCall.status === 'outgoing'
+                          ? 'Đợi đối phương chấp nhận cuộc gọi'
+                          : 'Đang trao đổi tín hiệu kết nối'}
+                    </p>
+                    {activeCall.status === 'connected' && (
+                      <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-300">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
+                        {formatCallDuration(callDurationSec)}
+                      </div>
+                    )}
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void toggleCallFullscreen();
+                        }}
+                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800/70 text-xs font-semibold uppercase tracking-[0.1em] text-slate-200 transition hover:bg-slate-700"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                          <path d="M5 5h5a1 1 0 1 0 0-2H4a1 1 0 0 0-1 1v6a1 1 0 0 0 2 0V5ZM19 3h-6a1 1 0 1 0 0 2h5v5a1 1 0 0 0 2 0V4a1 1 0 0 0-1-1ZM5 13a1 1 0 0 0-2 0v6a1 1 0 0 0 1 1h6a1 1 0 1 0 0-2H5v-5ZM20 13a1 1 0 0 0-2 0v5h-5a1 1 0 1 0 0 2h6a1 1 0 0 0 1-1v-6Z" />
+                        </svg>
+                        {isFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                      </button>
+                    </div>
+                    {callError && <p className="mt-4 text-sm text-red-300">{callError}</p>}
+
+                    {activeCall.mode === 'video' && (
+                      <div className="mt-4 rounded-2xl border border-slate-700/80 bg-slate-800/60 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">
+                          Chất lượng video
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void applyVideoProfile('p480');
+                            }}
+                            className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                              selectedVideoProfile === 'p480'
+                                ? 'bg-cyan-500 text-white'
+                                : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                            }`}
+                          >
+                            480p
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void applyVideoProfile('p720');
+                            }}
+                            className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                              selectedVideoProfile === 'p720'
+                                ? 'bg-cyan-500 text-white'
+                                : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                            }`}
+                          >
+                            720p
+                          </button>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-300">
+                          FPS mục tiêu: {targetVideoFps}. {isVideoFpsClamped ? 'Thiết lập cao hơn sẽ tự giới hạn để ổn định.' : ''}
+                        </p>
+                      </div>
+                    )}
+
+                    {useLiveKitProvider && callQuotaState && (
+                      <div className="mt-4 rounded-2xl border border-slate-700/80 bg-slate-800/60 p-3">
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.14em]">
+                          <span className="text-slate-300">LiveKit quota</span>
+                          <span
+                            className={
+                              callQuotaState.usagePercent !== null &&
+                              callQuotaState.usagePercent >= callQuotaState.hardLimitPercent
+                                ? 'text-red-300'
+                                : callQuotaState.fallbackRecommended
+                                  ? 'text-amber-300'
+                                  : 'text-cyan-300'
+                            }
+                          >
+                            {callQuotaState.usagePercent !== null
+                              ? `${Math.round(callQuotaState.usagePercent)}%`
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        {callQuotaState.usagePercent !== null ? (
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-700">
+                            <div
+                              className={`h-full rounded-full ${
+                                callQuotaState.usagePercent >= callQuotaState.hardLimitPercent
+                                  ? 'bg-red-400'
+                                  : callQuotaState.fallbackRecommended
+                                    ? 'bg-amber-400'
+                                    : 'bg-cyan-400'
+                              }`}
+                              style={{
+                                width: `${Math.min(Math.max(callQuotaState.usagePercent, 0), 100)}%`,
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-slate-300">
+                            Server chưa gửi usage hiện tại. Cuộc gọi vẫn tiếp tục bình thường.
+                          </p>
+                        )}
+                        <p className="mt-3 text-xs text-slate-300">
+                          {callQuotaState.usagePercent !== null &&
+                          callQuotaState.usagePercent >= callQuotaState.hardLimitPercent
+                            ? 'Đã qua hard limit. Cuộc gọi mới sẽ chuyển sang fallback.'
+                            : callQuotaState.fallbackRecommended
+                              ? 'Đang gần ngưỡng. Cuộc gọi mới có thể fallback để giữ ổn định.'
+                              : 'Quota đang ổn, ưu tiên dùng LiveKit cho cuộc gọi mới.'}
+                        </p>
+                        <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-slate-400">
+                          Nguồn quota: {callQuotaState.usageSource === 'api' ? 'API tự động' : callQuotaState.usageSource === 'manual' ? 'Biến env thủ công' : 'Chưa có dữ liệu'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    <div className={`grid gap-2 ${activeCall.mode === 'video' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void toggleMicrophone();
+                        }}
+                        className={`inline-flex h-12 items-center justify-center gap-2 rounded-2xl border text-sm font-semibold transition ${
+                          isMicEnabled
+                            ? 'border-slate-500 bg-slate-800 text-slate-100 hover:bg-slate-700'
+                            : 'border-amber-300/40 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30'
+                        }`}
+                      >
+                        {isMicEnabled ? (
+                          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                            <path d="M12 15a4 4 0 0 0 4-4V7a4 4 0 1 0-8 0v4a4 4 0 0 0 4 4Zm-6-4a1 1 0 0 1 2 0 4 4 0 1 0 8 0 1 1 0 1 1 2 0 6 6 0 0 1-5 5.91V20h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-3.09A6 6 0 0 1 6 11Z" />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                            <path d="M16 11V7a4 4 0 0 0-7.08-2.56l1.47 1.47A2 2 0 0 1 14 7v4a1.98 1.98 0 0 1-.19.86l1.58 1.58c.39-.7.61-1.5.61-2.44ZM3.7 2.29a1 1 0 0 0-1.41 1.42l4.08 4.07A7.7 7.7 0 0 0 6 11a6 6 0 0 0 5 5.91V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-3.09a6.1 6.1 0 0 0 2.57-1.04l4.72 4.72a1 1 0 0 0 1.42-1.42L3.7 2.3ZM8 11a3.9 3.9 0 0 1 .15-1.08l5.92 5.92A4 4 0 0 1 8 11Zm10 0a1 1 0 1 1 2 0 7.95 7.95 0 0 1-1.25 4.32l-1.47-1.47c.46-.84.72-1.8.72-2.85Z" />
+                          </svg>
+                        )}
+                        {isMicEnabled ? 'Tắt mic' : 'Bật mic'}
+                      </button>
+
+                      {activeCall.mode === 'video' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void toggleCamera();
+                          }}
+                          className={`inline-flex h-12 items-center justify-center gap-2 rounded-2xl border text-sm font-semibold transition ${
+                            isCameraEnabled
+                              ? 'border-slate-500 bg-slate-800 text-slate-100 hover:bg-slate-700'
+                              : 'border-amber-300/40 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30'
+                          }`}
+                        >
+                          {isCameraEnabled ? (
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                              <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                              <path d="M4.7 3.29a1 1 0 0 0-1.4 1.42l1.95 1.95A2 2 0 0 0 3 10v4a2 2 0 0 0 2 2h8.17l4.12 4.12a1 1 0 1 0 1.41-1.42L4.7 3.29ZM21.1 8.08a1 1 0 0 1 .9.98v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-.17.82l-1.6-1.6a1.98 1.98 0 0 0 .77-1.58V10a2 2 0 0 0-2-2H9.58l-1.9-1.9c.1-.06.21-.1.32-.1h6a2 2 0 0 1 2 2v.64l3.2-2.56a1 1 0 0 1 1.9.78Z" />
+                            </svg>
+                          )}
+                          {isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => finishCall(true)}
+                      className="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-red-500 text-base font-semibold text-white shadow-lg shadow-red-500/30"
+                    >
+                      Kết thúc cuộc gọi
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <audio ref={remoteAudioRef} autoPlay />
+            </div>
+          ) : fallbackSession ? (
+            <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-slate-900 p-6 text-white shadow-2xl sm:p-8">
+              <div className="inline-flex rounded-full border border-amber-300/40 bg-amber-400/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">
+                Fallback đang hoạt động
+              </div>
+              <h3 className="mt-4 text-2xl font-semibold">{fallbackSession.peerName}</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{fallbackSession.reason}</p>
+
+              <div className="mt-6 space-y-3">
+                <button
+                  type="button"
+                  onClick={reopenFallbackRoom}
+                  className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-500 text-sm font-semibold text-white shadow-lg shadow-cyan-500/30"
+                >
+                  Mở phòng dự phòng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => finishCall(false)}
+                  className="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-600 bg-slate-800 text-sm font-semibold text-slate-200"
+                >
+                  Đóng
+                </button>
+              </div>
+
+              <p className="mt-4 text-xs text-slate-400">{fallbackSession.fallbackUrl}</p>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </GlobalCallContext.Provider>
+  );
+}
+
+export function useGlobalCall() {
+  const context = useContext(GlobalCallContext);
+  if (!context) {
+    throw new Error('useGlobalCall must be used within GlobalCallProvider');
+  }
+  return context;
+}

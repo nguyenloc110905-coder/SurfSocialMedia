@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useThemeStore } from './stores/themeStore';
+import { usePresence } from './hooks/usePresence';
 import Layout from './components/layout/Layout';
 import AuthPage from './pages/AuthPage';
 import ForgotPassword from './pages/ForgotPassword';
@@ -16,7 +17,10 @@ import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
+import Waves from './pages/Waves';
+import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
+import { useMessageSound } from './hooks/useMessageSound';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -49,6 +53,8 @@ function ThemeInit() {
 
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
+  usePresence();
+  useMessageSound();
   const loading = useAuthStore((s) => s.loading);
   const location = useLocation();
 
@@ -94,7 +100,7 @@ function HomeOrRedirect() {
 
 export default function App() {
   return (
-    <>
+    <GlobalCallProvider>
       <ThemeInit />
       <Routes>
         <Route path="/" element={<HomeOrRedirect />} />
@@ -145,12 +151,7 @@ export default function App() {
           />
           <Route
             path="waves"
-            element={
-              <PlaceholderPage
-                title="Waves"
-                description="Nhắn tin nhanh — công cụ trò chuyện của Surf."
-              />
-            }
+            element={<Waves />}
           />
           <Route
             path="explore"
@@ -180,6 +181,6 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </GlobalCallProvider>
   );
 }

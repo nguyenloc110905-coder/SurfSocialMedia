@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../lib/api';
 import { uploadImage, uploadVideo } from '../../lib/cloudinary';
+import { resizePostImage } from '../../lib/utils/image';
 import TagFriendsModal from './TagFriendsModal';
 
 interface ImagePreview {
@@ -37,12 +38,17 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [videos, setVideos] = useState<VideoPreview[]>([]);
   const [feeling, setFeeling] = useState('');
   const [location, setLocation] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showFeelingPicker, setShowFeelingPicker] = useState(false);
   const [showLocationInput, setShowLocationInput] = useState(false);
   const [showPrivacyDropdown, setShowPrivacyDropdown] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [taggedFriends, setTaggedFriends] = useState<TaggedFriend[]>([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -120,6 +126,74 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isExpanded, content, images.length]);
 
+  const searchLocation = useCallback((query: string) => {
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+    if (!query.trim() || query.length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
+    locationDebounceRef.current = setTimeout(async () => {
+      setLocationLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=10&addressdetails=1&extratags=1`,
+          { headers: { 'Accept-Language': 'vi,en' } }
+        );
+        type NominatimResult = {
+          display_name: string;
+          name?: string;
+          class: string;
+          type: string;
+          address?: Record<string, string>;
+        };
+        const data = (await res.json()) as NominatimResult[];
+
+        // Ưu tiên POI / địa danh lên đầu
+        const POI_CLASSES = ['tourism', 'amenity', 'leisure', 'historic', 'shop', 'sport', 'natural', 'man_made'];
+        const sorted = [
+          ...data.filter((d) => POI_CLASSES.includes(d.class)),
+          ...data.filter((d) => !POI_CLASSES.includes(d.class)),
+        ].slice(0, 6);
+
+        // Format tên gọn: "Tên địa danh, Quận/Huyện, Tỉnh/TP"
+        const formatted = sorted.map((d) => {
+          const addr = d.address ?? {};
+          const name = d.name || addr['amenity'] || addr['tourism'] || addr['leisure'] || addr['historic'] || '';
+          const district = addr['suburb'] || addr['city_district'] || addr['district'] || addr['county'] || '';
+          const city = addr['city'] || addr['town'] || addr['state'] || '';
+          if (name && (district || city)) {
+            const parts = [name, district, city].filter(Boolean);
+            // Bỏ trùng lặp
+            const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
+            return unique.join(', ');
+          }
+          // Fallback: rút gọn display_name còn 3 phần
+          const fallback = d.display_name.split(', ').slice(0, 3).join(', ');
+          return fallback;
+        });
+
+        // Loại trùng
+        setLocationSuggestions([...new Set(formatted)]);
+      } catch {
+        setLocationSuggestions([]);
+      } finally {
+        setLocationLoading(false);
+      }
+    }, 400);
+  }, []);
+
+  const handleLocationQueryChange = (value: string) => {
+    setLocationQuery(value);
+    setLocation(value);
+    searchLocation(value);
+  };
+
+  const selectLocationSuggestion = (suggestion: string) => {
+    setLocation(suggestion);
+    setLocationQuery(suggestion);
+    setLocationSuggestions([]);
+  };
+
   const toggleFriend = (friendUid: string) => {
     setSelectedFriendIds((prev) =>
       prev.includes(friendUid) ? prev.filter((id) => id !== friendUid) : [...prev, friendUid]
@@ -135,6 +209,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     if ((!content.trim() && images.length === 0 && videos.length === 0) || isSubmitting) return;
 
     setIsSubmitting(true);
+    setErrorMsg(null);
     try {
       const imageUrls = await Promise.all(
         images.map((img) => uploadImage(img.file, { folder: 'surf/posts' }))
@@ -142,7 +217,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       const videoUrls = await Promise.all(
         videos.map((v) => uploadVideo(v.file, { folder: 'surf/posts/videos' }))
       );
-      const mediaUrls = [...imageUrls, ...videoUrls];
+      // Video luôn đứng trước ảnh để PostCard ưu tiên hiển thị video làm ảnh chính
+      const mediaUrls = [...videoUrls, ...imageUrls];
 
       // Prepare tagged friends data
       const taggedFriendsData = taggedFriends.map((f) => ({
@@ -166,6 +242,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       setVideos([]);
       setFeeling('');
       setLocation('');
+      setLocationQuery('');
+      setLocationSuggestions([]);
       setTaggedFriends([]);
       setSelectedFriendIds([]);
       setPrivacy('public');
@@ -176,7 +254,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       onPostCreated?.(newPost);
     } catch (error) {
       console.error('Failed to create post:', error);
-      alert('Không thể đăng bài. Vui lòng thử lại!');
+      const msg = error instanceof Error ? error.message : 'Không thể đăng bài. Vui lòng thử lại!';
+      setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -192,15 +271,20 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     setIsExpanded(true);
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newImages: ImagePreview[] = files.map((file) => ({
-      id: Math.random().toString(36),
-      url: URL.createObjectURL(file),
-      file,
-    }));
-    setImages((prev) => [...prev, ...newImages]);
     e.target.value = '';
+    const newImages: ImagePreview[] = await Promise.all(
+      files.map(async (file) => {
+        const blob = await resizePostImage(file);
+        return {
+          id: Math.random().toString(36),
+          url: URL.createObjectURL(blob),
+          file: new File([blob], file.name, { type: 'image/jpeg' }),
+        };
+      })
+    );
+    setImages((prev) => [...prev, ...newImages]);
   };
 
   const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -719,30 +803,56 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
 
           {/* Location Input */}
           {showLocationInput && (
-            <div className="mb-3 animate-smooth-fade-in-delayed">
+            <div className="mb-3 animate-smooth-fade-in-delayed relative z-10">
               <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-xl border border-gray-200 dark:border-slate-700/50">
-                <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-red-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
                 </svg>
                 <input
                   type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  value={locationQuery}
+                  onChange={(e) => handleLocationQueryChange(e.target.value)}
                   placeholder="Bạn đang ở đâu?"
                   className="flex-1 bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none"
                   autoFocus
                 />
+                {locationLoading && (
+                  <svg className="w-4 h-4 text-gray-400 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                )}
                 <button
                   type="button"
                   onClick={() => {
                     setShowLocationInput(false);
                     setLocation('');
+                    setLocationQuery('');
+                    setLocationSuggestions([]);
                   }}
-                  className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                  className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 shrink-0"
                 >
                   ×
                 </button>
               </div>
+              {locationSuggestions.length > 0 && (
+                <ul className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-lg overflow-hidden">
+                  {locationSuggestions.map((s, i) => (
+                    <li key={i}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-cyan-50 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
+                        onClick={() => selectLocationSuggestion(s)}
+                      >
+                        <svg className="w-3.5 h-3.5 text-red-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                        </svg>
+                        <span className="truncate">{s}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 
@@ -875,6 +985,24 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               <span className="text-xs font-bold">GIF</span>
             </button>
           </div>
+
+          {/* Error Banner */}
+          {errorMsg && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm animate-fade-in">
+              <svg className="w-5 h-5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <div>
+                <p className="font-semibold">Bài đăng bị từ chối</p>
+                <p className="mt-0.5">{errorMsg}</p>
+              </div>
+              <button type="button" onClick={() => setErrorMsg(null)} className="ml-auto shrink-0 text-red-400 hover:text-red-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           {/* Wave-Styled Submit Button */}
           <button
