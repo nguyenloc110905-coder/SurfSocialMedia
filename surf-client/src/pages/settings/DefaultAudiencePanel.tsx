@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
 import { DEFAULT_AUDIENCE_OPTIONS } from './settings-constants';
 import type { DefaultAudience } from './settings-constants';
 
@@ -7,17 +8,75 @@ interface DefaultAudiencePanelProps {
   onShowCustom: () => void;
 }
 
+function toDefaultAudience(value: unknown): DefaultAudience {
+  if (value === 'public' || value === 'friends' || value === 'custom') {
+    return value;
+  }
+  // Fallback để hiển thị trong UI 3 lựa chọn hiện có.
+  if (value === 'only-me') {
+    return 'custom';
+  }
+  return 'public';
+}
+
 export default function DefaultAudiencePanel({
   onShowReview,
   onShowCustom,
 }: DefaultAudiencePanelProps) {
-  const [defaultAudience, setDefaultAudience] = useState<DefaultAudience>('custom');
+  const [defaultAudience, setDefaultAudience] = useState<DefaultAudience>('public');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleContinue = () => {
-    if (defaultAudience === 'public' || defaultAudience === 'friends') {
-      onShowReview(defaultAudience);
-    } else if (defaultAudience === 'custom') {
-      onShowCustom();
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDefaultAudience = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const me = await api.get<{ defaultPostPrivacy?: string }>('/api/users/me');
+        if (!cancelled) {
+          setDefaultAudience(toDefaultAudience(me.defaultPostPrivacy));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error('Failed to load default post privacy:', e);
+          setError('Không tải được quyền riêng tư mặc định. Đang dùng Công khai.');
+          setDefaultAudience('public');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadDefaultAudience();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleContinue = async () => {
+    if (loading || saving) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+      await api.put('/api/users/me', { defaultPostPrivacy: defaultAudience });
+
+      if (defaultAudience === 'public' || defaultAudience === 'friends') {
+        onShowReview(defaultAudience);
+      } else {
+        onShowCustom();
+      }
+    } catch (e) {
+      console.error('Failed to save default post privacy:', e);
+      setError('Không lưu được cài đặt. Vui lòng thử lại.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -31,6 +90,12 @@ export default function DefaultAudiencePanel({
         thể đổi đối tượng cho từng nội dung khi đăng.
       </p>
 
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
       <div className="space-y-3 mb-6">
         {DEFAULT_AUDIENCE_OPTIONS.map((opt) => {
           const selected = defaultAudience === opt.value;
@@ -38,12 +103,13 @@ export default function DefaultAudiencePanel({
             <button
               key={opt.value}
               type="button"
+              disabled={loading || saving}
               onClick={() => setDefaultAudience(opt.value)}
               className={`w-full flex items-start gap-4 p-4 rounded-2xl text-left transition-all border-2 ${
                 selected
                   ? 'border-surf-primary dark:border-surf-secondary bg-surf-primary/10 dark:bg-surf-secondary/15 shadow-md shadow-surf-primary/10 dark:shadow-surf-secondary/10'
                   : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/90 hover:border-slate-300 dark:hover:border-slate-500'
-              }`}
+              } ${(loading || saving) ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
               <span
                 className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
@@ -103,9 +169,10 @@ export default function DefaultAudiencePanel({
         <button
           type="button"
           onClick={handleContinue}
+          disabled={loading || saving}
           className="w-full sm:w-auto px-8 py-3 rounded-xl font-semibold bg-surf-primary dark:bg-surf-secondary text-white hover:opacity-90 focus:ring-2 focus:ring-surf-primary/50 dark:focus:ring-surf-secondary/50 focus:ring-offset-2 dark:focus:ring-offset-surf-dark transition-opacity"
         >
-          Tiếp
+          {loading ? 'Đang tải...' : saving ? 'Đang lưu...' : 'Tiếp'}
         </button>
       </div>
     </div>

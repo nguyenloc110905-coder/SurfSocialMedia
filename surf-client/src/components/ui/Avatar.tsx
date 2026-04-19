@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { optimizeAvatar } from '../../lib/image-cdn';
 
 interface AvatarProps {
   src?: string | null;
@@ -15,6 +16,15 @@ const sizeClasses = {
   lg: 'w-12 h-12 text-base',
   xl: 'w-16 h-16 text-xl',
   '2xl': 'w-20 h-20 text-2xl',
+};
+
+const sizePixels = {
+  xs: 24,
+  sm: 32,
+  md: 40,
+  lg: 48,
+  xl: 64,
+  '2xl': 80,
 };
 
 export default function Avatar({
@@ -39,10 +49,12 @@ export default function Avatar({
     return cleanName.substring(0, 1).toUpperCase();
   }, [name]);
 
+  const optimizedSrc = src ? optimizeAvatar(src, sizePixels[size]) : '';
+
   return (
     <div className={`relative ${sizeClasses[size]} ${className}`}>
       {src ? (
-        <img src={src} alt={name || ''} className="w-full h-full rounded-full object-cover" />
+        <img src={optimizedSrc} alt={name || ''} className="w-full h-full rounded-full object-cover" />
       ) : (
         <div className="w-full h-full rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 dark:from-cyan-600 dark:to-blue-700 flex items-center justify-center">
           <span className="font-bold text-white drop-shadow-md">{initials}</span>

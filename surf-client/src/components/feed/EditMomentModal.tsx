@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../../lib/api';
 import type { MomentItem } from './MomentViewer';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -360,7 +361,7 @@ export default function EditMomentModal({ moment, onClose, onSaved }: EditMoment
                 {/* Media */}
                 {moment.mediaType === 'image' ? (
                   <img
-                    src={moment.mediaUrl}
+                    src={optimizeImageUrl(moment.mediaUrl)}
                     alt="preview"
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                     style={{ filter: filterCss }}
@@ -408,7 +409,7 @@ export default function EditMomentModal({ moment, onClose, onSaved }: EditMoment
                       zIndex: 6,
                     }}
                   >
-                    <img src={s.url} alt="" className="w-full h-auto block" />
+                    <img src={optimizeImageUrl(s.url)} alt="" className="w-full h-auto block" />
                   </div>
                 ))}
 
@@ -548,7 +549,7 @@ export default function EditMomentModal({ moment, onClose, onSaved }: EditMoment
                           >
                             {moment.mediaType === 'image' ? (
                               <img
-                                src={moment.mediaUrl}
+                                src={optimizeImageUrl(moment.mediaUrl)}
                                 alt={f.name}
                                 className="w-full h-full object-cover"
                                 style={{ filter: f.css }}
@@ -804,7 +805,7 @@ export default function EditMomentModal({ moment, onClose, onSaved }: EditMoment
                                   <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center">
                                     {friend.avatarUrl ? (
                                       <img
-                                        src={friend.avatarUrl}
+                                        src={optimizeImageUrl(friend.avatarUrl)}
                                         alt=""
                                         className="w-full h-full object-cover"
                                       />

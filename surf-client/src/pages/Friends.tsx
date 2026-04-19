@@ -2,6 +2,8 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import PresenceBadge from '@/components/ui/PresenceBadge';
+import { optimizeImageUrl } from '@/lib/image-cdn';
 import { getSocket } from '@/lib/socket';
 
 type FriendItem = { id: string; name: string; avatarUrl?: string; mutualCount?: number };
@@ -12,10 +14,12 @@ type BlockedItem = { id: string; name: string; avatarUrl?: string | null; email?
 /* -- Avatar ---------------------------------------------------------------- */
 function Avatar({
   url,
+  uid,
   name,
   size = 'md',
 }: {
   url?: string | null;
+  uid?: string;
   name: string;
   size?: 'sm' | 'md' | 'lg';
 }) {
@@ -27,17 +31,22 @@ function Avatar({
       ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
       : (name[0] || 'S').toUpperCase();
   })();
-  return url ? (
-    <img
-      src={url}
-      alt={name}
-      className={`${dim} rounded-2xl object-cover flex-shrink-0 ring-2 ring-white/20`}
-    />
-  ) : (
-    <span
-      className={`${dim} rounded-2xl flex-shrink-0 flex items-center justify-center font-bold text-white bg-gradient-to-br from-surf-primary to-surf-secondary ring-2 ring-white/20`}
-    >
-      {initials}
+  return (
+    <span className="relative inline-flex flex-shrink-0 overflow-visible">
+      {url ? (
+        <img
+          src={optimizeImageUrl(url)}
+          alt={name}
+          className={`${dim} rounded-2xl object-cover ring-2 ring-white/20`}
+        />
+      ) : (
+        <span
+          className={`${dim} rounded-2xl flex items-center justify-center font-bold text-white bg-gradient-to-br from-surf-primary to-surf-secondary ring-2 ring-white/20`}
+        >
+          {initials}
+        </span>
+      )}
+      {uid && <PresenceBadge uid={uid} size={size === 'lg' ? 'md' : 'sm'} />}
     </span>
   );
 }
@@ -453,7 +462,7 @@ export default function Friends() {
                         <li key={s.id}>
                           <Card>
                             <Link to={`/feed/profile/${s.id}`}>
-                              <Avatar url={s.avatarUrl} name={s.name} />
+                              <Avatar url={s.avatarUrl} uid={s.id} name={s.name} />
                             </Link>
                             <div className="flex-1 min-w-0">
                               <Link
@@ -534,7 +543,7 @@ export default function Friends() {
                       <li key={r.id}>
                         <Card>
                           <Link to={`/feed/profile/${r.fromUid}`}>
-                            <Avatar url={r.avatarUrl} name={r.name} />
+                            <Avatar url={r.avatarUrl} uid={r.fromUid} name={r.name} />
                           </Link>
                           <div className="flex-1 min-w-0">
                             <Link
@@ -597,7 +606,7 @@ export default function Friends() {
                       <li key={s.id}>
                         <Card>
                           <Link to={`/feed/profile/${s.toUid}`}>
-                            <Avatar url={s.avatarUrl} name={s.name} />
+                            <Avatar url={s.avatarUrl} uid={s.toUid} name={s.name} />
                           </Link>
                           <div className="flex-1 min-w-0">
                             <Link
@@ -658,7 +667,7 @@ export default function Friends() {
                         <li>
                           <Card>
                             <Link to={`/feed/profile/${s.id}`}>
-                              <Avatar url={s.avatarUrl} name={s.name} />
+                              <Avatar url={s.avatarUrl} uid={s.id} name={s.name} />
                             </Link>
                             <div className="flex-1 min-w-0">
                               <Link
@@ -728,7 +737,7 @@ export default function Friends() {
                         <li key={f.id}>
                           <Card>
                             <Link to={`/feed/profile/${f.id}`}>
-                              <Avatar url={f.avatarUrl} name={f.name} />
+                              <Avatar url={f.avatarUrl} uid={f.id} name={f.name} />
                             </Link>
                             <div className="flex-1 min-w-0">
                               <Link
@@ -806,7 +815,7 @@ export default function Friends() {
                   <li key={b.id}>
                     <Card>
                       <Link to={`/feed/profile/${b.id}`}>
-                        <Avatar url={b.avatarUrl} name={b.name} />
+                        <Avatar url={b.avatarUrl} uid={b.id} name={b.name} />
                       </Link>
                       <div className="flex-1 min-w-0">
                         <Link

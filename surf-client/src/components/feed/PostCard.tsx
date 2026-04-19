@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import Modal from '../ui/Modal';
+import PresenceBadge from '../ui/PresenceBadge';
 import { isVideoUrl } from '../../lib/cloudinary';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 import EditPostModal from './EditPostModal';
 import { getSocket } from '../../lib/socket';
 
@@ -301,6 +303,54 @@ function FeedVideo({
         </div>
       </div>
     </div>
+  );
+}
+
+function UserPresenceAvatar({
+  uid,
+  name,
+  photoURL,
+  imgClassName,
+  fallbackClassName,
+  fallbackTextClassName,
+  presenceSize = 'sm',
+  showOfflineLabel = false,
+}: {
+  uid?: string;
+  name: string;
+  photoURL?: string | null;
+  imgClassName: string;
+  fallbackClassName: string;
+  fallbackTextClassName: string;
+  presenceSize?: 'sm' | 'md' | 'lg';
+  showOfflineLabel?: boolean;
+}) {
+  const initial = (() => {
+    const value = name || 'U';
+    const words = value.split(' ').filter(Boolean);
+    if (words.length >= 2) {
+      return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+    }
+    return value[0]?.toUpperCase() ?? 'U';
+  })();
+
+  return (
+    <span className="relative inline-flex flex-shrink-0 overflow-visible">
+      {photoURL ? (
+        <img src={optimizeImageUrl(photoURL)} alt={name} className={imgClassName} />
+      ) : (
+        <div className={fallbackClassName}>
+          <span className={fallbackTextClassName}>{initial}</span>
+        </div>
+      )}
+      {uid && (
+        <PresenceBadge
+          uid={uid}
+          size={presenceSize}
+          showOfflineLabel={showOfflineLabel}
+        />
+      )}
+    </span>
   );
 }
 
@@ -1008,14 +1058,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   if (isDeleted) return null;
 
   const hasMedia = post.mediaUrls && post.mediaUrls.length > 0;
+  const renderedMediaUrls = hasMedia
+    ? post.mediaUrls.map((url) => (isVideoUrl(url) ? url : optimizeImageUrl(url)))
+    : [];
+  const sharedRenderedMediaUrls = post.sharedFrom?.mediaUrls?.length
+    ? post.sharedFrom.mediaUrls.map((url) => (isVideoUrl(url) ? url : optimizeImageUrl(url)))
+    : [];
 
   // Sắp xếp lại: video lên trước (nếu có), ảnh theo sau — giữ nguyên thứ tự trong từng nhóm
   const displayMedia: { url: string; originalIndex: number }[] = hasMedia
     ? [
-        ...post.mediaUrls
+        ...renderedMediaUrls
           .map((url, i) => ({ url, originalIndex: i }))
           .filter((m) => isVideoUrl(m.url)),
-        ...post.mediaUrls
+        ...renderedMediaUrls
           .map((url, i) => ({ url, originalIndex: i }))
           .filter((m) => !isVideoUrl(m.url)),
       ]
@@ -1068,15 +1124,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
 
             {/* Author row */}
             <div className="flex items-center gap-3 px-5 pt-4">
-              {user?.photoURL ? (
-                <img src={user.photoURL} alt="You" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-              ) : (
-                <div className="w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                  <span className="text-sm font-bold text-white">
-                    {(user?.displayName?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
-                  </span>
-                </div>
-              )}
+              <UserPresenceAvatar
+                uid={user?.uid}
+                name={user?.displayName ?? user?.email ?? 'Bạn'}
+                photoURL={user?.photoURL}
+                imgClassName="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                fallbackClassName="w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                fallbackTextClassName="text-sm font-bold text-white"
+                presenceSize="sm"
+              />
               <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
                 {user?.displayName ?? 'Bạn'}
               </div>
@@ -1118,13 +1174,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             <div className="mx-5 mb-4 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
               <div className="px-4 py-3 bg-gray-50 dark:bg-slate-800/60">
                 <div className="flex items-center gap-2 mb-1.5">
-                  {post.authorPhotoURL ? (
-                    <img src={post.authorPhotoURL} alt={post.authorDisplayName} className="w-7 h-7 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-white">{(post.authorDisplayName?.[0] ?? 'U').toUpperCase()}</span>
-                    </div>
-                  )}
+                  <UserPresenceAvatar
+                    uid={post.authorId}
+                    name={post.authorDisplayName}
+                    photoURL={post.authorPhotoURL}
+                    imgClassName="w-7 h-7 rounded-full object-cover"
+                    fallbackClassName="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0"
+                    fallbackTextClassName="text-xs font-bold text-white"
+                    presenceSize="sm"
+                  />
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{post.authorDisplayName}</span>
                 </div>
                 {post.content && (
@@ -1133,10 +1191,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
               </div>
               {post.mediaUrls?.length > 0 && (
                 <div className="overflow-hidden" style={{ maxHeight: '160px' }}>
-                  {isVideoUrl(post.mediaUrls[0]) ? (
-                    <video src={post.mediaUrls[0]} className="w-full object-cover" style={{ maxHeight: '160px' }} muted playsInline />
+                  {isVideoUrl(renderedMediaUrls[0]) ? (
+                    <video src={renderedMediaUrls[0]} className="w-full object-cover" style={{ maxHeight: '160px' }} muted playsInline />
                   ) : (
-                    <img src={post.mediaUrls[0]} alt="Preview" className="w-full object-cover" style={{ maxHeight: '160px' }} />
+                    <img src={renderedMediaUrls[0]} alt="Preview" className="w-full object-cover" style={{ maxHeight: '160px' }} />
                   )}
                 </div>
               )}
@@ -1593,25 +1651,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   onClick={() => goToProfile(post.authorId)}
                   className="cursor-pointer flex-shrink-0"
                 >
-                  {post.authorPhotoURL ? (
-                    <img
-                      src={post.authorPhotoURL ?? undefined}
-                      alt={post.authorDisplayName}
-                      className="w-9 h-9 rounded-full ring-2 ring-white/50 object-cover"
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full ring-2 ring-white/50 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                      <span className="text-sm font-bold text-white">
-                        {(() => {
-                          const name = post.authorDisplayName || 'U';
-                          const words = name.split(' ');
-                          return words.length >= 2
-                            ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
-                            : name[0].toUpperCase();
-                        })()}
-                      </span>
-                    </div>
-                  )}
+                  <UserPresenceAvatar
+                    uid={post.authorId}
+                    name={post.authorDisplayName}
+                    photoURL={post.authorPhotoURL}
+                    imgClassName="w-9 h-9 rounded-full ring-2 ring-white/50 object-cover"
+                    fallbackClassName="w-9 h-9 rounded-full ring-2 ring-white/50 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                    fallbackTextClassName="text-sm font-bold text-white"
+                    presenceSize="sm"
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-1 flex-wrap">
@@ -1681,25 +1729,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 onClick={() => goToProfile(post.authorId)}
                 className="cursor-pointer flex-shrink-0"
               >
-                {post.authorPhotoURL ? (
-                  <img
-                    src={post.authorPhotoURL}
-                    alt={post.authorDisplayName}
-                    className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center hover:scale-105 transition-transform">
-                    <span className="text-lg font-bold text-white">
-                      {(() => {
-                        const name = post.authorDisplayName || 'U';
-                        const words = name.split(' ');
-                        return words.length >= 2
-                          ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
-                          : name[0].toUpperCase();
-                      })()}
-                    </span>
-                  </div>
-                )}
+                <UserPresenceAvatar
+                  uid={post.authorId}
+                  name={post.authorDisplayName}
+                  photoURL={post.authorPhotoURL}
+                  imgClassName="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover hover:scale-105 transition-transform"
+                  fallbackClassName="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center hover:scale-105 transition-transform"
+                  fallbackTextClassName="text-lg font-bold text-white"
+                  presenceSize="sm"
+                />
               </div>
 
               <div className="flex-1 min-w-0">
@@ -1886,7 +1924,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   <div className="flex items-center gap-2 mb-2">
                     {post.sharedFrom.authorPhotoURL ? (
                       <img
-                        src={post.sharedFrom.authorPhotoURL}
+                          src={optimizeImageUrl(post.sharedFrom.authorPhotoURL)}
                         alt={post.sharedFrom.authorDisplayName}
                         className="w-8 h-8 rounded-full object-cover"
                       />
@@ -1917,9 +1955,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 </div>
                 {post.sharedFrom.mediaUrls?.length > 0 && (
                   <div className="overflow-hidden max-h-56">
-                    {isVideoUrl(post.sharedFrom.mediaUrls[0]) ? (
+                      {isVideoUrl(sharedRenderedMediaUrls[0]) ? (
                       <video
-                        src={post.sharedFrom.mediaUrls[0]}
+                          src={sharedRenderedMediaUrls[0]}
                         className="w-full object-cover"
                         style={{ maxHeight: '224px' }}
                         muted
@@ -1927,7 +1965,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       />
                     ) : (
                       <img
-                        src={post.sharedFrom.mediaUrls[0]}
+                          src={sharedRenderedMediaUrls[0]}
                         alt="Shared media"
                         className="w-full object-cover"
                         style={{ maxHeight: '224px' }}
@@ -1941,44 +1979,44 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             {/* Media — edge-to-edge inside card */}
             {hasMedia && (
               <div className="-mx-5 sm:-mx-6 mb-4 overflow-hidden">
-                {post.mediaUrls.length === 1 &&
-                  (isVideoUrl(post.mediaUrls[0]) ? (
+                {renderedMediaUrls.length === 1 &&
+                  (isVideoUrl(renderedMediaUrls[0]) ? (
                     <FeedVideo
-                      src={post.mediaUrls[0]}
+                      src={renderedMediaUrls[0]}
                       fill={false}
                       onExpand={() => openLightbox(0)}
                     />
                   ) : (
                     <img
-                      src={post.mediaUrls[0]}
+                      src={renderedMediaUrls[0]}
                       alt="Post media"
                       className="w-full block object-cover cursor-pointer"
                       style={{ maxHeight: '520px' }}
                       onClick={() => openLightbox(0)}
                     />
                   ))}
-                {post.mediaUrls.length === 2 && (
+                {renderedMediaUrls.length === 2 && (
                   <div
                     className="grid gap-0.5"
                     style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
                   >
                     <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-                      {isVideoUrl(post.mediaUrls[0]) ? (
-                        <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                      {isVideoUrl(renderedMediaUrls[0]) ? (
+                        <FeedVideo src={renderedMediaUrls[0]} onExpand={() => openLightbox(0)} />
                       ) : (
                         <img
-                          src={post.mediaUrls[0]}
+                          src={renderedMediaUrls[0]}
                           alt="Post media 1"
                           className="w-full h-full object-cover"
                         />
                       )}
                     </div>
                     <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                      {isVideoUrl(post.mediaUrls[1]) ? (
-                        <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                      {isVideoUrl(renderedMediaUrls[1]) ? (
+                        <FeedVideo src={renderedMediaUrls[1]} onExpand={() => openLightbox(1)} />
                       ) : (
                         <img
-                          src={post.mediaUrls[1]}
+                          src={renderedMediaUrls[1]}
                           alt="Post media 2"
                           className="w-full h-full object-cover"
                         />
@@ -1986,39 +2024,39 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     </div>
                   </div>
                 )}
-                {post.mediaUrls.length === 3 && (
+                {renderedMediaUrls.length === 3 && (
                   <div className="grid grid-cols-2 grid-rows-2 gap-0.5" style={{ height: '420px' }}>
                     <div
                       className="overflow-hidden row-span-2 cursor-pointer"
                       onClick={() => openLightbox(0)}
                     >
-                      {isVideoUrl(post.mediaUrls[0]) ? (
-                        <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                      {isVideoUrl(renderedMediaUrls[0]) ? (
+                        <FeedVideo src={renderedMediaUrls[0]} onExpand={() => openLightbox(0)} />
                       ) : (
                         <img
-                          src={post.mediaUrls[0]}
+                          src={renderedMediaUrls[0]}
                           alt="Post media 1"
                           className="w-full h-full object-cover"
                         />
                       )}
                     </div>
                     <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(1)}>
-                      {isVideoUrl(post.mediaUrls[1]) ? (
-                        <FeedVideo src={post.mediaUrls[1]} onExpand={() => openLightbox(1)} />
+                      {isVideoUrl(renderedMediaUrls[1]) ? (
+                        <FeedVideo src={renderedMediaUrls[1]} onExpand={() => openLightbox(1)} />
                       ) : (
                         <img
-                          src={post.mediaUrls[1]}
+                          src={renderedMediaUrls[1]}
                           alt="Post media 2"
                           className="w-full h-full object-cover"
                         />
                       )}
                     </div>
                     <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(2)}>
-                      {isVideoUrl(post.mediaUrls[2]) ? (
-                        <FeedVideo src={post.mediaUrls[2]} onExpand={() => openLightbox(2)} />
+                      {isVideoUrl(renderedMediaUrls[2]) ? (
+                        <FeedVideo src={renderedMediaUrls[2]} onExpand={() => openLightbox(2)} />
                       ) : (
                         <img
-                          src={post.mediaUrls[2]}
+                          src={renderedMediaUrls[2]}
                           alt="Post media 3"
                           className="w-full h-full object-cover"
                         />
@@ -2026,30 +2064,30 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     </div>
                   </div>
                 )}
-                {post.mediaUrls.length >= 4 && (
+                {renderedMediaUrls.length >= 4 && (
                   <div className="flex flex-col gap-0.5">
                     <div
                       className="overflow-hidden cursor-pointer"
                       style={{ height: '260px' }}
                       onClick={() => openLightbox(0)}
                     >
-                      {isVideoUrl(post.mediaUrls[0]) ? (
-                        <FeedVideo src={post.mediaUrls[0]} onExpand={() => openLightbox(0)} />
+                      {isVideoUrl(renderedMediaUrls[0]) ? (
+                        <FeedVideo src={renderedMediaUrls[0]} onExpand={() => openLightbox(0)} />
                       ) : (
                         <img
-                          src={post.mediaUrls[0]}
+                          src={renderedMediaUrls[0]}
                           alt="Post media 1"
                           className="w-full h-full object-cover"
                         />
                       )}
                     </div>
                     <div className="flex gap-0.5 overflow-x-auto" style={{ height: '90px' }}>
-                      {post.mediaUrls.slice(1).map((url, i) => (
+                      {renderedMediaUrls.slice(1).map((url, i) => (
                         <div
                           key={i}
                           className="flex-none overflow-hidden cursor-pointer"
                           style={{
-                            width: `calc((100% - ${(post.mediaUrls.length - 2) * 2}px) / ${post.mediaUrls.length - 1})`,
+                            width: `calc((100% - ${(renderedMediaUrls.length - 2) * 2}px) / ${renderedMediaUrls.length - 1})`,
                             minWidth: '60px',
                           }}
                           onClick={() => openLightbox(i + 1)}
@@ -2219,13 +2257,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
               <div className="mt-3 space-y-2">
                 {previewComments.map((comment) => (
                   <div key={comment.id} className="flex gap-2 items-start">
-                    {comment.authorPhotoURL ? (
-                      <img src={comment.authorPhotoURL} alt={comment.authorDisplayName} className="w-7 h-7 rounded-full flex-shrink-0 object-cover" />
-                    ) : (
-                      <div className="w-7 h-7 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                        <span className="text-xs font-bold text-white">{(comment.authorDisplayName || 'U')[0].toUpperCase()}</span>
-                      </div>
-                    )}
+                    <UserPresenceAvatar
+                      uid={comment.authorId}
+                      name={comment.authorDisplayName}
+                      photoURL={comment.authorPhotoURL}
+                      imgClassName="w-7 h-7 rounded-full flex-shrink-0 object-cover"
+                      fallbackClassName="w-7 h-7 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                      fallbackTextClassName="text-xs font-bold text-white"
+                      presenceSize="sm"
+                    />
                     <div
                       className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2 flex-1 min-w-0 cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-700/60 transition-colors"
                       onClick={() => setShowComments(true)}
@@ -2273,29 +2313,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   <div className="space-y-3 mb-4">
                     {topLevelComments.map((comment) => (
                       <div key={comment.id} className="flex gap-2">
-                        {comment.authorPhotoURL ? (
-                          <img
-                            src={comment.authorPhotoURL}
-                            alt={comment.authorDisplayName}
-                            className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer"
-                            onClick={() => goToProfile(comment.authorId)}
+                        <div
+                          className="cursor-pointer"
+                          onClick={() => goToProfile(comment.authorId)}
+                        >
+                          <UserPresenceAvatar
+                            uid={comment.authorId}
+                            name={comment.authorDisplayName}
+                            photoURL={comment.authorPhotoURL}
+                            imgClassName="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                            fallbackClassName="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                            fallbackTextClassName="text-xs font-bold text-white"
+                            presenceSize="sm"
                           />
-                        ) : (
-                          <div
-                            className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer"
-                            onClick={() => goToProfile(comment.authorId)}
-                          >
-                            <span className="text-xs font-bold text-white">
-                              {(() => {
-                                const n = comment.authorDisplayName || 'U';
-                                const w = n.split(' ');
-                                return w.length >= 2
-                                  ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
-                                  : n[0].toUpperCase();
-                              })()}
-                            </span>
-                          </div>
-                        )}
+                        </div>
                         <div className="flex-1 min-w-0">
                           {editingCommentId === comment.id ? (
                             <div className="flex gap-2 items-center">
@@ -2441,13 +2472,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               )}
                               {expandedReplies[comment.id] && repliesMap[comment.id]?.map((reply) => (
                                 <div key={reply.id} className="flex gap-2">
-                                  {reply.authorPhotoURL ? (
-                                    <img src={reply.authorPhotoURL} alt={reply.authorDisplayName} className="w-6 h-6 rounded-full flex-shrink-0 object-cover cursor-pointer" onClick={() => goToProfile(reply.authorId)} />
-                                  ) : (
-                                    <div className="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer" onClick={() => goToProfile(reply.authorId)}>
-                                      <span className="text-[10px] font-bold text-white">{(reply.authorDisplayName || 'U')[0].toUpperCase()}</span>
-                                    </div>
-                                  )}
+                                  <div
+                                    className="cursor-pointer"
+                                    onClick={() => goToProfile(reply.authorId)}
+                                  >
+                                    <UserPresenceAvatar
+                                      uid={reply.authorId}
+                                      name={reply.authorDisplayName}
+                                      photoURL={reply.authorPhotoURL}
+                                      imgClassName="w-6 h-6 rounded-full flex-shrink-0 object-cover"
+                                      fallbackClassName="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                                      fallbackTextClassName="text-[10px] font-bold text-white"
+                                      presenceSize="sm"
+                                    />
+                                  </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-1.5">
                                       <div className="font-semibold text-xs text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit" onClick={() => goToProfile(reply.authorId)}>
@@ -2466,13 +2504,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               ))}
                               {replyingToId === comment.id && (
                                 <div className="flex gap-2 items-center">
-                                  {user?.photoURL ? (
-                                    <img src={user.photoURL} alt="You" className="w-6 h-6 rounded-full flex-shrink-0 object-cover" />
-                                  ) : (
-                                    <div className="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                                      <span className="text-[10px] font-bold text-white">{((user?.displayName || user?.email || 'U')[0]).toUpperCase()}</span>
-                                    </div>
-                                  )}
+                                  <UserPresenceAvatar
+                                    uid={user?.uid}
+                                    name={user?.displayName ?? user?.email ?? 'You'}
+                                    photoURL={user?.photoURL}
+                                    imgClassName="w-6 h-6 rounded-full flex-shrink-0 object-cover"
+                                    fallbackClassName="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                                    fallbackTextClassName="text-[10px] font-bold text-white"
+                                    presenceSize="sm"
+                                  />
                                   <div className="flex-1 relative">
                                     <input
                                       autoFocus
@@ -2522,25 +2562,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 )}
                 {/* Comment Input */}
                 <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-slate-700/50">
-                  {user?.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt="You"
-                      className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                      <span className="text-xs font-bold text-white">
-                        {(() => {
-                          const n = user?.displayName || user?.email || 'U';
-                          const w = n.split(' ');
-                          return w.length >= 2
-                            ? (w[0][0] + w[w.length - 1][0]).toUpperCase()
-                            : n[0].toUpperCase();
-                        })()}
-                      </span>
-                    </div>
-                  )}
+                  <UserPresenceAvatar
+                    uid={user?.uid}
+                    name={user?.displayName ?? user?.email ?? 'You'}
+                    photoURL={user?.photoURL}
+                    imgClassName="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                    fallbackClassName="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                    fallbackTextClassName="text-xs font-bold text-white"
+                    presenceSize="sm"
+                  />
                   <div className="flex-1 relative">
                     {commentError && (
                       <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/50 rounded-xl text-sm text-red-600 dark:text-red-400">
@@ -2776,9 +2806,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 className="absolute inset-0 flex items-center justify-center pointer-events-none"
                 style={{ top: '52px', bottom: '0' }}
               >
-                {isVideoUrl(post.mediaUrls[lightboxIndex]) ? (
+                {isVideoUrl(renderedMediaUrls[lightboxIndex]) ? (
                   <video
-                    src={post.mediaUrls[lightboxIndex]}
+                    src={renderedMediaUrls[lightboxIndex]}
                     className="max-w-full max-h-full object-contain pointer-events-auto"
                     controls
                     autoPlay
@@ -2787,8 +2817,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   />
                 ) : (
                   <img
-                    src={post.mediaUrls[lightboxIndex]}
-                    alt={`Ảnh ${lightboxIndex + 1} / ${post.mediaUrls.length}`}
+                    src={renderedMediaUrls[lightboxIndex]}
+                    alt={`Ảnh ${lightboxIndex + 1} / ${renderedMediaUrls.length}`}
                     className="max-w-full max-h-full object-contain select-none"
                   />
                 )}
@@ -2826,13 +2856,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   top: '52px',
                   bottom: '0',
                   width: '50%',
-                  cursor: lightboxIndex < post.mediaUrls.length - 1 ? 'e-resize' : 'default',
+                  cursor: lightboxIndex < renderedMediaUrls.length - 1 ? 'e-resize' : 'default',
                 }}
                 onClick={() =>
-                  setLightboxIndex((prev) => Math.min(post.mediaUrls.length - 1, prev + 1))
+                  setLightboxIndex((prev) => Math.min(renderedMediaUrls.length - 1, prev + 1))
                 }
               >
-                {lightboxIndex < post.mediaUrls.length - 1 && (
+                {lightboxIndex < renderedMediaUrls.length - 1 && (
                   <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-lg">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -2847,17 +2877,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
               </div>
 
               {/* Dot indicators */}
-              {post.mediaUrls.length > 1 && (
+              {renderedMediaUrls.length > 1 && (
                 <div
                   className="absolute z-20 flex gap-2"
                   style={{ bottom: '20px', left: '50%', transform: 'translateX(-50%)' }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {post.mediaUrls.map((_, i) => (
+                  {renderedMediaUrls.map((_, i) => (
                     <button
                       key={i}
                       onClick={() => setLightboxIndex(i)}
-                      className={`w-2 h-2 rounded-full transition-all ${
+                      className={`w-2.5 h-2.5 rounded-full transition-all ${
                         i === lightboxIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/70'
                       }`}
                     />
@@ -2896,7 +2926,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   <div className="flex items-center gap-2 mb-1">
                     {post.authorPhotoURL ? (
                       <img
-                        src={post.authorPhotoURL}
+                        src={optimizeImageUrl(post.authorPhotoURL)}
                         alt={post.authorDisplayName}
                         className="w-8 h-8 rounded-full object-cover"
                       />
@@ -2934,7 +2964,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       <div key={comment.id} className="flex gap-2">
                         {comment.authorPhotoURL ? (
                           <img
-                            src={comment.authorPhotoURL}
+                            src={optimizeImageUrl(comment.authorPhotoURL)}
                             alt={comment.authorDisplayName}
                             className="w-8 h-8 rounded-full flex-shrink-0 object-cover cursor-pointer"
                             onClick={() => {
@@ -3039,7 +3069,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   <div className="flex gap-2">
                     {user?.photoURL ? (
                       <img
-                        src={user.photoURL}
+                        src={optimizeImageUrl(user.photoURL)}
                         alt="You"
                         className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
                       />
@@ -3140,13 +3170,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   .filter((r) => reactorFilter === null || r.reaction === reactorFilter)
                   .map((r) => (
                     <div key={r.uid} className="flex items-center gap-3 py-2.5">
-                      {r.photoURL ? (
-                        <img src={r.photoURL} alt={r.displayName} className="w-10 h-10 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-white">{(r.displayName || 'U')[0].toUpperCase()}</span>
-                        </div>
-                      )}
+                      <UserPresenceAvatar
+                        uid={r.uid}
+                        name={r.displayName}
+                        photoURL={r.photoURL}
+                        imgClassName="w-10 h-10 rounded-full object-cover"
+                        fallbackClassName="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0"
+                        fallbackTextClassName="text-sm font-bold text-white"
+                        presenceSize="sm"
+                      />
                       <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{r.displayName}</span>
                       <span className="text-lg">{r.reaction}</span>
                     </div>
@@ -3221,13 +3253,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   .filter((r) => commentReactorFilter === null || r.reaction === commentReactorFilter)
                   .map((r) => (
                     <div key={r.uid} className="flex items-center gap-3 py-2.5">
-                      {r.photoURL ? (
-                        <img src={r.photoURL} alt={r.displayName} className="w-10 h-10 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-white">{(r.displayName || 'U')[0].toUpperCase()}</span>
-                        </div>
-                      )}
+                      <UserPresenceAvatar
+                        uid={r.uid}
+                        name={r.displayName}
+                        photoURL={r.photoURL}
+                        imgClassName="w-10 h-10 rounded-full object-cover"
+                        fallbackClassName="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0"
+                        fallbackTextClassName="text-sm font-bold text-white"
+                        presenceSize="sm"
+                      />
                       <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{r.displayName}</span>
                       <span className="text-lg">{r.reaction}</span>
                     </div>

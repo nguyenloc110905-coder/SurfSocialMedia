@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../lib/api';
 import { uploadImage, uploadVideo } from '../../lib/cloudinary';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 import { resizePostImage } from '../../lib/utils/image';
 import TagFriendsModal from './TagFriendsModal';
 
@@ -28,10 +29,60 @@ interface CreatePostProps {
   onPostCreated?: (post: Record<string, unknown>) => void;
 }
 
+type PostPrivacy = 'public' | 'friends' | 'only-me' | 'custom';
+
+type NominatimAddress = Record<string, string>;
+
+function formatLocationLabel({
+  name,
+  address,
+  displayName,
+}: {
+  name?: string;
+  address?: NominatimAddress;
+  displayName?: string;
+}): string {
+  const addr = address ?? {};
+  const baseName =
+    name || addr['amenity'] || addr['tourism'] || addr['leisure'] || addr['historic'] || '';
+  const district =
+    addr['suburb'] || addr['city_district'] || addr['district'] || addr['county'] || '';
+  const city = addr['city'] || addr['town'] || addr['state'] || '';
+
+  if (baseName && (district || city)) {
+    const parts = [baseName, district, city].filter(Boolean);
+    const unique = parts.filter((value, index, arr) => arr.indexOf(value) === index);
+    return unique.join(', ');
+  }
+
+  if (baseName) {
+    return baseName;
+  }
+
+  return (displayName ?? '').split(', ').slice(0, 3).join(', ');
+}
+
+const getCurrentPosition = (): Promise<GeolocationPosition> =>
+  new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    });
+  });
+
+function toPostPrivacy(value: unknown): PostPrivacy {
+  if (value === 'public' || value === 'friends' || value === 'only-me' || value === 'custom') {
+    return value;
+  }
+  return 'public';
+}
+
 export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const { user } = useAuthStore();
   const [content, setContent] = useState('');
-  const [privacy, setPrivacy] = useState<'public' | 'friends' | 'only-me' | 'custom'>('public');
+  const [privacy, setPrivacy] = useState<PostPrivacy>('public');
+  const [defaultPrivacy, setDefaultPrivacy] = useState<PostPrivacy>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [images, setImages] = useState<ImagePreview[]>([]);
@@ -41,6 +92,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [locationQuery, setLocationQuery] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [locationGeoLoading, setLocationGeoLoading] = useState(false);
+  const [locationGeoError, setLocationGeoError] = useState<string | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showFeelingPicker, setShowFeelingPicker] = useState(false);
   const [showLocationInput, setShowLocationInput] = useState(false);
@@ -53,13 +106,50 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const privacyDropdownRef = useRef<HTMLDivElement>(null);
+  const hasManualPrivacySelectionRef = useRef(false);
 
-  const privacyOptions = [
+  const privacyOptions: Array<{ value: PostPrivacy; icon: string; label: string; desc: string }> = [
     { value: 'public', icon: '🌐', label: 'Công khai', desc: 'Ai cũng có thể xem' },
     { value: 'friends', icon: '👥', label: 'Bạn bè', desc: 'Chỉ bạn bè của bạn' },
     { value: 'only-me', icon: '🔒', label: 'Chỉ mình tôi', desc: 'Chỉ bạn có thể xem' },
     { value: 'custom', icon: '⚙️', label: 'Tùy chỉnh', desc: 'Chọn đối tượng cụ thể' },
   ];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDefaultPrivacy = async () => {
+      if (!user?.uid) {
+        setDefaultPrivacy('public');
+        setPrivacy('public');
+        hasManualPrivacySelectionRef.current = false;
+        return;
+      }
+
+      try {
+        const me = await api.get<{ defaultPostPrivacy?: string }>('/api/users/me');
+        if (cancelled) return;
+        const parsedDefault = toPostPrivacy(me.defaultPostPrivacy);
+        setDefaultPrivacy(parsedDefault);
+        if (!hasManualPrivacySelectionRef.current) {
+          setPrivacy(parsedDefault);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to load default post privacy:', error);
+        setDefaultPrivacy('public');
+        if (!hasManualPrivacySelectionRef.current) {
+          setPrivacy('public');
+        }
+      }
+    };
+
+    loadDefaultPrivacy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
 
   const feelings = [
     { emoji: '😊', label: 'Vui vẻ' },
@@ -157,19 +247,11 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
 
         // Format tên gọn: "Tên địa danh, Quận/Huyện, Tỉnh/TP"
         const formatted = sorted.map((d) => {
-          const addr = d.address ?? {};
-          const name = d.name || addr['amenity'] || addr['tourism'] || addr['leisure'] || addr['historic'] || '';
-          const district = addr['suburb'] || addr['city_district'] || addr['district'] || addr['county'] || '';
-          const city = addr['city'] || addr['town'] || addr['state'] || '';
-          if (name && (district || city)) {
-            const parts = [name, district, city].filter(Boolean);
-            // Bỏ trùng lặp
-            const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
-            return unique.join(', ');
-          }
-          // Fallback: rút gọn display_name còn 3 phần
-          const fallback = d.display_name.split(', ').slice(0, 3).join(', ');
-          return fallback;
+          return formatLocationLabel({
+            name: d.name,
+            address: d.address,
+            displayName: d.display_name,
+          });
         });
 
         // Loại trùng
@@ -183,16 +265,85 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   }, []);
 
   const handleLocationQueryChange = (value: string) => {
+    setLocationGeoError(null);
     setLocationQuery(value);
     setLocation(value);
     searchLocation(value);
   };
 
   const selectLocationSuggestion = (suggestion: string) => {
+    setLocationGeoError(null);
     setLocation(suggestion);
     setLocationQuery(suggestion);
     setLocationSuggestions([]);
   };
+
+  const useCurrentLocation = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocationGeoError('Trình duyệt không hỗ trợ định vị. Hãy nhập vị trí thủ công.');
+      return;
+    }
+
+    setLocationGeoLoading(true);
+    setLocationGeoError(null);
+    setLocationSuggestions([]);
+
+    try {
+      const position = await getCurrentPosition();
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+
+      const reverseUrl =
+        `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(lat.toString())}` +
+        `&lon=${encodeURIComponent(lon.toString())}&format=jsonv2&addressdetails=1`;
+
+      const res = await fetch(reverseUrl, {
+        headers: { 'Accept-Language': 'vi,en' },
+      });
+
+      type ReverseResult = {
+        display_name?: string;
+        name?: string;
+        address?: NominatimAddress;
+      };
+
+      if (!res.ok) {
+        throw new Error('reverse_geocode_failed');
+      }
+
+      const data = (await res.json()) as ReverseResult;
+      const formatted = formatLocationLabel({
+        name: data.name,
+        address: data.address,
+        displayName: data.display_name,
+      });
+      const fallback = `Lat ${lat.toFixed(5)}, Lon ${lon.toFixed(5)}`;
+      const resolved = formatted || fallback;
+
+      setLocation(resolved);
+      setLocationQuery(resolved);
+    } catch (error) {
+      const geoError = error as GeolocationPositionError | Error;
+      if ('code' in geoError) {
+        if (geoError.code === 1) {
+          setLocationGeoError('Bạn đã từ chối quyền định vị. Hãy nhập vị trí thủ công.');
+          return;
+        }
+        if (geoError.code === 2) {
+          setLocationGeoError('Không thể xác định vị trí hiện tại. Hãy thử lại hoặc nhập thủ công.');
+          return;
+        }
+        if (geoError.code === 3) {
+          setLocationGeoError('Hết thời gian lấy vị trí. Hãy thử lại hoặc nhập thủ công.');
+          return;
+        }
+      }
+
+      setLocationGeoError('Không lấy được vị trí hiện tại. Hãy nhập vị trí thủ công.');
+    } finally {
+      setLocationGeoLoading(false);
+    }
+  }, []);
 
   const toggleFriend = (friendUid: string) => {
     setSelectedFriendIds((prev) =>
@@ -244,9 +395,11 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       setLocation('');
       setLocationQuery('');
       setLocationSuggestions([]);
+      setLocationGeoError(null);
       setTaggedFriends([]);
       setSelectedFriendIds([]);
-      setPrivacy('public');
+      setPrivacy(defaultPrivacy);
+      hasManualPrivacySelectionRef.current = false;
       setIsExpanded(false);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -375,7 +528,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full blur-md group-hover:blur-lg transition-all opacity-50"></div>
               {user?.photoURL ? (
                 <img
-                  src={user.photoURL}
+                  src={optimizeImageUrl(user.photoURL)}
                   alt={user?.displayName || 'User'}
                   className="relative w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover"
                 />
@@ -444,7 +597,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full blur-md group-hover:blur-lg transition-all opacity-50"></div>
               {user?.photoURL ? (
                 <img
-                  src={user.photoURL}
+                  src={optimizeImageUrl(user.photoURL)}
                   alt={user?.displayName || 'User'}
                   className="relative w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover"
                 />
@@ -571,7 +724,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
                           key={option.value}
                           type="button"
                           onClick={() => {
-                            setPrivacy(option.value as 'public' | 'friends' | 'only-me' | 'custom');
+                            hasManualPrivacySelectionRef.current = true;
+                            setPrivacy(option.value);
                             setShowPrivacyDropdown(false);
                           }}
                           className={`relative flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-300 ${
@@ -829,12 +983,53 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
                     setLocation('');
                     setLocationQuery('');
                     setLocationSuggestions([]);
+                    setLocationGeoError(null);
                   }}
                   className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 shrink-0"
                 >
                   ×
                 </button>
               </div>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void useCurrentLocation();
+                  }}
+                  disabled={locationGeoLoading}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-200 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-900/20 px-2.5 py-1.5 text-xs font-semibold text-cyan-700 dark:text-cyan-300 transition-colors hover:bg-cyan-100 dark:hover:bg-cyan-900/35 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {locationGeoLoading ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 2v3m0 14v3m10-10h-3M5 12H2m15.364-7.364l-2.121 2.121M8.757 15.243l-2.121 2.121m0-12.728l2.121 2.121m8.486 8.486l2.121 2.121M12 16a4 4 0 100-8 4 4 0 000 8z"
+                      />
+                    </svg>
+                  )}
+                  <span>{locationGeoLoading ? 'Đang lấy vị trí...' : 'Vị trí hiện tại'}</span>
+                </button>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Hoặc nhập thủ công ở ô bên trên
+                </span>
+              </div>
+              {locationGeoError && (
+                <p className="mt-2 text-xs text-red-500 dark:text-red-400">{locationGeoError}</p>
+              )}
               {locationSuggestions.length > 0 && (
                 <ul className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-lg overflow-hidden">
                   {locationSuggestions.map((s, i) => (

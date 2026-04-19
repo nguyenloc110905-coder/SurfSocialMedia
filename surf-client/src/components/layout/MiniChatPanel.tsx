@@ -4,8 +4,8 @@ import { api } from '../../lib/api';
 import { uploadImage } from '../../lib/cloudinary';
 import { getSocket } from '../../lib/socket';
 import { useAuthStore } from '../../stores/authStore';
-import { usePresenceStore } from '../../stores/presenceStore';
-import { formatLastSeen } from '../../lib/utils/lastSeen';
+import PresenceBadge from '../ui/PresenceBadge';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 
 interface ConversationItem {
   id: string;
@@ -32,6 +32,16 @@ interface UiMessage {
 }
 
 interface RealtimePayload {
+  conversationId: string;
+  message: UiMessage;
+}
+
+interface MessageSelfHiddenPayload {
+  conversationId: string;
+  messageId: string;
+}
+
+interface MessageRecalledPayload {
   conversationId: string;
   message: UiMessage;
 }
@@ -64,38 +74,32 @@ async function downloadFile(url: string, fileName: string) {
   }
 }
 
-function Avatar({ src, name, size = 'md' }: { src?: string | null; name?: string | null; size?: 'sm' | 'md' }) {
+function Avatar({
+  src,
+  name,
+  uid,
+  size = 'md',
+  showPresence = false,
+}: {
+  src?: string | null;
+  name?: string | null;
+  uid?: string | null;
+  size?: 'sm' | 'md';
+  showPresence?: boolean;
+}) {
   const cls = size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
   return (
-    <span className={`${cls} rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center bg-gradient-to-br from-surf-primary to-cyan-500 text-white font-semibold`}>
-      {src
-        ? <img src={src} alt={name ?? ''} className="w-full h-full object-cover" />
-        : <span>{name ? getInitials(name) : '?'}</span>
-      }
-    </span>
-  );
-}
-
-/** Presence badge overlaid on avatar corner */
-function ConvPresenceBadge({ uid }: { uid: string }) {
-  const isOnline = usePresenceStore((s) => s.onlineUsers.has(uid));
-  const lastSeenTs = usePresenceStore((s) => s.lastSeen.get(uid));
-
-  if (isOnline) {
-    return (
-      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800" />
-    );
-  }
-  if (lastSeenTs == null) return null;
-  const { label, gray } = formatLastSeen(lastSeenTs);
-  if (gray) {
-    return (
-      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-slate-500 border-2 border-white dark:border-slate-800" />
-    );
-  }
-  return (
-    <span className="absolute -bottom-1 -right-1 bg-gray-700 dark:bg-slate-600 text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-full border border-white dark:border-slate-800 whitespace-nowrap">
-      {label}
+    <span className="relative inline-flex flex-shrink-0 overflow-visible">
+      <span
+        className={`${cls} rounded-full overflow-hidden flex items-center justify-center bg-gradient-to-br from-surf-primary to-cyan-500 text-white font-semibold`}
+      >
+        {src ? (
+          <img src={optimizeImageUrl(src)} alt={name ?? ''} className="w-full h-full object-cover" />
+        ) : (
+          <span>{name ? getInitials(name) : '?'}</span>
+        )}
+      </span>
+      {showPresence && uid && <PresenceBadge uid={uid} size={size === 'sm' ? 'sm' : 'md'} />}
     </span>
   );
 }
@@ -189,7 +193,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
   // Realtime socket — sound is handled globally by useMessageSound in App.tsx
   useEffect(() => {
     const socket = getSocket();
-    const handler = (payload: RealtimePayload) => {
+    const onMessageNew = (payload: RealtimePayload) => {
       const { conversationId, message } = payload;
       // Update messages if in this conversation
       if (message.conversationId === activeId) {
@@ -213,8 +217,44 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
         )
       );
     };
-    socket.on('message:new', handler);
-    return () => { socket.off('message:new', handler); };
+    const onMessageSelfHidden = (payload: MessageSelfHiddenPayload) => {
+      if (payload.conversationId !== activeId) return;
+      setMessages((prev) => prev.filter((message) => message.id !== payload.messageId));
+    };
+    const onMessageRecalled = (payload: MessageRecalledPayload) => {
+      if (payload.conversationId === activeId) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === payload.message.id ? { ...message, ...payload.message } : message
+          )
+        );
+      }
+
+      setConversations((prev) =>
+        prev.map((conversation) => {
+          if (conversation.id !== payload.conversationId) return conversation;
+
+          const messageAt = +new Date(payload.message.createdAt);
+          const currentAt = conversation.lastMessageAt ? +new Date(conversation.lastMessageAt) : 0;
+          if (messageAt < currentAt) return conversation;
+
+          return {
+            ...conversation,
+            lastMessagePreview: payload.message.text,
+            lastMessageAt: payload.message.createdAt,
+          };
+        })
+      );
+    };
+
+    socket.on('message:new', onMessageNew);
+    socket.on('message:self-hidden', onMessageSelfHidden);
+    socket.on('message:recalled', onMessageRecalled);
+    return () => {
+      socket.off('message:new', onMessageNew);
+      socket.off('message:self-hidden', onMessageSelfHidden);
+      socket.off('message:recalled', onMessageRecalled);
+    };
   }, [activeId]);
 
   const handleSend = async (e: FormEvent) => {
@@ -331,11 +371,24 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
                   <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" /></svg>
                 </span>
               ) : (
-                <Avatar src={activeConv.peer?.avatarUrl} name={activeConv.peer?.name} size="sm" />
+                <Avatar
+                  src={activeConv.peer?.avatarUrl}
+                  name={activeConv.peer?.name}
+                  uid={activeConv.peer?.uid}
+                  size="sm"
+                  showPresence
+                />
               )}
-              <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                {activeConv.type === 'group' ? (activeConv.title ?? 'Nhóm') : (activeConv.peer?.name ?? 'Chat')}
-              </span>
+              <div className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                  {activeConv.type === 'group'
+                    ? (activeConv.title ?? 'Nhóm')
+                    : (activeConv.peer?.name ?? 'Chat')}
+                </span>
+                {activeConv.type !== 'group' && activeConv.peer?.uid && (
+                  <PresenceBadge uid={activeConv.peer.uid} variant="label" className="mt-0.5" />
+                )}
+              </div>
             </>
           ) : (
             <>
@@ -393,7 +446,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
                     </span>
                   )}
                   {conv.peer?.uid && conv.unreadCount === 0 && (
-                    <ConvPresenceBadge uid={conv.peer.uid} />
+                    <PresenceBadge uid={conv.peer.uid} size="sm" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -433,14 +486,19 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
                 return (
                   <div key={msg.id} className={`flex items-end gap-2 ${outgoing ? 'justify-end' : 'justify-start'}`}>
                     {!outgoing && (
-                      <Avatar src={activeConv?.peer?.avatarUrl} name={activeConv?.peer?.name} size="sm" />
+                      <Avatar
+                        src={activeConv?.peer?.avatarUrl}
+                        name={activeConv?.peer?.name}
+                        uid={activeConv?.peer?.uid}
+                        size="sm"
+                      />
                     )}
                     <div className={`max-w-[70%] rounded-2xl px-3 py-2 ${outgoing
                       ? 'bg-gradient-to-br from-surf-primary to-cyan-500 text-white rounded-br-sm'
                       : 'bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-white rounded-bl-sm'
                     } ${msg.optimistic ? 'opacity-60' : ''}`}>
                       {msgType === 'image' && msg.mediaUrl ? (
-                        <img src={msg.mediaUrl} alt="image" className="max-w-full rounded-lg cursor-pointer" onClick={() => setLightboxUrl(msg.mediaUrl!)} />
+                        <img src={optimizeImageUrl(msg.mediaUrl)} alt="image" className="max-w-full rounded-lg cursor-pointer" onClick={() => setLightboxUrl(optimizeImageUrl(msg.mediaUrl))} />
                       ) : msgType === 'audio' && msg.mediaUrl ? (
                         <audio controls src={msg.mediaUrl} className="max-w-full h-8" />
                       ) : msgType === 'file' && msg.mediaUrl ? (
@@ -512,7 +570,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
           <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
-          <img src={lightboxUrl} alt="preview" className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+          <img src={optimizeImageUrl(lightboxUrl)} alt="preview" className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
         </div>,
         document.body
       )}

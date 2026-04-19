@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { musicStore, type TrackItem } from '../../lib/musicStore';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 declare global {
@@ -304,7 +305,7 @@ export default function SurfMusicPlayer() {
           <div
             className="absolute inset-0 bg-cover bg-center scale-110"
             style={{
-              backgroundImage: `url(${current.thumbnail})`,
+              backgroundImage: `url(${optimizeImageUrl(current.thumbnail)})`,
               filter: 'blur(16px) brightness(0.55)',
             }}
           />
@@ -325,7 +326,7 @@ export default function SurfMusicPlayer() {
           >
             {current ? (
               <img
-                src={current.thumbnail}
+                src={optimizeImageUrl(current.thumbnail)}
                 alt=""
                 className="w-full h-full object-cover"
                 draggable={false}
@@ -546,7 +547,7 @@ export default function SurfMusicPlayer() {
             {searchResults.map((v) => (
               <li key={v.id} className="flex flex-col rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80 group">
                 <div className="flex items-center gap-2 p-1.5 cursor-pointer" onClick={() => playVideo(v)}>
-                  <img src={v.thumbnail} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0" />
+                  <img src={optimizeImageUrl(v.thumbnail)} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-gray-900 dark:text-white truncate leading-tight">{decodeHtml(v.title)}</p>
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{decodeHtml(v.artist)}</p>
@@ -624,7 +625,7 @@ export default function SurfMusicPlayer() {
                 ) : (
                   <span className="flex-shrink-0 text-[10px] w-3 text-center text-gray-400">{idx + 1}</span>
                 )}
-                <img src={v.thumbnail} alt="" className="w-7 h-7 rounded object-cover flex-shrink-0" />
+                <img src={optimizeImageUrl(v.thumbnail)} alt="" className="w-7 h-7 rounded object-cover flex-shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] font-medium truncate leading-tight">{decodeHtml(v.title)}</p>
                 </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../../lib/api';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 import EditMomentModal from './EditMomentModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -445,7 +446,7 @@ export default function MomentViewer({
           {currentMoment.mediaType === 'image' ? (
             <img
               key={currentMoment.id}
-              src={currentMoment.mediaUrl}
+              src={optimizeImageUrl(currentMoment.mediaUrl)}
               alt="moment"
               className="absolute inset-0 w-full h-full object-cover"
               style={{ filter: filterCss }}
@@ -493,7 +494,7 @@ export default function MomentViewer({
             <div className="w-10 h-10 rounded-full ring-2 ring-white/70 overflow-hidden flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600">
               {currentGroup.userPhotoURL ? (
                 <img
-                  src={currentGroup.userPhotoURL}
+                  src={optimizeImageUrl(currentGroup.userPhotoURL)}
                   alt=""
                   className="w-full h-full object-cover"
                 />
@@ -646,7 +647,7 @@ export default function MomentViewer({
                 zIndex: 6,
               }}
             >
-              <img src={s.url} alt="" className="w-full h-auto block" />
+              <img src={optimizeImageUrl(s.url)} alt="" className="w-full h-auto block" />
             </div>
           ))}
 
@@ -855,7 +856,7 @@ export default function MomentViewer({
                         >
                           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 overflow-hidden flex-shrink-0">
                             {photoURL ? (
-                              <img src={photoURL} alt="" className="w-full h-full object-cover" />
+                              <img src={optimizeImageUrl(photoURL)} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold">
                                 {name.charAt(0).toUpperCase()}

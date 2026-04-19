@@ -5,8 +5,11 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
  * - If > 7 days ago → { label: null, gray: true }
  * - Otherwise → { label: "5m" | "2h" | "3d", gray: false }
  */
-export function formatLastSeen(ts: number): { label: string | null; gray: boolean } {
-  const diff = Date.now() - ts;
+export function formatLastSeen(
+  ts: number,
+  nowMs = Date.now()
+): { label: string | null; gray: boolean } {
+  const diff = Math.max(0, nowMs - ts);
 
   if (diff >= SEVEN_DAYS_MS) return { label: null, gray: true };
 

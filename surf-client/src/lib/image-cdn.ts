@@ -30,38 +30,75 @@ function isCloudinaryUrl(url: string): boolean {
   return url.includes('res.cloudinary.com') || url.includes('cloudinary.com');
 }
 
+function isCloudinaryTransformSegment(segment: string): boolean {
+  // Example valid segment: c_fill,w_400,h_400
+  return /^([a-z]{1,4}_[^,/]+)(,[a-z]{1,4}_[^,/]+)*$/i.test(segment);
+}
+
+function splitUrlAndSuffix(url: string): { base: string; suffix: string } {
+  const qIdx = url.indexOf('?');
+  const hIdx = url.indexOf('#');
+
+  if (qIdx === -1 && hIdx === -1) {
+    return { base: url, suffix: '' };
+  }
+
+  if (qIdx === -1) {
+    return { base: url.slice(0, hIdx), suffix: url.slice(hIdx) };
+  }
+
+  if (hIdx === -1) {
+    return { base: url.slice(0, qIdx), suffix: url.slice(qIdx) };
+  }
+
+  const cut = Math.min(qIdx, hIdx);
+  return { base: url.slice(0, cut), suffix: url.slice(cut) };
+}
+
 /**
  * Chèn Cloudinary transforms vào URL gốc.
  * Ví dụ: https://res.cloudinary.com/dg8oqqjes/image/upload/v1234/photo.jpg
  *       → https://res.cloudinary.com/dg8oqqjes/image/upload/f_auto,q_auto,w_800/v1234/photo.jpg
  */
 function applyCloudinaryTransforms(url: string, opts: ImageOptions): string {
-  const parts: string[] = ['f_auto', 'q_auto'];
+  const desiredByKey = new Map<string, string>([
+    ['f', 'f_auto'],
+    ['q', 'q_auto'],
+  ]);
 
-  if (opts.width) parts.push(`w_${opts.width}`);
-  if (opts.height) parts.push(`h_${opts.height}`);
-  if (opts.crop) parts.push(`c_${opts.crop}`);
-  if (opts.quality && opts.quality !== 'auto') parts.push(`q_${opts.quality}`);
-  if (opts.format && opts.format !== 'auto') parts.push(`f_${opts.format}`);
+  if (opts.width) desiredByKey.set('w', `w_${opts.width}`);
+  if (opts.height) desiredByKey.set('h', `h_${opts.height}`);
+  if (opts.crop) desiredByKey.set('c', `c_${opts.crop}`);
+  if (opts.quality && opts.quality !== 'auto') desiredByKey.set('q', `q_${opts.quality}`);
+  if (opts.format && opts.format !== 'auto') desiredByKey.set('f', `f_${opts.format}`);
 
-  const transformStr = parts.join(',');
+  const uploadMarker = '/image/upload/';
+  const { base, suffix } = splitUrlAndSuffix(url);
+  const uploadIdx = base.indexOf(uploadMarker);
+  if (uploadIdx === -1) return url;
 
-  // Pattern: /image/upload/[existing-transforms/]v1234/...
-  // Chèn transforms ngay sau /image/upload/
-  const regex = /\/image\/upload\/((?:[a-z]_[^/]+\/)*)/;
-  if (regex.test(url)) {
-    return url.replace(regex, `/image/upload/${transformStr}/`);
+  const prefix = base.slice(0, uploadIdx + uploadMarker.length);
+  const rest = base.slice(uploadIdx + uploadMarker.length);
+  const segments = rest.split('/').filter(Boolean);
+
+  const existingTransformSegments: string[] = [];
+  while (segments.length > 0 && isCloudinaryTransformSegment(segments[0])) {
+    existingTransformSegments.push(segments.shift()!);
   }
 
-  // Fallback: nếu không match pattern, thử chèn trước phần cuối
-  const uploadIdx = url.indexOf('/image/upload/');
-  if (uploadIdx !== -1) {
-    const prefix = url.substring(0, uploadIdx + '/image/upload/'.length);
-    const suffix = url.substring(uploadIdx + '/image/upload/'.length);
-    return `${prefix}${transformStr}/${suffix}`;
-  }
+  const existingParts = existingTransformSegments
+    .join(',')
+    .split(',')
+    .filter(Boolean)
+    .filter((part) => {
+      const key = part.split('_', 1)[0];
+      return !desiredByKey.has(key);
+    });
 
-  return url;
+  const mergedTransform = [...existingParts, ...Array.from(desiredByKey.values())].join(',');
+  const restPath = segments.join('/');
+
+  return `${prefix}${mergedTransform}/${restPath}${suffix}`;
 }
 
 /**

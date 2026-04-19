@@ -24,6 +24,11 @@ export const SETTINGS_DETAIL_SECTIONS: {
     items: [
       { label: 'Kiểm tra quyền riêng tư', icon: 'lock', key: 'privacy-checkup' },
       { label: 'Đối tượng xem mặc định', icon: 'gear', key: 'default-audience' },
+      {
+        label: 'Ai có thể gửi lời mời kết bạn',
+        icon: 'people',
+        key: 'friend-request-privacy',
+      },
     ],
   },
   {

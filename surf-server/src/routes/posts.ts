@@ -5,6 +5,15 @@ import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getIo } from '../realtime/io.js';
 import { moderatePost } from '../services/aiModeration.js';
+import {
+  createNotification,
+  getUnreadNotificationCount,
+  toApiNotification,
+} from '../services/notifications.js';
+import {
+  emitNotificationNew,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 
@@ -84,36 +93,37 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
     // Notify each tagged friend via Firestore + socket
     if (Array.isArray(taggedFriends) && taggedFriends.length > 0) {
-      const notificationsRef = db.collection('notifications');
-      const notifyBatch = db.batch();
       type TaggedFriendEntry = { uid: string; displayName?: string; photoURL?: string | null };
-      for (const friend of taggedFriends as TaggedFriendEntry[]) {
-        if (!friend?.uid || friend.uid === req.uid) continue;
-        const notifDoc = notificationsRef.doc();
-        notifyBatch.set(notifDoc, {
-          type: 'tag',
-          recipientId: friend.uid,
-          actorId: req.uid,
-          actorName: user?.displayName ?? 'Ai đó',
-          actorPhoto: user?.photoURL ?? null,
-          postId: docRef.id,
-          postSnippet: (content?.trim() ?? '').substring(0, 100),
-          read: false,
-          createdAt: new Date(),
-        });
-        getIo().to(`user:${friend.uid}`).emit('notification:new', {
-          id: notifDoc.id,
-          type: 'tag',
-          actorId: req.uid,
-          actorName: user?.displayName ?? 'Ai đó',
-          actorPhoto: user?.photoURL ?? null,
-          postId: docRef.id,
-          postSnippet: (content?.trim() ?? '').substring(0, 100),
-          read: false,
-          createdAt: new Date().toISOString(),
-        });
-      }
-      await notifyBatch.commit();
+      const taggedUids = Array.from(
+        new Set(
+          (taggedFriends as TaggedFriendEntry[])
+            .map((friend) => friend?.uid)
+            .filter((uid): uid is string => typeof uid === 'string' && uid.length > 0)
+        )
+      ).filter((uid) => uid !== req.uid);
+
+      await Promise.all(
+        taggedUids.map(async (taggedUid) => {
+          try {
+            const notification = await createNotification({
+              userId: taggedUid,
+              type: 'mention',
+              actorId: req.uid,
+              entityType: 'post',
+              entityId: docRef.id,
+              message: `${user?.displayName ?? 'Ai đó'} đã nhắc đến bạn trong một bài viết.`,
+            });
+
+            if (!notification) return;
+
+            const unreadCount = await getUnreadNotificationCount(taggedUid);
+            emitNotificationNew(taggedUid, toApiNotification(notification));
+            emitNotificationUnreadCount(taggedUid, unreadCount);
+          } catch (error) {
+            console.warn('⚠️ Không tạo được notification mention:', error);
+          }
+        })
+      );
     }
 
     res.status(201).json({ id: created.id, ...created.data() });
@@ -381,25 +391,25 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
     if (idx === -1 && data.authorId && data.authorId !== req.uid) {
       const reactorDoc = await getDb().collection('users').doc(req.uid!).get();
       const reactor = reactorDoc.data();
-      const notifRef = getDb().collection('notifications').doc();
-      const notifData = {
-        id: notifRef.id,
-        type: 'reaction',
-        recipientId: data.authorId as string,
-        actorId: req.uid,
-        actorName: reactor?.displayName ?? 'Ai đó',
-        actorPhoto: reactor?.photoURL ?? null,
-        postId: req.params.id,
-        postSnippet: (data.content as string ?? '').substring(0, 100),
-        reaction,
-        read: false,
-        createdAt: new Date(),
-      };
-      notifRef.set(notifData).catch(() => {});
-      getIo().to(`user:${data.authorId as string}`).emit('notification:new', {
-        ...notifData,
-        createdAt: new Date().toISOString(),
-      });
+
+      try {
+        const notification = await createNotification({
+          userId: data.authorId as string,
+          type: 'post_reaction',
+          actorId: req.uid,
+          entityType: 'post',
+          entityId: req.params.id,
+          message: `${reactor?.displayName ?? 'Ai đó'} đã thả cảm xúc ${reaction} vào bài viết của bạn.`,
+        });
+
+        if (notification) {
+          const unreadCount = await getUnreadNotificationCount(data.authorId as string);
+          emitNotificationNew(data.authorId as string, toApiNotification(notification));
+          emitNotificationUnreadCount(data.authorId as string, unreadCount);
+        }
+      } catch (error) {
+        console.warn('⚠️ Không tạo được notification post_reaction:', error);
+      }
     }
 
     // RT-3: notify all clients viewing this post about the updated reaction count

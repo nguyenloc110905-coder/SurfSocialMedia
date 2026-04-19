@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getDb } from '../config/firebase-admin.js';
 import type { CreateCallLogInput, MessageDoc } from '../types/message.js';
 
@@ -13,6 +13,9 @@ const toDate = (value: unknown): Date | undefined => {
   if (value instanceof Timestamp) return value.toDate();
   return undefined;
 };
+
+const toStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const mapMessageDoc = (id: string, data: Record<string, unknown>): MessageDoc => ({
   id,
@@ -52,6 +55,8 @@ export const buildCallLogText = (
   const modeLabel = mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại';
 
   switch (outcome) {
+    case 'started':
+      return `${modeLabel} đã bắt đầu`;
     case 'completed':
       return `${modeLabel} • ${formatCallDuration(durationSeconds)}`;
     case 'missed':
@@ -62,6 +67,10 @@ export const buildCallLogText = (
       return `${modeLabel} khi đối phương đang bận`;
     case 'failed':
       return `${modeLabel} không thể kết nối`;
+    case 'ended':
+      return durationSeconds && durationSeconds > 0
+        ? `${modeLabel} đã kết thúc • ${formatCallDuration(durationSeconds)}`
+        : `${modeLabel} đã kết thúc`;
     default:
       return `${modeLabel} đã kết thúc`;
   }
@@ -71,6 +80,7 @@ type ListConversationMessagesInput = {
   conversationId: string;
   limit: number;
   beforeCursor?: string;
+  viewerId?: string;
 };
 
 type ListConversationMessagesResult = {
@@ -82,24 +92,62 @@ export const messageRepository = {
   async listByConversation(
     input: ListConversationMessagesInput
   ): Promise<ListConversationMessagesResult> {
-    let query = messagesCol(input.conversationId)
-      .orderBy('createdAt', 'desc')
-      .limit(input.limit + 1);
+    const targetLimit = Math.max(1, input.limit);
+    const scanLimit = Math.min(100, Math.max(targetLimit * 3, targetLimit + 1));
+    const collected: MessageDoc[] = [];
 
+    let cursorDate: Date | undefined;
     if (input.beforeCursor) {
-      const cursorDate = new Date(input.beforeCursor);
-      if (!Number.isNaN(cursorDate.getTime())) {
+      const parsed = new Date(input.beforeCursor);
+      if (!Number.isNaN(parsed.getTime())) cursorDate = parsed;
+    }
+
+    let exhausted = false;
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      let query = messagesCol(input.conversationId)
+        .orderBy('createdAt', 'desc')
+        .limit(scanLimit);
+
+      if (cursorDate) {
         query = query.startAfter(cursorDate);
+      }
+
+      const snap = await query.get();
+      if (snap.empty) {
+        exhausted = true;
+        break;
+      }
+
+      for (const doc of snap.docs) {
+        const data = (doc.data() ?? {}) as Record<string, unknown>;
+        const hiddenFor = toStringArray(data.hiddenFor);
+        if (input.viewerId && hiddenFor.includes(input.viewerId)) {
+          continue;
+        }
+
+        collected.push(mapMessageDoc(doc.id, data));
+        if (collected.length > targetLimit) break;
+      }
+
+      const lastDoc = snap.docs[snap.docs.length - 1];
+      const lastDocCreatedAt = toDate((lastDoc.data() ?? {}).createdAt);
+
+      if (!lastDocCreatedAt || snap.docs.length < scanLimit) {
+        exhausted = true;
+        break;
+      }
+
+      cursorDate = lastDocCreatedAt;
+
+      if (collected.length > targetLimit) {
+        break;
       }
     }
 
-    const snap = await query.get();
-    const mapped = snap.docs.map((doc) =>
-      mapMessageDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>)
-    );
-
-    const hasMore = mapped.length > input.limit;
-    const page = hasMore ? mapped.slice(0, input.limit) : mapped;
+    const hasMore =
+      collected.length > targetLimit || (!exhausted && collected.length >= targetLimit);
+    const page = hasMore ? collected.slice(0, targetLimit) : collected;
     const ascending = [...page].reverse();
     const nextCursor = hasMore ? ascending[0]?.createdAt.toISOString() ?? null : null;
 
@@ -133,6 +181,7 @@ export const messageRepository = {
       lastMessagePreview: preview,
       lastMessageAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+      lastMessageSeq: FieldValue.increment(1),
       [`unreadCountByUser.${senderId}`]: 0,
     };
 
@@ -181,6 +230,7 @@ export const messageRepository = {
       lastMessagePreview: preview,
       lastMessageAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+      lastMessageSeq: FieldValue.increment(1),
       [`unreadCountByUser.${senderId}`]: 0,
     };
 
@@ -218,6 +268,7 @@ export const messageRepository = {
       lastMessagePreview: text,
       lastMessageAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+      lastMessageSeq: FieldValue.increment(1),
       [`unreadCountByUser.${input.actorId}`]: 0,
     };
 
@@ -230,6 +281,68 @@ export const messageRepository = {
     await batch.commit();
 
     const snap = await messageRef.get();
+    return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+  },
+
+  async getById(messageId: string, conversationIdHint?: string): Promise<MessageDoc | null> {
+    const normalizedId = messageId.trim();
+    if (!normalizedId) return null;
+
+    if (conversationIdHint) {
+      const directSnap = await messagesCol(conversationIdHint).doc(normalizedId).get();
+      if (directSnap.exists) {
+        return mapMessageDoc(directSnap.id, (directSnap.data() ?? {}) as Record<string, unknown>);
+      }
+    }
+
+    const snap = await getDb()
+      .collectionGroup('messages')
+      .where(FieldPath.documentId(), '==', normalizedId)
+      .limit(1)
+      .get();
+
+    if (snap.empty) return null;
+
+    const doc = snap.docs[0];
+    const data = { ...(doc.data() ?? {}) } as Record<string, unknown>;
+    if (!data.conversationId) {
+      const parentConversationId = doc.ref.parent.parent?.id;
+      if (parentConversationId) {
+        data.conversationId = parentConversationId;
+      }
+    }
+
+    return mapMessageDoc(doc.id, data);
+  },
+
+  async hideForSelf(conversationId: string, messageId: string, userId: string): Promise<void> {
+    await messagesCol(conversationId).doc(messageId).update({
+      hiddenFor: FieldValue.arrayUnion(userId),
+    });
+  },
+
+  async recallForEveryone(
+    conversationId: string,
+    messageId: string,
+    senderId: string
+  ): Promise<MessageDoc> {
+    const ref = messagesCol(conversationId).doc(messageId);
+
+    await ref.update({
+      type: 'text',
+      text: 'Tin nhắn đã được thu hồi',
+      mediaUrl: FieldValue.delete(),
+      fileName: FieldValue.delete(),
+      callMode: FieldValue.delete(),
+      callOutcome: FieldValue.delete(),
+      durationSeconds: FieldValue.delete(),
+      recalledForEveryone: true,
+      recalledBy: senderId,
+      recalledAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const snap = await ref.get();
     return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
   },
 };

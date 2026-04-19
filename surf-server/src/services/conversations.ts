@@ -1,14 +1,15 @@
 import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 import { hasBlockRelation } from '../middleware/auth.js';
+import { conversationMemberRepository } from '../repositories/conversation-member.repository.js';
 import { conversationRepository } from '../repositories/conversation.repository.js';
 import { buildMessagePreview, messageRepository } from '../repositories/message.repository.js';
 import { buildDmPairKey, ConservationDoc } from '../types/conversation.js';
 import type {
-  MessageDoc,
-  SendTextMessageInput,
-  SendMediaMessageInput,
   CreateCallLogInput,
+  MessageDoc,
+  SendMediaMessageInput,
+  SendTextMessageInput,
 } from '../types/message.js';
 
 const DM_CACHE_TTL_SEC = 60 * 60 * 24 * 30;
@@ -26,6 +27,13 @@ export type ApiConversation = Omit<ConservationDoc, 'createdAt' | 'updatedAt' | 
 
 export type ApiMessage = Omit<MessageDoc, 'createdAt'> & {
   createdAt: string;
+};
+
+export type ApiReadReceiptItem = {
+  userId: string;
+  lastReadMessageId: string;
+  lastReadMessageCreatedAt: string;
+  lastReadAt: string | null;
 };
 
 export type RealtimeConversationPatch = {
@@ -63,6 +71,7 @@ export type SendTextMessageResult =
 export type SendMediaMessageResult =
   | { ok: true; item: MessageDoc; recipientIds: string[] }
   | { ok: false; reason: 'invalid_media' | 'not_found' | 'forbidden' | 'blocked' };
+
 export type CreateCallLogResult =
   | { ok: true; item: MessageDoc; participantIds: string[]; recipientIds: string[] }
   | { ok: false; reason: 'not_found' };
@@ -72,7 +81,23 @@ export type ListMessagesResult =
   | { ok: false; reason: 'not_found' | 'forbidden' };
 
 export type MarkConversationReadResult =
-  | { ok: true }
+  | { ok: true; item: ApiReadReceiptItem | null }
+  | { ok: false; reason: 'not_found' | 'forbidden' };
+
+export type MarkMessageReadByIdResult =
+  | { ok: true; conversationId: string; item: ApiReadReceiptItem | null }
+  | { ok: false; reason: 'not_found' | 'forbidden' };
+
+export type HideMessageForSelfResult =
+  | { ok: true; conversationId: string; messageId: string }
+  | { ok: false; reason: 'not_found' | 'forbidden' | 'not_sender' };
+
+export type RecallMessageForEveryoneResult =
+  | { ok: true; conversationId: string; item: MessageDoc }
+  | { ok: false; reason: 'not_found' | 'forbidden' | 'not_sender' };
+
+export type ListReadReceiptsResult =
+  | { ok: true; items: ApiReadReceiptItem[] }
   | { ok: false; reason: 'not_found' | 'forbidden' };
 
 export const toApiConversation = (item: ConservationDoc): ApiConversation => ({
@@ -85,6 +110,18 @@ export const toApiConversation = (item: ConservationDoc): ApiConversation => ({
 export const toApiMessage = (item: MessageDoc): ApiMessage => ({
   ...item,
   createdAt: item.createdAt.toISOString(),
+});
+
+export const toApiReadReceipt = (item: {
+  userId: string;
+  lastReadMessageId: string;
+  lastReadMessageCreatedAt: Date;
+  lastReadAt?: Date;
+}): ApiReadReceiptItem => ({
+  userId: item.userId,
+  lastReadMessageId: item.lastReadMessageId,
+  lastReadMessageCreatedAt: item.lastReadMessageCreatedAt.toISOString(),
+  lastReadAt: item.lastReadAt ? item.lastReadAt.toISOString() : null,
 });
 
 export const toRealtimeMessagePayload = (item: MessageDoc): RealtimeMessagePayload => {
@@ -111,10 +148,40 @@ export const toRealtimeMessagePayload = (item: MessageDoc): RealtimeMessagePaylo
   };
 };
 
+const toConversationPreview = (message: MessageDoc | null) => {
+  if (!message) {
+    return {
+      preview: null,
+      at: null,
+    };
+  }
+
+  const previewMap: Record<string, string> = {
+    image: '📷 Hình ảnh',
+    file: '📎 Tệp đính kèm',
+    audio: '🎤 Tin nhắn thoại',
+  };
+
+  const preview =
+    message.type === 'text'
+      ? buildMessagePreview(message.text)
+      : message.text
+        ? buildMessagePreview(message.text)
+        : (previewMap[message.type] ?? '📎 Tệp');
+
+  return {
+    preview,
+    at: message.createdAt.toISOString(),
+  };
+};
+
 const userExists = async (uid: string): Promise<boolean> => {
   const snap = await getDb().collection('users').doc(uid).get();
   return snap.exists;
 };
+
+const extractParticipantIds = async (conversationId: string): Promise<string[]> =>
+  conversationRepository.getMemberIds(conversationId);
 
 export const createOrGetDmConversation = async (
   actorUid: string,
@@ -131,11 +198,15 @@ export const createOrGetDmConversation = async (
   const cachedConservationId = redis ? await redis.get(dmCacheKey(pairKey)) : null;
   if (cachedConservationId) {
     const cached = await conversationRepository.getById(cachedConservationId);
-    if (cached) return { ok: true, created: false, item: cached };
-    // Cache bị lỗi, xóa cache để lần sau tạo mới
+    if (cached) {
+      await conversationMemberRepository.ensureMembers(cached.id, [actorUid, peerUid]);
+      return { ok: true, created: false, item: cached };
+    }
     await redis?.del(dmCacheKey(pairKey));
   }
+
   const result = await conversationRepository.findOrCreateDm(actorUid, peerUid);
+  await conversationMemberRepository.ensureMembers(result.item.id, [actorUid, peerUid]);
   await redis?.set(dmCacheKey(pairKey), result.item.id, { EX: DM_CACHE_TTL_SEC });
   return { ok: true, created: result.created, item: result.item };
 };
@@ -148,11 +219,13 @@ export const sendTextMessage = async (
 
   const conversation = await conversationRepository.getById(input.conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
-  if (!conversation.memberIds.includes(input.senderId)) {
+
+  const memberIds = await extractParticipantIds(input.conversationId);
+  if (!memberIds.includes(input.senderId)) {
     return { ok: false, reason: 'forbidden' };
   }
 
-  const recipientIds = conversation.memberIds.filter((id) => id !== input.senderId);
+  const recipientIds = memberIds.filter((id) => id !== input.senderId);
   const peerUid = recipientIds[0];
 
   if (peerUid && (await hasBlockRelation(input.senderId, peerUid))) {
@@ -176,11 +249,13 @@ export const sendMediaMessage = async (
 
   const conversation = await conversationRepository.getById(input.conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
-  if (!conversation.memberIds.includes(input.senderId)) {
+
+  const memberIds = await extractParticipantIds(input.conversationId);
+  if (!memberIds.includes(input.senderId)) {
     return { ok: false, reason: 'forbidden' };
   }
 
-  const recipientIds = conversation.memberIds.filter((id) => id !== input.senderId);
+  const recipientIds = memberIds.filter((id) => id !== input.senderId);
   const peerUid = recipientIds[0];
 
   if (peerUid && (await hasBlockRelation(input.senderId, peerUid))) {
@@ -199,13 +274,14 @@ export const sendMediaMessage = async (
 
   return { ok: true, item, recipientIds };
 };
+
 export const createCallLogMessage = async (
   input: CreateCallLogInput
 ): Promise<CreateCallLogResult> => {
   const conversation = await conversationRepository.getById(input.conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
 
-  const participantIds = conversation.memberIds;
+  const participantIds = await extractParticipantIds(input.conversationId);
   const recipientIds = participantIds.filter((uid) => uid !== input.actorId);
 
   const item = await messageRepository.createCallLogMessage({
@@ -224,7 +300,9 @@ export const listMessagesForConversation = async (
 ): Promise<ListMessagesResult> => {
   const conversation = await conversationRepository.getById(conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
-  if (!conversation.memberIds.includes(userId)) {
+
+  const memberIds = await extractParticipantIds(conversationId);
+  if (!memberIds.includes(userId)) {
     return { ok: false, reason: 'forbidden' };
   }
 
@@ -232,22 +310,176 @@ export const listMessagesForConversation = async (
     conversationId,
     limit,
     beforeCursor,
+    viewerId: userId,
   });
   return { ok: true, items: page.items, nextCursor: page.nextCursor };
 };
 
 export const markConversationRead = async (
   userId: string,
-  conversationId: string
+  conversationId: string,
+  lastReadMessageId?: string,
+  lastReadMessageCreatedAt?: string
 ): Promise<MarkConversationReadResult> => {
   const conversation = await conversationRepository.getById(conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
-  if (!conversation.memberIds.includes(userId)) {
+
+  const memberIds = await extractParticipantIds(conversationId);
+  if (!memberIds.includes(userId)) {
     return { ok: false, reason: 'forbidden' };
   }
 
   await conversationRepository.markReadByUser(conversationId, userId);
-  return { ok: true };
+
+  if (!lastReadMessageId || !lastReadMessageCreatedAt) {
+    return { ok: true, item: null };
+  }
+
+  const updated = await conversationMemberRepository.markRead(
+    conversationId,
+    userId,
+    lastReadMessageId,
+    lastReadMessageCreatedAt
+  );
+
+  return {
+    ok: true,
+    item: {
+      userId,
+      lastReadMessageId,
+      lastReadMessageCreatedAt,
+      lastReadAt: updated ? new Date().toISOString() : null,
+    },
+  };
+};
+
+export const markMessageReadById = async (
+  userId: string,
+  messageId: string,
+  conversationIdHint?: string,
+  lastReadMessageCreatedAt?: string
+): Promise<MarkMessageReadByIdResult> => {
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) return { ok: false, reason: 'not_found' };
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const cursorDate = lastReadMessageCreatedAt
+    ? new Date(lastReadMessageCreatedAt)
+    : message.createdAt;
+  const normalizedCursor = Number.isNaN(cursorDate.getTime())
+    ? message.createdAt.toISOString()
+    : cursorDate.toISOString();
+
+  const result = await markConversationRead(
+    userId,
+    message.conversationId,
+    message.id,
+    normalizedCursor
+  );
+
+  if (!result.ok) return result;
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    item: result.item,
+  };
+};
+
+export const hideMessageForSelf = async (
+  userId: string,
+  messageId: string,
+  conversationIdHint?: string
+): Promise<HideMessageForSelfResult> => {
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) return { ok: false, reason: 'not_found' };
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const memberIds = await extractParticipantIds(message.conversationId);
+  if (!memberIds.includes(userId)) return { ok: false, reason: 'forbidden' };
+
+  if (message.senderId !== userId) return { ok: false, reason: 'not_sender' };
+
+  await messageRepository.hideForSelf(message.conversationId, message.id, userId);
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    messageId: message.id,
+  };
+};
+
+export const recallMessageForEveryone = async (
+  userId: string,
+  messageId: string,
+  conversationIdHint?: string
+): Promise<RecallMessageForEveryoneResult> => {
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) return { ok: false, reason: 'not_found' };
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const memberIds = await extractParticipantIds(message.conversationId);
+  if (!memberIds.includes(userId)) return { ok: false, reason: 'forbidden' };
+
+  if (message.senderId !== userId) return { ok: false, reason: 'not_sender' };
+
+  const item = await messageRepository.recallForEveryone(
+    message.conversationId,
+    message.id,
+    userId
+  );
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    item,
+  };
+};
+
+export const listReadReceiptsForConversation = async (
+  userId: string,
+  conversationId: string,
+  fromCreatedAt: string,
+  toCreatedAt: string,
+  limit = 150
+): Promise<ListReadReceiptsResult> => {
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+
+  const memberIds = await extractParticipantIds(conversationId);
+  if (!memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const items = await conversationMemberRepository.listReadReceiptsInWindow(
+    conversationId,
+    fromCreatedAt,
+    toCreatedAt,
+    limit
+  );
+
+  return {
+    ok: true,
+    items: items
+      .filter((item) => item.lastReadMessageId && item.lastReadMessageCreatedAt)
+      .map((item) =>
+        toApiReadReceipt({
+          userId: item.userId,
+          lastReadMessageId: item.lastReadMessageId ?? '',
+          lastReadMessageCreatedAt: item.lastReadMessageCreatedAt ?? new Date(),
+          lastReadAt: item.lastReadAt,
+        })
+      ),
+  };
 };
 
 export type CreateGroupResult =
@@ -266,6 +498,7 @@ export const createGroupConversation = async (
   if (uniqueMembers.length < 2) return { ok: false, reason: 'too_few_members' };
 
   const item = await conversationRepository.createGroup(actorUid, trimmedTitle, uniqueMembers);
+  await conversationMemberRepository.ensureMembers(item.id, uniqueMembers);
   return { ok: true, item };
 };
 
@@ -281,12 +514,15 @@ export const addMembersToGroup = async (
   const conversation = await conversationRepository.getById(conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
   if (conversation.type !== 'group') return { ok: false, reason: 'not_group' };
-  if (!conversation.memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
 
-  const toAdd = newMemberIds.filter((id) => !conversation.memberIds.includes(id));
+  const memberIds = await extractParticipantIds(conversationId);
+  if (!memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
+
+  const toAdd = newMemberIds.filter((id) => !memberIds.includes(id));
   if (toAdd.length === 0) return { ok: true, addedIds: [] };
 
   await conversationRepository.addMembers(conversationId, toAdd);
+  await conversationMemberRepository.ensureMembers(conversationId, toAdd);
   return { ok: true, addedIds: toAdd };
 };
 
@@ -300,19 +536,19 @@ export const getGroupMembers = async (
 ): Promise<GetGroupMembersResult> => {
   const conversation = await conversationRepository.getById(conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
-  if (!conversation.memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
+
+  const memberIds = await extractParticipantIds(conversationId);
+  if (!memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
 
   const snaps =
-    conversation.memberIds.length > 0
-      ? await getDb().getAll(
-          ...conversation.memberIds.map((id) => getDb().collection('users').doc(id))
-        )
+    memberIds.length > 0
+      ? await getDb().getAll(...memberIds.map((id) => getDb().collection('users').doc(id)))
       : [];
 
-  const members = snaps.map((s) => {
-    const data = (s.data() ?? {}) as UserLite;
+  const members = snaps.map((snap) => {
+    const data = (snap.data() ?? {}) as UserLite;
     return {
-      uid: s.id,
+      uid: snap.id,
       name: data.displayName ?? 'Unknown',
       avatarUrl: data.photoURL ?? null,
     };
@@ -321,20 +557,24 @@ export const getGroupMembers = async (
   return { ok: true, members };
 };
 
-export const getUnreadConversationCount = async (userId: string): Promise<number> => {
-  const docs = await conversationRepository.listByMemberForUnread(userId);
-
-  return docs.reduce((total, doc) => total + (doc.unreadCountByUser?.[userId] ?? 0), 0);
-};
+export const getUnreadConversationCount = async (userId: string): Promise<number> =>
+  conversationRepository.sumUnreadByUser(userId);
 
 export const listConversationsForUser = async (
   userId: string,
   limit = 20
 ): Promise<ApiConversationListItem[]> => {
-  const docs = await conversationRepository.listByMember(userId, limit);
+  const details = await conversationRepository.listByMemberDetails(userId, limit);
+  const docs = details.map((detail) => detail.item);
+  const memberIdsByConversation = new Map(
+    details.map((detail) => [detail.item.id, detail.memberIds])
+  );
+  const unreadCountByConversation = new Map(
+    details.map((detail) => [detail.item.id, detail.unreadCount])
+  );
 
   const allMemberIds = Array.from(
-    new Set(docs.flatMap((d) => d.memberIds).filter((id) => id !== userId))
+    new Set(details.flatMap((detail) => detail.memberIds).filter((id) => id !== userId))
   );
 
   const memberSnaps =
@@ -343,7 +583,7 @@ export const listConversationsForUser = async (
       : [];
 
   const memberMap = new Map<string, UserLite>(
-    memberSnaps.map((s) => [s.id, (s.data() ?? {}) as UserLite])
+    memberSnaps.map((snap) => [snap.id, (snap.data() ?? {}) as UserLite])
   );
 
   const toMember = (uid: string) => {
@@ -355,30 +595,47 @@ export const listConversationsForUser = async (
     };
   };
 
-  return docs.map((d) => {
-    if (d.type === 'group') {
-      const otherIds = d.memberIds.filter((id) => id !== userId);
+  const latestVisibleByConversation = new Map(
+    await Promise.all(
+      docs.map(async (doc) => {
+        const page = await messageRepository.listByConversation({
+          conversationId: doc.id,
+          limit: 1,
+          viewerId: userId,
+        });
+        return [doc.id, page.items[0] ?? null] as const;
+      })
+    )
+  );
+
+  return docs.map((doc) => {
+    const memberIds = memberIdsByConversation.get(doc.id) ?? [];
+    const latestVisible = latestVisibleByConversation.get(doc.id) ?? null;
+    const { preview: lastMessagePreview, at: lastMessageAt } = toConversationPreview(latestVisible);
+
+    if (doc.type === 'group') {
+      const otherIds = memberIds.filter((id) => id !== userId);
       return {
-        id: d.id,
-        type: d.type,
-        title: d.title,
+        id: doc.id,
+        type: doc.type,
+        title: doc.title,
         peer: null,
         members: otherIds.map(toMember),
-        memberCount: d.memberIds.length,
-        unreadCount: d.unreadCountByUser?.[userId] ?? 0,
-        lastMessagePreview: d.lastMessagePreview ?? null,
-        lastMessageAt: d.lastMessageAt ? d.lastMessageAt.toISOString() : null,
+        memberCount: doc.memberCount,
+        unreadCount: unreadCountByConversation.get(doc.id) ?? 0,
+        lastMessagePreview,
+        lastMessageAt,
       };
     }
 
-    const peerUid = d.memberIds.find((id) => id !== userId) ?? null;
+    const peerUid = memberIds.find((id) => id !== userId) ?? null;
     return {
-      id: d.id,
-      type: d.type,
+      id: doc.id,
+      type: doc.type,
       peer: peerUid ? toMember(peerUid) : null,
-      unreadCount: d.unreadCountByUser?.[userId] ?? 0,
-      lastMessagePreview: d.lastMessagePreview ?? null,
-      lastMessageAt: d.lastMessageAt ? d.lastMessageAt.toISOString() : null,
+      unreadCount: unreadCountByConversation.get(doc.id) ?? 0,
+      lastMessagePreview,
+      lastMessageAt,
     };
   });
 };

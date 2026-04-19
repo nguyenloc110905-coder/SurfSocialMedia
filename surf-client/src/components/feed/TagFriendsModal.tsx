@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 
 interface Friend {
   uid: string;
@@ -138,7 +139,7 @@ export default function TagFriendsModal({
                   />
                   {friend.photoURL ? (
                     <img
-                      src={friend.photoURL}
+                      src={optimizeImageUrl(friend.photoURL)}
                       alt={friend.displayName || 'Friend'}
                       className="w-10 h-10 rounded-full ring-2 ring-gray-200 dark:ring-slate-700 object-cover"
                     />

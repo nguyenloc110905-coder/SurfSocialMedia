@@ -1,9 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
 import { getAuth, getDb } from '../config/firebase-admin.js';
+import { DEFAULT_NOTIFICATION_PREFS, NOTIFICATION_PREF_KEYS } from '../types/notification.js';
+import { DEFAULT_FRIEND_REQUEST_PRIVACY, isFriendRequestPrivacy } from '../types/privacy.js';
 
 export interface AuthRequest extends Request {
   uid?: string;
 }
+
+const hasCompleteNotificationPrefs = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  const raw = value as Record<string, unknown>;
+  return NOTIFICATION_PREF_KEYS.every((key) => typeof raw[key] === 'boolean');
+};
+
+const hasValidFriendRequestPrivacy = (value: unknown): boolean => isFriendRequestPrivacy(value);
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
@@ -27,16 +38,42 @@ export async function ensureUser(req: AuthRequest, res: Response, next: NextFunc
   try {
     const usersRef = getDb().collection('users');
     const doc = await usersRef.doc(req.uid).get();
-    if (doc.exists) return next();
-    const fbUser = await getAuth().getUser(req.uid);
-    await usersRef.doc(req.uid).set({
-      uid: req.uid,
-      email: fbUser.email ?? '',
-      displayName: fbUser.displayName ?? fbUser.email?.split('@')[0] ?? 'User',
-      photoURL: fbUser.photoURL ?? null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    if (!doc.exists) {
+      const fbUser = await getAuth().getUser(req.uid);
+      await usersRef.doc(req.uid).set({
+        uid: req.uid,
+        email: fbUser.email ?? '',
+        displayName: fbUser.displayName ?? fbUser.email?.split('@')[0] ?? 'User',
+        photoURL: fbUser.photoURL ?? null,
+        defaultPostPrivacy: 'public',
+        notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
+        friendRequestPrivacy: DEFAULT_FRIEND_REQUEST_PRIVACY,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      return next();
+    }
+
+    const existingData = doc.data() ?? {};
+    const updates: Record<string, unknown> = {};
+
+    if (!hasCompleteNotificationPrefs(existingData.notificationPrefs)) {
+      updates.notificationPrefs = DEFAULT_NOTIFICATION_PREFS;
+    }
+
+    if (!hasValidFriendRequestPrivacy(existingData.friendRequestPrivacy)) {
+      updates.friendRequestPrivacy = DEFAULT_FRIEND_REQUEST_PRIVACY;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await usersRef.doc(req.uid).set(
+        {
+          ...updates,
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
+    }
   } catch {
     // Không chặn request nếu lỗi (vd Firebase chưa cấu hình đủ)
   }

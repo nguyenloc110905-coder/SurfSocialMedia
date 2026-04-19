@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../lib/api';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 import CreateMomentModal from './CreateMomentModal';
 import MomentViewer, { MomentGroup } from './MomentViewer';
 
@@ -59,7 +60,7 @@ export default function MomentsBar() {
                 {/* Background — user photo or gradient */}
                 {user?.photoURL ? (
                   <img
-                    src={user.photoURL}
+                    src={optimizeImageUrl(user.photoURL)}
                     alt=""
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                   />
@@ -111,7 +112,7 @@ export default function MomentsBar() {
                         <>
                           <video
                             src={thumb.url}
-                            poster={videoPoster(thumb.url)}
+                            poster={optimizeImageUrl(videoPoster(thumb.url))}
                             muted
                             preload="metadata"
                             playsInline
@@ -124,7 +125,7 @@ export default function MomentsBar() {
                           </div>
                         </>
                       ) : (
-                        <img src={thumb.url} alt={group.userDisplayName} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                        <img src={optimizeImageUrl(thumb.url)} alt={group.userDisplayName} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                       )
                     ) : (
                       <div className="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
@@ -135,7 +136,7 @@ export default function MomentsBar() {
                     <div className="absolute bottom-[46px] left-1/2 -translate-x-1/2 z-10">
                       <div className="w-10 h-10 rounded-full ring-[3px] ring-white shadow-lg overflow-hidden bg-gradient-to-br from-cyan-500 to-blue-600 flex-shrink-0">
                         {group.userPhotoURL
-                          ? <img src={group.userPhotoURL} alt="" className="w-full h-full object-cover" />
+                          ? <img src={optimizeImageUrl(group.userPhotoURL)} alt="" className="w-full h-full object-cover" />
                           : <span className="w-full h-full flex items-center justify-center text-xs font-bold text-white">{getInitials(group.userDisplayName)}</span>
                         }
                       </div>

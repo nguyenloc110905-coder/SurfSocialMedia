@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import PresenceBadge from '@/components/ui/PresenceBadge';
+import { optimizeImageUrl } from '@/lib/image-cdn';
 import { isVideoUrl } from '@/lib/cloudinary';
 
 type SearchUser = { id: string; name: string; avatarUrl?: string; mutualCount?: number };
@@ -89,13 +91,20 @@ function PeopleResults({ users, q }: { users: SearchUser[]; q: string }) {
           to={`/feed/profile/${u.id}`}
           className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         >
-          {u.avatarUrl ? (
-            <img src={u.avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover flex-shrink-0" />
-          ) : (
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-lg font-bold">{u.name.charAt(0).toUpperCase()}</span>
-            </div>
-          )}
+          <span className="relative inline-flex flex-shrink-0 overflow-visible">
+            {u.avatarUrl ? (
+              <img
+                src={optimizeImageUrl(u.avatarUrl)}
+                alt=""
+                className="w-12 h-12 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                <span className="text-white text-lg font-bold">{u.name.charAt(0).toUpperCase()}</span>
+              </div>
+            )}
+            <PresenceBadge uid={u.id} size="md" />
+          </span>
           <div>
             <p className="font-semibold text-gray-900 dark:text-gray-100">{u.name}</p>
             {(u.mutualCount ?? 0) > 0 && (
@@ -122,7 +131,7 @@ function PostResults({ posts, q, navigate }: { posts: SearchPost[]; q: string; n
             className="flex gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
           >
             {firstImage && (
-              <img src={firstImage} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+              <img src={optimizeImageUrl(firstImage)} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
             )}
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{p.authorDisplayName}</p>

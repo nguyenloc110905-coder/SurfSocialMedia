@@ -2,7 +2,14 @@ export type MessageType = 'text' | 'image' | 'file' | 'audio' | 'call_log';
 
 export type CallLogMode = 'audio' | 'video';
 
-export type CallLogOutcome = 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended';
+export type CallLogOutcome =
+  | 'completed'
+  | 'missed'
+  | 'declined'
+  | 'busy'
+  | 'failed'
+  | 'ended'
+  | 'started';
 
 export type MessageDoc = {
   id: string;

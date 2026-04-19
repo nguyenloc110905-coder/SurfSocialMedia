@@ -11,6 +11,8 @@ import ReviewModal from './ReviewModal';
 import CustomSettingsModal from './CustomSettingsModal';
 import SettingsSectionPage from './SettingsSectionPage';
 import BlockListPanel from './BlockListPanel';
+import NotificationPreferencesPanel from './NotificationPreferencesPanel';
+import FriendRequestPrivacyPanel from './FriendRequestPrivacyPanel';
 
 export default function SettingsPage() {
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
@@ -54,6 +56,10 @@ export default function SettingsPage() {
             <DeleteAccountPanel />
           ) : selectedDetail === 'block-list' ? (
             <BlockListPanel />
+          ) : selectedDetail === 'friend-request-privacy' ? (
+            <FriendRequestPrivacyPanel />
+          ) : selectedDetail === 'notifications' ? (
+            <NotificationPreferencesPanel />
           ) : sectionKey ? (
             <SettingsSectionPage sectionKey={sectionKey} activeItem={selectedDetail} />
           ) : (

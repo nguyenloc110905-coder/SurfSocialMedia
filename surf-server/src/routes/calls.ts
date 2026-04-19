@@ -12,6 +12,7 @@ type LiveKitTokenRequestBody = {
   peerId?: string;
   mode?: CallMode;
   quality?: QualityProfile;
+  userName?: string;
 };
 
 type LiveKitTokenResponse = {
@@ -272,6 +273,10 @@ router.post('/livekit-token', requireAuth, async (req: AuthRequest, res) => {
     const peerId = typeof body.peerId === 'string' ? body.peerId.trim() : '';
     const mode = body.mode === 'video' ? 'video' : body.mode === 'audio' ? 'audio' : null;
     const quality = body.quality === 'p720' ? 'p720' : 'p480';
+    const userName =
+      typeof body.userName === 'string' && body.userName.trim()
+        ? body.userName.trim().slice(0, 120)
+        : req.headers['x-surf-user-name']?.toString().trim().slice(0, 120);
 
     if (!callId || !conversationId || !peerId || !mode) {
       res.status(400).json({ error: 'Missing callId, conversationId, peerId, or mode' });
@@ -324,7 +329,7 @@ router.post('/livekit-token', requireAuth, async (req: AuthRequest, res) => {
 
     const token = new AccessToken(liveKitApiKey, liveKitApiSecret, {
       identity: uid,
-      name: req.headers['x-surf-user-name']?.toString(),
+      name: userName,
       ttl: process.env.LIVEKIT_TOKEN_TTL || '1h',
       metadata: JSON.stringify({
         mode,

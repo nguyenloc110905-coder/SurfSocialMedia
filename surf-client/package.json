@@ -11,6 +11,8 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@livekit/components-react": "^2.9.20",
+    "@livekit/components-styles": "^1.2.0",
     "date-fns": "^4.1.0",
     "firebase": "^10.7.1",
     "livekit-client": "^2.18.1",

@@ -67,6 +67,62 @@ type CallSignalPayload = {
     | { type: 'ice'; candidate: RTCIceCandidateInit };
 };
 
+type GroupCallInvitePayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  conversationTitle?: string;
+  participantIds: string[];
+  mode: CallMode;
+};
+
+type GroupCallAcceptPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+};
+
+type GroupCallDeclinePayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  reason?: string;
+};
+
+type GroupCallParticipantJoinPayload = {
+  callId: string;
+  conversationId: string;
+  userId: string;
+};
+
+type GroupCallParticipantLeavePayload = {
+  callId: string;
+  conversationId: string;
+  userId: string;
+  reason?: string;
+};
+
+type GroupCallIncomingPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  conversationTitle?: string;
+  mode: CallMode;
+};
+
+type GroupCallRoomReadyPayload = {
+  callId: string;
+  conversationId: string;
+  hostUserId: string;
+  conversationTitle?: string;
+  mode: CallMode;
+  roomName: string;
+};
+
 type CallSession = {
   conversationId: string;
   fromUserId: string;
@@ -75,11 +131,63 @@ type CallSession = {
   acceptedAt?: number;
 };
 
+type GroupCallSession = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  conversationTitle?: string;
+  participantIds: string[];
+  acceptedUserIds: Set<string>;
+  activeParticipantUserIds: Set<string>;
+  mode: CallMode;
+  roomName?: string;
+  roomOpenedAt?: number;
+  startLogCreated: boolean;
+  endLogCreated: boolean;
+};
+
 const callSessions = new Map<string, CallSession>();
+const groupCallSessions = new Map<string, GroupCallSession>();
+const groupCallCleanupTimers = new Map<string, NodeJS.Timeout>();
+
+const GROUP_CALL_INVITE_TTL_MS = 1000 * 60 * 10;
+const GROUP_CALL_ACTIVE_TTL_MS = 1000 * 60 * 60 * 4;
+
+const scheduleGroupCallSessionCleanup = (callId: string, ttlMs: number) => {
+  const currentTimer = groupCallCleanupTimers.get(callId);
+  if (currentTimer) {
+    clearTimeout(currentTimer);
+  }
+
+  const nextTimer = setTimeout(() => {
+    void finalizeGroupCallSession(callId, 'timeout');
+  }, ttlMs);
+
+  // Avoid keeping the Node.js event loop alive for stale in-memory sessions.
+  nextTimer.unref?.();
+  groupCallCleanupTimers.set(callId, nextTimer);
+};
+
+const toSafeSegment = (value: string, fallback: string): string => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+
+  return normalized || fallback;
+};
+
+const buildGroupRoomName = (conversationId: string, callId: string) =>
+  `surf-group-${toSafeSegment(conversationId, 'conversation')}-${toSafeSegment(callId, 'call')}`;
 
 const emitCallLog = async (
   payload: Pick<CallEndPayload, 'callId' | 'conversationId' | 'fromUserId'>,
-  outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended',
+  outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended' | 'started',
   durationSeconds?: number
 ) => {
   const session = callSessions.get(payload.callId);
@@ -111,6 +219,97 @@ const emitCallLog = async (
   unreadCounts.forEach(({ uid, count }) => {
     emitMessageUnreadCount(uid, count);
   });
+};
+
+const emitGroupCallStartLog = async (session: GroupCallSession) => {
+  const result = await createCallLogMessage({
+    conversationId: session.conversationId,
+    actorId: session.fromUserId,
+    recipientIds: [],
+    mode: session.mode,
+    outcome: 'started',
+  });
+
+  if (!result.ok) return;
+
+  const realtimePayload = toRealtimeMessagePayload(result.item);
+  result.participantIds.forEach((uid) => {
+    emitMessageNew(uid, realtimePayload);
+  });
+
+  const unreadCounts = await Promise.all(
+    result.participantIds.map(async (uid) => ({
+      uid,
+      count: await getUnreadConversationCount(uid),
+    }))
+  );
+
+  unreadCounts.forEach(({ uid, count }) => {
+    emitMessageUnreadCount(uid, count);
+  });
+};
+
+const emitGroupCallEndedLog = async (
+  session: GroupCallSession,
+  durationSeconds?: number
+) => {
+  const result = await createCallLogMessage({
+    conversationId: session.conversationId,
+    actorId: session.fromUserId,
+    recipientIds: [],
+    mode: session.mode,
+    outcome: 'ended',
+    durationSeconds,
+  });
+
+  if (!result.ok) return;
+
+  const realtimePayload = toRealtimeMessagePayload(result.item);
+  result.participantIds.forEach((uid) => {
+    emitMessageNew(uid, realtimePayload);
+  });
+
+  const unreadCounts = await Promise.all(
+    result.participantIds.map(async (uid) => ({
+      uid,
+      count: await getUnreadConversationCount(uid),
+    }))
+  );
+
+  unreadCounts.forEach(({ uid, count }) => {
+    emitMessageUnreadCount(uid, count);
+  });
+};
+
+const finalizeGroupCallSession = async (
+  callId: string,
+  reason: 'ended' | 'timeout'
+) => {
+  const session = groupCallSessions.get(callId);
+  if (!session) {
+    groupCallCleanupTimers.delete(callId);
+    return;
+  }
+
+  if (session.startLogCreated && !session.endLogCreated) {
+    const durationSeconds = session.roomOpenedAt
+      ? Math.max(1, Math.round((Date.now() - session.roomOpenedAt) / 1000))
+      : undefined;
+    await emitGroupCallEndedLog(session, durationSeconds);
+    session.endLogCreated = true;
+  }
+
+  const timer = groupCallCleanupTimers.get(callId);
+  if (timer) {
+    clearTimeout(timer);
+    groupCallCleanupTimers.delete(callId);
+  }
+
+  groupCallSessions.delete(callId);
+
+  if (reason === 'timeout') {
+    console.info(`Group call session timed out and was cleaned up: ${callId}`);
+  }
 };
 
 export const registerCallHandlers = (io: Server, socket: Socket) => {
@@ -181,9 +380,11 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
         message: `${callerName} đã gọi cho bạn nhưng bạn đã bỏ lỡ cuộc gọi.`,
       });
 
-      const unreadCount = await getUnreadNotificationCount(payload.toUserId);
-      emitNotificationNew(payload.toUserId, toApiNotification(notification));
-      emitNotificationUnreadCount(payload.toUserId, unreadCount);
+      if (notification) {
+        const unreadCount = await getUnreadNotificationCount(payload.toUserId);
+        emitNotificationNew(payload.toUserId, toApiNotification(notification));
+        emitNotificationUnreadCount(payload.toUserId, unreadCount);
+      }
     } catch (error) {
       console.warn('⚠️ Không tạo được notification missed_call:', error);
     }
@@ -192,4 +393,126 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
   socket.on('call:signal', (payload: CallSignalPayload) => {
     io.to(userRoom(payload.toUserId)).emit('call:signal', payload);
   });
+
+  socket.on('call:group-invite', (payload: GroupCallInvitePayload) => {
+    const participantIds = Array.from(
+      new Set((payload.participantIds ?? []).map((id) => id.trim()).filter(Boolean))
+    ).filter((id) => id !== payload.fromUserId);
+
+    if (!payload.callId || !payload.conversationId || participantIds.length === 0) {
+      return;
+    }
+
+    groupCallSessions.set(payload.callId, {
+      callId: payload.callId,
+      conversationId: payload.conversationId,
+      fromUserId: payload.fromUserId,
+      fromName: payload.fromName,
+      fromAvatarUrl: payload.fromAvatarUrl,
+      conversationTitle: payload.conversationTitle,
+      participantIds,
+      acceptedUserIds: new Set<string>(),
+      activeParticipantUserIds: new Set<string>(),
+      mode: payload.mode,
+      startLogCreated: false,
+      endLogCreated: false,
+    });
+    scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_INVITE_TTL_MS);
+
+    const incomingPayload: GroupCallIncomingPayload = {
+      callId: payload.callId,
+      conversationId: payload.conversationId,
+      fromUserId: payload.fromUserId,
+      fromName: payload.fromName,
+      fromAvatarUrl: payload.fromAvatarUrl,
+      conversationTitle: payload.conversationTitle,
+      mode: payload.mode,
+    };
+
+    participantIds.forEach((uid) => {
+      io.to(userRoom(uid)).emit('call:group-incoming', incomingPayload);
+    });
+  });
+
+  socket.on('call:group-accept', async (payload: GroupCallAcceptPayload) => {
+    const session = groupCallSessions.get(payload.callId);
+    if (!session || session.conversationId !== payload.conversationId) return;
+
+    session.acceptedUserIds.add(payload.fromUserId);
+
+    if (!session.roomName) {
+      session.roomName = buildGroupRoomName(session.conversationId, session.callId);
+      session.roomOpenedAt = Date.now();
+
+      if (!session.startLogCreated) {
+        await emitGroupCallStartLog(session);
+        session.startLogCreated = true;
+      }
+
+      groupCallSessions.set(payload.callId, session);
+      scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
+
+      const readyPayload: GroupCallRoomReadyPayload = {
+        callId: session.callId,
+        conversationId: session.conversationId,
+        hostUserId: session.fromUserId,
+        conversationTitle: session.conversationTitle,
+        mode: session.mode,
+        roomName: session.roomName,
+      };
+
+      io.to(userRoom(session.fromUserId)).emit('call:group-room-ready', readyPayload);
+      io.to(userRoom(payload.fromUserId)).emit('call:group-room-ready', readyPayload);
+      return;
+    }
+
+    const readyPayload: GroupCallRoomReadyPayload = {
+      callId: session.callId,
+      conversationId: session.conversationId,
+      hostUserId: session.fromUserId,
+      conversationTitle: session.conversationTitle,
+      mode: session.mode,
+      roomName: session.roomName,
+    };
+
+    scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
+
+    io.to(userRoom(payload.fromUserId)).emit('call:group-room-ready', readyPayload);
+  });
+
+  socket.on('call:group-decline', (payload: GroupCallDeclinePayload) => {
+    const session = groupCallSessions.get(payload.callId);
+    if (!session || session.conversationId !== payload.conversationId) return;
+
+    io.to(userRoom(session.fromUserId)).emit('call:group-declined', payload);
+  });
+
+  socket.on('call:group-participant-join', (payload: GroupCallParticipantJoinPayload) => {
+    const session = groupCallSessions.get(payload.callId);
+    if (!session || session.conversationId !== payload.conversationId) return;
+    if (!session.roomName || !session.startLogCreated || session.endLogCreated) return;
+
+    session.activeParticipantUserIds.add(payload.userId);
+    groupCallSessions.set(payload.callId, session);
+    scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
+  });
+
+  socket.on(
+    'call:group-participant-leave',
+    async (payload: GroupCallParticipantLeavePayload) => {
+      const session = groupCallSessions.get(payload.callId);
+      if (!session || session.conversationId !== payload.conversationId) return;
+      if (!session.roomName || !session.startLogCreated || session.endLogCreated) return;
+
+      session.activeParticipantUserIds.delete(payload.userId);
+
+      if (session.activeParticipantUserIds.size > 0) {
+        groupCallSessions.set(payload.callId, session);
+        scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
+        return;
+      }
+
+      await finalizeGroupCallSession(payload.callId, 'ended');
+    }
+  );
 };

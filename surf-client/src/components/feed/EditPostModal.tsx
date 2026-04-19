@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { uploadImage, uploadVideo, isVideoUrl } from '../../lib/cloudinary';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 import { resizePostImage } from '../../lib/utils/image';
 import TagFriendsModal from './TagFriendsModal';
 
@@ -376,7 +377,7 @@ export default function EditPostModal({ post, onClose, onSaved }: EditPostModalP
                         {isVideoUrl(url) ? (
                           <video src={url} className="w-full h-full object-cover" />
                         ) : (
-                          <img src={url} alt="" className="w-full h-full object-cover" />
+                          <img src={optimizeImageUrl(url)} alt="" className="w-full h-full object-cover" />
                         )}
                         <button
                           type="button"
@@ -406,7 +407,7 @@ export default function EditPostModal({ post, onClose, onSaved }: EditPostModalP
                         {m.type === 'video' ? (
                           <video src={m.url} className="w-full h-full object-cover" />
                         ) : (
-                          <img src={m.url} alt="" className="w-full h-full object-cover" />
+                          <img src={optimizeImageUrl(m.url)} alt="" className="w-full h-full object-cover" />
                         )}
                         <button
                           type="button"
