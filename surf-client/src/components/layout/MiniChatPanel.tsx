@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../lib/api';
-import { uploadImage } from '../../lib/cloudinary';
+import { uploadFile, uploadImage } from '../../lib/cloudinary';
 import { getSocket } from '../../lib/socket';
 import { useAuthStore } from '../../stores/authStore';
 import PresenceBadge from '../ui/PresenceBadge';
@@ -46,6 +46,83 @@ interface MessageRecalledPayload {
   message: UiMessage;
 }
 
+interface MessageUpdatedPayload {
+  conversationId: string;
+  message: UiMessage;
+}
+
+const REPLY_PREFIX_PATTERN = /^↪\s*(.+?):\s*(.+)$/u;
+const REPLY_TARGET_MARKER_INLINE_PATTERN = /__reply_to:[^\s]+__/g;
+const REPLY_SENDER_MARKER_INLINE_PATTERN = /__reply_sender:[^\s]+__/g;
+const REPLY_TARGET_MARKER_LINE_PATTERN = /^__reply_to:[^\n]+__\n?/;
+const REPLY_SENDER_MARKER_LINE_PATTERN = /^__reply_sender:[^\n]+__\n?/;
+
+function unwrapReplyPrefix(value: string) {
+  let normalized = value.trim();
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    const match = normalized.match(REPLY_PREFIX_PATTERN);
+    if (!match) break;
+    normalized = match[2].trim();
+  }
+
+  return normalized;
+}
+
+function extractLatestChatContent(value: string) {
+  const stripped = value
+    .replace(REPLY_TARGET_MARKER_LINE_PATTERN, '')
+    .replace(REPLY_SENDER_MARKER_LINE_PATTERN, '')
+    .replace(REPLY_TARGET_MARKER_INLINE_PATTERN, ' ')
+    .replace(REPLY_SENDER_MARKER_INLINE_PATTERN, ' ')
+    .trim();
+  if (!stripped) return '';
+
+  const lines = stripped.split('\n');
+  const firstLine = lines[0]?.trim() ?? '';
+  const replyMatch = firstLine.match(REPLY_PREFIX_PATTERN);
+  if (!replyMatch) return stripped;
+
+  const body = lines.slice(1).join('\n').trim();
+  if (body) return body;
+
+  return unwrapReplyPrefix(replyMatch[2]);
+}
+
+function normalizeConversationPreview(value?: string | null) {
+  if (!value) return '';
+
+  return extractLatestChatContent(value).replace(/\s+/g, ' ').trim();
+}
+
+function getConversationPreview(message: UiMessage) {
+  const normalizedText = normalizeConversationPreview(message.text);
+  if (normalizedText) return normalizedText;
+
+  if (message.type === 'image') return 'Đã gửi ảnh';
+  if (message.type === 'file') return message.fileName ? `Đã gửi ${message.fileName}` : 'Đã gửi tệp';
+  if (message.type === 'audio') return 'Đã gửi ghi âm';
+
+  return 'Tin nhắn mới';
+}
+
+function getConversationListPreview(
+  conversation: ConversationItem,
+  message: UiMessage,
+  currentUserId?: string | null
+) {
+  const preview = getConversationPreview(message);
+  if (conversation.type !== 'group' || !preview) return preview;
+
+  const senderLabel =
+    message.senderId === currentUserId
+      ? 'Bạn'
+      : (conversation.members?.find((member) => member.uid === message.senderId)?.name ??
+        'Thành viên');
+
+  return `${senderLabel}: ${preview}`;
+}
+
 function getInitials(name: string) {
   const words = name.split(' ').filter(Boolean);
   if (words.length >= 2) return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -60,7 +137,25 @@ function formatTime(iso: string) {
 async function downloadFile(url: string, fileName: string) {
   try {
     const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Download failed with status ${res.status}`);
+    }
+
+    const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+    if (
+      contentType.includes('text/html') ||
+      contentType.includes('application/json') ||
+      contentType.includes('application/xml') ||
+      contentType.includes('text/xml')
+    ) {
+      throw new Error(`Invalid file response content-type: ${contentType}`);
+    }
+
     const blob = await res.blob();
+    if (blob.size === 0) {
+      throw new Error('Downloaded file is empty');
+    }
+
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
@@ -209,7 +304,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
           c.id === conversationId
             ? {
                 ...c,
-                lastMessagePreview: message.text,
+                lastMessagePreview: getConversationListPreview(c, message, user?.uid),
                 lastMessageAt: message.createdAt,
                 unreadCount: c.id === activeId ? 0 : c.unreadCount + 1,
               }
@@ -240,7 +335,41 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
 
           return {
             ...conversation,
-            lastMessagePreview: payload.message.text,
+            lastMessagePreview: getConversationListPreview(
+              conversation,
+              payload.message,
+              user?.uid
+            ),
+            lastMessageAt: payload.message.createdAt,
+          };
+        })
+      );
+    };
+
+    const onMessageUpdated = (payload: MessageUpdatedPayload) => {
+      if (payload.conversationId === activeId) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === payload.message.id ? { ...message, ...payload.message } : message
+          )
+        );
+      }
+
+      setConversations((prev) =>
+        prev.map((conversation) => {
+          if (conversation.id !== payload.conversationId) return conversation;
+
+          const messageAt = +new Date(payload.message.createdAt);
+          const currentAt = conversation.lastMessageAt ? +new Date(conversation.lastMessageAt) : 0;
+          if (messageAt < currentAt) return conversation;
+
+          return {
+            ...conversation,
+            lastMessagePreview: getConversationListPreview(
+              conversation,
+              payload.message,
+              user?.uid
+            ),
             lastMessageAt: payload.message.createdAt,
           };
         })
@@ -250,12 +379,14 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     socket.on('message:new', onMessageNew);
     socket.on('message:self-hidden', onMessageSelfHidden);
     socket.on('message:recalled', onMessageRecalled);
+    socket.on('message:updated', onMessageUpdated);
     return () => {
       socket.off('message:new', onMessageNew);
       socket.off('message:self-hidden', onMessageSelfHidden);
       socket.off('message:recalled', onMessageRecalled);
+      socket.off('message:updated', onMessageUpdated);
     };
-  }, [activeId]);
+  }, [activeId, user?.uid]);
 
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
@@ -282,7 +413,12 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
       setConversations((prev) =>
         prev.map((c) =>
           c.id === activeId
-            ? { ...c, lastMessagePreview: text, lastMessageAt: new Date().toISOString() }
+            ? {
+                ...c,
+                lastMessagePreview:
+                  getConversationListPreview(c, optimistic, user?.uid) || 'Tin nhắn mới',
+                lastMessageAt: new Date().toISOString(),
+              }
             : c
         )
       );
@@ -312,7 +448,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     e.target.value = '';
     setUploading(true);
     try {
-      const url = await uploadImage(file, { folder: 'surf_chat_files' });
+      const url = await uploadFile(file, { folder: 'surf_chat_files' });
       await api.post(`/api/conversations/${activeId}/messages`, { mediaUrl: url, mediaType: 'file', fileName: file.name });
     } catch { /* ignore */ }
     finally { setUploading(false); }
@@ -461,7 +597,8 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
                     )}
                   </div>
                   <p className={`text-xs truncate mt-0.5 ${conv.unreadCount > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-slate-500'}`}>
-                    {conv.lastMessagePreview ?? 'Bắt đầu cuộc trò chuyện'}
+                    {normalizeConversationPreview(conv.lastMessagePreview) ||
+                      'Bắt đầu cuộc trò chuyện'}
                   </p>
                 </div>
               </button>

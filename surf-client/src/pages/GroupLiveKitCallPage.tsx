@@ -57,6 +57,14 @@ type GroupCallParticipantPayload = {
   reason?: string;
 };
 
+type DirectCallEndPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  toUserId: string;
+  reason?: string;
+};
+
 const closeOrRedirect = (navigate: ReturnType<typeof useNavigate>) => {
   if (typeof window === 'undefined') return;
 
@@ -173,6 +181,7 @@ function MeetingWorkspace({
   onClose: () => void;
   conversationId: string;
 }) {
+  const [workspaceAppearance, setWorkspaceAppearance] = useState<'dark' | 'light'>('dark');
   const [activeTab, setActiveTab] = useState<MeetingTab>('participants');
   const [focusedTileId, setFocusedTileId] = useState<string | null>(null);
   const [participantQuery, setParticipantQuery] = useState('');
@@ -189,6 +198,7 @@ function MeetingWorkspace({
     { source: Track.Source.ScreenShare, withPlaceholder: false },
   ]);
   const { chatMessages, send, isSending } = useChat();
+  const isLightAppearance = workspaceAppearance === 'light';
 
   useEffect(() => {
     if (!conversationId) return;
@@ -328,11 +338,27 @@ function MeetingWorkspace({
   return (
     <>
       <RoomAudioRenderer />
-      <div className="h-full w-full bg-[#e7eaee] p-2 sm:p-4 lg:p-6">
-        <div className="mx-auto h-full max-w-[1750px] overflow-hidden rounded-[24px] border border-slate-300/80 bg-white shadow-[0_24px_64px_-26px_rgba(15,23,42,0.45)]">
+      <div
+        className={`h-full w-full p-2 sm:p-4 lg:p-6 ${
+          isLightAppearance ? 'bg-[#edf2f8]' : 'bg-[#101824]'
+        }`}
+      >
+        <div
+          className={`mx-auto h-full max-w-[1750px] overflow-hidden rounded-[24px] border shadow-[0_24px_64px_-26px_rgba(15,23,42,0.45)] ${
+            isLightAppearance ? 'border-slate-300/80 bg-white' : 'border-slate-700/80 bg-[#0d141f]'
+          }`}
+        >
           <div className="flex h-full flex-col lg:flex-row">
-            <div className="flex min-h-[360px] min-w-0 flex-1 flex-col bg-[#0a1018] lg:min-h-0">
-              <div className="flex items-center justify-between border-b border-slate-700/70 px-4 py-3 sm:px-5">
+            <div
+              className={`flex min-h-[360px] min-w-0 flex-1 flex-col lg:min-h-0 ${
+                isLightAppearance ? 'bg-[#172131]' : 'bg-[#0a1018]'
+              }`}
+            >
+              <div
+                className={`flex items-center justify-between border-b px-4 py-3 sm:px-5 ${
+                  isLightAppearance ? 'border-slate-500/45' : 'border-slate-700/70'
+                }`}
+              >
                 <div className="min-w-0">
                   <p className="truncate text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
                     Surf Group Meeting
@@ -340,27 +366,48 @@ function MeetingWorkspace({
                   <h1 className="truncate text-sm font-semibold text-slate-100 sm:text-base">{title}</h1>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="hidden items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/90 p-1 sm:flex">
-                    <button
-                      type="button"
-                      className="rounded-lg px-3 py-1 text-xs font-medium text-slate-300 transition hover:bg-slate-800"
-                    >
-                      Document
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg bg-slate-700 px-3 py-1 text-xs font-semibold text-white"
-                    >
-                      Meeting
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceAppearance('light')}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                      isLightAppearance
+                        ? 'border-amber-300 bg-amber-500/20 text-amber-200'
+                        : 'border-slate-600 bg-slate-800/85 text-slate-300 hover:bg-slate-700'
+                    }`}
+                    aria-label="Bật chế độ sáng"
+                    title="Chế độ sáng"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                      <path d="M12 4a1 1 0 0 1 1 1v1.1a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1Zm0 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7-5a1 1 0 0 1 1 1h1.1a1 1 0 1 1 0 2H20a1 1 0 1 1 0-2h-1a1 1 0 0 1 0-2ZM4 12a1 1 0 0 1 1-1h1.1a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm14.95-5.36a1 1 0 0 1 1.41 0l.78.78a1 1 0 1 1-1.42 1.42l-.77-.78a1 1 0 0 1 0-1.42ZM4.86 18.09a1 1 0 0 1 1.41 0l.78.78a1 1 0 0 1-1.42 1.42l-.77-.78a1 1 0 0 1 0-1.42Zm14.28 2.2a1 1 0 0 1-1.41 0l-.78-.78a1 1 0 1 1 1.42-1.42l.77.78a1 1 0 0 1 0 1.42ZM5.64 7.42a1 1 0 0 1-1.41 0l-.78-.78a1 1 0 0 1 1.42-1.42l.77.78a1 1 0 0 1 0 1.42Z" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceAppearance('dark')}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                      !isLightAppearance
+                        ? 'border-cyan-300 bg-cyan-500/20 text-cyan-200'
+                        : 'border-slate-500 bg-slate-800/85 text-slate-200 hover:bg-slate-700'
+                    }`}
+                    aria-label="Bật chế độ tối"
+                    title="Chế độ tối"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                      <path d="M11.37 3.02a1 1 0 0 1 1.11 1.24A7.5 7.5 0 0 0 19.74 13a1 1 0 0 1 1.24 1.11A9.5 9.5 0 1 1 11.37 3.02Z" />
+                    </svg>
+                  </button>
 
                   <button
                     type="button"
                     onClick={onClose}
-                    className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-500 bg-slate-800 px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-100 transition hover:bg-slate-700"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-500 bg-slate-800 px-3 text-slate-100 transition hover:bg-slate-700"
+                    aria-label="Đóng cuộc gọi"
+                    title="Đóng"
                   >
-                    Đóng
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                      <path d="m13.41 12 4.3-4.29-1.42-1.42L12 10.59l-4.29-4.3-1.42 1.42 4.3 4.29-4.3 4.29 1.42 1.42L12 13.41l4.29 4.3 1.42-1.42Z" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -626,25 +673,61 @@ export default function GroupLiveKitCallPage() {
   const [connection, setConnection] = useState<LiveKitConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const directEndEmittedRef = useRef(false);
 
   const callId = (searchParams.get('callId') ?? '').trim();
   const conversationId = (searchParams.get('conversationId') ?? '').trim();
-  const roomName = (searchParams.get('roomName') ?? '').trim();
+  const isDirectCallMode = searchParams.get('dm') === '1';
+  const directPeerId = (searchParams.get('peerId') ?? '').trim();
+  const directPeerName = (searchParams.get('peerName') ?? '').trim();
+  const roomName =
+    (searchParams.get('roomName') ?? '').trim() || (isDirectCallMode ? `dm-${callId}` : '');
   const hostUserId = (searchParams.get('hostUserId') ?? '').trim();
   const mode: CallMode = searchParams.get('mode') === 'audio' ? 'audio' : 'video';
-  const title = (searchParams.get('title') ?? '').trim() || 'Surf Group Call';
+  const titleParam = (searchParams.get('title') ?? '').trim();
+  const title = isDirectCallMode
+    ? directPeerName || titleParam || 'Surf Call'
+    : titleParam || 'Surf Group Call';
 
   const canRequestToken = useMemo(
     () => Boolean(user?.uid && callId && conversationId && roomName),
     [user?.uid, callId, conversationId, roomName]
   );
 
+  const emitDirectCallEnd = useCallback(
+    (reason?: string) => {
+      if (!isDirectCallMode || !user?.uid || !callId || !conversationId || !directPeerId) return;
+      if (directEndEmittedRef.current) return;
+
+      directEndEmittedRef.current = true;
+
+      const payload: DirectCallEndPayload = {
+        callId,
+        conversationId,
+        fromUserId: user.uid,
+        toUserId: directPeerId,
+        reason,
+      };
+
+      getSocket().emit('call:end', payload);
+    },
+    [isDirectCallMode, user?.uid, callId, conversationId, directPeerId]
+  );
+
+  useEffect(() => {
+    directEndEmittedRef.current = false;
+  }, [callId]);
+
   useEffect(() => {
     let cancelled = false;
 
     const requestToken = async () => {
       if (!canRequestToken || !user?.uid) {
-        setError('Thiếu dữ liệu cuộc gọi nhóm để kết nối LiveKit.');
+        setError(
+          isDirectCallMode
+            ? 'Thiếu dữ liệu cuộc gọi 1-1 để kết nối LiveKit.'
+            : 'Thiếu dữ liệu cuộc gọi nhóm để kết nối LiveKit.'
+        );
         setLoading(false);
         return;
       }
@@ -665,7 +748,9 @@ export default function GroupLiveKitCallPage() {
 
         if (response.provider !== 'livekit' || !response.serverUrl || !response.token) {
           setError(
-            'Không thể tạo phòng LiveKit cho cuộc gọi nhóm. Vui lòng kiểm tra cấu hình LiveKit trên server.'
+            isDirectCallMode
+              ? 'Không thể tạo phòng LiveKit cho cuộc gọi 1-1. Vui lòng kiểm tra cấu hình LiveKit trên server.'
+              : 'Không thể tạo phòng LiveKit cho cuộc gọi nhóm. Vui lòng kiểm tra cấu hình LiveKit trên server.'
           );
           setConnection(null);
           return;
@@ -678,7 +763,12 @@ export default function GroupLiveKitCallPage() {
       } catch (err) {
         if (cancelled) return;
         setConnection(null);
-        setError((err as Error).message || 'Không thể kết nối LiveKit cho cuộc gọi nhóm.');
+        setError(
+          (err as Error).message ||
+            (isDirectCallMode
+              ? 'Không thể kết nối LiveKit cho cuộc gọi 1-1.'
+              : 'Không thể kết nối LiveKit cho cuộc gọi nhóm.')
+        );
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -691,9 +781,18 @@ export default function GroupLiveKitCallPage() {
     return () => {
       cancelled = true;
     };
-  }, [canRequestToken, user?.uid, callId, conversationId, hostUserId, mode]);
+  }, [
+    canRequestToken,
+    user?.uid,
+    callId,
+    conversationId,
+    hostUserId,
+    mode,
+    isDirectCallMode,
+  ]);
 
   useEffect(() => {
+    if (isDirectCallMode) return;
     if (!connection || !user?.uid || !callId || !conversationId) return;
 
     const payload: GroupCallParticipantPayload = {
@@ -710,7 +809,42 @@ export default function GroupLiveKitCallPage() {
         reason: 'left',
       });
     };
-  }, [connection, user?.uid, callId, conversationId]);
+  }, [connection, user?.uid, callId, conversationId, isDirectCallMode]);
+
+  useEffect(() => {
+    if (!isDirectCallMode || typeof window === 'undefined') return;
+
+    const handleWindowLeave = () => {
+      emitDirectCallEnd('window_closed');
+    };
+
+    window.addEventListener('beforeunload', handleWindowLeave);
+    window.addEventListener('pagehide', handleWindowLeave);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleWindowLeave);
+      window.removeEventListener('pagehide', handleWindowLeave);
+    };
+  }, [isDirectCallMode, emitDirectCallEnd]);
+
+  useEffect(() => {
+    if (!isDirectCallMode || !user?.uid || !callId || !conversationId) return;
+
+    const socket = getSocket();
+
+    const onDirectCallEnded = (payload: DirectCallEndPayload) => {
+      if (payload.callId !== callId || payload.conversationId !== conversationId) return;
+      if (payload.fromUserId === user.uid) return;
+
+      closeOrRedirect(navigate);
+    };
+
+    socket.on('call:ended', onDirectCallEnded);
+
+    return () => {
+      socket.off('call:ended', onDirectCallEnded);
+    };
+  }, [isDirectCallMode, user?.uid, callId, conversationId, navigate]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#0f1319] text-white">
@@ -725,7 +859,9 @@ export default function GroupLiveKitCallPage() {
 
       {!loading && error && (
         <div className="mx-auto mt-14 w-full max-w-lg rounded-2xl border border-red-500/35 bg-red-500/10 p-6 text-center">
-          <h2 className="text-lg font-semibold text-red-200">Không thể vào cuộc gọi nhóm</h2>
+          <h2 className="text-lg font-semibold text-red-200">
+            {isDirectCallMode ? 'Không thể vào cuộc gọi 1-1' : 'Không thể vào cuộc gọi nhóm'}
+          </h2>
           <p className="mt-2 text-sm leading-6 text-red-100/90">{error}</p>
           <div className="mt-5 flex items-center justify-center gap-3">
             <button
@@ -754,7 +890,9 @@ export default function GroupLiveKitCallPage() {
           audio
           video={mode === 'video'}
           onDisconnected={() => {
-            if (user?.uid && callId && conversationId) {
+            if (isDirectCallMode) {
+              emitDirectCallEnd('window_closed');
+            } else if (user?.uid && callId && conversationId) {
               emitGroupCallParticipantEvent('call:group-participant-leave', {
                 callId,
                 conversationId,
@@ -770,7 +908,9 @@ export default function GroupLiveKitCallPage() {
           <MeetingWorkspace
             title={title}
             onClose={() => {
-              if (user?.uid && callId && conversationId) {
+              if (isDirectCallMode) {
+                emitDirectCallEnd('window_closed');
+              } else if (user?.uid && callId && conversationId) {
                 emitGroupCallParticipantEvent('call:group-participant-leave', {
                   callId,
                   conversationId,

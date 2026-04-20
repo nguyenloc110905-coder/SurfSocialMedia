@@ -11,6 +11,14 @@ export type CallLogOutcome =
   | 'ended'
   | 'started';
 
+export type MessageReactionActor = {
+  uid: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+export type MessageReactionsByEmoji = Record<string, Record<string, MessageReactionActor>>;
+
 export type MessageDoc = {
   id: string;
   conversationId: string;
@@ -20,6 +28,13 @@ export type MessageDoc = {
   mediaUrl?: string;
   fileName?: string;
   createdAt: Date;
+  editedAt?: Date;
+  editedBy?: string;
+  isForwarded?: boolean;
+  forwardedFromMessageId?: string;
+  forwardedFromConversationId?: string;
+  pinnedBy?: string[];
+  reactions?: MessageReactionsByEmoji;
   callMode?: CallLogMode;
   callOutcome?: CallLogOutcome;
   durationSeconds?: number;

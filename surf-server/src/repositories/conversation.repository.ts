@@ -175,4 +175,27 @@ export const conversationRepository = {
     }
     await col().doc(conversationId).update(updates);
   },
+
+  async refreshPreviewIfLatestMessage(
+    conversationId: string,
+    latestMessageCreatedAt: Date,
+    preview: string
+  ): Promise<void> {
+    const conversationRef = col().doc(conversationId);
+
+    await getDb().runTransaction(async (transaction) => {
+      const snap = await transaction.get(conversationRef);
+      if (!snap.exists) return;
+
+      const data = (snap.data() ?? {}) as Record<string, unknown>;
+      const currentLastMessageAt = toDate(data.lastMessageAt);
+      if (!currentLastMessageAt) return;
+      if (currentLastMessageAt.getTime() !== latestMessageCreatedAt.getTime()) return;
+
+      transaction.update(conversationRef, {
+        lastMessagePreview: preview,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+  },
 };

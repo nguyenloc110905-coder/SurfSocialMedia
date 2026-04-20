@@ -979,8 +979,8 @@ export default function Profile() {
           {/* Avatar overlapping cover */}
           <div className="relative -mt-16 sm:-mt-20 z-10 surf-avatar-in">
             {/* Glow ring behind avatar */}
-            <div className="surf-glow-ring absolute inset-0 rounded-3xl bg-gradient-to-br from-surf-primary/35 to-surf-secondary/35 blur-xl -z-10" />
-            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl ring-4 ring-white dark:ring-gray-900 shadow-2xl overflow-hidden bg-gradient-to-br from-surf-primary to-surf-secondary flex items-center justify-center">
+            <div className="surf-glow-ring absolute inset-0 rounded-full bg-gradient-to-br from-surf-primary/35 to-surf-secondary/35 blur-xl -z-10" />
+            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full ring-4 ring-white dark:ring-gray-900 shadow-2xl overflow-hidden bg-gradient-to-br from-surf-primary to-surf-secondary flex items-center justify-center">
               {photoURL ? (
                 <img src={optimizeImageUrl(photoURL)} alt={displayName} className="w-full h-full object-cover" />
               ) : (
@@ -2346,7 +2346,7 @@ export default function Profile() {
               <img
                 src={optimizeImageUrl(avatarPreviewUrl)}
                 alt="Xem trước"
-                className="w-40 h-40 rounded-2xl object-cover border-2 border-gray-200 dark:border-gray-600"
+                className="w-40 h-40 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
               />
             </div>
           )}

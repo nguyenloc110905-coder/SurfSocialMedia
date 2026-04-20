@@ -8,12 +8,18 @@ import { buildDmPairKey, ConservationDoc } from '../types/conversation.js';
 import type {
   CreateCallLogInput,
   MessageDoc,
+  MessageReactionActor,
   SendMediaMessageInput,
   SendTextMessageInput,
 } from '../types/message.js';
 
 const DM_CACHE_TTL_SEC = 60 * 60 * 24 * 30;
 const dmCacheKey = (pairKey: string) => `dm:${pairKey}`;
+const REPLY_PREFIX_PATTERN = /^↪\s*(.+?):\s*(.+)$/u;
+const REPLY_TARGET_MARKER_INLINE_PATTERN = /__reply_to:[^\s]+__/g;
+const REPLY_SENDER_MARKER_INLINE_PATTERN = /__reply_sender:[^\s]+__/g;
+const REPLY_TARGET_MARKER_LINE_PATTERN = /^__reply_to:[^\n]+__\n?/;
+const REPLY_SENDER_MARKER_LINE_PATTERN = /^__reply_sender:[^\n]+__\n?/;
 
 export type CreateDmResult =
   | { ok: true; created: boolean; item: ConservationDoc }
@@ -50,6 +56,7 @@ export type RealtimeMessagePayload = {
 type UserLite = {
   displayName?: string;
   photoURL?: string | null;
+  email?: string;
 };
 
 export type ApiConversationListItem = {
@@ -90,11 +97,46 @@ export type MarkMessageReadByIdResult =
 
 export type HideMessageForSelfResult =
   | { ok: true; conversationId: string; messageId: string }
-  | { ok: false; reason: 'not_found' | 'forbidden' | 'not_sender' };
+  | { ok: false; reason: 'not_found' | 'forbidden' };
 
 export type RecallMessageForEveryoneResult =
   | { ok: true; conversationId: string; item: MessageDoc }
   | { ok: false; reason: 'not_found' | 'forbidden' | 'not_sender' };
+
+export type ToggleMessageReactionResult =
+  | { ok: true; conversationId: string; item: MessageDoc }
+  | {
+      ok: false;
+      reason: 'not_found' | 'forbidden' | 'invalid_emoji' | 'not_reactable';
+    };
+
+export type EditMessageTextResult =
+  | { ok: true; conversationId: string; item: MessageDoc }
+  | {
+      ok: false;
+      reason: 'not_found' | 'forbidden' | 'not_sender' | 'invalid_text' | 'not_editable';
+    };
+
+export type ForwardMessageResult =
+  | { ok: true; conversationId: string; item: MessageDoc; recipientIds: string[] }
+  | {
+      ok: false;
+      reason: 'not_found' | 'forbidden' | 'invalid_target' | 'invalid_content' | 'blocked';
+    };
+
+export type ToggleMessagePinResult =
+  | { ok: true; conversationId: string; item: MessageDoc }
+  | {
+      ok: false;
+      reason: 'not_found' | 'forbidden';
+    };
+
+export type ReportMessageResult =
+  | { ok: true; conversationId: string; reportId: string }
+  | {
+      ok: false;
+      reason: 'not_found' | 'forbidden' | 'invalid_reason';
+    };
 
 export type ListReadReceiptsResult =
   | { ok: true; items: ApiReadReceiptItem[] }
@@ -153,6 +195,7 @@ const toConversationPreview = (message: MessageDoc | null) => {
     return {
       preview: null,
       at: null,
+      senderId: null,
     };
   }
 
@@ -172,12 +215,58 @@ const toConversationPreview = (message: MessageDoc | null) => {
   return {
     preview,
     at: message.createdAt.toISOString(),
+    senderId: message.senderId,
   };
+};
+
+const extractLatestChatContent = (input: string): string => {
+  let text = input ?? '';
+
+  text = text.replace(REPLY_TARGET_MARKER_INLINE_PATTERN, '');
+  text = text.replace(REPLY_SENDER_MARKER_INLINE_PATTERN, '');
+
+  if (REPLY_TARGET_MARKER_LINE_PATTERN.test(text)) {
+    text = text.replace(REPLY_TARGET_MARKER_LINE_PATTERN, '');
+  }
+  if (REPLY_SENDER_MARKER_LINE_PATTERN.test(text)) {
+    text = text.replace(REPLY_SENDER_MARKER_LINE_PATTERN, '');
+  }
+
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i];
+    const match = line.match(REPLY_PREFIX_PATTERN);
+    if (match) {
+      const content = match[2].trim();
+      if (content) {
+        return content;
+      }
+    }
+    return line;
+  }
+
+  return '';
 };
 
 const userExists = async (uid: string): Promise<boolean> => {
   const snap = await getDb().collection('users').doc(uid).get();
   return snap.exists;
+};
+
+const buildReactionActor = async (uid: string): Promise<MessageReactionActor> => {
+  const snap = await getDb().collection('users').doc(uid).get();
+  const data = (snap.data() ?? {}) as UserLite;
+  const fallbackName = data.email?.split('@')[0] ?? 'Người dùng';
+
+  return {
+    uid,
+    name: data.displayName?.trim() || fallbackName,
+    avatarUrl: data.photoURL ?? null,
+  };
 };
 
 const extractParticipantIds = async (conversationId: string): Promise<string[]> =>
@@ -389,6 +478,59 @@ export const markMessageReadById = async (
   };
 };
 
+export const toggleMessageReactionForMessage = async (
+  userId: string,
+  messageId: string,
+  emoji: string,
+  conversationIdHint?: string
+): Promise<ToggleMessageReactionResult> => {
+  const normalizedEmoji = emoji.trim();
+  if (!normalizedEmoji) {
+    return { ok: false, reason: 'invalid_emoji' };
+  }
+
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) return { ok: false, reason: 'not_found' };
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  if (message.type === 'call_log') {
+    return { ok: false, reason: 'not_reactable' };
+  }
+
+  const memberIds = await extractParticipantIds(message.conversationId);
+  if (!memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const actor = await buildReactionActor(userId);
+
+  let item: MessageDoc;
+  try {
+    item = await messageRepository.toggleReaction(
+      message.conversationId,
+      message.id,
+      userId,
+      normalizedEmoji,
+      actor
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === 'message_not_found') {
+      return { ok: false, reason: 'not_found' };
+    }
+
+    throw error;
+  }
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    item,
+  };
+};
+
 export const hideMessageForSelf = async (
   userId: string,
   messageId: string,
@@ -403,8 +545,6 @@ export const hideMessageForSelf = async (
 
   const memberIds = await extractParticipantIds(message.conversationId);
   if (!memberIds.includes(userId)) return { ok: false, reason: 'forbidden' };
-
-  if (message.senderId !== userId) return { ok: false, reason: 'not_sender' };
 
   await messageRepository.hideForSelf(message.conversationId, message.id, userId);
 
@@ -442,6 +582,235 @@ export const recallMessageForEveryone = async (
     ok: true,
     conversationId: message.conversationId,
     item,
+  };
+};
+
+export const editMessageText = async (
+  userId: string,
+  messageId: string,
+  text: string,
+  conversationIdHint?: string
+): Promise<EditMessageTextResult> => {
+  const normalizedText = extractLatestChatContent(text).trim();
+  if (!normalizedText) {
+    return { ok: false, reason: 'invalid_text' };
+  }
+
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) return { ok: false, reason: 'not_found' };
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const memberIds = await extractParticipantIds(message.conversationId);
+  if (!memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  if (message.senderId !== userId) {
+    return { ok: false, reason: 'not_sender' };
+  }
+
+  if (message.type !== 'text') {
+    return { ok: false, reason: 'not_editable' };
+  }
+
+  if (message.text.trim() === normalizedText) {
+    return { ok: true, conversationId: message.conversationId, item: message };
+  }
+
+  const item = await messageRepository.editTextMessage(
+    message.conversationId,
+    message.id,
+    userId,
+    normalizedText
+  );
+
+  await conversationRepository.refreshPreviewIfLatestMessage(
+    message.conversationId,
+    message.createdAt,
+    buildMessagePreview(item.text)
+  );
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    item,
+  };
+};
+
+export const forwardMessageToConversation = async (
+  userId: string,
+  messageId: string,
+  targetConversationId: string,
+  conversationIdHint?: string
+): Promise<ForwardMessageResult> => {
+  const normalizedTargetConversationId = targetConversationId.trim();
+  if (!normalizedTargetConversationId) {
+    return { ok: false, reason: 'invalid_target' };
+  }
+
+  const sourceMessage = await messageRepository.getById(messageId, conversationIdHint);
+  if (!sourceMessage) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  if (conversationIdHint && conversationIdHint !== sourceMessage.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const sourceMemberIds = await extractParticipantIds(sourceMessage.conversationId);
+  if (!sourceMemberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const normalizedText = extractLatestChatContent(sourceMessage.text).trim();
+
+  let forwarded:
+    | { ok: true; item: MessageDoc; recipientIds: string[] }
+    | {
+        ok: false;
+        reason: 'invalid_text' | 'invalid_media' | 'not_found' | 'forbidden' | 'blocked';
+      };
+
+  if (
+    sourceMessage.type === 'image' ||
+    sourceMessage.type === 'file' ||
+    sourceMessage.type === 'audio'
+  ) {
+    if (!sourceMessage.mediaUrl) {
+      return { ok: false, reason: 'invalid_content' };
+    }
+
+    forwarded = await sendMediaMessage({
+      senderId: userId,
+      conversationId: normalizedTargetConversationId,
+      type: sourceMessage.type,
+      mediaUrl: sourceMessage.mediaUrl,
+      fileName: sourceMessage.fileName,
+      text: normalizedText || undefined,
+    });
+  } else {
+    const callLogText =
+      sourceMessage.type === 'call_log' ? sourceMessage.text.trim() : normalizedText;
+    if (!callLogText) {
+      return { ok: false, reason: 'invalid_content' };
+    }
+
+    forwarded = await sendTextMessage({
+      senderId: userId,
+      conversationId: normalizedTargetConversationId,
+      text: callLogText,
+    });
+  }
+
+  if (!forwarded.ok) {
+    if (forwarded.reason === 'blocked') {
+      return { ok: false, reason: 'blocked' };
+    }
+    if (forwarded.reason === 'forbidden' || forwarded.reason === 'not_found') {
+      return { ok: false, reason: forwarded.reason };
+    }
+    return { ok: false, reason: 'invalid_content' };
+  }
+
+  const forwardedItem = await messageRepository.markAsForwarded(
+    forwarded.item.conversationId,
+    forwarded.item.id,
+    sourceMessage.id,
+    sourceMessage.conversationId
+  );
+
+  return {
+    ok: true,
+    conversationId: forwardedItem.conversationId,
+    item: forwardedItem,
+    recipientIds: forwarded.recipientIds,
+  };
+};
+
+export const toggleMessagePinForMessage = async (
+  userId: string,
+  messageId: string,
+  pinned?: boolean,
+  conversationIdHint?: string
+): Promise<ToggleMessagePinResult> => {
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const memberIds = await extractParticipantIds(message.conversationId);
+  if (!memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  let item: MessageDoc;
+  try {
+    item = await messageRepository.togglePinForUser(
+      message.conversationId,
+      message.id,
+      userId,
+      pinned
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === 'message_not_found') {
+      return { ok: false, reason: 'not_found' };
+    }
+    throw error;
+  }
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    item,
+  };
+};
+
+export const reportMessageForModeration = async (
+  userId: string,
+  messageId: string,
+  reason: string,
+  conversationIdHint?: string
+): Promise<ReportMessageResult> => {
+  const normalizedReason = reason.trim();
+  if (!normalizedReason) {
+    return { ok: false, reason: 'invalid_reason' };
+  }
+
+  const message = await messageRepository.getById(messageId, conversationIdHint);
+  if (!message) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  if (conversationIdHint && conversationIdHint !== message.conversationId) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const memberIds = await extractParticipantIds(message.conversationId);
+  if (!memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const reportRef = await getDb().collection('message_reports').add({
+    messageId: message.id,
+    conversationId: message.conversationId,
+    messageSenderId: message.senderId,
+    reporterId: userId,
+    reason: normalizedReason,
+    createdAt: new Date(),
+    status: 'open',
+  });
+
+  return {
+    ok: true,
+    conversationId: message.conversationId,
+    reportId: reportRef.id,
   };
 };
 
@@ -611,10 +980,24 @@ export const listConversationsForUser = async (
   return docs.map((doc) => {
     const memberIds = memberIdsByConversation.get(doc.id) ?? [];
     const latestVisible = latestVisibleByConversation.get(doc.id) ?? null;
-    const { preview: lastMessagePreview, at: lastMessageAt } = toConversationPreview(latestVisible);
+    const {
+      preview: lastMessagePreview,
+      at: lastMessageAt,
+      senderId: lastMessageSenderId,
+    } = toConversationPreview(latestVisible);
 
     if (doc.type === 'group') {
       const otherIds = memberIds.filter((id) => id !== userId);
+      const senderName = lastMessageSenderId
+        ? lastMessageSenderId === userId
+          ? 'Bạn'
+          : toMember(lastMessageSenderId).name
+        : null;
+      const groupPreview =
+        senderName && lastMessagePreview
+          ? `${senderName}: ${lastMessagePreview}`
+          : lastMessagePreview;
+
       return {
         id: doc.id,
         type: doc.type,
@@ -623,7 +1006,7 @@ export const listConversationsForUser = async (
         members: otherIds.map(toMember),
         memberCount: doc.memberCount,
         unreadCount: unreadCountByConversation.get(doc.id) ?? 0,
-        lastMessagePreview,
+        lastMessagePreview: groupPreview,
         lastMessageAt,
       };
     }

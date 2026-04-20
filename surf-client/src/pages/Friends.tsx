@@ -37,11 +37,11 @@ function Avatar({
         <img
           src={optimizeImageUrl(url)}
           alt={name}
-          className={`${dim} rounded-2xl object-cover ring-2 ring-white/20`}
+          className={`${dim} rounded-full object-cover ring-2 ring-white/20`}
         />
       ) : (
         <span
-          className={`${dim} rounded-2xl flex items-center justify-center font-bold text-white bg-gradient-to-br from-surf-primary to-surf-secondary ring-2 ring-white/20`}
+          className={`${dim} rounded-full flex items-center justify-center font-bold text-white bg-gradient-to-br from-surf-primary to-surf-secondary ring-2 ring-white/20`}
         >
           {initials}
         </span>

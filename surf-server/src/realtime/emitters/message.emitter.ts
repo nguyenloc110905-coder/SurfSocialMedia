@@ -20,3 +20,11 @@ export const emitMessageSelfHidden = (userId: string, payload: unknown) => {
 export const emitMessageRecalled = (conversationId: string, payload: unknown) => {
   getIo().to(conversationRoom(conversationId)).emit('message:recalled', payload);
 };
+
+export const emitMessageReactionUpdated = (conversationId: string, payload: unknown) => {
+  getIo().to(conversationRoom(conversationId)).emit('message:reaction-updated', payload);
+};
+
+export const emitMessageUpdated = (conversationId: string, payload: unknown) => {
+  getIo().to(conversationRoom(conversationId)).emit('message:updated', payload);
+};

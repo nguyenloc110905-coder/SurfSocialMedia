@@ -58,7 +58,7 @@ export default function PresenceBadge({
   if (!showLabel) {
     return (
       <span
-        title={isOnline ? 'Đang hoạt động' : 'Không hoạt động'}
+        title={isOnline ? 'Đang hoạt động' : 'Hoạt động hơn 7 ngày trước'}
         className={`absolute bottom-0 right-0 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-400'} ${dotClasses[size]} border-white dark:border-slate-800 ${className}`}
       />
     );
@@ -80,7 +80,7 @@ export default function PresenceBadge({
       className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium leading-none text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 ${className}`}
     >
       <span className="h-2 w-2 rounded-full bg-slate-400" />
-      {offlineLabel ? `Hoạt động ${offlineLabel} trước` : 'Không hoạt động'}
+      {offlineLabel ? `Hoạt động ${offlineLabel} trước` : 'Hoạt động hơn 7 ngày trước'}
     </span>
   );
 }
