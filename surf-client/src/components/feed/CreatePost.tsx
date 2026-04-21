@@ -26,9 +26,10 @@ interface TaggedFriend {
 
 interface CreatePostProps {
   onPostCreated?: (post: Record<string, unknown>) => void;
+  groupId?: string;
 }
 
-export default function CreatePost({ onPostCreated }: CreatePostProps) {
+export default function CreatePost({ onPostCreated, groupId }: CreatePostProps) {
   const { user } = useAuthStore();
   const [content, setContent] = useState('');
   const [privacy, setPrivacy] = useState<'public' | 'friends' | 'only-me' | 'custom'>('public');
@@ -49,6 +50,11 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [taggedFriends, setTaggedFriends] = useState<TaggedFriend[]>([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [showPollInput, setShowPollInput] = useState(false);
+  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -227,13 +233,16 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
         photoURL: f.photoURL,
       }));
 
-      const newPost = await api.post<Record<string, unknown>>('/api/posts', {
+      const endpoint = groupId ? `/api/groups/${groupId}/posts` : '/api/posts';
+      const newPost = await api.post<Record<string, unknown>>(endpoint, {
         content: content.trim(),
         mediaUrls,
         feeling: feeling || null,
         location: location || null,
         taggedFriends: taggedFriendsData,
         privacy: privacy,
+        isAnonymous,
+        poll: pollOptions.filter(o => o.trim()).length >= 2 ? { options: pollOptions.filter(o => o.trim()) } : null,
       });
 
       // Reset form
@@ -246,6 +255,9 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       setLocationSuggestions([]);
       setTaggedFriends([]);
       setSelectedFriendIds([]);
+      setIsAnonymous(false);
+      setPollOptions(['', '']);
+      setShowPollInput(false);
       setPrivacy('public');
       setIsExpanded(false);
       if (textareaRef.current) {
@@ -360,12 +372,100 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       {/* Gradient Border Effect */}
       <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 opacity-5 dark:opacity-20 blur-xl"></div>
 
-      {/* Collapsed State - Simple Placeholder */}
-      {!isExpanded && (
+      {/* Collapsed State - Facebook Style (Group) */}
+      {!isExpanded && groupId && (
+        <div className="relative z-10 bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0">
+              {user?.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user?.displayName || 'User'}
+                  className="w-10 h-10 rounded-full object-cover ring-1 ring-gray-200 dark:ring-slate-700"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+                  <span className="text-sm font-bold text-white">
+                    {(() => {
+                      const name = user?.displayName || user?.email || 'S';
+                      const words = name.split(' ');
+                      return words.length >= 2
+                        ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+                        : name.substring(0, 1).toUpperCase();
+                    })()}
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            <div
+              onClick={() => {
+                setIsExpanded(true);
+                setTimeout(() => textareaRef.current?.focus(), 100);
+              }}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700/50 dark:hover:bg-slate-700 cursor-pointer rounded-full px-4 py-2.5 transition-colors"
+            >
+              <span className="text-gray-500 dark:text-gray-400 text-[15px]">
+                Bạn viết gì đi...
+              </span>
+            </div>
+          </div>
+
+          <hr className="my-3 border-gray-200 dark:border-slate-700" />
+
+          <div className="flex items-center justify-evenly">
+            {groupId && (
+              <button
+                onClick={() => {
+                  setIsExpanded(true);
+                  setIsAnonymous(true);
+                  setTimeout(() => textareaRef.current?.focus(), 100);
+                }}
+                className="flex flex-1 items-center justify-center gap-2 py-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <svg className="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                  {/* Spy Glasses modifier overlay */}
+                  <path d="M7.5 13A2.5 2.5 0 005 15.5c0 .53.18 1.01.48 1.4A5.996 5.996 0 0112 18.2c2.05 0 3.84-.71 5.25-1.91A2.49 2.49 0 0019 15.5a2.5 2.5 0 00-4.9-1L12 14l-2.1.5A2.49 2.49 0 007.5 13z" fill="#0369a1"/>
+                </svg>
+                <span className="font-semibold text-gray-600 dark:text-gray-300 text-sm">B.viết ẩn danh</span>
+              </button>
+            )}
+            
+            <button
+              onClick={() => {
+                setIsExpanded(true);
+                setTimeout(triggerFileInput, 100);
+              }}
+              className="flex flex-1 items-center justify-center gap-2 py-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <svg className="w-6 h-6 text-green-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+              </svg>
+              <span className="font-semibold text-gray-600 dark:text-gray-300 text-sm">Ảnh/video</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setIsExpanded(true);
+                setShowPollInput(true);
+              }}
+              className="flex flex-1 items-center justify-center gap-2 py-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <svg className="w-6 h-6 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+              </svg>
+              <span className="font-semibold text-gray-600 dark:text-gray-300 text-sm">Thăm dò ý kiến</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Collapsed State - Dashboard Style (Main Feed) */}
+      {!isExpanded && !groupId && (
         <div
           onClick={() => {
             setIsExpanded(true);
-            // Focus textarea after a short delay to ensure it's rendered
             setTimeout(() => textareaRef.current?.focus(), 100);
           }}
           className="relative z-10 p-6 cursor-pointer"
@@ -856,6 +956,52 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
             </div>
           )}
 
+          {/* Poll Input */}
+          {showPollInput && (
+             <div className="mb-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-xl border border-gray-200 dark:border-slate-700/50 animate-smooth-fade-in-delayed">
+               <div className="flex items-center justify-between mb-2">
+                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                   Thăm dò ý kiến
+                 </h4>
+                 <button
+                   type="button"
+                   onClick={() => {
+                     setShowPollInput(false);
+                     setPollOptions(['', '']);
+                   }}
+                   className="text-gray-500 hover:text-gray-700"
+                 >×</button>
+               </div>
+               <div className="space-y-2">
+                 {pollOptions.map((opt, i) => (
+                    <input 
+                      key={i}
+                      type="text" 
+                      placeholder={`Lựa chọn ${i + 1}`}
+                      className="w-full text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 px-3 py-2 rounded-lg"
+                      value={opt}
+                      onChange={(e) => {
+                         const newOpts = [...pollOptions];
+                         newOpts[i] = e.target.value;
+                         if (i === newOpts.length - 1 && e.target.value.trim()) {
+                            newOpts.push('');
+                         }
+                         setPollOptions(newOpts);
+                      }}
+                    />
+                 ))}
+               </div>
+             </div>
+          )}
+
+          {/* Anonymous checkbox for group */}
+          {groupId && (
+            <label className="flex items-center gap-2 mb-3 cursor-pointer p-2 bg-gray-50 dark:bg-slate-800/50 rounded-xl w-fit">
+               <input type="checkbox" checked={isAnonymous} onChange={(e) => setIsAnonymous(e.target.checked)} className="w-4 h-4 text-cyan-600 rounded" />
+               <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Đăng ẩn danh</span>
+            </label>
+          )}
+
           {/* Modern Action Pills */}
           <div className="flex items-center gap-2 flex-wrap mb-4 animate-fade-in-3">
             {/* Image Pill */}
@@ -902,6 +1048,20 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               <span className="text-xs font-semibold">
                 Video{videos.length > 0 ? ` (${videos.length})` : ''}
               </span>
+            </button>
+
+            {/* Poll Pill */}
+            <button
+              type="button"
+              onClick={() => setShowPollInput(!showPollInput)}
+              className={`group flex items-center gap-2 px-3 py-2 rounded-full transition-all hover:scale-105 ${
+                pollOptions.some(o => o.trim())
+                  ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30'
+                  : 'bg-white dark:bg-slate-700/50 text-gray-800 dark:text-gray-300 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 dark:hover:bg-slate-700 border-2 border-gray-200 dark:border-slate-700 hover:border-cyan-300 dark:hover:border-cyan-700'
+              }`}
+              title="Tạo cuộc thăm dò"
+            >
+              <span className="text-xs font-semibold">📊 Thăm dò</span>
             </button>
 
             {/* Tag Pill */}

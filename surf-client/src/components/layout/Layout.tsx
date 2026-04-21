@@ -22,7 +22,7 @@ const MAIN_PATHS = [
   '/feed/live',
 ] as const;
 function isMainPage(pathname: string): boolean {
-  return MAIN_PATHS.some((p) => pathname === p) || pathname.startsWith('/feed/friends/');
+  return MAIN_PATHS.some((p) => pathname === p) || pathname.startsWith('/feed/friends/') || pathname.startsWith('/feed/groups/');
 }
 function isFriendsSection(pathname: string): boolean {
   return pathname === '/feed/friends' || pathname.startsWith('/feed/friends/');

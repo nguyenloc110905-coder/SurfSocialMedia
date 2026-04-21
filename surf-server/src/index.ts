@@ -24,6 +24,8 @@ import callsRoutes from './routes/calls.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 import { initIo } from './realtime/io.js';
 import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -78,6 +80,26 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev', { stream: { write: (msg) => logger.http(msg.trimEnd()) } }));
 
+/**
+ * @swagger
+ * /api/health:
+ *   get:
+ *     tags: [Health]
+ *     summary: Kiểm tra trạng thái server (không cần auth)
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server đang chạy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, example: ok }
+ *                 timestamp: { type: string, format: date-time }
+ *                 uptime: { type: integer, description: 'Số giây uptime' }
+ *                 env: { type: string, example: development }
+ */
 // Health check — trước app.use('/api', requireAuth) để không cần auth
 app.get('/api/health', (_, res) => {
   res.json({
@@ -87,6 +109,20 @@ app.get('/api/health', (_, res) => {
     env: process.env.NODE_ENV ?? 'development',
   });
 });
+
+// Swagger UI — đặt trước requireAuth để truy cập không cần token
+app.get('/api/docs.json', (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+app.use(
+  '/api/docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Surf API Docs',
+    swaggerOptions: { persistAuthorization: true },
+  })
+);
 
 // Mọi request /api đều cần đăng nhập; ensureUser tạo doc user nếu chưa có (để xuất hiện trong Gợi ý kết bạn)
 app.use('/api', requireAuth, ensureUser);
@@ -117,6 +153,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Surf API http://0.0.0.0:${PORT}`);
   console.log(`🔌 Socket.io ready`);
   console.log(`🏥 Health check: http://0.0.0.0:${PORT}/api/health`);
+  console.log(`📖 API docs: http://0.0.0.0:${PORT}/api/docs`);
 });
 
 // ── Dọn thùng rác: xóa vĩnh viễn bài viết đã xóa quá 36 ngày ─────────────

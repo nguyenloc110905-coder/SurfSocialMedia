@@ -5,6 +5,29 @@ import { logger } from '../config/logger.js';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/moments:
+ *   post:
+ *     tags: [Moments]
+ *     summary: Tạo moment mới (Story 24h)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mediaUrl]
+ *             properties:
+ *               mediaUrl: { type: string }
+ *               mediaType: { type: string, enum: [image, video], default: image }
+ *               caption: { type: string, nullable: true }
+ *               duration: { type: integer, description: 'Chỉ cho video (giây)' }
+ *     responses:
+ *       201: { description: Moment đã tạo }
+ *       400: { description: Thiếu mediaUrl }
+ */
 // ── POST / — Tạo moment mới ────────────────────────────────────────────────
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -86,6 +109,16 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/moments/feed:
+ *   get:
+ *     tags: [Moments]
+ *     summary: Feed moments của bạn bè (nhóm theo user, lọc 24h)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Danh sách moments nhóm theo user }
+ */
 // ── GET /feed — Lấy moments feed (nhóm theo user) ──────────────────────────
 router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -168,6 +201,22 @@ router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/moments/{id}/view:
+ *   post:
+ *     tags: [Moments]
+ *     summary: Đánh dấu đã xem moment
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy }
+ */
 // ── POST /:id/view — Đánh dấu đã xem ──────────────────────────────────────
 router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -196,6 +245,29 @@ router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/moments/{id}/react:
+ *   post:
+ *     tags: [Moments]
+ *     summary: Thêm emoji reaction vào moment
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               emoji: { type: string, example: '❤️' }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy }
+ */
 // ── POST /:id/react — Thêm reaction ────────────────────────────────────────
 router.post('/:id/react', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -255,6 +327,41 @@ router.post('/:id/react', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/moments/{id}:
+ *   patch:
+ *     tags: [Moments]
+ *     summary: Chỉnh sửa moment (chỉ tác giả)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               caption: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải tác giả }
+ *   delete:
+ *     tags: [Moments]
+ *     summary: Xóa moment (chỉ tác giả)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải tác giả }
+ */
 // ── PATCH /:id — Chỉnh sửa moment ──────────────────────────────────────────
 router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -303,6 +410,22 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/moments/{id}:
+ *   delete:
+ *     tags: [Moments]
+ *     summary: Xóa moment (chỉ tác giả)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải tác giả }
+ */
 // ── DELETE /:id — Xóa moment ────────────────────────────────────────────────
 router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -321,6 +444,22 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/moments/music/search:
+ *   get:
+ *     tags: [Moments]
+ *     summary: Tìm kiếm nhạc cho moment qua Deezer
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách nhạc }
+ *       400: { description: Thiếu query q }
+ */
 // ── GET /music/search — Tìm nhạc qua Deezer API ────────────────────────────
 router.get('/music/search', requireAuth, async (req: AuthRequest, res) => {
   try {

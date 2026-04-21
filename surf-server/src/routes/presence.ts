@@ -5,7 +5,24 @@ import { getPresenceFromList } from '../services/presence.js';
 
 const router = Router();
 
-/** GET /api/presence/friends — online list + lastSeen timestamps for offline friends */
+/**
+ * @swagger
+ * /api/presence/friends:
+ *   get:
+ *     tags: [Presence]
+ *     summary: Danh sách bạn bè online và lastSeen của offline
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 online: { type: array, items: { type: string }, description: 'Danh sách uid đang online' }
+ *                 lastSeen: { type: object, description: 'Map uid -> ISO timestamp' }
+ */
 router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;

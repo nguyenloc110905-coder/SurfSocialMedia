@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { uploadVideo } from '../lib/cloudinary';
 import { useAuthStore } from '../stores/authStore';
 import { useClipFeedStore, type ClipVideo } from '../stores/clipFeedStore';
+import { getSocket } from '../lib/socket';
 
 // Chuyển đổi URL Cloudinary video sang quality khác nhau
 function applyCloudinaryQuality(url: string, quality: string): string {
@@ -16,6 +17,49 @@ function applyCloudinaryQuality(url: string, quality: string): string {
     : 'f_auto,q_auto:best,h_1080';
   // Chèn transformation vào sau /video/upload/
   return url.replace('/video/upload/', `/video/upload/${tag}/`);
+}
+
+// ── Video Caption Text — parse #hashtag and @mention ─────────────────────────
+function VideoCaptionText({
+  text,
+  onMention,
+}: {
+  text: string;
+  onMention: (name: string) => void;
+}) {
+  const TOKEN_RE = /(#[\w\u00C0-\u024F\u1E00-\u1EFF]+|@[\w.\u00C0-\u024F\u1E00-\u1EFF]+)/g;
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOKEN_RE.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    const token = match[0];
+    if (token.startsWith('#')) {
+      parts.push(
+        <span
+          key={match.index}
+          className="text-cyan-400 font-semibold cursor-pointer hover:text-cyan-300 transition-colors"
+          onClick={(e) => { e.stopPropagation(); }}
+        >
+          {token}
+        </span>
+      );
+    } else {
+      const name = token.slice(1);
+      parts.push(
+        <span
+          key={match.index}
+          className="text-cyan-400 font-semibold cursor-pointer hover:text-cyan-300 transition-colors"
+          onClick={(e) => { e.stopPropagation(); onMention(name); }}
+        >
+          {token}
+        </span>
+      );
+    }
+    last = match.index + token.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
 }
 
 // ── Individual Clip Card ───────────────────────────────────────────────────────
@@ -45,6 +89,7 @@ function ClipCard({
   const [showQuality, setShowQuality] = useState(false);
   const [quality, setQuality] = useState<'auto'|'360'|'480'|'720'|'1080'>('auto');
   const [toast, setToast] = useState<string | null>(null);
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   const isCloudinary = video.videoUrl.includes('/video/upload/');
 
   // Comments
@@ -57,12 +102,27 @@ function ClipCard({
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const commentInputRef = useRef<HTMLInputElement>(null);
 
+  // Real-time: listen for new comments on this video
+  useEffect(() => {
+    const socket = getSocket();
+    const onCommentNew = (comment: CommentItem) => {
+      if ((comment as any).postId !== video.id) return;
+      setComments((prev) => {
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [...prev, comment];
+      });
+      setCommentCount((c) => c + 1);
+    };
+    socket.on('comment:new', onCommentNew);
+    return () => { socket.off('comment:new', onCommentNew); };
+  }, [video.id]);
+
   const openComments = async () => {
     setShowComments(true);
     if (comments.length === 0) {
       setCommentLoading(true);
       try {
-        const res = await api.get<{ comments: CommentItem[] }>(`/api/comments/${video.id}`);
+        const res = await api.get<{ comments: CommentItem[] }>(`/api/videos/${video.id}/comments`);
         setComments(res.comments ?? []);
       } catch { /* ignore */ }
       finally { setCommentLoading(false); }
@@ -74,7 +134,7 @@ function ClipCard({
     if (!commentInput.trim() || commentSubmitting) return;
     setCommentSubmitting(true);
     try {
-      const res = await api.post<CommentItem>(`/api/comments/${video.id}`, { content: commentInput.trim() });
+      const res = await api.post<CommentItem>(`/api/videos/${video.id}/comments`, { content: commentInput.trim() });
       setComments((prev) => [...prev, res]);
       setCommentCount((c) => c + 1);
       setCommentInput('');
@@ -538,7 +598,7 @@ function ClipCard({
       </div>
 
       {/* Bottom info overlay */}
-      <div className="absolute bottom-4 left-4 right-4 z-10">
+      <div className="absolute bottom-4 left-4 right-16 z-10">
         <button
           onClick={() => navigate(`/feed/profile/${video.authorId}`)}
           className="font-bold text-sm text-white hover:underline drop-shadow block"
@@ -546,10 +606,31 @@ function ClipCard({
           @{video.authorDisplayName}
         </button>
         {video.title && (
-          <p className="text-sm font-medium text-white mt-0.5 drop-shadow line-clamp-2">{video.title}</p>
+          <p className="text-sm font-medium text-white mt-0.5 drop-shadow line-clamp-1">
+            <VideoCaptionText text={video.title} onMention={(name) => navigate(`/feed/profile/${name}`)} />
+          </p>
         )}
         {video.description && (
-          <p className="text-xs text-white/80 mt-0.5 drop-shadow line-clamp-2">{video.description}</p>
+          <div className="mt-0.5">
+            <p
+              className={`text-xs text-white/85 drop-shadow leading-relaxed ${
+                captionExpanded ? '' : 'line-clamp-2'
+              }`}
+            >
+              <VideoCaptionText
+                text={video.description}
+                onMention={(name) => navigate(`/feed/profile/${name}`)}
+              />
+            </p>
+            {video.description.length > 80 && (
+              <button
+                className="text-[11px] text-white/60 hover:text-white/90 mt-0.5 transition-colors"
+                onClick={(e) => { e.stopPropagation(); setCaptionExpanded((p) => !p); }}
+              >
+                {captionExpanded ? 'Rút gọn' : 'Xem thêm'}
+              </button>
+            )}
+          </div>
         )}
         {(video.viewCount ?? 0) > 0 && (
           <p className="text-xs text-white/50 mt-1 drop-shadow">
@@ -837,19 +918,25 @@ function UploadModal({
             />
           </div>
 
-          {/* Description */}
+          {/* Description / Caption */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Mô tả
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                Caption
+              </label>
+              <span className="text-[10px] text-gray-400">{description.length}/500</span>
+            </div>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              maxLength={300}
-              rows={2}
-              placeholder="Mô tả clip của bạn..."
+              maxLength={500}
+              rows={3}
+              placeholder="Mô tả clip... Dùng #hashtag và @mention để tiếp cận nhiều người hơn!"
               className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none"
             />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Dùng <span className="text-cyan-500 font-semibold">#hashtag</span> và <span className="text-cyan-500 font-semibold">@tên_người_dùng</span> trong caption
+            </p>
           </div>
 
           {/* Privacy selector */}

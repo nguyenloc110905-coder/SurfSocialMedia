@@ -1,5 +1,6 @@
 import { FormEvent, useDeferredValue, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { useNavigate } from 'react-router-dom';
 
 type GroupPrivacy = 'public' | 'private';
 
@@ -41,6 +42,7 @@ export default function Groups() {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [category, setCategory] = useState('');
+  const [activeTab, setActiveTab] = useState<'discover' | 'joined'>('discover');
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -49,6 +51,8 @@ export default function Groups() {
     category: 'study',
     privacy: 'public' as GroupPrivacy,
   });
+  
+  const navigate = useNavigate();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,7 +67,8 @@ export default function Groups() {
         if (deferredSearch.trim()) query.set('q', deferredSearch.trim());
         if (category) query.set('category', category);
 
-        const data = await api.get<{ items: DiscoverGroup[] }>(`/api/groups?${query.toString()}`, {
+        const endpoint = activeTab === 'joined' ? '/api/groups/me' : '/api/groups';
+        const data = await api.get<{ items: DiscoverGroup[] }>(`${endpoint}?${query.toString()}`, {
           signal: controller.signal,
         });
         setGroups(data.items ?? []);
@@ -79,7 +84,7 @@ export default function Groups() {
     void loadGroups();
 
     return () => controller.abort();
-  }, [deferredSearch, category]);
+  }, [deferredSearch, category, activeTab]);
 
   const submitCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -175,12 +180,35 @@ export default function Groups() {
               Tạo nhóm
             </button>
           </div>
+          <div className="mt-8 flex gap-6 border-b border-cyan-200/50 dark:border-slate-800">
+            <button
+              className={`pb-3 font-semibold text-sm transition-colors border-b-4 ${
+                activeTab === 'discover'
+                  ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+              onClick={() => setActiveTab('discover')}
+            >
+              Khám phá
+            </button>
+            <button
+              className={`pb-3 font-semibold text-sm transition-colors border-b-4 ${
+                activeTab === 'joined'
+                  ? 'border-cyan-500 text-cyan-700 dark:text-cyan-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+              onClick={() => setActiveTab('joined')}
+            >
+              Nhóm của bạn
+            </button>
+          </div>
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm p-4 sm:p-5">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <input
+      {activeTab === 'discover' && (
+        <section className="rounded-3xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm p-4 sm:p-5">
+          <div className="flex flex-col lg:flex-row gap-3">
+            <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Tìm theo tên nhóm..."
@@ -199,6 +227,7 @@ export default function Groups() {
           </select>
         </div>
       </section>
+      )}
 
       {error && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -262,26 +291,32 @@ export default function Groups() {
                       {group.memberCount}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleJoin(group.id)}
-                    disabled={group.membershipStatus !== 'none' || joiningId === group.id}
-                    className={`rounded-2xl px-4 py-2.5 text-sm font-bold transition-colors ${
-                      group.membershipStatus === 'member'
-                        ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                        : group.membershipStatus === 'pending'
+                  {group.membershipStatus === 'member' ? (
+                     <button
+                       type="button"
+                       onClick={() => navigate(`/feed/groups/${group.id}`)}
+                       className="rounded-2xl px-4 py-2.5 text-sm font-bold transition-colors bg-cyan-600 text-white hover:bg-cyan-700"
+                     >
+                       Vào nhóm
+                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleJoin(group.id)}
+                      disabled={joiningId === group.id}
+                      className={`rounded-2xl px-4 py-2.5 text-sm font-bold transition-colors ${
+                        group.membershipStatus === 'pending'
                           ? 'bg-amber-100 text-amber-700 cursor-default'
                           : 'bg-slate-900 text-white hover:bg-slate-800'
-                    } disabled:opacity-100`}
-                  >
-                    {joiningId === group.id
-                      ? 'Đang xử lý...'
-                      : group.membershipStatus === 'member'
-                        ? 'Đã tham gia'
+                      } disabled:opacity-100`}
+                    >
+                      {joiningId === group.id
+                        ? 'Đang xử lý...'
                         : group.membershipStatus === 'pending'
                           ? 'Đang chờ duyệt'
                           : 'Tham gia'}
-                  </button>
+                    </button>
+                  )}
                 </div>
               </div>
             </article>

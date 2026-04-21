@@ -22,7 +22,16 @@ import {
 const router = Router();
 const db = () => getDb();
 
-/** GET /api/friends — danh sách bạn bè */
+/**
+ * @swagger
+ * /api/friends:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Danh sách bạn bè của tôi
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -63,7 +72,32 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/friends/requests — lời mời gửi đến tôi (pending) */
+/**
+ * @swagger
+ * /api/friends/requests:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Lời mời kết bạn gửi đến tôi (pending)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ *   post:
+ *     tags: [Friends]
+ *     summary: Gửi lời mời kết bạn
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [toUid]
+ *             properties:
+ *               toUid: { type: string }
+ *     responses:
+ *       201: { description: Lời mời đã gửi }
+ *       409: { description: Đã tồn tại hoặc đã là bạn }
+ */
 router.get('/requests', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -201,7 +235,41 @@ router.post(
   }
 );
 
-/** PATCH /api/friends/requests/:id — chấp nhận hoặc từ chối (body: { action: 'accept'|'reject' }) */
+/**
+ * @swagger
+ * /api/friends/requests/{id}:
+ *   patch:
+ *     tags: [Friends]
+ *     summary: Chấp nhận hoặc từ chối lời mời
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [action]
+ *             properties:
+ *               action: { type: string, enum: [accept, reject] }
+ *     responses:
+ *       200: { description: OK }
+ *   delete:
+ *     tags: [Friends]
+ *     summary: Hủy lời mời (từ chối hoặc thu hồi)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -266,7 +334,16 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/friends/sent — lời mời đã gửi (còn pending) */
+/**
+ * @swagger
+ * /api/friends/sent:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Lời mời đã gửi (còn pending)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -297,7 +374,16 @@ router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/friends/suggestions — gợi ý (user chưa là bạn, chưa có request pending) */
+/**
+ * @swagger
+ * /api/friends/suggestions:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Gợi ý kết bạn
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -402,7 +488,21 @@ router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/friends/status/:uid — kiểm tra trạng thái quan hệ bạn bè với user khác */
+/**
+ * @swagger
+ * /api/friends/status/{uid}:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Kiểm tra trạng thái quan hệ bạn bè với user khác
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/status/:uid', requireAuth, async (req: AuthRequest, res) => {
   try {
     const me = req.uid!;
@@ -482,7 +582,21 @@ router.delete('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** DELETE /api/friends/:uid — huỷ kết bạn (unfriend) */
+/**
+ * @swagger
+ * /api/friends/{uid}:
+ *   delete:
+ *     tags: [Friends]
+ *     summary: Hủy kết bạn (unfriend)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.delete('/:uid', requireAuth, async (req: AuthRequest, res) => {
   try {
     const me = req.uid!;
@@ -518,7 +632,21 @@ router.delete('/:uid', requireAuth, async (req: AuthRequest, res) => {
 /*  Firestore: nicknames/{uid}  → { entries: { [friendUid]: string } }      */
 /* ======================================================================== */
 
-/** GET /api/friends/mutual/:uid — bạn chung giữa mình và user khác */
+/**
+ * @swagger
+ * /api/friends/mutual/{uid}:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Danh sách bạn chung với user khác
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get(
   '/mutual/:uid',
   requireAuth,
@@ -564,7 +692,39 @@ router.get(
 /*  Firestore: friend_tiers/{uid} → { tiers: { [friendUid]: string } }     */
 /* ======================================================================== */
 
-/** GET /api/friends/tier/:friendUid — lấy tier hiện tại */
+/**
+ * @swagger
+ * /api/friends/tier/{friendUid}:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Lấy tier của một bạn (priority/normal/restricted)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: friendUid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   put:
+ *     tags: [Friends]
+ *     summary: Thiết lập tier cho bạn
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: friendUid
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               tier: { type: string, enum: [priority, normal, restricted] }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get(
   '/tier/:friendUid',
   requireAuth,
@@ -613,7 +773,16 @@ router.put(
   }
 );
 
-/** GET /api/friends/tiers — lấy tất cả tiers */
+/**
+ * @swagger
+ * /api/friends/tiers:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Lấy tất cả tiers
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/tiers', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -630,7 +799,16 @@ router.get('/tiers', requireAuth, async (req: AuthRequest, res) => {
 /*  Firestore: affinity/{uid} → { scores: { [friendUid]: number } }        */
 /* ======================================================================== */
 
-/** GET /api/friends/affinity — lấy tất cả affinity scores */
+/**
+ * @swagger
+ * /api/friends/affinity:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Lấy tất cả affinity scores (mức độ thân thiết)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/affinity', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -642,7 +820,16 @@ router.get('/affinity', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/friends/nicknames — lấy tất cả biệt danh của mình */
+/**
+ * @swagger
+ * /api/friends/nicknames:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Lấy tất cả biệt danh đã đặt
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/nicknames', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -654,7 +841,39 @@ router.get('/nicknames', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** PUT /api/friends/nicknames/:friendUid — đặt / cập nhật biệt danh cho 1 bạn */
+/**
+ * @swagger
+ * /api/friends/nicknames/{friendUid}:
+ *   put:
+ *     tags: [Friends]
+ *     summary: Đặt / cập nhật biệt danh cho bạn
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: friendUid
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nickname: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   delete:
+ *     tags: [Friends]
+ *     summary: Xóa biệt danh
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: friendUid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.put(
   '/nicknames/:friendUid',
   requireAuth,

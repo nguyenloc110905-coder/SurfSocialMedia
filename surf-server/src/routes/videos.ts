@@ -3,9 +3,34 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { logger } from '../config/logger.js';
+import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
+import { moderateText } from '../services/aiModeration.js';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/videos:
+ *   post:
+ *     tags: [Videos]
+ *     summary: Tạo video ngắn mới (Surf Clips)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [videoUrl]
+ *             properties:
+ *               videoUrl: { type: string }
+ *               thumbnailUrl: { type: string, nullable: true }
+ *               caption: { type: string, nullable: true }
+ *               privacy: { type: string, enum: [public, friends, only-me], default: public }
+ *     responses:
+ *       201: { description: Video đã tạo }
+ *       400: { description: Thiếu videoUrl }
+ */
 // ── POST / — create short video (client uploads to Cloudinary, sends back URL) ──
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -65,6 +90,23 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/feed:
+ *   get:
+ *     tags: [Videos]
+ *     summary: Feed video ngắn (ghép Videos + Posts có video, phân trang)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10, maximum: 20 }
+ *       - in: query
+ *         name: lastId
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách video }
+ */
 // ── GET /feed — paginated feed merging Videos collection + Posts with video ────
 router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -177,7 +219,22 @@ router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// ── GET /user/:uid — videos by a specific user ────────────────────────────────
+/**
+ * @swagger
+ * /api/videos/user/{uid}:
+ *   get:
+ *     tags: [Videos]
+ *     summary: Video của một user cụ thể
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách video }
+ */
+// ── GET /user/:uid — videos by a specific user ──────────────────────────────────────
 router.get('/user/:uid', requireAuth, async (req, res) => {
   try {
     const db = getDb();
@@ -195,7 +252,22 @@ router.get('/user/:uid', requireAuth, async (req, res) => {
   }
 });
 
-// ── POST /:id/like — toggle like ──────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/videos/{id}/like:
+ *   post:
+ *     tags: [Videos]
+ *     summary: Toggle like video
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
+// ── POST /:id/like — toggle like ──────────────────────────────────────────────────────────────
 router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
@@ -222,7 +294,22 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// ── POST /:id/view — increment view count (atomic) ────────────────────────────
+/**
+ * @swagger
+ * /api/videos/{id}/view:
+ *   post:
+ *     tags: [Videos]
+ *     summary: Tăng view count của video
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
+// ── POST /:id/view — increment view count (atomic) ─────────────────────────────────────
 router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
@@ -241,7 +328,35 @@ router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// ── DELETE /:id — soft delete (owner only) ────────────────────────────────────
+/**
+ * @swagger
+ * /api/videos/{id}:
+ *   delete:
+ *     tags: [Videos]
+ *     summary: Xóa video (soft delete, chỉ owner)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải owner }
+ *   get:
+ *     tags: [Videos]
+ *     summary: Xem chi tiết 1 video
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy }
+ */
+// ── DELETE /:id — soft delete (owner only) ─────────────────────────────────────────────────────
 router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
@@ -277,6 +392,74 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 
     res.json({ id: doc.id, ...doc.data() });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// ── VID-6: Comments on video ─────────────────────────────────────────────────
+
+// GET /api/videos/:id/comments
+router.get('/:id/comments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const snap = await db.collection('comments')
+      .where('postId', '==', req.params.id)
+      .orderBy('createdAt', 'asc')
+      .get();
+    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ comments });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /api/videos/:id/comments
+router.post('/:id/comments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const { content, parentId } = req.body;
+    if (!content?.trim()) {
+      res.status(400).json({ error: 'Comment content is required' });
+      return;
+    }
+
+    const videoDoc = await db.collection('videos').doc(req.params.id).get();
+    if (!videoDoc.exists) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    const moderation = await moderateText(content.trim());
+    if (!moderation.allowed) {
+      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      return;
+    }
+
+    const userDoc = await db.collection('users').doc(req.uid!).get();
+    const user = userDoc.data();
+
+    const commentRef = db.collection('comments').doc();
+    const commentData: Record<string, unknown> = {
+      postId: req.params.id,
+      authorId: req.uid,
+      authorDisplayName: user?.displayName ?? 'Anonymous',
+      authorPhotoURL: user?.photoURL ?? null,
+      content: content.trim(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      likeCount: 0,
+      likedBy: [],
+    };
+    if (parentId) commentData.parentId = parentId;
+
+    await commentRef.set(commentData);
+    await db.collection('videos').doc(req.params.id).update({ commentCount: FieldValue.increment(1) });
+
+    const responseData = { id: commentRef.id, ...commentData };
+    emitCommentNew(req.params.id, responseData);
+
+    res.status(201).json(responseData);
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

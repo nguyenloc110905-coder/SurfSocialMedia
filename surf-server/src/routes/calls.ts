@@ -257,6 +257,38 @@ const buildFallbackUrl = (provider: FallbackProvider, roomName: string): string 
   return `${jitsiBase.replace(/\/$/, '')}/${encodeURIComponent(roomName)}`;
 };
 
+/**
+ * @swagger
+ * /api/calls/livekit-token:
+ *   post:
+ *     tags: [Calls]
+ *     summary: Lấy LiveKit access token để tham gia cuộc gọi
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [roomName]
+ *             properties:
+ *               roomName: { type: string, description: 'Tên phòng LiveKit (thường là conversationId)' }
+ *               participantName: { type: string }
+ *               isHost: { type: boolean, default: false }
+ *     responses:
+ *       200:
+ *         description: Token thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token: { type: string }
+ *                 wsUrl: { type: string }
+ *                 roomName: { type: string }
+ *       400: { description: Thiếu roomName }
+ *       503: { description: LiveKit chưa cấu hình }
+ */
 router.post('/livekit-token', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid;

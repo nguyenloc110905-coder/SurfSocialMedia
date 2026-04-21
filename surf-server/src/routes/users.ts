@@ -30,7 +30,21 @@ function normalize(s: string): string {
     .toLowerCase();
 }
 
-/** GET /api/users/search?q=... */
+/**
+ * @swagger
+ * /api/users/search:
+ *   get:
+ *     tags: [Users]
+ *     summary: Tìm kiếm user theo tên
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách user khớp }
+ */
 router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -85,7 +99,17 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/users/me */
+/**
+ * @swagger
+ * /api/users/me:
+ *   get:
+ *     tags: [Users]
+ *     summary: Lấy hồ sơ của bản thân
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: User chưa tồn tại }
+ */
 router.get('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const doc = await getDb().collection('users').doc(req.uid!).get();
@@ -99,7 +123,26 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** PUT /api/users/me */
+/**
+ * @swagger
+ * /api/users/me:
+ *   put:
+ *     tags: [Users]
+ *     summary: Cập nhật hồ sơ của bản thân
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               displayName: { type: string }
+ *               bio: { type: string }
+ *               photoURL: { type: string }
+ *               email: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { displayName, bio, photoURL, email } = req.body;
@@ -124,7 +167,29 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/users/me/recent-searches */
+/**
+ * @swagger
+ * /api/users/me/recent-searches:
+ *   get:
+ *     tags: [Users]
+ *     summary: Lấy danh sách tìm kiếm gần đây
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ *   put:
+ *     tags: [Users]
+ *     summary: Cập nhật danh sách tìm kiếm gần đây
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recentSearches: { type: array, items: { type: object } }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => {
   try {
     const doc = await getDb().collection('users').doc(req.uid!).get();
@@ -154,7 +219,16 @@ router.put('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-/** GET /api/users/me/blocked — danh sách user tôi đã chặn */
+/**
+ * @swagger
+ * /api/users/me/blocked:
+ *   get:
+ *     tags: [Users]
+ *     summary: Danh sách user đã bị chặn
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/me/blocked', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -186,7 +260,21 @@ router.get('/me/blocked', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/users/:uid/block-status */
+/**
+ * @swagger
+ * /api/users/{uid}/block-status:
+ *   get:
+ *     tags: [Users]
+ *     summary: Kiểm tra trạng thái chặn giữa tôi và user khác
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/:uid/block-status', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
@@ -233,7 +321,32 @@ router.get('/:uid/block-status', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** POST /api/users/:uid/block */
+/**
+ * @swagger
+ * /api/users/{uid}/block:
+ *   post:
+ *     tags: [Users]
+ *     summary: Chặn user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã chặn }
+ *   delete:
+ *     tags: [Users]
+ *     summary: Bỏ chặn user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã bỏ chặn }
+ */
 router.post('/:uid/block', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
@@ -380,7 +493,21 @@ router.post('/:uid/unblock', requireAuth, async (req: AuthRequest, res) => {
 
 // ─── Follow routes ───────────────────────────────────────────────────────────
 
-/** GET /api/users/:uid/follow-status */
+/**
+ * @swagger
+ * /api/users/{uid}/follow-status:
+ *   get:
+ *     tags: [Users]
+ *     summary: Kiểm tra trạng thái follow
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/:uid/follow-status', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
@@ -406,7 +533,21 @@ router.get('/:uid/follow-status', requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-/** POST /api/users/:uid/follow */
+/**
+ * @swagger
+ * /api/users/{uid}/follow:
+ *   post:
+ *     tags: [Users]
+ *     summary: Follow user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã follow }
+ */
 router.post(
   '/:uid/follow',
   requireAuth,
@@ -430,7 +571,21 @@ router.post(
   }
 );
 
-/** POST /api/users/:uid/unfollow */
+/**
+ * @swagger
+ * /api/users/{uid}/unfollow:
+ *   post:
+ *     tags: [Users]
+ *     summary: Unfollow user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã unfollow }
+ */
 router.post(
   '/:uid/unfollow',
   requireAuth,
@@ -452,7 +607,27 @@ router.post(
 
 // ─── Sub-collection routes (phải đặt trước /:uid GET) ──────────────────────
 
-/** GET /api/users/:uid/posts — lọc theo mối quan hệ, bao gồm cả bài chia sẻ */
+/**
+ * @swagger
+ * /api/users/{uid}/posts:
+ *   get:
+ *     tags: [Users]
+ *     summary: Bài viết của user (bao gồm bài chia sẻ)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10 }
+ *       - in: query
+ *         name: lastId
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách bài viết }
+ */
 router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
   try {
     const viewerUid = req.uid!;
@@ -497,7 +672,21 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** GET /api/users/:uid/friends */
+/**
+ * @swagger
+ * /api/users/{uid}/friends:
+ *   get:
+ *     tags: [Users]
+ *     summary: Danh sách bạn bè của user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/:uid/friends', requireAuth, async (req, res) => {
   try {
     const friendDoc = await getDb().collection('friends').doc(req.params.uid).get();
@@ -522,7 +711,21 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
   }
 });
 
-/** GET /api/users/:uid/photos */
+/**
+ * @swagger
+ * /api/users/{uid}/photos:
+ *   get:
+ *     tags: [Users]
+ *     summary: Ảnh của user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/:uid/photos', requireAuth, async (req, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 100, 500);
@@ -564,7 +767,21 @@ router.get('/:uid/photos', requireAuth, async (req, res) => {
   }
 });
 
-/** GET /api/users/:uid/clips — video posts (Surf Clips) */
+/**
+ * @swagger
+ * /api/users/{uid}/clips:
+ *   get:
+ *     tags: [Users]
+ *     summary: Video ngắn (Surf Clips) của user
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/:uid/clips', requireAuth, async (req, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 200);
@@ -603,7 +820,22 @@ router.get('/:uid/clips', requireAuth, async (req, res) => {
   }
 });
 
-/** GET /api/users/:uid — profile bất kỳ (phải đặt SAU tất cả sub-routes) */
+/**
+ * @swagger
+ * /api/users/{uid}:
+ *   get:
+ *     tags: [Users]
+ *     summary: Xem hồ sơ public của user bất kỳ
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: User không tồn tại }
+ */
 router.get('/:uid', requireAuth, async (req, res) => {
   try {
     const doc = await getDb().collection('users').doc(req.params.uid).get();

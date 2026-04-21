@@ -8,11 +8,45 @@ import { setOtp, verifyAndConsumeOtp } from '../utils/otp-store.js';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Lấy uid của token hiện tại
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 uid: { type: string }
+ */
 router.get('/me', requireAuth, (req: AuthRequest, res) => {
   res.json({ uid: req.uid });
 });
 
-/** POST /api/auth/notify-login — Gửi email thông báo đăng nhập */
+/**
+ * @swagger
+ * /api/auth/notify-login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Gửi email thông báo đăng nhập tới user
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sent: { type: boolean }
+ *                 reason: { type: string, nullable: true }
+ */
 router.post('/notify-login', requireAuth, async (req: AuthRequest, res) => {
   try {
     const fbUser = await getAuth().getUser(req.uid!);
@@ -32,7 +66,23 @@ router.post('/notify-login', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** POST /api/auth/notify-register — Gửi email chào mừng đăng ký */
+/**
+ * @swagger
+ * /api/auth/notify-register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Gửi email chào mừng sau khi đăng ký
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sent: { type: boolean }
+ */
 router.post('/notify-register', requireAuth, async (req: AuthRequest, res) => {
   try {
     const fbUser = await getAuth().getUser(req.uid!);
@@ -51,7 +101,28 @@ router.post('/notify-register', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** POST /api/auth/send-otp — Tạo & gửi mã OTP xác nhận đổi mật khẩu / đổi email */
+/**
+ * @swagger
+ * /api/auth/send-otp:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Tạo & gửi OTP xác nhận đổi mật khẩu / đổi email
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [purpose]
+ *             properties:
+ *               purpose: { type: string, enum: [change-password, change-email] }
+ *               newPassword: { type: string, description: 'Bắt buộc khi purpose=change-password' }
+ *               newEmail: { type: string, description: 'Bắt buộc khi purpose=change-email' }
+ *     responses:
+ *       200: { description: Đã gửi OTP }
+ *       400: { description: Dữ liệu không hợp lệ }
+ */
 router.post('/send-otp', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { purpose, newPassword, newEmail } = req.body as {
@@ -96,7 +167,27 @@ router.post('/send-otp', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** POST /api/auth/verify-otp — Xác minh OTP và áp dụng thay đổi */
+/**
+ * @swagger
+ * /api/auth/verify-otp:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Xác minh OTP và áp dụng thay đổi (đổi pass / đổi email)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [purpose, code]
+ *             properties:
+ *               purpose: { type: string, enum: [change-password, change-email] }
+ *               code: { type: string, example: '123456' }
+ *     responses:
+ *       200: { description: Thành công }
+ *       400: { description: Mã OTP sai hoặc hết hạn }
+ */
 router.post('/verify-otp', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { purpose, code } = req.body as { purpose?: string; code?: string };
@@ -124,7 +215,26 @@ router.post('/verify-otp', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** POST /api/auth/change-password — Đổi mật khẩu (đã xác thực phía client) */
+/**
+ * @swagger
+ * /api/auth/change-password:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Đổi mật khẩu trực tiếp (không cần OTP)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword]
+ *             properties:
+ *               newPassword: { type: string, minLength: 6 }
+ *     responses:
+ *       200: { description: Đổi thành công }
+ *       400: { description: Mật khẩu quá ngắn }
+ */
 router.post('/change-password', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { newPassword } = req.body as { newPassword?: string };
@@ -140,7 +250,17 @@ router.post('/change-password', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-/** DELETE /api/auth/account — Xóa tài khoản (đã xác thực phía client) */
+/**
+ * @swagger
+ * /api/auth/account:
+ *   delete:
+ *     tags: [Auth]
+ *     summary: Xóa tài khoản Firebase
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Đã xóa }
+ *       500: { description: Lỗi server }
+ */
 router.delete('/account', requireAuth, async (req: AuthRequest, res) => {
   try {
     await getAuth().deleteUser(req.uid!);

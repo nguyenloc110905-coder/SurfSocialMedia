@@ -12,6 +12,7 @@ import PostPage from './pages/PostPage';
 import ShortVideo from './pages/ShortVideo';
 import Friends from './pages/Friends';
 import Groups from './pages/Groups';
+import GroupDetails from './pages/GroupDetails';
 import SettingsPage from './pages/settings/SettingsPage';
 import MarketPage from './pages/MarketPage';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -137,6 +138,7 @@ export default function App() {
           <Route path="friends/history" element={<Friends />} />
           <Route path="friends/blocked" element={<Friends />} />
           <Route path="groups" element={<Groups />} />
+          <Route path="groups/:groupId" element={<GroupDetails />} />
           <Route path="market" element={<MarketPage />} />
           <Route path="saved" element={<SavedPage />} />
           <Route

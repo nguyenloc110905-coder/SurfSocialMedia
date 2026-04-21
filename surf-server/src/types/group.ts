@@ -9,6 +9,7 @@ export type GroupDoc = {
   privacy: GroupPrivacy;
   ownerId: string;
   adminIds: string[];
+  moderatorIds: string[];
   memberIds: string[];
   memberCount: number;
   createdAt: Date;

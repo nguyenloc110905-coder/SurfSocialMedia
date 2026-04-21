@@ -21,6 +21,32 @@ const parseIntSafe = (value: unknown, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/**
+ * @swagger
+ * /api/notifications:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Danh sách thông báo (cursor pagination)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *         description: Unix ms từ nextCursor của trang trước
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 items: { type: array, items: { type: object } }
+ *                 nextCursor: { type: integer, nullable: true }
+ */
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -39,6 +65,23 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/unread-count:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Số thông báo chưa đọc
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count: { type: integer }
+ */
 router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -49,6 +92,23 @@ router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/{id}/read:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Đánh dấu 1 thông báo đã đọc
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy }
+ *       403: { description: Không có quyền }
+ */
 router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -72,6 +132,25 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/notifications/read-all:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Đánh dấu tất cả đã đọc
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 updated: { type: integer }
+ *                 count: { type: integer }
+ */
 router.patch('/read-all', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;

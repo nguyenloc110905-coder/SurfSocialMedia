@@ -4,6 +4,35 @@ import { getDb } from '../config/firebase-admin.js';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/feed:
+ *   get:
+ *     tags: [Feed]
+ *     summary: Bảng tin cá nhân hóa (bạn bè + follow + nhóm, bổ sung Khám phá khi thiếu)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: lastId
+ *         schema: { type: string }
+ *         description: ID của bài cuối cùng (cursor phân trang)
+ *     responses:
+ *       200:
+ *         description: Danh sách bài viết
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 posts:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/Post' }
+ *                 hasMore: { type: boolean }
+ *                 nextLastId: { type: string, nullable: true }
+ */
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -11,13 +40,17 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 20, 50);
     const lastId = req.query.lastId as string | undefined;
 
-    // Lấy danh sách bạn bè + đang theo dõi
-    const [friendDoc, followDoc] = await Promise.all([
+    // Lấy danh sách bạn bè + đang theo dõi + nhóm đã tham gia
+    const [friendDoc, followDoc, groupsSnap] = await Promise.all([
       getDb().collection('friends').doc(uid).get(),
       getDb().collection('follows').doc(uid).get(),
+      getDb().collection('groups').where('memberIds', 'array-contains', uid).get(),
     ]);
     const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
     const followingIds: string[] = followDoc.exists ? (followDoc.data()?.followingIds ?? []) : [];
+
+    const joinedGroupIds = new Set(groupsSnap.docs.map(d => d.id));
+    const groupDetails = new Map(groupsSnap.docs.map(d => [d.id, { name: d.data().name, coverImageUrl: d.data().coverImageUrl }]));
 
     // Tập hợp người quen (bản thân + bạn + đang follow)
     const visibleAuthors = new Set([uid, ...friendIds, ...followingIds]);
@@ -38,29 +71,42 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     type PostDoc = {
       id: string;
       authorId: string;
+      authorDisplayName?: string;
+      authorPhotoURL?: string | null;
       privacy?: string;
       deleted?: boolean;
       _discover?: boolean;
       deletedAt?: { toMillis?: () => number };
+      groupId?: string;
+      isAnonymous?: boolean;
+      group?: any;
       [key: string]: unknown;
     };
 
     const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PostDoc);
 
-    // Loại bỏ bài đã xóa (đang trong thùng rác)
-    const activeDocs = allDocs.filter((p) => p.deleted !== true);
+    // Loại bỏ bài đã xóa hoặc bài trong nhóm mà chưa tham gia
+    const activeDocs = allDocs.filter((p) => {
+      if (p.deleted === true) return false;
+      if (p.groupId && !joinedGroupIds.has(p.groupId)) return false;
+      return true;
+    });
 
     // ── Feed cá nhân hoá ──────────────────────────────────────────────────
-    const personalizedPosts = isNewUser
-      ? []
-      : activeDocs.filter((p) => {
-          const authorId = p.authorId;
-          const privacy = p.privacy ?? 'public';
-          if (authorId === uid) return true;
-          if (!visibleAuthors.has(authorId)) return false;
-          if (friendIds.includes(authorId)) return privacy === 'public' || privacy === 'friends';
-          return privacy === 'public'; // chỉ follow
-        });
+    const personalizedPosts = activeDocs.filter((p) => {
+      const authorId = p.authorId;
+      const privacy = p.privacy ?? 'public';
+      
+      // Luôn hiện bài của chính mình
+      if (authorId === uid) return true;
+      
+      // Nếu không có bạn bè/follow thì không xét tiếp
+      if (isNewUser) return false;
+      
+      if (!visibleAuthors.has(authorId)) return false;
+      if (friendIds.includes(authorId)) return privacy === 'public' || privacy === 'friends';
+      return privacy === 'public'; // chỉ follow
+    });
 
     // ── Bổ sung "Khám phá" khi feed cá nhân thiếu ────────────────────────
     const needDiscover = personalizedPosts.length < limitNum;
@@ -79,6 +125,22 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       });
       posts = [...personalizedPosts, ...discoverPosts].slice(0, limitNum);
     }
+
+    posts = posts.map(p => {
+      const modified = { ...p };
+      if (modified.isAnonymous && modified.authorId !== uid) {
+        modified.authorId = `anon_${modified.id}`;
+        modified.authorDisplayName = 'Thành viên ẩn danh';
+        modified.authorPhotoURL = null;
+      }
+      if (modified.groupId && groupDetails.has(modified.groupId)) {
+        modified.group = {
+          id: modified.groupId,
+          ...groupDetails.get(modified.groupId)
+        };
+      }
+      return modified;
+    });
 
     const hasMore = allDocs.length > limitNum;
     const nextLastId = posts.length ? posts[posts.length - 1].id : null;

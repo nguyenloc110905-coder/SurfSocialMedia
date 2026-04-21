@@ -4,9 +4,39 @@ import { logger } from '../config/logger.js';
 const router = Router();
 
 /**
- * GET /api/music/search?q=&limit=
- * Tìm kiếm bài hát trên YouTube Data API v3.
- * Yêu cầu YOUTUBE_API_KEY trong .env
+ * @swagger
+ * /api/music/search:
+ *   get:
+ *     tags: [Music]
+ *     summary: Tìm kiếm bài nhạc qua YouTube Data API v3 (cần YOUTUBE_API_KEY)
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *         description: Từ khóa tìm kiếm
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10, maximum: 20 }
+ *     responses:
+ *       200:
+ *         description: Danh sách video nhạc
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 videos:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       title: { type: string }
+ *                       artist: { type: string }
+ *                       thumbnail: { type: string }
+ *       400: { description: Thiếu query q }
+ *       503: { description: YouTube API key chưa cấu hình }
  */
 router.get('/search', async (req, res) => {
   try {

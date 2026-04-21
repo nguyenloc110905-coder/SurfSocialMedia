@@ -25,6 +25,7 @@ const mapGroupDoc = (id: string, data: Record<string, unknown>): GroupDoc => ({
   privacy: (data.privacy as GroupDoc['privacy']) ?? 'public',
   ownerId: (data.ownerId as string) ?? '',
   adminIds: Array.isArray(data.adminIds) ? (data.adminIds as string[]) : [],
+  moderatorIds: Array.isArray(data.moderatorIds) ? (data.moderatorIds as string[]) : [],
   memberIds: Array.isArray(data.memberIds) ? (data.memberIds as string[]) : [],
   memberCount: typeof data.memberCount === 'number' ? data.memberCount : 0,
   createdAt: toDate(data.createdAt) ?? new Date(),
@@ -52,6 +53,7 @@ export const groupRepository = {
       privacy: input.privacy,
       ownerId: input.ownerId,
       adminIds: [input.ownerId],
+      moderatorIds: [],
       memberIds: [input.ownerId],
       memberCount: 1,
       createdAt: FieldValue.serverTimestamp(),
@@ -70,6 +72,14 @@ export const groupRepository = {
 
   async listPublic(limit = 50): Promise<GroupDoc[]> {
     const snap = await groupsCol().where('privacy', '==', 'public').limit(limit).get();
+
+    return snap.docs
+      .map((doc) => mapGroupDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  },
+
+  async listUserJoinedGroups(userId: string, limit = 50): Promise<GroupDoc[]> {
+    const snap = await groupsCol().where('memberIds', 'array-contains', userId).limit(limit).get();
 
     return snap.docs
       .map((doc) => mapGroupDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>))
@@ -121,5 +131,69 @@ export const groupRepository = {
     return snap.docs.map((doc) =>
       mapJoinRequestDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>)
     );
+  },
+
+  async removeMember(groupId: string, userId: string): Promise<void> {
+    await groupsCol()
+      .doc(groupId)
+      .update({
+        memberIds: FieldValue.arrayRemove(userId),
+        adminIds: FieldValue.arrayRemove(userId),
+        moderatorIds: FieldValue.arrayRemove(userId),
+        memberCount: FieldValue.increment(-1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+  },
+
+  async updateJoinRequestStatus(groupId: string, userId: string, status: GroupJoinRequestDoc['status']): Promise<void> {
+    const requestId = `${groupId}__${userId}`;
+    await joinRequestsCol().doc(requestId).update({
+      status,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  },
+
+  async listPendingJoinRequestsByGroup(groupId: string): Promise<GroupJoinRequestDoc[]> {
+    const snap = await joinRequestsCol()
+      .where('groupId', '==', groupId)
+      .where('status', '==', 'pending')
+      .get();
+    return snap.docs.map((doc) => mapJoinRequestDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>));
+  },
+
+  async promoteToAdmin(groupId: string, userId: string): Promise<void> {
+    await groupsCol()
+      .doc(groupId)
+      .update({
+        adminIds: FieldValue.arrayUnion(userId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+  },
+
+  async demoteFromAdmin(groupId: string, userId: string): Promise<void> {
+    await groupsCol()
+      .doc(groupId)
+      .update({
+        adminIds: FieldValue.arrayRemove(userId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+  },
+
+  async promoteToModerator(groupId: string, userId: string): Promise<void> {
+    await groupsCol()
+      .doc(groupId)
+      .update({
+        moderatorIds: FieldValue.arrayUnion(userId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+  },
+
+  async demoteFromModerator(groupId: string, userId: string): Promise<void> {
+    await groupsCol()
+      .doc(groupId)
+      .update({
+        moderatorIds: FieldValue.arrayRemove(userId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
   },
 };

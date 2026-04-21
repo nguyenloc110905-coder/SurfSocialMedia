@@ -5,6 +5,7 @@ import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getIo } from '../realtime/io.js';
 import { moderatePost } from '../services/aiModeration.js';
+import { groupRepository } from '../repositories/group.repository.js';
 
 const router = Router();
 
@@ -18,6 +19,36 @@ function detectHasVideo(urls: string[]): boolean {
   );
 }
 
+/**
+ * @swagger
+ * /api/posts:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Tạo bài viết mới (cá nhân hoặc trong nhóm)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content: { type: string }
+ *               mediaUrls: { type: array, items: { type: string } }
+ *               parentId: { type: string, nullable: true }
+ *               feeling: { type: string, nullable: true }
+ *               location: { type: string, nullable: true }
+ *               taggedFriends: { type: array, items: { type: object } }
+ *               privacy: { type: string, enum: [public, friends, only-me, custom], default: public }
+ *               groupId: { type: string, nullable: true, description: 'Cần là member của nhóm' }
+ *               isAnonymous: { type: boolean, default: false }
+ *               poll: { type: object, nullable: true }
+ *     responses:
+ *       201: { description: Tạo thành công, content: { application/json: { schema: { $ref: '#/components/schemas/Post' } } } }
+ *       400: { description: Thiếu content & media }
+ *       403: { description: Không phải member nhóm }
+ *       422: { description: Vi phạm AI moderation }
+ */
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   console.log('[POST /api/posts] Request received, content:', req.body?.content?.substring(0, 50));
   try {
@@ -32,11 +63,26 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       location,
       taggedFriends = [],
       privacy = 'public',
+      groupId,
+      isAnonymous = false,
+      poll,
     } = req.body;
 
     if (!content?.trim() && mediaUrls.length === 0) {
       res.status(400).json({ error: 'Content or media is required' });
       return;
+    }
+
+    if (groupId) {
+      const group = await groupRepository.getById(groupId);
+      if (!group) {
+        res.status(404).json({ error: 'Group not found' });
+        return;
+      }
+      if (!group.memberIds.includes(req.uid!)) {
+        res.status(403).json({ error: 'Only group members can post' });
+        return;
+      }
     }
 
     // Kiểm duyệt nội dung bằng AI trước khi lưu
@@ -61,6 +107,19 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
+    
+    // Xử lý poll
+    let formattedPoll = null;
+    if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
+      formattedPoll = {
+        options: poll.options.map((opt: any, index: number) => ({
+          id: `opt_${Date.now()}_${index}`,
+          text: opt.text || opt,
+          votes: []
+        }))
+      };
+    }
+
     const docRef = postsRef.doc();
     await docRef.set({
       authorId: req.uid,
@@ -73,12 +132,15 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       taggedFriends: Array.isArray(taggedFriends) ? taggedFriends : [],
       privacy: privacy || 'public',
       parentId: parentId || null,
+      groupId: groupId || null,
       createdAt: new Date(),
       updatedAt: new Date(),
       likeCount: 0,
       replyCount: 0,
       likedBy: [],
       hasVideo: detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []),
+      isAnonymous: !!isAnonymous,
+      poll: formattedPoll,
     });
     const created = await docRef.get();
 
@@ -130,6 +192,24 @@ function normalizePost(s: string): string {
     .toLowerCase();
 }
 
+/**
+ * @swagger
+ * /api/posts/search:
+ *   get:
+ *     tags: [Posts]
+ *     summary: Tìm kiếm bài viết
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: type
+ *         schema: { type: string, enum: [posts, users], default: posts }
+ *     responses:
+ *       200: { description: Kết quả tìm kiếm }
+ */
 // GET /search?q=&type= — tìm kiếm bài viết (phải đặt trước /:id)
 router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -159,6 +239,16 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/trash:
+ *   get:
+ *     tags: [Posts]
+ *     summary: Danh sách bài viết trong thùng rác
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Danh sách bài đã xóa }
+ */
 // GET /trash — danh sách bài viết trong thùng rác của user
 router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -181,6 +271,16 @@ router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/saved:
+ *   get:
+ *     tags: [Posts]
+ *     summary: Danh sách bài viết đã lưu
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ */
 // GET /saved — bài viết đã lưu của user đang đăng nhập
 router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -207,6 +307,32 @@ router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/save:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Lưu bài viết
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã lưu }
+ *   delete:
+ *     tags: [Posts]
+ *     summary: Bỏ lưu bài viết
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã bỏ lưu }
+ */
 // POST /:id/save — lưu bài viết; gọi lại để bỏ lưu
 router.post('/:id/save', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -237,6 +363,118 @@ router.delete('/:id/save', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/poll/{optionId}:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Bỏ phiếu cho một đáp án trong poll
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: optionId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Bỏ phiếu thành công }
+ *       404: { description: Không tìm thấy }
+ */
+// POST /:id/poll/:optionId — vote on a poll
+router.post('/:id/poll/:optionId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const postId = req.params.id;
+    const optionId = req.params.optionId;
+    const uid = req.uid!;
+    const postRef = getDb().collection('posts').doc(postId);
+
+    await getDb().runTransaction(async (t) => {
+      const doc = await t.get(postRef);
+      if (!doc.exists || doc.data()?.deleted === true) {
+        throw new Error('Post not found');
+      }
+      const data = doc.data() as any;
+      if (!data.poll || !Array.isArray(data.poll.options)) {
+        throw new Error('Post does not contain a valid poll');
+      }
+
+      let optionFound = false;
+      const newOptions = data.poll.options.map((opt: any) => {
+        // Remove user from all options first (single vote policy)
+        const votes = (opt.votes || []).filter((v: string) => v !== uid);
+        if (opt.id === optionId) {
+          optionFound = true;
+          votes.push(uid);
+        }
+        return { ...opt, votes };
+      });
+
+      if (!optionFound) throw new Error('Option not found');
+
+      t.update(postRef, { 'poll.options': newOptions });
+    });
+
+    res.json({ success: true });
+  } catch (e) {
+    if ((e as Error).message === 'Post not found' || (e as Error).message === 'Option not found') {
+      res.status(404).json({ error: (e as Error).message });
+    } else {
+      res.status(500).json({ error: (e as Error).message });
+    }
+  }
+});
+
+/**
+ * @swagger
+ * /api/posts/{id}:
+ *   get:
+ *     tags: [Posts]
+ *     summary: Xem chi tiết bài viết kèm comments
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy }
+ *   patch:
+ *     tags: [Posts]
+ *     summary: Chỉnh sửa bài viết (chỉ tác giả)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content: { type: string }
+ *               privacy: { type: string, enum: [public, friends, only-me] }
+ *     responses:
+ *       200: { description: Đã cập nhật }
+ *       403: { description: Không có quyền }
+ *   delete:
+ *     tags: [Posts]
+ *     summary: Xóa bài viết (chuyển vào thùng rác)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã xóa }
+ *       403: { description: Không có quyền }
+ */
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const postsRef = getDb().collection('posts');
@@ -312,6 +550,22 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/restore:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Khôi phục bài viết từ thùng rác
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã khôi phục }
+ *       403: { description: Không có quyền }
+ */
 // POST /:id/restore — khôi phục bài viết từ thùng rác
 router.post('/:id/restore', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -331,6 +585,21 @@ router.post('/:id/restore', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/permanent:
+ *   delete:
+ *     tags: [Posts]
+ *     summary: Xóa vĩnh viễn khỏi Firestore
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã xóa vĩnh viễn }
+ */
 // DELETE /:id/permanent — xóa vĩnh viễn khỏi Firestore
 router.delete('/:id/permanent', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -347,6 +616,29 @@ router.delete('/:id/permanent', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/like:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Toggle like / bỏ like bài viết
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reaction: { type: string, example: '👍', description: 'Emoji reaction, mặc định 👍' }
+ *     responses:
+ *       200: { description: OK, content: { application/json: { schema: { type: object, properties: { liked: { type: boolean }, likeCount: { type: integer } } } } } }
+ *       404: { description: Không tìm thấy }
+ */
 router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
   try {
     const postsRef = getDb().collection('posts');
@@ -415,6 +707,30 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/share:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Chia sẻ bài viết (tạo post mới có sharedFrom)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content: { type: string }
+ *               privacy: { type: string, enum: [public, friends, only-me] }
+ *     responses:
+ *       201: { description: Đã chia sẻ }
+ *       404: { description: Không tìm thấy }
+ */
 // POST /:id/share — chia sẻ bài viết (tạo post mới với sharedFrom ref)
 router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -476,6 +792,21 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/posts/{id}/reactions:
+ *   get:
+ *     tags: [Posts]
+ *     summary: Danh sách người đã react
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 // GET /:id/reactions — list of users who reacted with their display info
 router.get('/:id/reactions', requireAuth, async (req, res) => {
   try {

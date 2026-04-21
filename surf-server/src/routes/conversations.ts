@@ -31,6 +31,39 @@ const parseCursorSafe = (value: unknown): string | undefined => {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 
+/**
+ * @swagger
+ * /api/conversations:
+ *   post:
+ *     tags: [Conversations]
+ *     summary: Tạo hoặc lấy cuộc trò chuyện 1-1 với user khác
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [peerUid]
+ *             properties:
+ *               peerUid: { type: string }
+ *     responses:
+ *       200: { description: Conversation đã tồn tại hoặc mới tạo }
+ *       400: { description: Thiếu peerUid }
+ *   get:
+ *     tags: [Conversations]
+ *     summary: Danh sách cuộc trò chuyện
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const actorUid = req.uid!;
@@ -71,6 +104,23 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/conversations/unread-count:
+ *   get:
+ *     tags: [Conversations]
+ *     summary: Số cuộc trò chuyện chưa đọc
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count: { type: integer }
+ */
 router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -81,6 +131,49 @@ router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/conversations/{id}/messages:
+ *   get:
+ *     tags: [Conversations]
+ *     summary: Tin nhắn trong cuộc trò chuyện (cursor pagination)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải thành viên }
+ *   post:
+ *     tags: [Conversations]
+ *     summary: Gửi tin nhắn vào cuộc trò chuyện
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               text: { type: string }
+ *               mediaUrl: { type: string, nullable: true }
+ *               replyToId: { type: string, nullable: true }
+ *     responses:
+ *       201: { description: Tin nhắn đã gửi }
+ *       403: { description: Không phải thành viên }
+ */
 router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -104,6 +197,21 @@ router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/conversations/{id}/read:
+ *   patch:
+ *     tags: [Conversations]
+ *     summary: Đánh dấu đã đọc cuộc trò chuyện
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -128,6 +236,27 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/conversations/group:
+ *   post:
+ *     tags: [Conversations]
+ *     summary: Tạo nhóm chat mới
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [memberIds]
+ *             properties:
+ *               title: { type: string }
+ *               memberIds: { type: array, items: { type: string }, description: 'Không bao gồm bản thân' }
+ *     responses:
+ *       201: { description: Nhóm chat mới }
+ *       400: { description: Cần ít nhất 2 memberIds }
+ */
 router.post('/group', requireAuth, async (req: AuthRequest, res) => {
   try {
     const actorUid = req.uid!;
@@ -154,6 +283,39 @@ router.post('/group', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/conversations/{id}/members:
+ *   get:
+ *     tags: [Conversations]
+ *     summary: Danh sách thành viên nhóm chat
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   post:
+ *     tags: [Conversations]
+ *     summary: Thêm thành viên vào nhóm chat
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               memberIds: { type: array, items: { type: string } }
+ *     responses:
+ *       200: { description: OK }
+ */
 router.get('/:id/members', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;

@@ -9,6 +9,45 @@ import { moderateText } from '../services/aiModeration.js';
 
 const router = Router();
 
+/**
+ * @swagger
+ * /api/comments/{postId}:
+ *   get:
+ *     tags: [Comments]
+ *     summary: Lấy danh sách comment của bài viết
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách comments }
+ *   post:
+ *     tags: [Comments]
+ *     summary: Đăng comment mới (hỗ trợ reply + reaction + ẩn danh)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text: { type: string }
+ *               parentId: { type: string, nullable: true, description: 'ID comment cha (reply)' }
+ *               mediaUrl: { type: string, nullable: true }
+ *               isAnonymous: { type: boolean, default: false }
+ *     responses:
+ *       201: { description: Comment được tạo }
+ *       404: { description: Không tìm thấy bài viết }
+ */
 // Get comments for a post — returns all comments sorted in-memory (no composite index needed)
 router.get('/:postId', requireAuth, async (req, res) => {
   try {
@@ -204,6 +243,49 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/comments/{postId}/{commentId}:
+ *   patch:
+ *     tags: [Comments]
+ *     summary: Chỉnh sửa comment (chỉ tác giả)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               text: { type: string }
+ *     responses:
+ *       200: { description: Đã cập nhật }
+ *       403: { description: Không có quyền }
+ *   delete:
+ *     tags: [Comments]
+ *     summary: Xóa comment
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã xóa }
+ *       403: { description: Không có quyền }
+ */
 // Edit a comment (CMT-4)
 router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -281,6 +363,25 @@ router.delete('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) 
   }
 });
 
+/**
+ * @swagger
+ * /api/comments/{postId}/{commentId}/like:
+ *   post:
+ *     tags: [Comments]
+ *     summary: Toggle like comment
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 // Like/unlike a comment
 router.post('/:postId/:commentId/like', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -319,6 +420,32 @@ router.post('/:postId/:commentId/like', requireAuth, async (req: AuthRequest, re
   }
 });
 
+/**
+ * @swagger
+ * /api/comments/{postId}/{commentId}/react:
+ *   post:
+ *     tags: [Comments]
+ *     summary: Thêm emoji reaction vào comment
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               emoji: { type: string, example: '❤️' }
+ *     responses:
+ *       200: { description: OK }
+ */
 // React to a comment with emoji (POST /:postId/:commentId/react)
 router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -398,6 +525,25 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
   }
 });
 
+/**
+ * @swagger
+ * /api/comments/{postId}/{commentId}/reactions:
+ *   get:
+ *     tags: [Comments]
+ *     summary: Danh sách người đã react comment
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 // GET /:postId/:commentId/reactions — list of users who reacted to a comment
 router.get('/:postId/:commentId/reactions', requireAuth, async (req, res) => {
   try {

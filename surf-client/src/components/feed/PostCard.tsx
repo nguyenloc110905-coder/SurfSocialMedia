@@ -53,6 +53,8 @@ interface PostCardProps {
     taggedFriends?: Array<{ uid: string; displayName: string }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
+    isAnonymous?: boolean;
+    poll?: { options: { id: string; text: string; votes: string[] }[] };
     savedBy?: string[];
     sharedFrom?: {
       id: string;
@@ -307,7 +309,10 @@ function FeedVideo({
 export default function PostCard({ post, currentUserId, onPostUpdated, defaultOpenComments }: PostCardProps) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const goToProfile = (uid?: string) => uid && navigate(`/feed/profile/${uid}`);
+  const goToProfile = (uid?: string) => {
+    if (post.isAnonymous) return;
+    if (uid) navigate(`/feed/profile/${uid}`);
+  };
   const commentInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const initialLiked = currentUserId ? (post.likedBy?.includes(currentUserId) ?? false) : false;
@@ -375,6 +380,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxCommentOpen, setLightboxCommentOpen] = useState(false);
   const [lightboxShowReactions, setLightboxShowReactions] = useState(false);
+  const [pollData, setPollData] = useState(post.poll);
+  const [votingOptionId, setVotingOptionId] = useState<string | null>(null);
   const lightboxCommentRef = useRef<HTMLInputElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
@@ -707,6 +714,27 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
     } finally {
       setSubmittingReply(null);
+    }
+  };
+
+  const handleVote = async (optionId: string) => {
+    if (!currentUserId || votingOptionId || !pollData) return;
+    setVotingOptionId(optionId);
+    
+    // optimistic update
+    const newOptions = pollData.options.map(opt => ({
+      ...opt,
+      votes: opt.votes.filter(v => v !== currentUserId).concat(opt.id === optionId ? [currentUserId] : [])
+    }));
+    setPollData({ ...pollData, options: newOptions });
+
+    try {
+      await api.post(`/api/posts/${post.id}/poll/${optionId}`);
+    } catch {
+      // revert on failure 
+      setPollData(post.poll);
+    } finally {
+      setVotingOptionId(null);
     }
   };
 
@@ -1677,39 +1705,102 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
 
             {/* Author Header */}
             <div className="flex items-start gap-3 mb-4">
-              <div
-                onClick={() => goToProfile(post.authorId)}
-                className="cursor-pointer flex-shrink-0"
-              >
-                {post.authorPhotoURL ? (
-                  <img
-                    src={post.authorPhotoURL}
-                    alt={post.authorDisplayName}
-                    className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center hover:scale-105 transition-transform">
-                    <span className="text-lg font-bold text-white">
-                      {(() => {
-                        const name = post.authorDisplayName || 'U';
-                        const words = name.split(' ');
-                        return words.length >= 2
-                          ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
-                          : name[0].toUpperCase();
-                      })()}
-                    </span>
-                  </div>
-                )}
-              </div>
+              {post.group ? (
+                // --- Group Post Header (Facebook style) ---
+                <div className="relative flex-shrink-0 mt-0.5 mr-1" onClick={() => navigate(`/feed/groups/${post.group!.id}`)}>
+                  {/* Group Cover */}
+                  {post.group.coverImageUrl ? (
+                    <img 
+                      src={post.group.coverImageUrl} 
+                      alt={post.group.name} 
+                      className="w-11 h-11 rounded-lg object-cover cursor-pointer hover:opacity-90 ring-1 ring-black/5 dark:ring-white/10"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center cursor-pointer hover:opacity-90 ring-1 ring-black/5 dark:ring-white/10">
+                      <span className="text-lg font-bold text-white">{post.group.name[0].toUpperCase()}</span>
+                    </div>
+                  )}
+                  {/* Overlaid Author Avatar */}
+                  {post.isAnonymous ? (
+                    <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 bg-slate-200 dark:bg-slate-700 flex items-center justify-center shadow-md">
+                      <span className="text-[10px]">🕵️</span>
+                    </div>
+                  ) : (
+                    post.authorPhotoURL ? (
+                      <img 
+                        src={post.authorPhotoURL} 
+                        className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 object-cover cursor-pointer hover:opacity-90 shadow-md"
+                        onClick={(e) => { e.stopPropagation(); goToProfile(post.authorId); }}
+                        alt={post.authorDisplayName}
+                      />
+                    ) : (
+                      <div 
+                        className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-90 shadow-md"
+                        onClick={(e) => { e.stopPropagation(); goToProfile(post.authorId); }}
+                      >
+                        <span className="text-[10px] font-bold text-white uppercase">{(post.authorDisplayName || 'U')[0]}</span>
+                      </div>
+                    )
+                  )}
+                </div>
+              ) : (
+                // --- Normal User Header ---
+                <div
+                  onClick={() => goToProfile(post.authorId)}
+                  className={`flex-shrink-0 ${post.isAnonymous ? '' : 'cursor-pointer'}`}
+                >
+                  {!post.isAnonymous && post.authorPhotoURL ? (
+                    <img
+                      src={post.authorPhotoURL}
+                      alt={post.authorDisplayName}
+                      className="w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg object-cover hover:scale-105 transition-transform"
+                    />
+                  ) : (
+                    <div className={`w-12 h-12 rounded-full ring-2 ring-white dark:ring-slate-800 shadow-lg ${post.isAnonymous ? 'bg-slate-200 dark:bg-slate-700' : 'bg-gradient-to-br from-cyan-500 to-blue-600'} flex items-center justify-center ${post.isAnonymous ? '' : 'hover:scale-105 transition-transform'}`}>
+                      <span className="text-lg font-bold text-white">
+                        {post.isAnonymous ? '🕵️' : (() => {
+                          const name = post.authorDisplayName || 'U';
+                          const words = name.split(' ');
+                          return words.length >= 2
+                            ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+                            : name[0].toUpperCase();
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex-1 min-w-0">
                 <div className="text-sm leading-relaxed mb-1">
-                  <h3
-                    onClick={() => goToProfile(post.authorId)}
-                    className="inline font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
-                  >
-                    {post.authorDisplayName}
-                  </h3>
+                  {post.group ? (
+                    <>
+                      <h3
+                        onClick={() => navigate(`/feed/groups/${post.group!.id}`)}
+                        className="inline font-bold text-gray-900 dark:text-gray-100 hover:underline cursor-pointer"
+                      >
+                        {post.group.name}
+                      </h3>
+                      <div className="block" />
+                      <span
+                        onClick={() => goToProfile(post.authorId)}
+                        className={`font-semibold ${!post.isAnonymous ? 'hover:underline cursor-pointer text-gray-700 dark:text-gray-300' : 'text-gray-500'}`}
+                      >
+                        {post.isAnonymous 
+                          ? (currentUserId === post.authorId ? 'Bạn (Ẩn danh)' : 'Người dùng ẩn danh') 
+                          : post.authorDisplayName}
+                      </span>
+                    </>
+                  ) : (
+                    <h3
+                      onClick={() => goToProfile(post.authorId)}
+                      className={`inline font-bold text-gray-900 dark:text-gray-100 ${post.isAnonymous ? '' : 'hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors'}`}
+                    >
+                      {post.isAnonymous 
+                        ? (currentUserId === post.authorId ? 'Bạn (Ẩn danh)' : 'Người dùng ẩn danh') 
+                        : post.authorDisplayName}
+                    </h3>
+                  )}
                   {post.feeling && (
                     <span className="text-gray-600 dark:text-gray-400">
                       {' '}
@@ -1876,6 +1967,35 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Poll */}
+            {pollData && pollData.options && (
+              <div className="mb-4">
+                {pollData.options.map((opt) => {
+                  const totalVotes = pollData.options.reduce((sum, o) => sum + (o.votes?.length || 0), 0);
+                  const myVote = opt.votes?.includes(currentUserId || '');
+                  const percent = totalVotes > 0 ? ((opt.votes?.length || 0) / totalVotes) * 100 : 0;
+                  
+                  return (
+                    <button 
+                       key={opt.id} 
+                       onClick={() => handleVote(opt.id)} 
+                       disabled={votingOptionId === opt.id}
+                       className="relative w-full text-left p-3 border border-gray-200 dark:border-slate-700 rounded-xl mb-2 overflow-hidden flex justify-between items-center group transition"
+                    >
+                       <div className="absolute top-0 left-0 bottom-0 bg-cyan-100 dark:bg-cyan-900/30 transition-all z-0" style={{ width: `${percent}%` }} />
+                       <span className="relative z-10 font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                         <div className={`w-4 h-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${myVote ? 'border-cyan-500 bg-cyan-500' : 'border-gray-300 dark:border-slate-600'}`}>
+                           {myVote && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                         </div>
+                         {opt.text}
+                       </span>
+                       <span className="relative z-10 text-xs text-slate-500 font-bold">{opt.votes?.length || 0} phiếu</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
