@@ -16,6 +16,7 @@
     "livekit-client": "^2.18.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-mentions": "^4.4.10",
     "react-router-dom": "^6.21.1",
     "socket.io-client": "^4.8.3",
     "zustand": "^4.4.7"
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
+    "@types/react-mentions": "^4.4.1",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "@vitejs/plugin-react": "^4.2.1",

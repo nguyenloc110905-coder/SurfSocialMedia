@@ -103,6 +103,7 @@ export default function NotificationBell() {
       case 'comment':
       case 'reply':
       case 'comment_reaction':
+      case 'mention':
         if (notif.postId) navigate(`/feed/post/${notif.postId}`);
         break;
       default:
@@ -141,6 +142,7 @@ export default function NotificationBell() {
     if (n.type === 'comment') return <>{name}{' đã bình luận về bài viết của bạn'}{snippet}</>;
     if (n.type === 'reply') return <>{name}{' đã trả lời bình luận của bạn'}{snippet}</>;
     if (n.type === 'comment_reaction') return <>{name}{` đã thả ${n.reaction ?? '❤️'} vào bình luận của bạn`}{snippet}</>;
+    if (n.type === 'mention') return <>{name}{' đã nhắc đến bạn trong một bình luận'}{snippet}</>;
     return <>{name}{' đã thông báo cho bạn'}</>;
   };
 

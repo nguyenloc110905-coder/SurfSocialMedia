@@ -237,6 +237,51 @@ router.delete('/:id/save', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// POST /:id/report — báo cáo bài viết vi phạm
+router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
+  const VALID_REASONS = ['spam', 'inappropriate', 'misinformation', 'hate_speech', 'harassment', 'violence', 'copyright', 'other'];
+  try {
+    const db = getDb();
+    const postDoc = await db.collection('posts').doc(req.params.id).get();
+    if (!postDoc.exists || postDoc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    if (postDoc.data()?.authorId === req.uid) {
+      res.status(400).json({ error: 'Bạn không thể báo cáo bài viết của chính mình' });
+      return;
+    }
+    const { reason } = req.body as { reason?: string };
+    if (!reason || !VALID_REASONS.includes(reason)) {
+      res.status(400).json({ error: 'Lý do báo cáo không hợp lệ' });
+      return;
+    }
+    // Deduplicate: one report per user per post
+    const existing = await db.collection('reports')
+      .where('postId', '==', req.params.id)
+      .where('reporterId', '==', req.uid!)
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      res.status(409).json({ error: 'Bạn đã báo cáo bài viết này rồi' });
+      return;
+    }
+    const postData = postDoc.data()!;
+    await db.collection('reports').add({
+      postId: req.params.id,
+      reporterId: req.uid,
+      postAuthorId: postData.authorId ?? null,
+      postContentSnippet: String(postData.content ?? '').substring(0, 150),
+      reason,
+      status: 'pending',
+      createdAt: new Date(),
+    });
+    res.status(201).json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const postsRef = getDb().collection('posts');
@@ -257,6 +302,48 @@ router.get('/:id', requireAuth, async (req, res) => {
         return aT - bT;
       });
     res.json({ ...post, replies });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// PATCH /:id/pin — ghim/bỏ ghim bài viết lên đầu trang cá nhân (chỉ tác giả)
+router.patch('/:id/pin', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const ref = db.collection('posts').doc(req.params.id);
+    const doc = await ref.get();
+
+    if (!doc.exists || doc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    if (doc.data()?.authorId !== req.uid) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const isCurrentlyPinned = !!doc.data()?.pinnedAt;
+
+    if (isCurrentlyPinned) {
+      await ref.update({ pinnedAt: null });
+      res.json({ pinned: false, pinnedAt: null });
+    } else {
+      // Unpin any other pinned post by this user first
+      const authorPostsSnap = await db.collection('posts')
+        .where('authorId', '==', req.uid!)
+        .get();
+      const batch = db.batch();
+      authorPostsSnap.docs.forEach((d) => {
+        if (d.id !== req.params.id && d.data()?.pinnedAt) {
+          batch.update(d.ref, { pinnedAt: null });
+        }
+      });
+      const now = new Date();
+      batch.update(ref, { pinnedAt: now });
+      await batch.commit();
+      res.json({ pinned: true, pinnedAt: now.toISOString() });
+    }
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

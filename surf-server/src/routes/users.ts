@@ -526,8 +526,11 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
-    // Sort by createdAt desc (Firestore compound query may change order)
+    // Sort: pinned post first, then by createdAt desc
     posts.sort((a, b) => {
+      const aPinned = !!(a as Record<string, unknown>).pinnedAt;
+      const bPinned = !!(b as Record<string, unknown>).pinnedAt;
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
       const aTime = (a.createdAt as { _seconds?: number; seconds?: number })?._seconds
         ?? (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
       const bTime = (b.createdAt as { _seconds?: number; seconds?: number })?._seconds

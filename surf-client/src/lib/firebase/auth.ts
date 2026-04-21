@@ -64,6 +64,7 @@ export function sendPasswordResetEmail(email: string) {
 }
 
 export async function signOut() {
+  markTabAuthAction();
   // Chuyển sang session persistence để xóa token đã lưu trong localStorage
   await setPersistence(auth, browserSessionPersistence);
   return fbSignOut(auth);
@@ -71,6 +72,22 @@ export async function signOut() {
 
 export function subscribeAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
+}
+
+// ─── Cross-tab isolation ───────────────────────────────────────────────────
+// Marks that THIS browser tab initiated an auth action (sign-in / sign-out).
+// Other tabs that receive a Firebase auth-state event without this flag can
+// safely ignore it — the change came from a different tab.
+const _TAB_AUTH_KEY = '_surf_tab_auth_ts';
+
+export function markTabAuthAction(): void {
+  sessionStorage.setItem(_TAB_AUTH_KEY, Date.now().toString());
+}
+
+export function isRecentTabAuthAction(): boolean {
+  const ts = sessionStorage.getItem(_TAB_AUTH_KEY);
+  if (!ts) return false;
+  return Date.now() - parseInt(ts, 10) < 30_000; // 30-second window
 }
 
 export async function updateUserProfile(updates: { displayName?: string; photoURL?: string }) {

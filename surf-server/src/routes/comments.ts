@@ -43,7 +43,11 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
     
-    const { content, parentId } = req.body;
+    const { content, parentId, mentions = [] } = req.body as {
+      content: string;
+      parentId?: string;
+      mentions?: { uid: string; displayName: string }[];
+    };
     
     if (!content?.trim()) {
       res.status(400).json({ error: 'Comment content is required' });
@@ -127,6 +131,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const postSnippet = isVideo
       ? (contentDoc.data()?.title as string ?? '').substring(0, 100)
       : (contentDoc.data()?.content as string ?? '').substring(0, 100);
+    const plainContent = content.trim().replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
     // Notify post author about new top-level comment (skip own post, skip replies — handled below)
     if (!parentId && postAuthorId && postAuthorId !== req.uid) {
       const notifRef = db.collection('notifications').doc();
@@ -139,7 +144,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         actorPhoto: user?.photoURL ?? null,
         postId: req.params.postId,
         postSnippet,
-        commentSnippet: content.trim().substring(0, 80),
+        commentSnippet: plainContent.substring(0, 80),
         read: false,
         createdAt: new Date(),
       };
@@ -164,7 +169,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           actorName: user?.displayName ?? 'Ai đó',
           actorPhoto: user?.photoURL ?? null,
           postId: req.params.postId,
-          commentSnippet: content.trim().substring(0, 80),
+          commentSnippet: plainContent.substring(0, 80),
           read: false,
           createdAt: new Date(),
         };
@@ -185,7 +190,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           actorName: user?.displayName ?? 'Ai đó',
           actorPhoto: user?.photoURL ?? null,
           postId: req.params.postId,
-          commentSnippet: content.trim().substring(0, 80),
+          commentSnippet: plainContent.substring(0, 80),
           read: false,
           createdAt: new Date(),
         };
@@ -195,6 +200,31 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           createdAt: new Date().toISOString(),
         });
       }
+    }
+
+    // Notify mentioned users (skip self, skip post author already notified above)
+    const alreadyNotified = new Set<string>([req.uid!]);
+    for (const mention of mentions) {
+      if (!mention.uid || alreadyNotified.has(mention.uid)) continue;
+      alreadyNotified.add(mention.uid);
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'mention',
+        recipientId: mention.uid,
+        actorId: req.uid,
+        actorName: user?.displayName ?? 'Ai đó',
+        actorPhoto: user?.photoURL ?? null,
+        postId: req.params.postId,
+        commentSnippet: plainContent.substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${mention.uid}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
     }
 
     res.status(201).json(responseData);
