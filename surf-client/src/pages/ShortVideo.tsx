@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { uploadVideo } from '../lib/cloudinary';
+import PresenceBadge from '../components/ui/PresenceBadge';
+import { optimizeImageUrl } from '../lib/image-cdn';
 import { useAuthStore } from '../stores/authStore';
 import { useClipFeedStore, type ClipVideo } from '../stores/clipFeedStore';
 import { getSocket } from '../lib/socket';
@@ -281,7 +283,7 @@ function ClipCard({
       <video
         ref={videoRef}
         src={videoSrc}
-        poster={video.thumbnailUrl ?? undefined}
+        poster={optimizeImageUrl(video.thumbnailUrl) || undefined}
         loop
         muted={muted}
         playsInline
@@ -365,7 +367,7 @@ function ClipCard({
         >
           {video.authorPhotoURL ? (
             <img
-              src={video.authorPhotoURL}
+              src={optimizeImageUrl(video.authorPhotoURL)}
               alt={video.authorDisplayName}
               className="w-12 h-12 rounded-full border-2 border-white object-cover"
             />
@@ -672,7 +674,7 @@ function ClipCard({
           {comments.map((c) => (
             <div key={c.id} className="flex gap-3">
               {c.authorPhotoURL ? (
-                <img src={c.authorPhotoURL} alt={c.authorDisplayName} className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
+                <img src={optimizeImageUrl(c.authorPhotoURL)} alt={c.authorDisplayName} className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
               ) : (
                 <div className="w-8 h-8 rounded-full flex-shrink-0 bg-cyan-500 flex items-center justify-center text-white text-xs font-bold">
                   {c.authorDisplayName?.[0]?.toUpperCase() ?? '?'}
@@ -748,13 +750,20 @@ function ClipCard({
               )}
               {filteredFriends.map((f) => (
                 <div key={f.id} className="flex items-center gap-3 py-1">
-                  {f.avatarUrl ? (
-                    <img src={f.avatarUrl} alt={f.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-cyan-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                      {f.name[0]?.toUpperCase() ?? '?'}
-                    </div>
-                  )}
+                  <span className="relative inline-flex flex-shrink-0 overflow-visible">
+                    {f.avatarUrl ? (
+                      <img
+                        src={optimizeImageUrl(f.avatarUrl)}
+                        alt={f.name}
+                        className="w-9 h-9 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-cyan-500 flex items-center justify-center text-white text-sm font-bold">
+                        {f.name[0]?.toUpperCase() ?? '?'}
+                      </div>
+                    )}
+                    <PresenceBadge uid={f.id} size="sm" />
+                  </span>
                   <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{f.name}</span>
                   <button
                     onClick={() => void shareToFriend(f)}

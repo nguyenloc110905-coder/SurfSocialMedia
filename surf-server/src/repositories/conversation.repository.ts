@@ -11,33 +11,47 @@ const toDate = (value: unknown): Date | undefined => {
   return undefined;
 };
 
+const mapMemberIds = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const getUnreadCountForUser = (data: Record<string, unknown>, userId: string): number => {
+  const unreadMap = data.unreadCountByUser;
+  if (!unreadMap || typeof unreadMap !== 'object') return 0;
+  const value = (unreadMap as Record<string, unknown>)[userId];
+  return typeof value === 'number' ? value : 0;
+};
+
 const mapConservationDoc = (id: string, data: Record<string, unknown>): ConservationDoc => ({
   id,
   type: (data.type as ConservationDoc['type']) ?? 'dm',
   title: (data.title as string) ?? undefined,
-  memberIds: Array.isArray(data.memberIds) ? (data.memberIds as string[]) : [],
-  memberPairKey: data.memberPairKey as string | undefined,
-  unreadCountByUser:
-    data.unreadCountByUser && typeof data.unreadCountByUser === 'object'
-      ? Object.fromEntries(
-          Object.entries(data.unreadCountByUser as Record<string, unknown>).map(([uid, count]) => [
-            uid,
-            typeof count === 'number' ? count : 0,
-          ])
-        )
-      : undefined,
   createdBy: (data.createdBy as string) ?? '',
+  memberCount:
+    typeof data.memberCount === 'number' ? data.memberCount : mapMemberIds(data.memberIds).length,
   createdAt: toDate(data.createdAt) ?? new Date(),
   updatedAt: toDate(data.updatedAt) ?? new Date(),
   lastMessageAt: toDate(data.lastMessageAt),
   lastMessagePreview: (data.lastMessagePreview as string) ?? undefined,
+  lastMessageSeq: typeof data.lastMessageSeq === 'number' ? data.lastMessageSeq : 0,
 });
+
+export type ConversationListDetail = {
+  item: ConservationDoc;
+  memberIds: string[];
+  unreadCount: number;
+};
 
 export const conversationRepository = {
   async getById(id: string): Promise<ConservationDoc | null> {
     const snap = await col().doc(id).get();
     if (!snap.exists) return null;
     return mapConservationDoc(snap.id, snap.data() ?? ({} as Record<string, unknown>));
+  },
+
+  async getMemberIds(conversationId: string): Promise<string[]> {
+    const snap = await col().doc(conversationId).get();
+    if (!snap.exists) return [];
+    return mapMemberIds((snap.data() ?? ({} as Record<string, unknown>)).memberIds);
   },
 
   async findOrCreateDm(
@@ -61,11 +75,13 @@ export const conversationRepository = {
         memberIds,
         memberPairKey: pairKey,
         unreadCountByUser: Object.fromEntries(memberIds.map((uid) => [uid, 0])),
+        memberCount: memberIds.length,
         createdBy: uidA,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         lastMessageAt: null,
         lastMessagePreview: null,
+        lastMessageSeq: 0,
       });
     });
 
@@ -85,17 +101,34 @@ export const conversationRepository = {
       .limit(limit)
       .get();
 
-    return snap.docs.map((d) =>
-      mapConservationDoc(d.id, (d.data() ?? {}) as Record<string, unknown>)
+    return snap.docs.map((doc) =>
+      mapConservationDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>)
     );
   },
 
-  async listByMemberForUnread(userId: string): Promise<ConservationDoc[]> {
-    const snap = await col().where('memberIds', 'array-contains', userId).get();
+  async listByMemberDetails(userId: string, limit = 20): Promise<ConversationListDetail[]> {
+    const snap = await col()
+      .where('memberIds', 'array-contains', userId)
+      .orderBy('lastMessageAt', 'desc')
+      .limit(limit)
+      .get();
 
-    return snap.docs.map((d) =>
-      mapConservationDoc(d.id, (d.data() ?? {}) as Record<string, unknown>)
-    );
+    return snap.docs.map((doc) => {
+      const data = (doc.data() ?? {}) as Record<string, unknown>;
+      return {
+        item: mapConservationDoc(doc.id, data),
+        memberIds: mapMemberIds(data.memberIds),
+        unreadCount: getUnreadCountForUser(data, userId),
+      };
+    });
+  },
+
+  async sumUnreadByUser(userId: string): Promise<number> {
+    const snap = await col().where('memberIds', 'array-contains', userId).get();
+    return snap.docs.reduce((total, doc) => {
+      const data = (doc.data() ?? {}) as Record<string, unknown>;
+      return total + getUnreadCountForUser(data, userId);
+    }, 0);
   },
 
   async markReadByUser(conversationId: string, userId: string): Promise<void> {
@@ -118,11 +151,13 @@ export const conversationRepository = {
       title,
       memberIds,
       unreadCountByUser,
+      memberCount: memberIds.length,
       createdBy,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
       lastMessageAt: null,
       lastMessagePreview: null,
+      lastMessageSeq: 0,
     });
 
     const snap = await ref.get();
@@ -132,11 +167,35 @@ export const conversationRepository = {
   async addMembers(conversationId: string, newMemberIds: string[]): Promise<void> {
     const updates: Record<string, unknown> = {
       memberIds: FieldValue.arrayUnion(...newMemberIds),
+      memberCount: FieldValue.increment(newMemberIds.length),
       updatedAt: FieldValue.serverTimestamp(),
     };
     for (const uid of newMemberIds) {
       updates[`unreadCountByUser.${uid}`] = 0;
     }
     await col().doc(conversationId).update(updates);
+  },
+
+  async refreshPreviewIfLatestMessage(
+    conversationId: string,
+    latestMessageCreatedAt: Date,
+    preview: string
+  ): Promise<void> {
+    const conversationRef = col().doc(conversationId);
+
+    await getDb().runTransaction(async (transaction) => {
+      const snap = await transaction.get(conversationRef);
+      if (!snap.exists) return;
+
+      const data = (snap.data() ?? {}) as Record<string, unknown>;
+      const currentLastMessageAt = toDate(data.lastMessageAt);
+      if (!currentLastMessageAt) return;
+      if (currentLastMessageAt.getTime() !== latestMessageCreatedAt.getTime()) return;
+
+      transaction.update(conversationRef, {
+        lastMessagePreview: preview,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
   },
 };

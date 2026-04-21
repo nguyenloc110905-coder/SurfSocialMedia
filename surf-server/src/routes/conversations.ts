@@ -8,6 +8,7 @@ import {
   getUnreadConversationCount,
   listMessagesForConversation,
   listConversationsForUser,
+  listReadReceiptsForConversation,
   markConversationRead,
   sendTextMessage,
   sendMediaMessage,
@@ -15,7 +16,11 @@ import {
   toApiMessage,
   toRealtimeMessagePayload,
 } from '../services/conversations.js';
-import { emitMessageNew, emitMessageUnreadCount } from '../realtime/emitters/message.emitter.js';
+import {
+  emitMessageNew,
+  emitMessageRead,
+  emitMessageUnreadCount,
+} from '../realtime/emitters/message.emitter.js';
 
 const router = Router();
 
@@ -212,10 +217,56 @@ router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
  *     responses:
  *       200: { description: OK }
  */
+router.get('/:id/read-receipts', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const fromCreatedAt = parseCursorSafe(req.query.fromCreatedAt);
+    const toCreatedAt = parseCursorSafe(req.query.toCreatedAt);
+    const limit = Math.min(parseIntSafe(req.query.limit, 150), 300);
+
+    if (!fromCreatedAt || !toCreatedAt) {
+      res.status(400).json({ error: 'Invalid receipt window' });
+      return;
+    }
+
+    const result = await listReadReceiptsForConversation(
+      uid,
+      req.params.id,
+      fromCreatedAt,
+      toCreatedAt,
+      limit
+    );
+
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    res.json({ items: result.items });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const result = await markConversationRead(uid, req.params.id);
+    const lastReadMessageId =
+      typeof req.body?.lastReadMessageId === 'string' && req.body.lastReadMessageId.trim()
+        ? req.body.lastReadMessageId.trim()
+        : undefined;
+    const lastReadMessageCreatedAt = parseCursorSafe(req.body?.lastReadMessageCreatedAt);
+    const result = await markConversationRead(
+      uid,
+      req.params.id,
+      lastReadMessageId,
+      lastReadMessageCreatedAt
+    );
 
     if (!result.ok) {
       if (result.reason === 'not_found') {
@@ -230,7 +281,14 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
     const count = await getUnreadConversationCount(uid);
     emitMessageUnreadCount(uid, count);
 
-    res.json({ ok: true, count });
+    if (result.item) {
+      emitMessageRead(req.params.id, {
+        conversationId: req.params.id,
+        item: result.item,
+      });
+    }
+
+    res.json({ ok: true, count, item: result.item });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

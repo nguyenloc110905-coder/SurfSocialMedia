@@ -10,6 +10,8 @@ import {
 import { uploadProfileImage } from '@/lib/firebase/storage';
 import { updateUserProfile } from '@/lib/firebase/auth';
 import { resizeAvatar, resizeCover } from '@/lib/utils/image';
+import { optimizeImageUrl } from '@/lib/image-cdn';
+import PresenceBadge from '@/components/ui/PresenceBadge';
 import Modal from '@/components/ui/Modal';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -942,7 +944,7 @@ export default function Profile() {
           )}
           {coverImageUrl && (
             <img
-              src={coverImageUrl}
+              src={optimizeImageUrl(coverImageUrl)}
               alt=""
               className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover/cover:scale-[1.02]"
             />
@@ -977,10 +979,10 @@ export default function Profile() {
           {/* Avatar overlapping cover */}
           <div className="relative -mt-16 sm:-mt-20 z-10 surf-avatar-in">
             {/* Glow ring behind avatar */}
-            <div className="surf-glow-ring absolute inset-0 rounded-3xl bg-gradient-to-br from-surf-primary/35 to-surf-secondary/35 blur-xl -z-10" />
-            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl ring-4 ring-white dark:ring-gray-900 shadow-2xl overflow-hidden bg-gradient-to-br from-surf-primary to-surf-secondary flex items-center justify-center">
+            <div className="surf-glow-ring absolute inset-0 rounded-full bg-gradient-to-br from-surf-primary/35 to-surf-secondary/35 blur-xl -z-10" />
+            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full ring-4 ring-white dark:ring-gray-900 shadow-2xl overflow-hidden bg-gradient-to-br from-surf-primary to-surf-secondary flex items-center justify-center">
               {photoURL ? (
-                <img src={photoURL} alt={displayName} className="w-full h-full object-cover" />
+                <img src={optimizeImageUrl(photoURL)} alt={displayName} className="w-full h-full object-cover" />
               ) : (
                 <span className="text-4xl sm:text-5xl font-bold text-white select-none">
                   {initial}
@@ -1348,7 +1350,7 @@ export default function Profile() {
               <div className="flex gap-3 items-center">
                 <div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-semibold text-surf-primary flex-shrink-0 overflow-hidden">
                   {photoURL ? (
-                    <img src={photoURL} alt="" className="w-full h-full object-cover" />
+                    <img src={optimizeImageUrl(photoURL)} alt="" className="w-full h-full object-cover" />
                   ) : (
                     initial
                   )}
@@ -1504,7 +1506,7 @@ export default function Profile() {
                         <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 flex items-center justify-center overflow-hidden relative">
                           {hasMedia && firstImage ? (
                             <img
-                              src={firstImage}
+                              src={optimizeImageUrl(firstImage)}
                               alt=""
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
@@ -1654,17 +1656,20 @@ export default function Profile() {
                       onClick={() => navigate(`/feed/profile/${friend.id}`)}
                     >
                       <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 flex items-center justify-center overflow-hidden">
-                        {friend.photoURL ? (
-                          <img
-                            src={friend.photoURL}
-                            alt={friend.displayName}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="text-4xl font-bold text-surf-primary">
-                            {friend.displayName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        <div className="relative h-full w-full">
+                          {friend.photoURL ? (
+                            <img
+                              src={optimizeImageUrl(friend.photoURL)}
+                              alt={friend.displayName}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-surf-primary">
+                              {friend.displayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <PresenceBadge uid={friend.id} size="md" />
+                        </div>
                       </div>
                       <div className="p-3">
                         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
@@ -1739,7 +1744,7 @@ export default function Profile() {
                       style={{ animationDelay: `${index * 0.04}s` }}
                     >
                       <img
-                        src={photo.url}
+                        src={optimizeImageUrl(photo.url)}
                         alt=""
                         className="w-full h-full object-cover group-hover:scale-110 group-hover:brightness-105 transition-all duration-500"
                       />
@@ -2030,7 +2035,7 @@ export default function Profile() {
                     {highlightPhotos.map((url, i) => (
                       <div key={i} className="relative group aspect-square">
                         <img
-                          src={url}
+                          src={optimizeImageUrl(url)}
                           alt=""
                           className="w-full h-full rounded-2xl object-cover hover:brightness-95 transition-all"
                         />
@@ -2339,9 +2344,9 @@ export default function Profile() {
           {avatarPreviewUrl && (
             <div className="flex justify-center">
               <img
-                src={avatarPreviewUrl}
+                src={optimizeImageUrl(avatarPreviewUrl)}
                 alt="Xem trước"
-                className="w-40 h-40 rounded-2xl object-cover border-2 border-gray-200 dark:border-gray-600"
+                className="w-40 h-40 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
               />
             </div>
           )}
@@ -2371,7 +2376,7 @@ export default function Profile() {
         <div className="space-y-4">
           {coverPreviewUrl && (
             <div className="w-full aspect-video overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800">
-              <img src={coverPreviewUrl} alt="Xem trước" className="w-full h-full object-cover" />
+              <img src={optimizeImageUrl(coverPreviewUrl)} alt="Xem trước" className="w-full h-full object-cover" />
             </div>
           )}
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center">

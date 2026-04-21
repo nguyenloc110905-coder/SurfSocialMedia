@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { optimizeImageUrl } from '@/lib/image-cdn';
 import SettingsPrivacy from './SettingsPrivacy';
 import HelpSupport from './HelpSupport';
 import SearchBox from './SearchBox';
@@ -146,7 +147,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
           aria-haspopup="true"
         >
           {user?.photoURL ? (
-            <img src={user.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+            <img src={optimizeImageUrl(user.photoURL)} alt="" className="w-full h-full rounded-full object-cover" />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">{initial}</span>
@@ -169,7 +170,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                 >
                   {user?.photoURL ? (
                     <img
-                      src={user.photoURL}
+                      src={optimizeImageUrl(user.photoURL)}
                       alt=""
                       className="w-10 h-10 rounded-full object-cover"
                     />

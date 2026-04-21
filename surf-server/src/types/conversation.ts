@@ -4,14 +4,13 @@ export type ConservationDoc = {
   id: string;
   type: ConversationType;
   title?: string;
-  memberIds: string[];
-  memberPairKey?: string;
-  unreadCountByUser?: Record<string, number>;
   createdBy: string;
+  memberCount: number;
   createdAt: Date;
   updatedAt: Date;
   lastMessageAt?: Date;
   lastMessagePreview?: string;
+  lastMessageSeq: number;
 };
 
 export const buildDmPairKey = (uid1: string, uid2: string): string =>

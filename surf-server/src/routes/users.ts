@@ -1,7 +1,19 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest, requireNoBlock } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  NOTIFICATION_PREF_KEYS,
+  normalizeNotificationPrefs,
+  type NotificationType,
+} from '../types/notification.js';
+import {
+  DEFAULT_FRIEND_REQUEST_PRIVACY,
+  FRIEND_REQUEST_PRIVACY_OPTIONS,
+  isFriendRequestPrivacy,
+  normalizeFriendRequestPrivacy,
+} from '../types/privacy.js';
 
 const router = Router();
 
@@ -45,6 +57,34 @@ function normalize(s: string): string {
  *     responses:
  *       200: { description: Danh sách user khớp }
  */
+const ALLOWED_DEFAULT_POST_PRIVACY = ['public', 'friends', 'only-me', 'custom'] as const;
+type DefaultPostPrivacy = (typeof ALLOWED_DEFAULT_POST_PRIVACY)[number];
+
+function isDefaultPostPrivacy(value: unknown): value is DefaultPostPrivacy {
+  return (
+    typeof value === 'string' && ALLOWED_DEFAULT_POST_PRIVACY.includes(value as DefaultPostPrivacy)
+  );
+}
+
+type NotificationPrefsPatch = Partial<Record<NotificationType, boolean>>;
+
+function parseNotificationPrefsPatch(value: unknown): NotificationPrefsPatch | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const raw = value as Record<string, unknown>;
+  const allowed = new Set<string>(NOTIFICATION_PREF_KEYS);
+  const patch: NotificationPrefsPatch = {};
+
+  for (const [key, prefValue] of Object.entries(raw)) {
+    if (!allowed.has(key)) return null;
+    if (typeof prefValue !== 'boolean') return null;
+    patch[key as NotificationType] = prefValue;
+  }
+
+  return patch;
+}
+
+/** GET /api/users/search?q=... */
 router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
@@ -117,7 +157,14 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
       res.status(404).json({ error: 'Profile not found' });
       return;
     }
-    res.json({ id: doc.id, ...doc.data() });
+
+    const data = doc.data() ?? {};
+    res.json({
+      id: doc.id,
+      ...data,
+      notificationPrefs: normalizeNotificationPrefs(data.notificationPrefs),
+      friendRequestPrivacy: normalizeFriendRequestPrivacy(data.friendRequestPrivacy),
+    });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -145,23 +192,88 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
  */
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { displayName, bio, photoURL, email } = req.body;
+    const {
+      displayName,
+      bio,
+      photoURL,
+      email,
+      defaultPostPrivacy,
+      notificationPrefs,
+      friendRequestPrivacy,
+    } = req.body as {
+      displayName?: unknown;
+      bio?: unknown;
+      photoURL?: unknown;
+      email?: unknown;
+      defaultPostPrivacy?: unknown;
+      notificationPrefs?: unknown;
+      friendRequestPrivacy?: unknown;
+    };
+
+    if (defaultPostPrivacy !== undefined && !isDefaultPostPrivacy(defaultPostPrivacy)) {
+      res.status(400).json({
+        error: `defaultPostPrivacy must be one of: ${ALLOWED_DEFAULT_POST_PRIVACY.join(', ')}`,
+      });
+      return;
+    }
+
+    const notificationPrefsPatch =
+      notificationPrefs === undefined ? undefined : parseNotificationPrefsPatch(notificationPrefs);
+
+    if (notificationPrefsPatch === null) {
+      res.status(400).json({
+        error: 'notificationPrefs must be an object of boolean flags keyed by notification types',
+      });
+      return;
+    }
+
+    if (friendRequestPrivacy !== undefined && !isFriendRequestPrivacy(friendRequestPrivacy)) {
+      res.status(400).json({
+        error: `friendRequestPrivacy must be one of: ${FRIEND_REQUEST_PRIVACY_OPTIONS.join(', ')}`,
+      });
+      return;
+    }
+
     const ref = getDb().collection('users').doc(req.uid!);
+    const doc = await ref.get();
+    const existing = (doc.data() ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = { updatedAt: new Date() };
     if (displayName !== undefined) data.displayName = displayName;
     if (bio !== undefined) data.bio = bio;
     if (photoURL !== undefined) data.photoURL = photoURL;
-    const doc = await ref.get();
+    if (defaultPostPrivacy !== undefined) data.defaultPostPrivacy = defaultPostPrivacy;
+    if (friendRequestPrivacy !== undefined) data.friendRequestPrivacy = friendRequestPrivacy;
+    if (notificationPrefsPatch !== undefined) {
+      const currentPrefs = normalizeNotificationPrefs(existing.notificationPrefs);
+      data.notificationPrefs = {
+        ...currentPrefs,
+        ...notificationPrefsPatch,
+      };
+    }
+
     if (!doc.exists) {
       data.uid = req.uid;
       data.email = email ?? '';
+      data.defaultPostPrivacy = isDefaultPostPrivacy(defaultPostPrivacy)
+        ? defaultPostPrivacy
+        : 'public';
+      data.friendRequestPrivacy = isFriendRequestPrivacy(friendRequestPrivacy)
+        ? friendRequestPrivacy
+        : DEFAULT_FRIEND_REQUEST_PRIVACY;
+      data.notificationPrefs = data.notificationPrefs ?? DEFAULT_NOTIFICATION_PREFS;
       data.createdAt = new Date();
       await ref.set(data);
     } else {
       await ref.update(data);
     }
     const updated = await ref.get();
-    res.json({ id: updated.id, ...updated.data() });
+    const updatedData = updated.data() ?? {};
+    res.json({
+      id: updated.id,
+      ...updatedData,
+      notificationPrefs: normalizeNotificationPrefs(updatedData.notificationPrefs),
+      friendRequestPrivacy: normalizeFriendRequestPrivacy(updatedData.friendRequestPrivacy),
+    });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -659,10 +771,14 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
 
     // Sort by createdAt desc (Firestore compound query may change order)
     posts.sort((a, b) => {
-      const aTime = (a.createdAt as { _seconds?: number; seconds?: number })?._seconds
-        ?? (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
-      const bTime = (b.createdAt as { _seconds?: number; seconds?: number })?._seconds
-        ?? (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      const aTime =
+        (a.createdAt as { _seconds?: number; seconds?: number })?._seconds ??
+        (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ??
+        0;
+      const bTime =
+        (b.createdAt as { _seconds?: number; seconds?: number })?._seconds ??
+        (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ??
+        0;
       return bTime - aTime;
     });
 
@@ -801,7 +917,12 @@ router.get('/:uid/clips', requireAuth, async (req, res) => {
             typeof url === 'string' &&
             (url.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url));
           if (isVideo) {
-            clips.push({ url, postId: doc.id, content: data.content ?? '', createdAt: data.createdAt });
+            clips.push({
+              url,
+              postId: doc.id,
+              content: data.content ?? '',
+              createdAt: data.createdAt,
+            });
           }
         });
       }

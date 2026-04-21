@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import { auth } from '@/lib/firebase/auth';
 
 export type CallMode = 'audio' | 'video';
 export type VideoProfile = 'p480' | 'p720';
@@ -26,6 +27,7 @@ type FetchLiveKitTokenInput = {
   peerId: string;
   mode: CallMode;
   quality: VideoProfile;
+  userName?: string;
 };
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
@@ -111,5 +113,20 @@ export const buildDeterministicFallbackUrl = (conversationId: string, callId: st
   return `${base}/${encodeURIComponent(roomName)}`;
 };
 
-export const fetchLiveKitToken = (payload: FetchLiveKitTokenInput) =>
-  api.post<LiveKitTokenResponse>('/api/calls/livekit-token', payload);
+const resolveLiveKitUserName = () => {
+  const displayName = auth.currentUser?.displayName?.trim();
+  if (displayName) return displayName;
+
+  const emailPrefix = auth.currentUser?.email?.split('@')[0]?.trim();
+  if (emailPrefix) return emailPrefix;
+
+  return '';
+};
+
+export const fetchLiveKitToken = (payload: FetchLiveKitTokenInput) => {
+  const userName = resolveLiveKitUserName();
+  return api.post<LiveKitTokenResponse>('/api/calls/livekit-token', {
+    ...payload,
+    userName: userName || undefined,
+  });
+};

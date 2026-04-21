@@ -18,9 +18,17 @@ import {
   emitNotificationNew,
   emitNotificationUnreadCount,
 } from '../realtime/emitters/notification.emitter.js';
+import { normalizeFriendRequestPrivacy } from '../types/privacy.js';
 
 const router = Router();
 const db = () => getDb();
+
+const hasMutualFriend = (sourceIds: string[], targetIds: string[]): boolean => {
+  if (sourceIds.length === 0 || targetIds.length === 0) return false;
+
+  const targetSet = new Set(targetIds);
+  return sourceIds.some((id) => targetSet.has(id));
+};
 
 /**
  * @swagger
@@ -41,11 +49,13 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       res.json({ friends: [] });
       return;
     }
-    const usersSnap = await db().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
     const myFriendsSet = new Set(friendIds);
-    // Batch-load friend lists to compute mutual counts
-    const fDocs = await db().getAll(...friendIds.map((id) => db().collection('friends').doc(id)));
+    // Batch-load only the needed user + friend documents (avoid full collection scan)
+    const [userDocs, fDocs] = await Promise.all([
+      db().getAll(...friendIds.map((id) => db().collection('users').doc(id))),
+      db().getAll(...friendIds.map((id) => db().collection('friends').doc(id))),
+    ]);
+    const usersMap = new Map(userDocs.map((d) => [d.id, { id: d.id, ...d.data() }]));
     const friendFriendsMap = new Map<string, string[]>();
     fDocs.forEach((d) => {
       if (d.exists) friendFriendsMap.set(d.id, d.data()?.friendIds ?? []);
@@ -167,6 +177,23 @@ router.post(
         res.status(400).json({ error: 'Already friends' });
         return;
       }
+
+      const requestPrivacy = normalizeFriendRequestPrivacy(toUser.data()?.friendRequestPrivacy);
+      if (requestPrivacy === 'friends_of_friends') {
+        const toFriendDoc = await db().collection('friends').doc(toUid).get();
+        const toFriendIds: string[] = toFriendDoc.exists
+          ? (toFriendDoc.data()?.friendIds ?? [])
+          : [];
+
+        if (!hasMutualFriend(friendIds, toFriendIds)) {
+          res.status(403).json({
+            error: 'This user only accepts friend requests from friends of friends',
+            code: 'FRIEND_REQUEST_PRIVACY_RESTRICTED',
+          });
+          return;
+        }
+      }
+
       const ref = await db().collection('friend_requests').add({
         fromUid,
         toUid,
@@ -202,31 +229,15 @@ router.post(
           entityId: ref.id,
           message: `${fromData?.displayName ?? 'Unknown'} đã gửi lời mời kết bạn cho bạn.`,
         });
-        const unreadCount = await getUnreadNotificationCount(toUid);
-        emitNotificationNew(toUid, toApiNotification(notification));
-        emitNotificationUnreadCount(toUid, unreadCount);
+
+        if (notification) {
+          const unreadCount = await getUnreadNotificationCount(toUid);
+          emitNotificationNew(toUid, toApiNotification(notification));
+          emitNotificationUnreadCount(toUid, unreadCount);
+        }
       } catch (notifyError) {
         console.warn('⚠️ Không tạo được notification friend_request:', notifyError);
       }
-
-      // Write notification doc + emit notification:new so the bell updates
-      const notifRef = db().collection('notifications').doc();
-      const notifPayload = {
-        id: notifRef.id,
-        type: 'friend_request',
-        recipientId: toUid,
-        actorId: fromUid,
-        actorName: fromData?.displayName ?? 'Ai đó',
-        actorPhoto: fromData?.photoURL ?? null,
-        requestId: ref.id,
-        read: false,
-        createdAt: new Date(),
-      };
-      notifRef.set(notifPayload).catch(() => {});
-      io.to(`user:${toUid}`).emit('notification:new', {
-        ...notifPayload,
-        createdAt: new Date().toISOString(),
-      });
 
       res.status(201).json({ id: ref.id, toUid, status: 'pending' });
     } catch (e) {
@@ -321,9 +332,12 @@ router.patch('/requests/:id', requireAuth, async (req: AuthRequest, res) => {
           entityId: id,
           message: `${acceptorName} đã chấp nhận lời mời kết bạn của bạn.`,
         });
-        const unreadCount = await getUnreadNotificationCount(fromUid);
-        emitNotificationNew(fromUid, toApiNotification(notification));
-        emitNotificationUnreadCount(fromUid, unreadCount);
+
+        if (notification) {
+          const unreadCount = await getUnreadNotificationCount(fromUid);
+          emitNotificationNew(fromUid, toApiNotification(notification));
+          emitNotificationUnreadCount(fromUid, unreadCount);
+        }
       } catch (notifyError) {
         console.warn('⚠️ Không tạo được notification friend_accept:', notifyError);
       }
@@ -615,8 +629,16 @@ router.delete('/:uid', requireAuth, async (req: AuthRequest, res) => {
     batch.set(theirRef, { friendIds: theirIds.filter((id) => id !== me) }, { merge: true });
     // Clean up any lingering friend_requests between them
     const [req1, req2] = await Promise.all([
-      db().collection('friend_requests').where('fromUid', '==', me).where('toUid', '==', other).get(),
-      db().collection('friend_requests').where('fromUid', '==', other).where('toUid', '==', me).get(),
+      db()
+        .collection('friend_requests')
+        .where('fromUid', '==', me)
+        .where('toUid', '==', other)
+        .get(),
+      db()
+        .collection('friend_requests')
+        .where('fromUid', '==', other)
+        .where('toUid', '==', me)
+        .get(),
     ]);
     req1.docs.forEach((d) => batch.delete(d.ref));
     req2.docs.forEach((d) => batch.delete(d.ref));

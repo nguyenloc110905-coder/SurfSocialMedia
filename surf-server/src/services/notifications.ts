@@ -1,10 +1,13 @@
+import { getDb } from '../config/firebase-admin.js';
 import { notificationRepository } from '../repositories/notification.repository.js';
 import {
   NOTIFICATION_ICON_BY_TYPE,
+  normalizeNotificationPrefs,
   type CreateNotificationInput,
   type ListNotificationsInput,
   type MarkNotificationReadResult,
   type NotificationDoc,
+  type NotificationType,
 } from '../types/notification.js';
 
 export type ApiNotification = Omit<NotificationDoc, 'createdAt' | 'readAt'> & {
@@ -18,9 +21,23 @@ export const toApiNotification = (doc: NotificationDoc): ApiNotification => ({
   readAt: doc.readAt ? doc.readAt.toISOString() : null,
 });
 
+const isNotificationEnabledForUser = async (
+  userId: string,
+  type: NotificationType
+): Promise<boolean> => {
+  const userDoc = await getDb().collection('users').doc(userId).get();
+  if (!userDoc.exists) return true;
+
+  const prefs = normalizeNotificationPrefs(userDoc.data()?.notificationPrefs);
+  return prefs[type];
+};
+
 export const createNotification = async (
   input: CreateNotificationInput
-): Promise<NotificationDoc> => {
+): Promise<NotificationDoc | null> => {
+  const enabled = await isNotificationEnabledForUser(input.userId, input.type);
+  if (!enabled) return null;
+
   const iconKey = input.iconKey ?? NOTIFICATION_ICON_BY_TYPE[input.type];
   return notificationRepository.create({ ...input, iconKey });
 };

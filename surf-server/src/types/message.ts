@@ -2,7 +2,22 @@ export type MessageType = 'text' | 'image' | 'file' | 'audio' | 'call_log';
 
 export type CallLogMode = 'audio' | 'video';
 
-export type CallLogOutcome = 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended';
+export type CallLogOutcome =
+  | 'completed'
+  | 'missed'
+  | 'declined'
+  | 'busy'
+  | 'failed'
+  | 'ended'
+  | 'started';
+
+export type MessageReactionActor = {
+  uid: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+export type MessageReactionsByEmoji = Record<string, Record<string, MessageReactionActor>>;
 
 export type MessageDoc = {
   id: string;
@@ -13,6 +28,13 @@ export type MessageDoc = {
   mediaUrl?: string;
   fileName?: string;
   createdAt: Date;
+  editedAt?: Date;
+  editedBy?: string;
+  isForwarded?: boolean;
+  forwardedFromMessageId?: string;
+  forwardedFromConversationId?: string;
+  pinnedBy?: string[];
+  reactions?: MessageReactionsByEmoji;
   callMode?: CallLogMode;
   callOutcome?: CallLogOutcome;
   durationSeconds?: number;

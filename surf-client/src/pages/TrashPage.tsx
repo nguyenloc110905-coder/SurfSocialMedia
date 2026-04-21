@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { optimizeImageUrl } from '../lib/image-cdn';
 import Modal from '../components/ui/Modal';
 
 interface TrashedPost {
@@ -210,7 +211,7 @@ export default function TrashPage() {
                   <div className="flex items-center gap-2.5 mb-3">
                     {post.authorPhotoURL ? (
                       <img
-                        src={post.authorPhotoURL}
+                        src={optimizeImageUrl(post.authorPhotoURL)}
                         alt={post.authorDisplayName}
                         className="w-9 h-9 rounded-full object-cover flex-shrink-0"
                       />
@@ -244,7 +245,7 @@ export default function TrashPage() {
                   {post.mediaUrls?.length > 0 && (
                     <div className="mb-3 rounded-xl overflow-hidden bg-gray-100 dark:bg-slate-700 h-28 relative">
                       <img
-                        src={post.mediaUrls[0]}
+                        src={optimizeImageUrl(post.mediaUrls[0])}
                         alt=""
                         className="w-full h-full object-cover opacity-70"
                       />

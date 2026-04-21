@@ -19,6 +19,7 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
 import Waves from './pages/Waves';
+import GroupLiveKitCallPage from './pages/GroupLiveKitCallPage';
 import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
 import { useMessageSound } from './hooks/useMessageSound';
@@ -151,10 +152,7 @@ export default function App() {
             path="pages"
             element={<PlaceholderPage title="Trang" description="Trang bạn quản lý và theo dõi." />}
           />
-          <Route
-            path="waves"
-            element={<Waves />}
-          />
+          <Route path="waves" element={<Waves />} />
           <Route
             path="explore"
             element={
@@ -182,6 +180,22 @@ export default function App() {
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="/call-window"
+          element={
+            <Protected>
+              <div className="min-h-screen bg-slate-950" />
+            </Protected>
+          }
+        />
+        <Route
+          path="/group-call-window"
+          element={
+            <Protected>
+              <GroupLiveKitCallPage />
+            </Protected>
+          }
+        />
       </Routes>
     </GlobalCallProvider>
   );

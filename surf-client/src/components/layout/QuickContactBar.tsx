@@ -5,43 +5,10 @@ import { getSocket } from '../../lib/socket';
 import { useAuthStore } from '../../stores/authStore';
 import SurfMusicPlayer from './SurfMusicPlayer';
 import MiniChatPanel from './MiniChatPanel';
+import PresenceBadge from '../ui/PresenceBadge';
 import { musicStore, type TrackItem, type Playlist } from '../../lib/musicStore';
 import { usePresenceStore } from '../../stores/presenceStore';
-import { formatLastSeen } from '../../lib/utils/lastSeen';
-
-/** Renders the presence indicator overlaid on an avatar corner */
-function PresenceBadge({ uid, size = 'md' }: { uid: string; size?: 'sm' | 'md' }) {
-  const isOnline = usePresenceStore((s) => s.onlineUsers.has(uid));
-  const lastSeenTs = usePresenceStore((s) => s.lastSeen.get(uid));
-
-  if (isOnline) {
-    const dotSize = size === 'sm' ? 'w-2.5 h-2.5' : 'w-3 h-3';
-    return (
-      <span
-        className={`absolute bottom-0 right-0 ${dotSize} rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800`}
-      />
-    );
-  }
-
-  if (lastSeenTs == null) return null;
-
-  const { label, gray } = formatLastSeen(lastSeenTs);
-
-  if (gray) {
-    const dotSize = size === 'sm' ? 'w-2.5 h-2.5' : 'w-3 h-3';
-    return (
-      <span
-        className={`absolute bottom-0 right-0 ${dotSize} rounded-full bg-gray-400 dark:bg-slate-500 border-2 border-white dark:border-slate-800`}
-      />
-    );
-  }
-
-  return (
-    <span className="absolute -bottom-1 -right-1 bg-gray-700 dark:bg-slate-600 text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-full border border-white dark:border-slate-800 whitespace-nowrap">
-      {label}
-    </span>
-  );
-}
+import { optimizeImageUrl } from '../../lib/image-cdn';
 
 interface Friend {
   id: string;
@@ -341,7 +308,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                       }`}
                     >
                       <div className="relative flex-shrink-0">
-                        <img src={v.thumbnail} alt="" className="w-20 h-[45px] rounded object-cover" />
+                        <img src={optimizeImageUrl(v.thumbnail)} alt="" className="w-20 h-[45px] rounded object-cover" />
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <div className="w-6 h-6 bg-black/50 rounded-full flex items-center justify-center">
                             <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
@@ -362,7 +329,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                   {ytActiveInfo && (
                     <div className="mx-3 mt-3 mb-1 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 p-2.5 flex items-start gap-2.5">
                       <div className="relative flex-shrink-0">
-                        <img src={ytActiveInfo.thumbnail} alt="" className="w-16 h-9 rounded object-cover" />
+                        <img src={optimizeImageUrl(ytActiveInfo.thumbnail)} alt="" className="w-16 h-9 rounded object-cover" />
                         {/* animated equalizer badge */}
                         <span className="absolute -bottom-1 -right-1 bg-red-500 rounded-full w-4 h-4 flex items-center justify-center">
                           <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -400,7 +367,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                             }`}
                           >
                             <div className="relative flex-shrink-0">
-                              <img src={v.thumbnail} alt="" className="w-20 h-[45px] rounded object-cover" />
+                              <img src={optimizeImageUrl(v.thumbnail)} alt="" className="w-20 h-[45px] rounded object-cover" />
                               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                 <div className="w-6 h-6 bg-black/60 rounded-full flex items-center justify-center">
                                   <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
@@ -506,7 +473,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                           className="flex items-center gap-2 px-1.5 py-1 cursor-pointer"
                           onClick={() => musicStore.requestPlay(track)}
                         >
-                          <img src={track.thumbnail} alt="" className="w-7 h-7 rounded object-cover flex-shrink-0" />
+                          <img src={optimizeImageUrl(track.thumbnail)} alt="" className="w-7 h-7 rounded object-cover flex-shrink-0" />
                           <div className="min-w-0 flex-1">
                             <p className="text-[11px] font-medium text-gray-800 dark:text-gray-200 truncate leading-tight">
                               {decodeHtml(track.title)}
@@ -711,7 +678,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                                     className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/60 group"
                                     onClick={() => musicStore.requestPlay(track)}
                                   >
-                                    <img src={track.thumbnail} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
+                                    <img src={optimizeImageUrl(track.thumbnail)} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
                                     <p className="min-w-0 flex-1 text-[11px] text-gray-700 dark:text-gray-300 truncate">
                                       {decodeHtml(track.title)}
                                     </p>
@@ -808,7 +775,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                       <span className="w-9 h-9 rounded-full overflow-hidden block">
                         {friend.avatarUrl ? (
                           <img
-                            src={friend.avatarUrl}
+                            src={optimizeImageUrl(friend.avatarUrl)}
                             alt={friend.name}
                             className="w-full h-full object-cover"
                           />
@@ -952,7 +919,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
               <span className="relative flex-shrink-0">
                 <span className="w-9 h-9 rounded-full overflow-hidden block ring-2 ring-white dark:ring-slate-800 shadow-sm">
                   {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt={friend.name} className="w-full h-full object-cover" />
+                    <img src={optimizeImageUrl(friend.avatarUrl)} alt={friend.name} className="w-full h-full object-cover" />
                   ) : (
                     <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-sm font-bold">
                       {getInitials(friend.name)}

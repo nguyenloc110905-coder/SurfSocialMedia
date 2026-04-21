@@ -176,9 +176,11 @@ router.post('/:id/join', requireAuth, async (req: AuthRequest, res) => {
               : `${actorName} đã tham gia nhóm ${result.item.name}.`,
         });
 
-        const unreadCount = await getUnreadNotificationCount(adminId);
-        emitNotificationNew(adminId, toApiNotification(notification));
-        emitNotificationUnreadCount(adminId, unreadCount);
+        if (notification) {
+          const unreadCount = await getUnreadNotificationCount(adminId);
+          emitNotificationNew(adminId, toApiNotification(notification));
+          emitNotificationUnreadCount(adminId, unreadCount);
+        }
       })
     );
 

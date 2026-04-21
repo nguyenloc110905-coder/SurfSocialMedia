@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { optimizeImageUrl } from '@/lib/image-cdn';
+import PresenceBadge from '@/components/ui/PresenceBadge';
 
 // ─── localStorage helpers ────────────────────────────────────────────────────
 
@@ -43,21 +45,30 @@ function removeRecent(item: RecentItem) {
 
 function Avatar({
   name,
+  uid,
   avatarUrl,
   size = 8,
 }: {
   name: string;
+  uid?: string;
   avatarUrl?: string;
   size?: number;
 }) {
   const cls = `w-${size} h-${size} rounded-full flex-shrink-0`;
-  if (avatarUrl) return <img src={avatarUrl} alt="" className={`${cls} object-cover`} />;
+
   return (
-    <div
-      className={`${cls} bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center`}
-    >
-      <span className="text-white text-xs font-bold">{name.charAt(0).toUpperCase()}</span>
-    </div>
+    <span className="relative inline-flex flex-shrink-0 overflow-visible">
+      {avatarUrl ? (
+        <img src={optimizeImageUrl(avatarUrl)} alt="" className={`${cls} object-cover`} />
+      ) : (
+        <div
+          className={`${cls} bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center`}
+        >
+          <span className="text-white text-xs font-bold">{name.charAt(0).toUpperCase()}</span>
+        </div>
+      )}
+      {uid && <PresenceBadge uid={uid} size="sm" />}
+    </span>
   );
 }
 
@@ -302,7 +313,7 @@ export default function SearchBox({ wrapperClassName }: Props) {
                     }`}
                   >
                     {item.type === 'user' ? (
-                      <Avatar name={item.name} avatarUrl={item.avatarUrl} />
+                      <Avatar name={item.name} uid={item.uid} avatarUrl={item.avatarUrl} />
                     ) : (
                       <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
                         <SearchIcon />
@@ -348,7 +359,7 @@ export default function SearchBox({ wrapperClassName }: Props) {
                           : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
                       }`}
                     >
-                      <Avatar name={u.name} avatarUrl={u.avatarUrl} />
+                      <Avatar name={u.name} uid={u.id} avatarUrl={u.avatarUrl} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                           {u.name}

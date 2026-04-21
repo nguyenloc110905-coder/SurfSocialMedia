@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { uploadImage, uploadVideo } from '../../lib/cloudinary';
+import { optimizeImageUrl } from '../../lib/image-cdn';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function MusicTrackRow({
       }`}
       onClick={onSelect}
     >
-      <img src={track.cover} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+      <img src={optimizeImageUrl(track.cover)} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
           {track.title}
@@ -837,7 +838,7 @@ export default function CreateMomentModal({ onClose, onCreated }: CreateMomentMo
                       onPointerUp={() => setDragTarget(null)}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <img src={s.url} alt="" className="w-full h-auto block" draggable={false} />
+                      <img src={optimizeImageUrl(s.url)} alt="" className="w-full h-auto block" draggable={false} />
                       {/* Resize, rotate, delete controls when selected */}
                       {selectedStickerId === s.id && (
                         <>
@@ -1295,7 +1296,7 @@ export default function CreateMomentModal({ onClose, onCreated }: CreateMomentMo
                                 onClick={() => setSelectedStickerId(s.id)}
                               >
                                 <img
-                                  src={s.url}
+                                  src={optimizeImageUrl(s.url)}
                                   alt=""
                                   className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
                                 />
@@ -1380,7 +1381,7 @@ export default function CreateMomentModal({ onClose, onCreated }: CreateMomentMo
                       {selectedMusic && (
                         <div className="flex items-center gap-3 bg-cyan-50 dark:bg-cyan-900/20 rounded-xl p-3 border border-cyan-200 dark:border-cyan-800">
                           <img
-                            src={selectedMusic.cover}
+                            src={optimizeImageUrl(selectedMusic.cover)}
                             alt=""
                             className="w-10 h-10 rounded-lg object-cover"
                           />
@@ -1751,7 +1752,7 @@ export default function CreateMomentModal({ onClose, onCreated }: CreateMomentMo
                                     <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center">
                                       {friend.avatarUrl ? (
                                         <img
-                                          src={friend.avatarUrl}
+                                          src={optimizeImageUrl(friend.avatarUrl)}
                                           alt=""
                                           className="w-full h-full object-cover"
                                         />

@@ -396,6 +396,45 @@ body {
   background: linear-gradient(to bottom, rgb(6 182 212 / 0.5), rgb(59 130 246 / 0.5));
 }
 
+/* Waves: scrollbar keeps a dark look in dark mode */
+.waves-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(125 211 252 / 0.4) transparent;
+}
+
+.waves-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.waves-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.waves-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, rgb(56 189 248 / 0.45), rgb(14 116 144 / 0.45));
+  border-radius: 999px;
+}
+
+.waves-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, rgb(14 165 233 / 0.7), rgb(8 145 178 / 0.7));
+}
+
+.dark .waves-scrollbar {
+  scrollbar-color: rgb(71 85 105 / 0.85) rgb(15 23 42 / 0.45);
+}
+
+.dark .waves-scrollbar::-webkit-scrollbar-track {
+  background: rgb(15 23 42 / 0.5);
+}
+
+.dark .waves-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, rgb(71 85 105 / 0.9), rgb(51 65 85 / 0.9));
+}
+
+.dark .waves-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, rgb(100 116 139 / 0.92), rgb(71 85 105 / 0.92));
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    Auth page v2: dark ocean theme – orbs, particles, glass, slide
    ═══════════════════════════════════════════════════════════════════════ */

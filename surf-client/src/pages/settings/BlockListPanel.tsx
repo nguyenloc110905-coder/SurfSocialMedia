@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
+import { optimizeImageUrl } from '@/lib/image-cdn';
 
 interface BlockedUser {
   id: string;
@@ -113,7 +114,7 @@ export default function BlockListPanel() {
             >
               {u.avatarUrl ? (
                 <img
-                  src={u.avatarUrl}
+                  src={optimizeImageUrl(u.avatarUrl)}
                   alt={u.name}
                   className="w-11 h-11 rounded-full object-cover border border-slate-200 dark:border-slate-700"
                 />

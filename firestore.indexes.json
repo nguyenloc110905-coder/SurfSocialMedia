@@ -139,6 +139,15 @@
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "isRead", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "conversation_members",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "lastReadMessageCreatedAt", "order": "DESCENDING" },
+        { "fieldPath": "lastReadAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

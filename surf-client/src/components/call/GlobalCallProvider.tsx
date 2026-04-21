@@ -18,6 +18,7 @@ import {
   type LiveKitTokenResponse,
   type VideoProfile,
 } from '@/lib/livekit-call';
+import { optimizeImageUrl } from '@/lib/image-cdn';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -88,8 +89,52 @@ type StartCallInput = {
   mode: CallMode;
 };
 
+type StartGroupCallInput = {
+  conversationId: string;
+  conversationTitle?: string;
+  memberIds: string[];
+  mode: CallMode;
+};
+
+type GroupIncomingCall = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  conversationTitle?: string;
+  mode: CallMode;
+};
+
+type GroupCallRoomReadyPayload = {
+  callId: string;
+  conversationId: string;
+  hostUserId: string;
+  conversationTitle?: string;
+  mode: CallMode;
+  roomName: string;
+};
+
+type GroupCallDeclinedPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  reason?: string;
+};
+
+type GroupCallIncomingPayload = {
+  callId: string;
+  conversationId: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatarUrl: string | null;
+  conversationTitle?: string;
+  mode: CallMode;
+};
+
 type GlobalCallContextValue = {
   startCall: (input: StartCallInput) => void;
+  startGroupCall: (input: StartGroupCallInput) => void;
   activeCall: ActiveCall | null;
   incomingCall: IncomingCall | null;
   isBusy: boolean;
@@ -120,11 +165,32 @@ type PendingCallAcceptPayload = IncomingCall & {
   createdAt: number;
 };
 
+type PendingOutgoingCallConnectPayload = {
+  callId: string;
+  conversationId: string;
+  peerId: string;
+  peerName: string;
+  peerAvatarUrl: string | null;
+  mode: CallMode;
+  targetUserId: string;
+  createdAt: number;
+};
+
+type PendingGroupOutgoingCall = {
+  callId: string;
+  conversationId: string;
+  conversationTitle?: string;
+  mode: CallMode;
+};
+
 const GlobalCallContext = createContext<GlobalCallContextValue | null>(null);
 
 const CALL_WINDOW_QUERY_KEY = 'callWindow';
 const PENDING_CALL_ACCEPT_STORAGE_KEY = 'surf:call:pending-accept';
+const PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY = 'surf:call:pending-outgoing-connect';
 const PENDING_CALL_ACCEPT_MAX_AGE_MS = 1000 * 60 * 2;
+const POPUP_HORIZONTAL_MARGIN = 48;
+const POPUP_VERTICAL_MARGIN = 64;
 
 const parseRtcUrls = (value?: string) =>
   value
@@ -200,7 +266,12 @@ const getFallbackReason = (reason?: string) => {
 };
 
 const initials = (value?: string | null) =>
-  value?.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'S';
+  value
+    ?.trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || 'S';
 
 const formatCallDuration = (durationSec: number) => {
   const hours = Math.floor(durationSec / 3600);
@@ -237,12 +308,20 @@ function CallAvatar({
     return <div className={fallbackClassName}>{initials(name)}</div>;
   }
 
-  return <img src={src} alt={name ?? 'Call avatar'} className={className} onError={() => setFailed(true)} />;
+  return (
+    <img
+      src={optimizeImageUrl(src)}
+      alt={name ?? 'Call avatar'}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 export function GlobalCallProvider({ children }: PropsWithChildren) {
   const user = useAuthStore((state) => state.user);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const [groupIncomingCall, setGroupIncomingCall] = useState<GroupIncomingCall | null>(null);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
   const [callToast, setCallToast] = useState<CallToast | null>(null);
@@ -260,6 +339,9 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [connectedAtMs, setConnectedAtMs] = useState<number | null>(null);
   const [callDurationSec, setCallDurationSec] = useState(0);
+  const [pendingGroupOutgoingCall, setPendingGroupOutgoingCall] =
+    useState<PendingGroupOutgoingCall | null>(null);
+  const [awaitingGroupRoomCallId, setAwaitingGroupRoomCallId] = useState<string | null>(null);
 
   const callWindowMode =
     typeof window !== 'undefined' &&
@@ -279,6 +361,9 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   const ringtoneContextRef = useRef<AudioContext | null>(null);
   const ringtoneIntervalRef = useRef<number | null>(null);
   const outgoingTimeoutRef = useRef<number | null>(null);
+  const groupOutgoingTimeoutRef = useRef<number | null>(null);
+  const openedGroupRoomCallIdsRef = useRef<Set<string>>(new Set());
+  const endedCallIdsRef = useRef<Set<string>>(new Set());
 
   const activeVideoSpec = getVideoSpec(selectedVideoProfile, targetVideoFps);
 
@@ -446,11 +531,134 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     }, 6000);
   };
 
+  const clearGroupOutgoingTimeout = () => {
+    if (groupOutgoingTimeoutRef.current) {
+      window.clearTimeout(groupOutgoingTimeoutRef.current);
+      groupOutgoingTimeoutRef.current = null;
+    }
+  };
+
+  const buildGroupCallWindowUrl = (payload: GroupCallRoomReadyPayload) => {
+    if (typeof window === 'undefined') return '';
+
+    const url = new URL('/group-call-window', window.location.origin);
+    url.searchParams.set(CALL_WINDOW_QUERY_KEY, '1');
+    url.searchParams.set('callId', payload.callId);
+    url.searchParams.set('conversationId', payload.conversationId);
+    url.searchParams.set('roomName', payload.roomName);
+    url.searchParams.set('mode', payload.mode);
+    url.searchParams.set('hostUserId', payload.hostUserId);
+    if (payload.conversationTitle) {
+      url.searchParams.set('title', payload.conversationTitle);
+    }
+
+    return url.toString();
+  };
+
+  const buildDirectCallMeetingUrl = (call: ActiveCall) => {
+    if (typeof window === 'undefined') return '';
+
+    const url = new URL('/group-call-window', window.location.origin);
+    const hostUserId = call.isOutgoing ? user?.uid : call.peerId;
+
+    url.searchParams.set(CALL_WINDOW_QUERY_KEY, '1');
+    url.searchParams.set('dm', '1');
+    url.searchParams.set('callId', call.callId);
+    url.searchParams.set('conversationId', call.conversationId);
+    url.searchParams.set('roomName', `dm-${call.callId}`);
+    url.searchParams.set('mode', call.mode);
+    if (hostUserId) {
+      url.searchParams.set('hostUserId', hostUserId);
+    }
+    url.searchParams.set('peerId', call.peerId);
+    url.searchParams.set('peerName', call.peerName);
+    url.searchParams.set('title', call.peerName);
+
+    return url.toString();
+  };
+
+  const focusPopup = (popup: Window | null) => {
+    if (!popup) return false;
+
+    try {
+      popup.focus();
+    } catch {
+      // Some browsers can block focus without blocking the popup itself.
+    }
+
+    return true;
+  };
+
+  const openGroupRoomWindow = (payload: GroupCallRoomReadyPayload) => {
+    if (openedGroupRoomCallIdsRef.current.has(payload.callId)) return;
+
+    const targetUrl = buildGroupCallWindowUrl(payload);
+    if (!targetUrl) return;
+
+    openedGroupRoomCallIdsRef.current.add(payload.callId);
+    window.setTimeout(
+      () => {
+        openedGroupRoomCallIdsRef.current.delete(payload.callId);
+      },
+      1000 * 60 * 60
+    );
+
+    const popup = window.open(targetUrl, 'surf-group-call-window', buildCallWindowFeatures());
+
+    if (!popup) {
+      pushToast('Popup bị chặn', 'Đang chuyển sang phòng gọi nhóm trong tab hiện tại.');
+      window.location.assign(targetUrl);
+      return;
+    }
+
+    focusPopup(popup);
+  };
+
+  const openDirectCallMeetingWindow = (call: ActiveCall) => {
+    const targetUrl = buildDirectCallMeetingUrl(call);
+    if (!targetUrl) return false;
+
+    const popup = window.open(targetUrl, 'surf-direct-call-window', buildCallWindowFeatures());
+
+    if (!popup) return false;
+    return focusPopup(popup);
+  };
+
   const buildCallWindowUrl = () => {
     if (typeof window === 'undefined') return '';
-    const url = new URL(window.location.href);
+    const url = new URL('/call-window', window.location.origin);
     url.searchParams.set(CALL_WINDOW_QUERY_KEY, '1');
     return url.toString();
+  };
+
+  const buildCallWindowFeatures = () => {
+    if (typeof window === 'undefined') return '';
+
+    const maxAllowedWidth = Math.max(680, window.screen.availWidth - POPUP_HORIZONTAL_MARGIN);
+    const maxAllowedHeight = Math.max(520, window.screen.availHeight - POPUP_VERTICAL_MARGIN);
+    const preferredWidth = Math.round(window.screen.availWidth * 0.78);
+    const preferredHeight = Math.round(window.screen.availHeight * 0.8);
+    const width = Math.min(maxAllowedWidth, Math.max(860, Math.min(preferredWidth, 1220)));
+    const height = Math.min(maxAllowedHeight, Math.max(560, Math.min(preferredHeight, 860)));
+    const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+    const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+
+    return [
+      'width=' + width,
+      'height=' + height,
+      'left=' + left,
+      'top=' + top,
+      'resizable=yes',
+      'scrollbars=no',
+    ].join(',');
+  };
+
+  const openCallWindow = () => {
+    if (typeof window === 'undefined') return false;
+
+    const popup = window.open(buildCallWindowUrl(), 'surf-call-window', buildCallWindowFeatures());
+
+    return focusPopup(popup);
   };
 
   const queuePendingCallAccept = (call: IncomingCall, targetUserId: string) => {
@@ -497,6 +705,63 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
         fromName: parsed.fromName,
         fromAvatarUrl: typeof parsed.fromAvatarUrl === 'string' ? parsed.fromAvatarUrl : null,
         mode: parsed.mode,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const queuePendingOutgoingCallConnect = (call: ActiveCall, targetUserId: string) => {
+    if (typeof window === 'undefined') return;
+
+    const payload: PendingOutgoingCallConnectPayload = {
+      callId: call.callId,
+      conversationId: call.conversationId,
+      peerId: call.peerId,
+      peerName: call.peerName,
+      peerAvatarUrl: call.peerAvatarUrl,
+      mode: call.mode,
+      targetUserId,
+      createdAt: Date.now(),
+    };
+
+    window.localStorage.setItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY, JSON.stringify(payload));
+  };
+
+  const consumePendingOutgoingCallConnect = (targetUserId: string): ActiveCall | null => {
+    if (typeof window === 'undefined') return null;
+
+    const raw = window.localStorage.getItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY);
+    if (!raw) return null;
+
+    window.localStorage.removeItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY);
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<PendingOutgoingCallConnectPayload>;
+
+      if (parsed.targetUserId !== targetUserId) return null;
+      if (typeof parsed.createdAt !== 'number') return null;
+      if (Date.now() - parsed.createdAt > PENDING_CALL_ACCEPT_MAX_AGE_MS) return null;
+
+      if (
+        typeof parsed.callId !== 'string' ||
+        typeof parsed.conversationId !== 'string' ||
+        typeof parsed.peerId !== 'string' ||
+        typeof parsed.peerName !== 'string' ||
+        (parsed.mode !== 'audio' && parsed.mode !== 'video')
+      ) {
+        return null;
+      }
+
+      return {
+        callId: parsed.callId,
+        conversationId: parsed.conversationId,
+        peerId: parsed.peerId,
+        peerName: parsed.peerName,
+        peerAvatarUrl: typeof parsed.peerAvatarUrl === 'string' ? parsed.peerAvatarUrl : null,
+        mode: parsed.mode,
+        isOutgoing: true,
+        status: 'connecting',
       };
     } catch {
       return null;
@@ -575,9 +840,11 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       reason,
     });
 
-    const popup = window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+    const popup = window.open(fallbackUrl, 'surf-call-fallback-window', buildCallWindowFeatures());
     if (!popup) {
       setCallError(`Trình duyệt chặn popup. Mở thủ công: ${fallbackUrl}`);
+    } else {
+      focusPopup(popup);
     }
 
     pushToast('Chuyển sang phòng dự phòng', `${reason} (${call.peerName})`);
@@ -585,9 +852,15 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
 
   const reopenFallbackRoom = () => {
     if (!fallbackSession) return;
-    const popup = window.open(fallbackSession.fallbackUrl, '_blank', 'noopener,noreferrer');
+    const popup = window.open(
+      fallbackSession.fallbackUrl,
+      'surf-call-fallback-window',
+      buildCallWindowFeatures()
+    );
     if (!popup) {
       setCallError(`Trình duyệt chặn popup. Mở thủ công: ${fallbackSession.fallbackUrl}`);
+    } else {
+      focusPopup(popup);
     }
   };
 
@@ -978,16 +1251,22 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       await context.resume().catch(() => undefined);
     }
 
-    const scheduleTone = (offset: number, frequency: number, duration: number) => {
+    const scheduleTone = (
+      offset: number,
+      frequency: number,
+      duration: number,
+      type: OscillatorType = 'triangle',
+      peak = 0.06
+    ) => {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       const startAt = context.currentTime + offset;
       const endAt = startAt + duration;
 
-      oscillator.type = 'sine';
+      oscillator.type = type;
       oscillator.frequency.setValueAtTime(frequency, startAt);
       gain.gain.setValueAtTime(0.0001, startAt);
-      gain.gain.exponentialRampToValueAtTime(0.08, startAt + 0.03);
+      gain.gain.exponentialRampToValueAtTime(peak, startAt + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.0001, endAt);
 
       oscillator.connect(gain);
@@ -997,8 +1276,10 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       oscillator.stop(endAt);
     };
 
-    scheduleTone(0, 880, 0.26);
-    scheduleTone(0.36, 740, 0.28);
+    scheduleTone(0.0, 659.25, 0.18);
+    scheduleTone(0.22, 783.99, 0.18);
+    scheduleTone(0.44, 987.77, 0.22, 'sine', 0.05);
+    scheduleTone(0.74, 783.99, 0.2);
   };
 
   const startRingtone = () => {
@@ -1121,6 +1402,13 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
 
   const emitEndCall = (call: ActiveCall, reason?: string) => {
     if (!user?.uid) return;
+    if (endedCallIdsRef.current.has(call.callId)) return;
+
+    endedCallIdsRef.current.add(call.callId);
+    window.setTimeout(() => {
+      endedCallIdsRef.current.delete(call.callId);
+    }, 15000);
+
     getSocket().emit('call:end', {
       callId: call.callId,
       conversationId: call.conversationId,
@@ -1128,6 +1416,19 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       toUserId: call.peerId,
       reason,
     });
+  };
+
+  const closeCurrentCallWindow = () => {
+    if (!callWindowMode || typeof window === 'undefined') return;
+
+    window.setTimeout(() => {
+      if (window.opener) {
+        window.close();
+        return;
+      }
+
+      window.location.replace('/feed/waves');
+    }, 80);
   };
 
   const finishCall = (
@@ -1142,6 +1443,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     const current = activeCallRef.current;
     if (notifyPeer && current) emitEndCall(current, reason);
     clearOutgoingTimeout();
+    clearGroupOutgoingTimeout();
     stopRingtone();
     resetCallMedia();
     setCallQuotaState(null);
@@ -1149,6 +1451,9 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     setCallDurationSec(0);
     setIsMicEnabled(true);
     setIsCameraEnabled(true);
+    setAwaitingGroupRoomCallId(null);
+    setPendingGroupOutgoingCall(null);
+    setGroupIncomingCall(null);
     if (!options?.keepFallbackSession) {
       setFallbackSession(null);
     }
@@ -1204,7 +1509,17 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   };
 
   const startCall = (input: StartCallInput) => {
-    if (!user?.uid || activeCallRef.current || incomingCall) return;
+    if (
+      !user?.uid ||
+      activeCallRef.current ||
+      incomingCall ||
+      groupIncomingCall ||
+      pendingGroupOutgoingCall ||
+      awaitingGroupRoomCallId ||
+      fallbackSession
+    ) {
+      return;
+    }
 
     const callId =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -1235,6 +1550,112 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       fromAvatarUrl: user.photoURL ?? null,
       mode: input.mode,
     });
+  };
+
+  const startGroupCall = (input: StartGroupCallInput) => {
+    if (
+      !user?.uid ||
+      activeCallRef.current ||
+      incomingCall ||
+      groupIncomingCall ||
+      pendingGroupOutgoingCall ||
+      awaitingGroupRoomCallId ||
+      fallbackSession
+    ) {
+      return;
+    }
+
+    const participantIds = Array.from(
+      new Set(input.memberIds.map((id) => id.trim()).filter(Boolean))
+    ).filter((id) => id !== user.uid);
+
+    if (participantIds.length === 0) {
+      pushToast('Chưa thể gọi nhóm', 'Nhóm chưa có thành viên khác để tham gia cuộc gọi.');
+      return;
+    }
+
+    const callId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    clearGroupOutgoingTimeout();
+    setCallError(null);
+    setIncomingCall(null);
+    setGroupIncomingCall(null);
+    setPendingGroupOutgoingCall({
+      callId,
+      conversationId: input.conversationId,
+      conversationTitle: input.conversationTitle,
+      mode: input.mode,
+    });
+    setAwaitingGroupRoomCallId(callId);
+
+    getSocket().emit('call:group-invite', {
+      callId,
+      conversationId: input.conversationId,
+      fromUserId: user.uid,
+      fromName: user.displayName ?? user.email?.split('@')[0] ?? 'Surf user',
+      fromAvatarUrl: user.photoURL ?? null,
+      conversationTitle: input.conversationTitle,
+      participantIds,
+      mode: input.mode,
+    });
+
+    pushToast(
+      input.mode === 'video'
+        ? 'Đang mời vào cuộc gọi video nhóm'
+        : 'Đang mời vào cuộc gọi thoại nhóm',
+      'Hệ thống sẽ tự mở phòng ngay khi có thành viên chấp nhận.'
+    );
+  };
+
+  const connectOutgoingAcceptedCall = async (call: ActiveCall) => {
+    if (!user?.uid) return;
+
+    try {
+      clearOutgoingTimeout();
+      setCallError(null);
+      setCallQuotaState(null);
+      setFallbackSession(null);
+      resetCallControls(call.mode);
+      setActiveCall({ ...call, status: 'connecting', isOutgoing: true });
+
+      if (useLiveKitProvider) {
+        await connectLiveKitCall({ ...call, status: 'connecting', isOutgoing: true });
+        return;
+      }
+
+      const stream = await requestLocalStream(call.mode);
+      const peer = createPeerConnection({ ...call, status: 'connecting', isOutgoing: true });
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+
+      getSocket().emit('call:signal', {
+        callId: call.callId,
+        conversationId: call.conversationId,
+        fromUserId: user.uid,
+        toUserId: call.peerId,
+        mode: call.mode,
+        signal: {
+          type: 'offer',
+          sdp: {
+            type: offer.type,
+            sdp: offer.sdp ?? undefined,
+          },
+        },
+      });
+    } catch (e) {
+      const rawMessage = (e as Error).message;
+      const fallbackMessage =
+        rawMessage.startsWith('livekit_') || rawMessage === 'fallback'
+          ? getFallbackReason(rawMessage)
+          : rawMessage;
+      setCallError(fallbackMessage || 'Không thể bắt đầu cuộc gọi');
+      finishCall(true, 'fallback', { keepFallbackSession: true });
+    }
   };
 
   const acceptIncomingCallInternal = async (call: IncomingCall) => {
@@ -1291,11 +1712,63 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
 
   const acceptIncomingCall = async () => {
     if (!incomingCall || !user?.uid || activeCallRef.current) return;
-
     if (!callWindowMode) {
+      if (useLiveKitProvider) {
+        const directCall: ActiveCall = {
+          callId: incomingCall.callId,
+          conversationId: incomingCall.conversationId,
+          peerId: incomingCall.fromUserId,
+          peerName: incomingCall.fromName,
+          peerAvatarUrl: incomingCall.fromAvatarUrl,
+          mode: incomingCall.mode,
+          isOutgoing: false,
+          status: 'connecting',
+        };
+
+        const popup = openDirectCallMeetingWindow(directCall);
+
+        if (popup) {
+          stopRingtone();
+          setCallError(null);
+          getSocket().emit('call:accept', {
+            callId: incomingCall.callId,
+            conversationId: incomingCall.conversationId,
+            fromUserId: user.uid,
+            toUserId: incomingCall.fromUserId,
+            mode: incomingCall.mode,
+          });
+          setIncomingCall(null);
+          pushToast(
+            'Đã mở cửa sổ gọi',
+            `Đang kết nối cuộc gọi với ${incomingCall.fromName} ở giao diện meeting.`
+          );
+          return;
+        }
+
+        const meetingUrl = buildDirectCallMeetingUrl(directCall);
+        if (meetingUrl && typeof window !== 'undefined') {
+          stopRingtone();
+          setCallError(null);
+          getSocket().emit('call:accept', {
+            callId: incomingCall.callId,
+            conversationId: incomingCall.conversationId,
+            fromUserId: user.uid,
+            toUserId: incomingCall.fromUserId,
+            mode: incomingCall.mode,
+          });
+          setIncomingCall(null);
+          pushToast(
+            'Popup bị chặn',
+            `Đang chuyển cuộc gọi với ${incomingCall.fromName} sang giao diện meeting trong tab hiện tại.`
+          );
+          window.location.assign(meetingUrl);
+          return;
+        }
+      }
+
       try {
         queuePendingCallAccept(incomingCall, user.uid);
-        const popup = window.open(buildCallWindowUrl(), '_blank', 'noopener,noreferrer');
+        const popup = openCallWindow();
 
         if (popup) {
           stopRingtone();
@@ -1332,14 +1805,53 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     setIncomingCall(null);
   };
 
+  const acceptGroupIncomingCall = () => {
+    if (
+      !groupIncomingCall ||
+      !user?.uid ||
+      activeCallRef.current ||
+      incomingCall ||
+      fallbackSession ||
+      pendingGroupOutgoingCall ||
+      awaitingGroupRoomCallId
+    ) {
+      return;
+    }
+
+    stopRingtone();
+    clearGroupOutgoingTimeout();
+    setCallError(null);
+    setAwaitingGroupRoomCallId(groupIncomingCall.callId);
+
+    getSocket().emit('call:group-accept', {
+      callId: groupIncomingCall.callId,
+      conversationId: groupIncomingCall.conversationId,
+      fromUserId: user.uid,
+    });
+    setGroupIncomingCall(null);
+  };
+
+  const declineGroupIncomingCall = () => {
+    if (!groupIncomingCall || !user?.uid) return;
+
+    stopRingtone();
+    getSocket().emit('call:group-decline', {
+      callId: groupIncomingCall.callId,
+      conversationId: groupIncomingCall.conversationId,
+      fromUserId: user.uid,
+      reason: 'declined',
+    });
+    setGroupIncomingCall(null);
+  };
+
   useEffect(() => {
-    if (incomingCall && !activeCall) {
+    if ((incomingCall || groupIncomingCall) && !activeCall) {
       startRingtone();
       return;
     }
 
     stopRingtone();
-  }, [incomingCall, activeCall]);
+  }, [incomingCall, groupIncomingCall, activeCall]);
 
   useEffect(() => {
     if (!callWindowMode || !user?.uid || activeCallRef.current || acceptingCall) return;
@@ -1348,6 +1860,34 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     if (!pendingCall) return;
 
     void acceptIncomingCallInternal(pendingCall);
+  }, [callWindowMode, user?.uid]);
+
+  useEffect(() => {
+    if (!callWindowMode || !user?.uid || activeCallRef.current || acceptingCall) return;
+
+    const pendingOutgoingCall = consumePendingOutgoingCallConnect(user.uid);
+    if (!pendingOutgoingCall) return;
+
+    void connectOutgoingAcceptedCall(pendingOutgoingCall);
+  }, [callWindowMode, user?.uid, acceptingCall]);
+
+  useEffect(() => {
+    if (!callWindowMode || typeof window === 'undefined') return;
+
+    const handleWindowLeave = () => {
+      const current = activeCallRef.current;
+      if (!current) return;
+
+      emitEndCall(current, 'window_closed');
+    };
+
+    window.addEventListener('beforeunload', handleWindowLeave);
+    window.addEventListener('pagehide', handleWindowLeave);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleWindowLeave);
+      window.removeEventListener('pagehide', handleWindowLeave);
+    };
   }, [callWindowMode, user?.uid]);
 
   useEffect(() => {
@@ -1371,11 +1911,46 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   }, [activeCall]);
 
   useEffect(() => {
+    clearGroupOutgoingTimeout();
+
+    const trackedCallId = pendingGroupOutgoingCall?.callId ?? awaitingGroupRoomCallId;
+    if (!trackedCallId) {
+      return;
+    }
+
+    groupOutgoingTimeoutRef.current = window.setTimeout(() => {
+      setPendingGroupOutgoingCall((current) =>
+        current?.callId === trackedCallId ? null : current
+      );
+
+      setAwaitingGroupRoomCallId((current) => {
+        if (current !== trackedCallId) return current;
+
+        pushToast('Không có phản hồi', 'Chưa có thành viên nào tham gia cuộc gọi nhóm.');
+        setCallError('Cuộc gọi nhóm đã hết thời gian chờ.');
+        return null;
+      });
+    }, 45000);
+
+    return () => {
+      clearGroupOutgoingTimeout();
+    };
+  }, [pendingGroupOutgoingCall?.callId, awaitingGroupRoomCallId]);
+
+  useEffect(() => {
     const socket = getSocket();
 
     const onIncomingCall = (payload: CallInvitePayload) => {
+      if (!user?.uid) return;
       if (payload.fromUserId === user?.uid) return;
-      if (activeCallRef.current) {
+      if (
+        activeCallRef.current ||
+        incomingCall ||
+        groupIncomingCall ||
+        pendingGroupOutgoingCall ||
+        awaitingGroupRoomCallId ||
+        fallbackSession
+      ) {
         socket.emit('call:decline', {
           callId: payload.callId,
           conversationId: payload.conversationId,
@@ -1397,52 +1972,104 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       });
     };
 
+    const onGroupIncomingCall = (payload: GroupCallIncomingPayload) => {
+      if (!user?.uid) return;
+      if (payload.fromUserId === user.uid) return;
+
+      if (
+        activeCallRef.current ||
+        incomingCall ||
+        groupIncomingCall ||
+        pendingGroupOutgoingCall ||
+        awaitingGroupRoomCallId ||
+        fallbackSession
+      ) {
+        socket.emit('call:group-decline', {
+          callId: payload.callId,
+          conversationId: payload.conversationId,
+          fromUserId: user.uid,
+          reason: 'busy',
+        });
+        return;
+      }
+
+      setCallError(null);
+      setGroupIncomingCall({
+        callId: payload.callId,
+        conversationId: payload.conversationId,
+        fromUserId: payload.fromUserId,
+        fromName: payload.fromName,
+        fromAvatarUrl: payload.fromAvatarUrl,
+        conversationTitle: payload.conversationTitle,
+        mode: payload.mode,
+      });
+    };
+
     const onCallAccepted = async (payload: CallAcceptedPayload) => {
       const current = activeCallRef.current;
-      if (!current || current.callId !== payload.callId || !current.isOutgoing || !user?.uid) return;
+      if (!current || current.callId !== payload.callId || !current.isOutgoing || !user?.uid)
+        return;
 
-      try {
-        clearOutgoingTimeout();
-        setCallError(null);
-        setActiveCall((call) =>
-          call && call.callId === payload.callId ? { ...call, status: 'connecting' } : call
-        );
+      const nextCall: ActiveCall = {
+        ...current,
+        status: 'connecting',
+        isOutgoing: true,
+      };
 
+      if (!callWindowMode) {
         if (useLiveKitProvider) {
-          await connectLiveKitCall({ ...current, status: 'connecting' });
-          return;
+          const popup = openDirectCallMeetingWindow(nextCall);
+
+          if (popup) {
+            clearOutgoingTimeout();
+            setCallError(null);
+            resetCallMedia();
+            setActiveCall(null);
+            pushToast(
+              'Đã mở cửa sổ gọi',
+              `Cuộc gọi với ${nextCall.peerName} đang chạy ở giao diện meeting.`
+            );
+            return;
+          }
+
+          const meetingUrl = buildDirectCallMeetingUrl(nextCall);
+          if (meetingUrl && typeof window !== 'undefined') {
+            clearOutgoingTimeout();
+            setCallError(null);
+            resetCallMedia();
+            setActiveCall(null);
+            pushToast(
+              'Popup bị chặn',
+              `Đang chuyển cuộc gọi với ${nextCall.peerName} sang giao diện meeting trong tab hiện tại.`
+            );
+            window.location.assign(meetingUrl);
+            return;
+          }
         }
 
-        const stream = await requestLocalStream(current.mode);
-        const peer = createPeerConnection({ ...current, status: 'connecting' });
-        stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+        try {
+          queuePendingOutgoingCallConnect(nextCall, user.uid);
+          const popup = openCallWindow();
 
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
+          if (popup) {
+            clearOutgoingTimeout();
+            setCallError(null);
+            resetCallMedia();
+            setActiveCall(null);
+            pushToast(
+              'Đã chuyển sang cửa sổ gọi',
+              `Cuộc gọi với ${nextCall.peerName} đang chạy ở cửa sổ mới.`
+            );
+            return;
+          }
 
-        socket.emit('call:signal', {
-          callId: current.callId,
-          conversationId: current.conversationId,
-          fromUserId: user.uid,
-          toUserId: current.peerId,
-          mode: current.mode,
-          signal: {
-            type: 'offer',
-            sdp: {
-              type: offer.type,
-              sdp: offer.sdp ?? undefined,
-            },
-          },
-        });
-      } catch (e) {
-        const rawMessage = (e as Error).message;
-        const fallbackMessage =
-          rawMessage.startsWith('livekit_') || rawMessage === 'fallback'
-            ? getFallbackReason(rawMessage)
-            : rawMessage;
-        setCallError(fallbackMessage || 'Không thể bắt đầu cuộc gọi');
-        finishCall(true, 'fallback', { keepFallbackSession: true });
+          window.localStorage.removeItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY);
+        } catch {
+          window.localStorage.removeItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY);
+        }
       }
+
+      await connectOutgoingAcceptedCall(nextCall);
     };
 
     const onCallDeclined = (payload: CallEndPayload) => {
@@ -1468,13 +2095,26 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       const currentActive = activeCallRef.current;
 
       if (currentIncoming?.callId === payload.callId) {
-        const description =
-          payload.reason === 'missed'
-            ? `${currentIncoming.fromName} đã kết thúc sau khi bạn chưa kịp bắt máy.`
-            : `${currentIncoming.fromName} đã kết thúc cuộc gọi.`;
+        let description = `${currentIncoming.fromName} đã kết thúc cuộc gọi.`;
+        if (payload.reason === 'window_closed') {
+          description = `${currentIncoming.fromName} đã tắt cửa sổ cuộc gọi.`;
+        } else if (payload.reason === 'missed') {
+          description = `${currentIncoming.fromName} đã kết thúc sau khi bạn chưa kịp bắt máy.`;
+        }
+
         pushToast('Cuộc gọi nhỡ', description);
-      } else if (currentActive?.callId === payload.callId && currentActive.isOutgoing && currentActive.status !== 'connected') {
-        pushToast('Cuộc gọi kết thúc', `Cuộc gọi tới ${currentActive.peerName} đã kết thúc.`);
+      } else if (
+        currentActive?.callId === payload.callId &&
+        currentActive.isOutgoing &&
+        currentActive.status !== 'connected'
+      ) {
+        const description =
+          payload.reason === 'window_closed'
+            ? `${currentActive.peerName} đã tắt cửa sổ cuộc gọi.`
+            : `Cuộc gọi tới ${currentActive.peerName} đã kết thúc.`;
+        pushToast('Cuộc gọi kết thúc', description);
+      } else if (currentActive?.callId === payload.callId && payload.reason === 'window_closed') {
+        pushToast('Cuộc gọi kết thúc', `${currentActive.peerName} đã tắt cửa sổ cuộc gọi.`);
       }
 
       if (currentActive?.callId === payload.callId || currentIncoming?.callId === payload.callId) {
@@ -1489,11 +2129,43 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       });
     };
 
+    const onGroupRoomReady = (payload: GroupCallRoomReadyPayload) => {
+      const isAwaiting = awaitingGroupRoomCallId === payload.callId;
+      const isOutgoingSession = pendingGroupOutgoingCall?.callId === payload.callId;
+      if (!isAwaiting && !isOutgoingSession) return;
+
+      clearGroupOutgoingTimeout();
+      setPendingGroupOutgoingCall((current) =>
+        current?.callId === payload.callId ? null : current
+      );
+      setAwaitingGroupRoomCallId((current) => (current === payload.callId ? null : current));
+      setGroupIncomingCall((current) => (current?.callId === payload.callId ? null : current));
+      setCallError(null);
+
+      openGroupRoomWindow(payload);
+    };
+
+    const onGroupDeclined = (payload: GroupCallDeclinedPayload) => {
+      if (pendingGroupOutgoingCall?.callId === payload.callId) {
+        pushToast(
+          'Có thành viên đã từ chối',
+          'Hệ thống vẫn tiếp tục chờ thành viên khác tham gia.'
+        );
+      }
+
+      if (groupIncomingCall?.callId === payload.callId) {
+        setGroupIncomingCall(null);
+      }
+    };
+
     socket.on('call:incoming', onIncomingCall);
     socket.on('call:accepted', onCallAccepted);
     socket.on('call:declined', onCallDeclined);
     socket.on('call:ended', onCallEnded);
     socket.on('call:signal', onCallSignal);
+    socket.on('call:group-incoming', onGroupIncomingCall);
+    socket.on('call:group-room-ready', onGroupRoomReady);
+    socket.on('call:group-declined', onGroupDeclined);
 
     return () => {
       socket.off('call:incoming', onIncomingCall);
@@ -1501,13 +2173,24 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       socket.off('call:declined', onCallDeclined);
       socket.off('call:ended', onCallEnded);
       socket.off('call:signal', onCallSignal);
+      socket.off('call:group-incoming', onGroupIncomingCall);
+      socket.off('call:group-room-ready', onGroupRoomReady);
+      socket.off('call:group-declined', onGroupDeclined);
     };
-  }, [incomingCall?.callId, user?.uid]);
+  }, [
+    incomingCall?.callId,
+    groupIncomingCall?.callId,
+    pendingGroupOutgoingCall?.callId,
+    awaitingGroupRoomCallId,
+    fallbackSession,
+    user?.uid,
+  ]);
 
   useEffect(() => {
     return () => {
       stopRingtone();
       clearOutgoingTimeout();
+      clearGroupOutgoingTimeout();
       if (callToastTimeoutRef.current) {
         window.clearTimeout(callToastTimeoutRef.current);
       }
@@ -1517,26 +2200,142 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
 
   const showRemoteVideoPlaceholder =
     activeCall?.mode === 'video' && (!remoteStream || !hasRemoteVideoTrack || isRemoteCameraMuted);
-
+  const isOutgoingWaitingForAccept = Boolean(
+    activeCall && activeCall.isOutgoing && activeCall.status === 'outgoing'
+  );
+  const showPreConnectScreen = isOutgoingWaitingForAccept;
+  const preConnectTitle = activeCall
+    ? isOutgoingWaitingForAccept
+      ? `Đang gọi cho ${activeCall.peerName}`
+      : activeCall.isOutgoing
+        ? `Đang kết nối với ${activeCall.peerName}`
+        : `${activeCall.peerName} đang gọi cho bạn`
+    : '';
+  const preConnectHint = activeCall
+    ? isOutgoingWaitingForAccept
+      ? 'Đợi đối phương chấp nhận cuộc gọi'
+      : 'Đang trao đổi tín hiệu kết nối'
+    : '';
+  const isCallWindow = callWindowMode;
+  const overlayClass = isCallWindow
+    ? 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 p-0'
+    : 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-sm sm:p-4 lg:p-6';
+  const callStageClass = isFullscreen
+    ? 'w-full bg-slate-950 shadow-2xl shadow-slate-950/40 flex h-full max-h-none max-w-none items-center justify-center overflow-hidden rounded-none p-2 sm:p-4'
+    : isCallWindow
+      ? 'w-full bg-slate-950 shadow-2xl shadow-slate-950/40 h-[100dvh] max-h-none max-w-none overflow-hidden rounded-none'
+      : 'w-full bg-slate-950 shadow-2xl shadow-slate-950/40 max-h-[calc(100dvh-1rem)] max-w-6xl overflow-hidden rounded-[30px] border border-cyan-300/10 ring-1 ring-white/5 sm:rounded-[36px]';
   return (
     <GlobalCallContext.Provider
       value={{
         startCall,
+        startGroupCall,
         activeCall,
         incomingCall,
-        isBusy: Boolean(activeCall || incomingCall || fallbackSession),
+        isBusy: Boolean(
+          activeCall ||
+          incomingCall ||
+          groupIncomingCall ||
+          pendingGroupOutgoingCall ||
+          awaitingGroupRoomCallId ||
+          fallbackSession
+        ),
       }}
     >
       {children}
       {callToast && (
         <div className="pointer-events-none fixed right-6 top-6 z-[119] max-w-sm rounded-[28px] border border-cyan-100 bg-white/95 px-5 py-4 shadow-[0_26px_60px_-28px_rgba(8,145,178,0.45)] backdrop-blur">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-600">Surf Call</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-600">
+            Surf Call
+          </p>
           <h4 className="mt-2 text-lg font-semibold text-slate-900">{callToast.title}</h4>
           <p className="mt-1 text-sm leading-6 text-slate-500">{callToast.description}</p>
         </div>
       )}
+      {groupIncomingCall && !incomingCall && !activeCall && !fallbackSession && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+            <CallAvatar
+              src={groupIncomingCall.fromAvatarUrl}
+              name={groupIncomingCall.fromName}
+              className="mx-auto h-24 w-24 rounded-full object-cover"
+              fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-2xl font-semibold text-white"
+            />
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-violet-600">
+              {groupIncomingCall.mode === 'video' ? 'Lời mời video nhóm' : 'Lời mời thoại nhóm'}
+            </p>
+            <h3 className="mt-3 text-2xl font-semibold text-slate-900">
+              {groupIncomingCall.conversationTitle ?? 'Nhóm Surf Waves'}
+            </h3>
+            <p className="mt-2 text-sm text-slate-500">
+              {groupIncomingCall.fromName} đang mời bạn tham gia. Khi chấp nhận, hệ thống sẽ mở cửa
+              sổ cuộc gọi mới.
+            </p>
+            {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
+            <div className="mt-8 flex items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={declineGroupIncomingCall}
+                className="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 px-5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Từ chối
+              </button>
+              <button
+                type="button"
+                onClick={acceptGroupIncomingCall}
+                className="inline-flex h-12 items-center justify-center rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 px-5 text-sm font-semibold text-white shadow-lg shadow-violet-500/30"
+              >
+                Tham gia
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!groupIncomingCall &&
+        !incomingCall &&
+        !activeCall &&
+        !fallbackSession &&
+        (pendingGroupOutgoingCall || awaitingGroupRoomCallId) && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-violet-600">
+                {pendingGroupOutgoingCall
+                  ? 'Đang chờ thành viên tham gia'
+                  : 'Đang chuẩn bị phòng gọi'}
+              </p>
+              <h3 className="mt-3 text-2xl font-semibold text-slate-900">
+                {pendingGroupOutgoingCall?.conversationTitle ?? 'Cuộc gọi nhóm Surf Waves'}
+              </h3>
+              <p className="mt-2 text-sm text-slate-500">
+                {pendingGroupOutgoingCall
+                  ? 'Cửa sổ cuộc gọi sẽ tự mở ngay khi có người chấp nhận lời mời.'
+                  : 'Hệ thống đang kết nối vào phòng nhóm, vui lòng giữ nguyên màn hình.'}
+              </p>
+              {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
+              {pendingGroupOutgoingCall && (
+                <div className="mt-6 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearGroupOutgoingTimeout();
+                      setPendingGroupOutgoingCall(null);
+                      setAwaitingGroupRoomCallId((current) =>
+                        current === pendingGroupOutgoingCall.callId ? null : current
+                      );
+                    }}
+                    className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 px-5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    Hủy chờ
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       {(incomingCall || activeCall || fallbackSession) && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-sm sm:p-4 lg:p-6">
+        <div className={overlayClass}>
           {incomingCall && !activeCall ? (
             <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
               <CallAvatar
@@ -1548,7 +2347,9 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
               <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600">
                 {incomingCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
               </p>
-              <h3 className="mt-3 text-3xl font-semibold text-slate-900">{incomingCall.fromName}</h3>
+              <h3 className="mt-3 text-3xl font-semibold text-slate-900">
+                {incomingCall.fromName}
+              </h3>
               <p className="mt-2 text-sm text-slate-500">Đang gọi cho bạn qua Surf Waves</p>
               {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
               <div className="mt-8 flex items-center justify-center gap-4">
@@ -1594,35 +2395,100 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
               </div>
             </div>
           ) : activeCall ? (
-            <div
-              ref={callStageRef}
-              className={`w-full bg-slate-950 shadow-2xl shadow-slate-950/40 ${
-                isFullscreen
-                  ? 'flex h-full max-h-none max-w-none items-center justify-center overflow-hidden rounded-none p-2 sm:p-4'
-                  : 'max-h-[calc(100dvh-1rem)] max-w-6xl overflow-hidden rounded-[30px] border border-cyan-300/10 ring-1 ring-white/5 sm:rounded-[36px]'
-              }`}
-            >
+            showPreConnectScreen ? (
+              <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+                <CallAvatar
+                  src={activeCall.peerAvatarUrl}
+                  name={activeCall.peerName}
+                  className="mx-auto h-24 w-24 rounded-full object-cover"
+                  fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white"
+                />
+                <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600">
+                  {activeCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
+                </p>
+                <h3 className="mt-3 text-3xl font-semibold text-slate-900">{preConnectTitle}</h3>
+                <p className="mt-2 text-sm text-slate-500">{preConnectHint}</p>
+                {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
+                <div className="mt-8 flex items-center justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      finishCall(true, 'cancelled');
+                      closeCurrentCallWindow();
+                    }}
+                    className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/30"
+                    title="Cúp cuộc gọi"
+                    aria-label="Cúp cuộc gọi"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-6 w-6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4.5 15.5c4.7-3.2 10.3-3.2 15 0" />
+                      <path d="M7.2 15.2 6 18" />
+                      <path d="M16.8 15.2 18 18" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 opacity-60"
+                    title="Đang chờ chấp nhận"
+                    aria-label="Đang chờ chấp nhận"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                      <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+            <div ref={callStageRef} className={callStageClass}>
               {!isFullscreen && (
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/8 via-transparent to-blue-500/8" />
               )}
               <div
-                className={`relative grid w-full min-h-[420px] grid-cols-1 lg:min-h-[520px] lg:grid-cols-[minmax(0,1fr)_300px] ${
-                  isFullscreen ? 'max-h-[calc(100dvh-1rem)] max-w-[1800px] overflow-hidden' : ''
-                }`}
+                className={
+                  'relative grid w-full grid-cols-1 ' +
+                  (isCallWindow
+                    ? 'h-full min-h-0 lg:grid-cols-[minmax(0,1fr)_300px]'
+                    : 'min-h-[420px] lg:min-h-[520px] lg:grid-cols-[minmax(0,1fr)_300px]') +
+                  (isFullscreen ? ' max-h-[calc(100dvh-1rem)] max-w-[1800px] overflow-hidden' : '')
+                }
               >
-                <div className="relative flex min-h-[260px] items-center justify-center border-b border-white/10 bg-slate-950/90 sm:min-h-[340px] lg:min-h-[520px] lg:border-b-0">
+                <div
+                  className={
+                    'relative h-full w-full ' + (isCallWindow ? 'p-0' : 'p-2 sm:p-3 lg:p-4')
+                  }
+                >
                   {activeCall.mode === 'video' ? (
                     <div className="relative h-full w-full p-2 sm:p-3 lg:p-4">
                       <video
                         ref={remoteVideoRef}
                         autoPlay
                         playsInline
-                        className={`h-full w-full rounded-2xl border border-white/10 bg-black object-contain object-center shadow-[0_12px_32px_-20px_rgba(0,0,0,0.8)] transition-opacity duration-200 ${
-                          showRemoteVideoPlaceholder ? 'opacity-0' : 'opacity-100'
-                        }`}
+                        className={
+                          'h-full w-full bg-black object-center shadow-[0_12px_32px_-20px_rgba(0,0,0,0.8)] transition-opacity duration-200 ' +
+                          (isCallWindow
+                            ? 'object-cover rounded-none border-0'
+                            : 'object-contain rounded-2xl border border-white/10') +
+                          (showRemoteVideoPlaceholder ? ' opacity-0' : ' opacity-100')
+                        }
                       />
                       {showRemoteVideoPlaceholder && (
-                        <div className="absolute inset-2 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black text-white sm:inset-3 lg:inset-4">
+                        <div
+                          className={
+                            'absolute flex flex-col items-center justify-center gap-4 bg-black text-white ' +
+                            (isCallWindow
+                              ? 'inset-0 rounded-none'
+                              : 'inset-2 rounded-2xl sm:inset-3 lg:inset-4')
+                          }
+                        >
                           <CallAvatar
                             src={activeCall.peerAvatarUrl}
                             name={activeCall.peerName}
@@ -1745,7 +2611,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                           </button>
                         </div>
                         <p className="mt-3 text-xs text-slate-300">
-                          FPS mục tiêu: {targetVideoFps}. {isVideoFpsClamped ? 'Thiết lập cao hơn sẽ tự giới hạn để ổn định.' : ''}
+                          FPS mục tiêu: {targetVideoFps}.{' '}
+                          {isVideoFpsClamped ? 'Thiết lập cao hơn sẽ tự giới hạn để ổn định.' : ''}
                         </p>
                       </div>
                     )}
@@ -1798,13 +2665,20 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                               : 'Quota đang ổn, ưu tiên dùng LiveKit cho cuộc gọi mới.'}
                         </p>
                         <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-slate-400">
-                          Nguồn quota: {callQuotaState.usageSource === 'api' ? 'API tự động' : callQuotaState.usageSource === 'manual' ? 'Biến env thủ công' : 'Chưa có dữ liệu'}
+                          Nguồn quota:{' '}
+                          {callQuotaState.usageSource === 'api'
+                            ? 'API tự động'
+                            : callQuotaState.usageSource === 'manual'
+                              ? 'Biến env thủ công'
+                              : 'Chưa có dữ liệu'}
                         </p>
                       </div>
                     )}
                   </div>
                   <div className="space-y-3">
-                    <div className={`grid gap-2 ${activeCall.mode === 'video' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <div
+                      className={`grid gap-2 ${activeCall.mode === 'video' ? 'grid-cols-2' : 'grid-cols-1'}`}
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -1855,7 +2729,10 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => finishCall(true)}
+                      onClick={() => {
+                        finishCall(true);
+                        closeCurrentCallWindow();
+                      }}
                       className="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-red-500 text-base font-semibold text-white shadow-lg shadow-red-500/30"
                     >
                       Kết thúc cuộc gọi
@@ -1865,6 +2742,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
               </div>
               <audio ref={remoteAudioRef} autoPlay />
             </div>
+            )
           ) : fallbackSession ? (
             <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-slate-900 p-6 text-white shadow-2xl sm:p-8">
               <div className="inline-flex rounded-full border border-amber-300/40 bg-amber-400/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">
