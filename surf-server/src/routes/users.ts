@@ -29,7 +29,39 @@ async function getRelationship(viewerUid: string, targetUid: string) {
   return {
     isFriend: friendIds.includes(targetUid),
     isFollowing: followingIds.includes(targetUid),
+    friendIds,
   };
+}
+
+function canViewByPrivacySetting(
+  viewerUid: string,
+  targetUid: string,
+  setting?: string,
+  isFriend = false
+) {
+  if (viewerUid === targetUid) return true;
+  if (!setting || setting === 'public') return true;
+  if (setting === 'friends') return isFriend;
+  return false; // only-me or unknown values
+}
+
+function sanitizePrivacySettings(value: unknown) {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const allowedValues = new Set(['public', 'friends', 'only-me']);
+  const output: Record<string, string> = {};
+  for (const key of ['posts', 'friends', 'photos'] as const) {
+    const candidate = raw[key];
+    if (typeof candidate === 'string' && allowedValues.has(candidate)) {
+      output[key] = candidate;
+    }
+  }
+  return Object.keys(output).length ? output : undefined;
+}
+
+async function getUserPrivacySettings(uid: string) {
+  const userDoc = await getDb().collection('users').doc(uid).get();
+  return userDoc.exists ? (userDoc.data()?.privacySettings ?? {}) : {};
 }
 
 // ─── Static routes (phải đặt trước /:uid) ─────────────────────────────────
@@ -200,6 +232,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       defaultPostPrivacy,
       notificationPrefs,
       friendRequestPrivacy,
+      privacySettings,
     } = req.body as {
       displayName?: unknown;
       bio?: unknown;
@@ -208,6 +241,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       defaultPostPrivacy?: unknown;
       notificationPrefs?: unknown;
       friendRequestPrivacy?: unknown;
+      privacySettings?: unknown;
     };
 
     if (defaultPostPrivacy !== undefined && !isDefaultPostPrivacy(defaultPostPrivacy)) {
@@ -249,6 +283,10 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
         ...currentPrefs,
         ...notificationPrefsPatch,
       };
+    }
+    const sanitizedPrivacySettings = sanitizePrivacySettings(privacySettings);
+    if (sanitizedPrivacySettings !== undefined) {
+      data.privacySettings = sanitizedPrivacySettings;
     }
 
     if (!doc.exists) {
@@ -759,26 +797,33 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
     // Filter out deleted posts and reply posts (parentId set) — only top-level posts and shares
     posts = posts.filter((p) => !p.deleted && !p.parentId);
 
+    const userDoc = await getDb().collection('users').doc(targetUid).get();
+    const targetPrivacySettings = userDoc.exists ? userDoc.data()?.privacySettings : {};
+    const ownerPostsSetting = targetPrivacySettings?.posts ?? 'public';
+
     if (viewerUid !== targetUid) {
       const { isFriend } = await getRelationship(viewerUid, targetUid);
-      posts = posts.filter((p: Record<string, unknown>) => {
-        const privacy = p.privacy ?? 'public';
-        if (privacy === 'only-me') return false;
-        if (privacy === 'friends') return isFriend;
-        return true; // public / custom → ai cũng thấy
-      });
+      if (!canViewByPrivacySetting(viewerUid, targetUid, ownerPostsSetting, isFriend)) {
+        posts = [];
+      } else {
+        posts = posts.filter((p: Record<string, unknown>) => {
+          const privacy = p.privacy ?? 'public';
+          if (privacy === 'only-me') return false;
+          if (privacy === 'friends') return isFriend;
+          return true; // public / custom → ai cũng thấy
+        });
+      }
     }
 
-    // Sort by createdAt desc (Firestore compound query may change order)
+    // Sort: pinned post first, then by createdAt desc
     posts.sort((a, b) => {
-      const aTime =
-        (a.createdAt as { _seconds?: number; seconds?: number })?._seconds ??
-        (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ??
-        0;
-      const bTime =
-        (b.createdAt as { _seconds?: number; seconds?: number })?._seconds ??
-        (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ??
-        0;
+      const aPinned = !!(a as Record<string, unknown>).pinnedAt;
+      const bPinned = !!(b as Record<string, unknown>).pinnedAt;
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      const aTime = (a.createdAt as { _seconds?: number; seconds?: number })?._seconds
+        ?? (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      const bTime = (b.createdAt as { _seconds?: number; seconds?: number })?._seconds
+        ?? (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
       return bTime - aTime;
     });
 
@@ -803,10 +848,21 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
  *     responses:
  *       200: { description: OK }
  */
-router.get('/:uid/friends', requireAuth, async (req, res) => {
+router.get('/:uid/friends', requireAuth, async (req: AuthRequest, res) => {
   try {
     const friendDoc = await getDb().collection('friends').doc(req.params.uid).get();
     const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+
+    const targetUid = req.params.uid;
+    const { isFriend, friendIds: viewerFriendIds } = await getRelationship(req.uid!, targetUid);
+    const targetDoc = await getDb().collection('users').doc(targetUid).get();
+    const targetPrivacySettings = targetDoc.exists ? targetDoc.data()?.privacySettings : {};
+    const friendsSetting = targetPrivacySettings?.friends ?? 'public';
+    if (!canViewByPrivacySetting(req.uid!, targetUid, friendsSetting, isFriend)) {
+      res.json({ friends: [] });
+      return;
+    }
+
     if (friendIds.length === 0) {
       res.json({ friends: [] });
       return;
@@ -842,13 +898,23 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
  *     responses:
  *       200: { description: OK }
  */
-router.get('/:uid/photos', requireAuth, async (req, res) => {
+router.get('/:uid/photos', requireAuth, async (req: AuthRequest, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const targetUid = req.params.uid;
+    const { isFriend } = await getRelationship(req.uid!, targetUid);
+    const targetDoc = await getDb().collection('users').doc(targetUid).get();
+    const targetPrivacySettings = targetDoc.exists ? targetDoc.data()?.privacySettings : {};
+    const photosSetting = targetPrivacySettings?.photos ?? 'public';
+    if (!canViewByPrivacySetting(req.uid!, targetUid, photosSetting, isFriend)) {
+      res.json({ photos: [] });
+      return;
+    }
+
     // No orderBy — sort in memory to avoid needing a composite index
     const snap = await getDb()
       .collection('posts')
-      .where('authorId', '==', req.params.uid)
+      .where('authorId', '==', targetUid)
       .limit(limitNum)
       .get();
     type Photo = { url: string; postId: string; createdAt: unknown };
@@ -856,6 +922,9 @@ router.get('/:uid/photos', requireAuth, async (req, res) => {
     snap.docs.forEach((doc) => {
       const data = doc.data();
       if (data.deleted) return;
+      const privacy = data.privacy ?? 'public';
+      if (privacy === 'only-me') return;
+      if (privacy === 'friends' && !isFriend && req.uid !== targetUid) return;
       if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
         data.mediaUrls.forEach((url: string) => {
           // images only (exclude Cloudinary video uploads and common video extensions)
@@ -898,12 +967,22 @@ router.get('/:uid/photos', requireAuth, async (req, res) => {
  *     responses:
  *       200: { description: OK }
  */
-router.get('/:uid/clips', requireAuth, async (req, res) => {
+router.get('/:uid/clips', requireAuth, async (req: AuthRequest, res) => {
   try {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const targetUid = req.params.uid;
+    const { isFriend } = await getRelationship(req.uid!, targetUid);
+    const targetDoc = await getDb().collection('users').doc(targetUid).get();
+    const targetPrivacySettings = targetDoc.exists ? targetDoc.data()?.privacySettings : {};
+    const ownerPostsSetting = targetPrivacySettings?.posts ?? 'public';
+    if (!canViewByPrivacySetting(req.uid!, targetUid, ownerPostsSetting, isFriend)) {
+      res.json({ clips: [] });
+      return;
+    }
+
     const snap = await getDb()
       .collection('posts')
-      .where('authorId', '==', req.params.uid)
+      .where('authorId', '==', targetUid)
       .limit(limitNum)
       .get();
     type Clip = { url: string; postId: string; content: string; createdAt: unknown };
@@ -911,6 +990,9 @@ router.get('/:uid/clips', requireAuth, async (req, res) => {
     snap.docs.forEach((doc) => {
       const data = doc.data();
       if (data.deleted) return;
+      const privacy = data.privacy ?? 'public';
+      if (privacy === 'only-me') return;
+      if (privacy === 'friends' && !isFriend && req.uid !== targetUid) return;
       if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
         data.mediaUrls.forEach((url: string) => {
           const isVideo =

@@ -1,5 +1,6 @@
 import { SETTINGS_DETAIL_SECTIONS } from '@/lib/settings-constants';
 import { SettingsIcon } from '@/lib/settings-data';
+import PrivacySettingsPanel from './PrivacySettingsPanel';
 
 interface SettingsSectionPageProps {
   sectionKey: string;
@@ -9,6 +10,10 @@ interface SettingsSectionPageProps {
 export default function SettingsSectionPage({ sectionKey, activeItem }: SettingsSectionPageProps) {
   const section = SETTINGS_DETAIL_SECTIONS.find((s) => s.key === sectionKey);
   if (!section) return null;
+
+  if (activeItem === 'privacy-settings') {
+    return <PrivacySettingsPanel />;
+  }
 
   return (
     <div className="max-w-3xl">

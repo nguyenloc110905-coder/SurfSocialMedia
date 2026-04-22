@@ -7,6 +7,7 @@ import {
   getFacebookRedirectResult,
   signUp,
   setAuthPersistence,
+  markTabAuthAction,
 } from '@/lib/firebase/auth';
 import { syncUserProfile, api } from '@/lib/api';
 import { PHONE_COUNTRIES } from '@/lib/phone-countries';
@@ -238,6 +239,7 @@ export default function AuthPage() {
 
   /* ─── Auth executors ─────────────────────────────────────────────────── */
   const executeLogin = async () => {
+    markTabAuthAction();
     setLoading(true);
     try {
       await setAuthPersistence(rememberMe);
@@ -255,6 +257,7 @@ export default function AuthPage() {
   };
 
   const executeRegister = async () => {
+    markTabAuthAction();
     setLoading(true);
     try {
       const result = await signUp(regEmail.trim(), regPassword, regName.trim());
@@ -269,6 +272,7 @@ export default function AuthPage() {
   };
 
   const executeGooglePost = async () => {
+    markTabAuthAction();
     setLoading(true);
     try {
       const result = await signInWithGoogle();
@@ -299,6 +303,7 @@ export default function AuthPage() {
   };
 
   const executeFacebookPost = async () => {
+    markTabAuthAction();
     setLoading(true);
     try {
       await signInWithFacebook(); // triggers redirect, page will reload

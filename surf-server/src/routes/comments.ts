@@ -5,15 +5,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
 import { logger } from '../config/logger.js';
 import { moderateText } from '../services/aiModeration.js';
-import {
-  createNotification,
-  getUnreadNotificationCount,
-  toApiNotification,
-} from '../services/notifications.js';
-import {
-  emitNotificationNew,
-  emitNotificationUnreadCount,
-} from '../realtime/emitters/notification.emitter.js';
+import { getIo } from '../realtime/io.js';
 
 const router = Router();
 
@@ -90,7 +82,11 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
     
-    const { content, parentId } = req.body;
+    const { content, parentId, mentions = [] } = req.body as {
+      content: string;
+      parentId?: string;
+      mentions?: { uid: string; displayName: string }[];
+    };
     
     if (!content?.trim()) {
       res.status(400).json({ error: 'Comment content is required' });
@@ -171,26 +167,31 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
 
     const contentDoc = isVideo ? videoDoc! : postDoc;
     const postAuthorId = contentDoc.data()?.authorId as string | undefined;
+    const postSnippet = isVideo
+      ? (contentDoc.data()?.title as string ?? '').substring(0, 100)
+      : (contentDoc.data()?.content as string ?? '').substring(0, 100);
+    const plainContent = content.trim().replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
     // Notify post author about new top-level comment (skip own post, skip replies — handled below)
     if (!parentId && postAuthorId && postAuthorId !== req.uid) {
-      try {
-        const notification = await createNotification({
-          userId: postAuthorId,
-          type: 'comment',
-          actorId: req.uid,
-          entityType: 'post',
-          entityId: req.params.postId,
-          message: `${user?.displayName ?? 'Ai đó'} đã bình luận bài viết của bạn: "${content.trim().substring(0, 80)}"`,
-        });
-
-        if (notification) {
-          const unreadCount = await getUnreadNotificationCount(postAuthorId);
-          emitNotificationNew(postAuthorId, toApiNotification(notification));
-          emitNotificationUnreadCount(postAuthorId, unreadCount);
-        }
-      } catch (error) {
-        console.warn('⚠️ Không tạo được notification comment:', error);
-      }
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'comment',
+        recipientId: postAuthorId,
+        actorId: req.uid,
+        actorName: user?.displayName ?? 'Ai đó',
+        actorPhoto: user?.photoURL ?? null,
+        postId: req.params.postId,
+        postSnippet,
+        commentSnippet: plainContent.substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${postAuthorId}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
     }
 
     // Notify parent comment author when someone replies (skip self, skip if same as post author — already notified)
@@ -198,46 +199,71 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       const parentDoc = await commentsRef.doc(parentId).get();
       const parentAuthorId = parentDoc.data()?.authorId as string | undefined;
       if (parentAuthorId && parentAuthorId !== req.uid && parentAuthorId !== postAuthorId) {
-        try {
-          const notification = await createNotification({
-            userId: parentAuthorId,
-            type: 'comment',
-            actorId: req.uid,
-            entityType: 'comment',
-            entityId: parentId,
-            message: `${user?.displayName ?? 'Ai đó'} đã trả lời bình luận của bạn: "${content.trim().substring(0, 80)}"`,
-          });
-
-          if (notification) {
-            const unreadCount = await getUnreadNotificationCount(parentAuthorId);
-            emitNotificationNew(parentAuthorId, toApiNotification(notification));
-            emitNotificationUnreadCount(parentAuthorId, unreadCount);
-          }
-        } catch (error) {
-          console.warn('⚠️ Không tạo được notification reply:', error);
-        }
+        const notifRef = db.collection('notifications').doc();
+        const notifData = {
+          id: notifRef.id,
+          type: 'reply',
+          recipientId: parentAuthorId,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: req.params.postId,
+          commentSnippet: plainContent.substring(0, 80),
+          read: false,
+          createdAt: new Date(),
+        };
+        notifRef.set(notifData).catch(() => {});
+        getIo().to(`user:${parentAuthorId}`).emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
       }
       // Also notify post author about the reply if they're not the parent author (already above)
       if (postAuthorId && postAuthorId !== req.uid && postAuthorId !== parentAuthorId) {
-        try {
-          const notification = await createNotification({
-            userId: postAuthorId,
-            type: 'comment',
-            actorId: req.uid,
-            entityType: 'post',
-            entityId: req.params.postId,
-            message: `${user?.displayName ?? 'Ai đó'} đã trả lời trong bài viết của bạn: "${content.trim().substring(0, 80)}"`,
-          });
-
-          if (notification) {
-            const unreadCount = await getUnreadNotificationCount(postAuthorId);
-            emitNotificationNew(postAuthorId, toApiNotification(notification));
-            emitNotificationUnreadCount(postAuthorId, unreadCount);
-          }
-        } catch (error) {
-          console.warn('⚠️ Không tạo được notification comment reply on post:', error);
-        }
+        const notifRef = db.collection('notifications').doc();
+        const notifData = {
+          id: notifRef.id,
+          type: 'reply',
+          recipientId: postAuthorId,
+          actorId: req.uid,
+          actorName: user?.displayName ?? 'Ai đó',
+          actorPhoto: user?.photoURL ?? null,
+          postId: req.params.postId,
+          commentSnippet: plainContent.substring(0, 80),
+          read: false,
+          createdAt: new Date(),
+        };
+        notifRef.set(notifData).catch(() => {});
+        getIo().to(`user:${postAuthorId}`).emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
       }
+    }
+
+    // Notify mentioned users (skip self, skip post author already notified above)
+    const alreadyNotified = new Set<string>([req.uid!]);
+    for (const mention of mentions) {
+      if (!mention.uid || alreadyNotified.has(mention.uid)) continue;
+      alreadyNotified.add(mention.uid);
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'mention',
+        recipientId: mention.uid,
+        actorId: req.uid,
+        actorName: user?.displayName ?? 'Ai đó',
+        actorPhoto: user?.photoURL ?? null,
+        postId: req.params.postId,
+        commentSnippet: plainContent.substring(0, 80),
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${mention.uid}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
     }
 
     res.status(201).json(responseData);
@@ -497,24 +523,24 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
       const actorDoc = await usersRef.doc(req.uid!).get();
       const actor = actorDoc.data();
 
-      try {
-        const notification = await createNotification({
-          userId: commentAuthorId,
-          type: 'post_reaction',
-          actorId: req.uid,
-          entityType: 'comment',
-          entityId: req.params.commentId,
-          message: `${actor?.displayName ?? 'Ai đó'} đã thả cảm xúc ${likedBy.includes(req.uid!) ? reactions[req.uid!] : reaction} vào bình luận của bạn.`,
-        });
-
-        if (notification) {
-          const unreadCount = await getUnreadNotificationCount(commentAuthorId);
-          emitNotificationNew(commentAuthorId, toApiNotification(notification));
-          emitNotificationUnreadCount(commentAuthorId, unreadCount);
-        }
-      } catch (error) {
-        console.warn('⚠️ Không tạo được notification comment reaction:', error);
-      }
+      const notifRef = db.collection('notifications').doc();
+      const notifData = {
+        id: notifRef.id,
+        type: 'post_reaction',
+        recipientId: commentAuthorId,
+        actorId: req.uid,
+        actorName: actor?.displayName ?? 'Ai đó',
+        actorPhoto: actor?.photoURL ?? null,
+        commentId: req.params.commentId,
+        reaction: likedBy.includes(req.uid!) ? reactions[req.uid!] : reaction,
+        read: false,
+        createdAt: new Date(),
+      };
+      notifRef.set(notifData).catch(() => {});
+      getIo().to(`user:${commentAuthorId}`).emit('notification:new', {
+        ...notifData,
+        createdAt: new Date().toISOString(),
+      });
     }
 
     res.json({

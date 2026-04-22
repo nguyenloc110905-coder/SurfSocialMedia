@@ -92,21 +92,33 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       return true;
     });
 
+    // Load author privacy settings for visible posts
+    const authorIds = Array.from(
+      new Set(activeDocs.map((p) => p.authorId).filter((id) => id && id !== uid))
+    );
+    const authorRefs = authorIds.map((id) => getDb().collection('users').doc(id));
+    const authorDocs = authorRefs.length > 0 ? await getDb().getAll(...authorRefs) : [];
+    const authorPrivacyMap = new Map(
+      authorDocs
+        .filter((doc) => doc.exists)
+        .map((doc) => [doc.id, doc.data()?.privacySettings?.posts ?? 'public'] as [string, string])
+    );
+
     // ── Feed cá nhân hoá ──────────────────────────────────────────────────
-    const personalizedPosts = activeDocs.filter((p) => {
-      const authorId = p.authorId;
-      const privacy = p.privacy ?? 'public';
-      
-      // Luôn hiện bài của chính mình
-      if (authorId === uid) return true;
-      
-      // Nếu không có bạn bè/follow thì không xét tiếp
-      if (isNewUser) return false;
-      
-      if (!visibleAuthors.has(authorId)) return false;
-      if (friendIds.includes(authorId)) return privacy === 'public' || privacy === 'friends';
-      return privacy === 'public'; // chỉ follow
-    });
+    const personalizedPosts = isNewUser
+      ? []
+      : activeDocs.filter((p) => {
+          const authorId = p.authorId;
+          const privacy = p.privacy ?? 'public';
+          if (authorId === uid) return true;
+          const authorPostsSetting = authorPrivacyMap.get(authorId) ?? 'public';
+          const isFriendAuthor = friendIds.includes(authorId);
+          if (!visibleAuthors.has(authorId)) return false;
+          if (authorPostsSetting === 'only-me') return false;
+          if (authorPostsSetting === 'friends' && !isFriendAuthor) return false;
+          if (isFriendAuthor) return privacy === 'public' || privacy === 'friends';
+          return privacy === 'public'; // chỉ follow
+        });
 
     // ── Bổ sung "Khám phá" khi feed cá nhân thiếu ────────────────────────
     const needDiscover = personalizedPosts.length < limitNum;
@@ -117,6 +129,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       const discoverPosts = activeDocs.filter((p) => {
         if (personalIds.has(p.id)) return false; // đã có rồi
         if (p.authorId === uid) return false; // bài của mình
+        const authorPostsSetting = authorPrivacyMap.get(p.authorId) ?? 'public';
+        if (authorPostsSetting === 'only-me') return false;
+        const isFriendAuthor = friendIds.includes(p.authorId);
+        if (authorPostsSetting === 'friends' && !isFriendAuthor) return false;
         return (p.privacy ?? 'public') === 'public'; // chỉ lấy public
       });
       // Đánh dấu bài khám phá để client có thể hiện label "Khám phá"

@@ -8,6 +8,8 @@ import { isVideoUrl } from '../../lib/cloudinary';
 import { optimizeImageUrl } from '../../lib/image-cdn';
 import EditPostModal from './EditPostModal';
 import { getSocket } from '../../lib/socket';
+import MentionCommentInput from './MentionCommentInput';
+import { markupToPlain, extractMentions, renderCommentContent } from '../../lib/mentionUtils';
 
 interface Comment {
   id: string;
@@ -58,6 +60,7 @@ interface PostCardProps {
     isAnonymous?: boolean;
     poll?: { options: { id: string; text: string; votes: string[] }[] };
     savedBy?: string[];
+    pinnedAt?: string | null;
     sharedFrom?: {
       id: string;
       authorId?: string;
@@ -77,6 +80,7 @@ interface PostCardProps {
   currentUserId?: string;
   onPostUpdated?: (updated: PostCardProps['post']) => void;
   defaultOpenComments?: boolean;
+  showPinOption?: boolean;
 }
 
 /** Plays video when ≥30% visible in the viewport; pauses when scrolled away. */
@@ -356,14 +360,14 @@ function UserPresenceAvatar({
   );
 }
 
-export default function PostCard({ post, currentUserId, onPostUpdated, defaultOpenComments }: PostCardProps) {
+export default function PostCard({ post, currentUserId, onPostUpdated, defaultOpenComments, showPinOption = false }: PostCardProps) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const goToProfile = (uid?: string) => {
     if (post.isAnonymous) return;
     if (uid) navigate(`/feed/profile/${uid}`);
   };
-  const commentInputRef = useRef<HTMLInputElement>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const initialLiked = currentUserId ? (post.likedBy?.includes(currentUserId) ?? false) : false;
   const initialReaction = currentUserId ? (post.reactions?.[currentUserId] ?? null) : null;
@@ -384,6 +388,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [shareReaction, setShareReaction] = useState<string | null>(null);
   const [showShareReactionPicker, setShowShareReactionPicker] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [isPinned, setIsPinned] = useState(!!post.pinnedAt);
   const [isSaved, setIsSaved] = useState(
     currentUserId ? (post.savedBy?.includes(currentUserId) ?? false) : false
   );
@@ -426,13 +431,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [contentExpanded, setContentExpanded] = useState(false);
   const CONTENT_COLLAPSE_LIMIT = 100; // chars before showing "Xem thêm"
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportToast, setReportToast] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxCommentOpen, setLightboxCommentOpen] = useState(false);
   const [lightboxShowReactions, setLightboxShowReactions] = useState(false);
   const [pollData, setPollData] = useState(post.poll);
   const [votingOptionId, setVotingOptionId] = useState<string | null>(null);
-  const lightboxCommentRef = useRef<HTMLInputElement>(null);
+  const lightboxCommentRef = useRef<HTMLTextAreaElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
   const reactionHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -621,14 +630,16 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   }, [showComments]);
 
   const handleSubmitComment = async () => {
-    if (!commentText.trim() || submittingComment) return;
+    if (!markupToPlain(commentText).trim() || submittingComment) return;
     setCommentError(null);
 
     try {
       setSubmittingComment(true);
+      const mentions = extractMentions(commentText);
       console.log(`📤 Submitting comment to post ${post.id}:`, commentText.trim());
       const response = await api.post<Comment>(`/api/comments/${post.id}`, {
         content: commentText.trim(),
+        mentions,
       });
       console.log(`✅ Comment created:`, response);
 
@@ -750,11 +761,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const handleLikeComment = (commentId: string) => handleReactComment(commentId, '❤️');
 
   const handleSubmitReply = async (parentId: string) => {
-    const text = (replyTexts[parentId] ?? '').trim();
+    const markup = replyTexts[parentId] ?? '';
+    const text = markupToPlain(markup).trim();
     if (!text || submittingReply === parentId) return;
     setSubmittingReply(parentId);
     try {
-      await api.post<Comment>(`/api/comments/${post.id}`, { content: text, parentId });
+      const mentions = extractMentions(markup);
+      await api.post<Comment>(`/api/comments/${post.id}`, { content: markup.trim(), mentions, parentId });
       // Do NOT push to state here — the socket 'comment:new' event will add it (deduped)
       setReplyTexts((prev) => ({ ...prev, [parentId]: '' }));
       setReplyingToId(null);
@@ -1033,6 +1046,33 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
     setShowDeleteConfirm(true);
   };
 
+  const handlePinToggle = async () => {
+    try {
+      const res = await api.patch<{ pinned: boolean }>(`/api/posts/${post.id}/pin`, {});
+      setIsPinned(res.pinned);
+      onPostUpdated?.({ ...post, pinnedAt: res.pinned ? new Date().toISOString() : null });
+    } catch (err) {
+      console.error('Pin toggle failed:', err);
+    }
+  };
+
+  const handleReport = async () => {
+    if (!reportReason || reportSubmitting) return;
+    setReportSubmitting(true);
+    try {
+      await api.post(`/api/posts/${post.id}/report`, { reason: reportReason });
+      setShowReportModal(false);
+      setReportReason('');
+      setReportToast('✅ Đã gửi báo cáo. Cảm ơn bạn!');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      setReportToast(msg.includes('đã báo cáo') ? '⚠️ Bạn đã báo cáo bài viết này rồi' : '❌ Không thể gửi báo cáo. Thử lại sau.');
+    } finally {
+      setReportSubmitting(false);
+      setTimeout(() => setReportToast(null), 3000);
+    }
+  };
+
   const confirmDeletePost = async () => {
     setShowDeleteConfirm(false);
     try {
@@ -1278,6 +1318,72 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
           </div>
         </div>
       </Modal>
+
+      {/* Report post modal */}
+      {showReportModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => { setShowReportModal(false); setReportReason(''); }}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-200 dark:border-slate-700">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Báo cáo bài viết</h3>
+              <button
+                onClick={() => { setShowReportModal(false); setReportReason(''); }}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 text-sm transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Hãy cho chúng tôi biết vấn đề với bài viết này.
+              </p>
+              <select
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                className="w-full rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+              >
+                <option value="">Chọn lý do...</option>
+                <option value="spam">Spam</option>
+                <option value="inappropriate">Nội dung không phù hợp</option>
+                <option value="misinformation">Thông tin sai lệch</option>
+                <option value="hate_speech">Ngôn từ thù hận</option>
+                <option value="harassment">Quấy rối / Bắt nạt</option>
+                <option value="violence">Nội dung bạo lực</option>
+                <option value="copyright">Vi phạm bản quyền</option>
+                <option value="other">Khác</option>
+              </select>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => { setShowReportModal(false); setReportReason(''); }}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={() => void handleReport()}
+                  disabled={!reportReason || reportSubmitting}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {reportSubmitting ? 'Đang gửi...' : 'Gửi báo cáo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report toast */}
+      {reportToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] bg-gray-900/90 backdrop-blur-sm text-white text-sm px-5 py-2.5 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+          {reportToast}
+        </div>
+      )}
+
       {/* Backdrop */}
       {showComments && (
         <div
@@ -1304,6 +1410,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             : undefined
         }
       >
+        {/* Pinned post indicator */}
+        {isPinned && !showComments && (
+          <div className="flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold text-cyan-600 dark:text-cyan-400">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/></svg>
+            Bài viết đã ghim
+          </div>
+        )}
         {/* ── MEDIA HERO LAYOUT — kept as dead code; media now rendered inside card ── */}
         {/* eslint-disable-next-line no-constant-condition */}
         {false ? (
@@ -1625,25 +1738,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         Chuyển vào thùng rác
                       </button>
                     )}
-                    <button
-                      onClick={() => setShowOptions(false)}
-                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                    {currentUserId !== post.authorId && (
+                      <button
+                        onClick={() => { setShowReportModal(true); setShowOptions(false); }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                        />
-                      </svg>
-                      Báo cáo bài viết
-                    </button>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        Báo cáo bài viết
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1948,6 +2053,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         Chỉnh sửa bài viết
                       </button>
                     )}
+                    {showPinOption && currentUserId === post.authorId && (
+                      <button
+                        onClick={() => { void handlePinToggle(); setShowOptions(false); }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
+                      >
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/></svg>
+                        {isPinned ? 'Bỏ ghim bài viết' : 'Ghim lên trang cá nhân'}
+                      </button>
+                    )}
                     {currentUserId === post.authorId && (
                       <button
                         onClick={() => {
@@ -1972,25 +2086,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         Xóa bài viết
                       </button>
                     )}
-                    <button
-                      onClick={() => setShowOptions(false)}
-                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                    {currentUserId !== post.authorId && (
+                      <button
+                        onClick={() => { setShowReportModal(true); setShowOptions(false); }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                        />
-                      </svg>
-                      Báo cáo bài viết
-                    </button>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        Báo cáo bài viết
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2398,7 +2504,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       onClick={() => setShowComments(true)}
                     >
                       <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{comment.authorDisplayName}</span>
-                      <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 break-words">{comment.content}</p>
+                      <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 break-words">{renderCommentContent(comment.content)}</p>
                       {comment.likeCount > 0 && (
                         <span className="text-xs text-gray-400 flex items-center gap-0.5 mt-1">
                           {(() => {
@@ -2489,7 +2595,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                 {comment.authorDisplayName}
                               </div>
                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
-                                {comment.content}
+                                {renderCommentContent(comment.content)}
                                 {comment.isEdited && (
                                   <span className="ml-1 text-xs text-gray-400 font-normal">• Đã chỉnh sửa</span>
                                 )}
@@ -2544,7 +2650,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               onClick={() => {
                                 setReplyingToId(replyingToId === comment.id ? null : comment.id);
                                 if (replyingToId !== comment.id) {
-                                  setReplyTexts((p) => ({ ...p, [comment.id]: `@${comment.authorDisplayName} ` }));
+                                  setReplyTexts((p) => ({ ...p, [comment.id]: `@[${comment.authorDisplayName}](${comment.authorId}) ` }));
                                 }
                               }}
                             >
@@ -2618,10 +2724,19 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                       <div className="font-semibold text-xs text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit" onClick={() => goToProfile(reply.authorId)}>
                                         {reply.authorDisplayName}
                                       </div>
-                                      <div className="text-xs text-gray-800 dark:text-gray-200 mt-0.5">{reply.content}</div>
+                                      <div className="text-xs text-gray-800 dark:text-gray-200 mt-0.5">{renderCommentContent(reply.content)}</div>
                                     </div>
                                     <div className="flex items-center gap-3 mt-0.5 px-2 text-[11px] font-semibold text-gray-500">
                                       <span>{reply.createdAt && formatTime(reply.createdAt)}</span>
+                                      <button
+                                        className="text-gray-600 dark:text-gray-400 hover:underline"
+                                        onClick={() => {
+                                          setReplyingToId(comment.id);
+                                          setReplyTexts((p) => ({ ...p, [comment.id]: `@[${reply.authorDisplayName}](${reply.authorId}) ` }));
+                                        }}
+                                      >
+                                        Trả lời
+                                      </button>
                                       {currentUserId === reply.authorId && (
                                         <button onClick={() => handleDeleteComment(reply.id)} className="hover:text-red-500 hover:underline">Xóa</button>
                                       )}
@@ -2641,22 +2756,19 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                     presenceSize="sm"
                                   />
                                   <div className="flex-1 relative">
-                                    <input
+                                    <MentionCommentInput
                                       autoFocus
-                                      type="text"
                                       value={replyTexts[comment.id] ?? ''}
-                                      onChange={(e) => setReplyTexts((p) => ({ ...p, [comment.id]: e.target.value }))}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') void handleSubmitReply(comment.id);
-                                        if (e.key === 'Escape') setReplyingToId(null);
-                                      }}
+                                      onChange={(v) => setReplyTexts((p) => ({ ...p, [comment.id]: v }))}
+                                      onKeyDown={(e) => { if (e.key === 'Escape') setReplyingToId(null); }}
+                                      onSubmit={() => void handleSubmitReply(comment.id)}
                                       placeholder={`Trả lời ${comment.authorDisplayName}...`}
                                       disabled={submittingReply === comment.id}
-                                      className="w-full bg-white dark:bg-slate-900/50 text-gray-900 dark:text-gray-100 placeholder-gray-400 rounded-full px-3 py-1.5 pr-10 text-xs border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50"
+                                      size="sm"
                                     />
                                     <button
                                       onClick={() => void handleSubmitReply(comment.id)}
-                                      disabled={!(replyTexts[comment.id] ?? '').trim() || submittingReply === comment.id}
+                                      disabled={!markupToPlain(replyTexts[comment.id] ?? '').trim() || submittingReply === comment.id}
                                       className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-600 disabled:opacity-40"
                                     >
                                       {submittingReply === comment.id
@@ -2706,19 +2818,18 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         <button type="button" onClick={() => setCommentError(null)} className="shrink-0 hover:text-red-700">×</button>
                       </div>
                     )}
-                    <input
-                      ref={commentInputRef}
-                      type="text"
+                    <MentionCommentInput
                       value={commentText}
-                      onChange={(e) => { setCommentText(e.target.value); setCommentError(null); }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
-                      placeholder="Viết bình luận của bạn..."
+                      onChange={setCommentText}
+                      onClearError={() => setCommentError(null)}
+                      onSubmit={handleSubmitComment}
                       disabled={submittingComment}
-                      className="w-full bg-white dark:bg-slate-900/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 rounded-full px-4 py-2.5 pr-12 border-2 border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-400 transition-all disabled:opacity-50"
+                      placeholder="Viết bình luận của bạn..."
+                      inputRef={commentInputRef}
                     />
                     <button
                       onClick={handleSubmitComment}
-                      disabled={!commentText.trim() || submittingComment}
+                      disabled={!markupToPlain(commentText).trim() || submittingComment}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-cyan-600 hover:text-cyan-700 transition-colors disabled:opacity-50"
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -3146,7 +3257,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                 {comment.authorDisplayName}
                               </div>
                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
-                                {comment.content}
+                                {renderCommentContent(comment.content)}
                                 {comment.isEdited && (
                                   <span className="ml-1 text-xs text-gray-400 font-normal">• Đã chỉnh sửa</span>
                                 )}
@@ -3208,19 +3319,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       </div>
                     )}
                     <div className="flex-1 relative">
-                      <input
-                        ref={lightboxCommentRef}
-                        type="text"
+                      <MentionCommentInput
                         value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && void handleSubmitComment()}
-                        placeholder="Viết bình luận..."
+                        onChange={setCommentText}
+                        onSubmit={handleSubmitComment}
                         disabled={submittingComment}
-                        className="w-full bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 rounded-full px-4 py-2 pr-10 text-sm border border-gray-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+                        placeholder="Viết bình luận..."
+                        inputRef={lightboxCommentRef}
                       />
                       <button
                         onClick={() => void handleSubmitComment()}
-                        disabled={!commentText.trim() || submittingComment}
+                        disabled={!markupToPlain(commentText).trim() || submittingComment}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-cyan-600 hover:text-cyan-700 disabled:opacity-40"
                       >
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">

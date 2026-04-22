@@ -1,17 +1,6 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
-import {
-  getUnreadNotificationCount,
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
-  toApiNotification,
-} from '../services/notifications.js';
-import {
-  emitNotificationRead,
-  emitNotificationReadAll,
-  emitNotificationUnreadCount,
-} from '../realtime/emitters/notification.emitter.js';
+import { getDb } from '../config/firebase-admin.js';
 
 const router = Router();
 
@@ -19,6 +8,10 @@ const parseIntSafe = (value: unknown, fallback: number): number => {
   if (typeof value !== 'string') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+};
+
+type RawNotif = Record<string, unknown> & {
+  createdAt?: { seconds?: number; _seconds?: number };
 };
 
 /**
@@ -50,16 +43,20 @@ const parseIntSafe = (value: unknown, fallback: number): number => {
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const limit = Math.min(parseIntSafe(req.query.limit, 20), 50);
-    const cursorMs = parseIntSafe(req.query.cursor, 0) || undefined;
-
-    const items = await listNotifications({ userId: uid, limit, cursorMs });
-    const nextCursor = items.length === limit ? items[items.length - 1].createdAt.getTime() : null;
-
-    res.json({
-      items: items.map(toApiNotification),
-      nextCursor,
-    });
+    const limit = Math.min(parseIntSafe(req.query.limit, 30), 100);
+    // All inline notifications are stored with recipientId (comments, posts, reactions, mentions)
+    const snap = await getDb()
+      .collection('notifications')
+      .where('recipientId', '==', uid)
+      .get();
+    const notifications = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as RawNotif[])
+      .sort((a, b) => {
+        const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
+        const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
+        return bT - aT;
+      })
+      .slice(0, limit);
+    res.json({ notifications });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -85,7 +82,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const count = await getUnreadNotificationCount(uid);
+    const snap = await getDb().collection('notifications').where('recipientId', '==', uid).get();
+    const count = snap.docs.filter((doc) => !doc.data().read).length;
     res.json({ count });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -112,21 +110,22 @@ router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
 router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const result = await markNotificationRead(uid, req.params.id);
-    if (!result.ok && result.reason === 'not_found') {
+    if (req.params.id.startsWith('fr-')) {
+      res.json({ ok: true });
+      return;
+    }
+    const ref = getDb().collection('notifications').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) {
       res.status(404).json({ error: 'Notification not found' });
       return;
     }
-    if (!result.ok && result.reason === 'forbidden') {
+    if (doc.data()?.recipientId !== uid) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
-
-    const count = await getUnreadNotificationCount(uid);
-    emitNotificationRead(uid, req.params.id);
-    emitNotificationUnreadCount(uid, count);
-
-    res.json({ ok: true, count });
+    await ref.update({ read: true });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -154,11 +153,21 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
 router.patch('/read-all', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const ids = await markAllNotificationsRead(uid);
-    const count = await getUnreadNotificationCount(uid);
-    emitNotificationReadAll(uid, ids);
-    emitNotificationUnreadCount(uid, count);
-    res.json({ ok: true, updated: ids.length, count });
+    const snap = await getDb()
+      .collection('notifications')
+      .where('recipientId', '==', uid)
+      .get();
+    const db = getDb();
+    const batch = db.batch();
+    let updated = 0;
+    snap.docs.forEach((doc) => {
+      if (!doc.data().read) {
+        batch.update(doc.ref, { read: true });
+        updated++;
+      }
+    });
+    if (updated > 0) await batch.commit();
+    res.json({ ok: true, updated });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
