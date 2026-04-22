@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MentionsInput, Mention, SuggestionDataItem } from 'react-mentions';
 import { api } from '../../lib/api';
+import { useThemeStore } from '../../stores/themeStore';
 
 interface Friend extends SuggestionDataItem {
   id: string;
@@ -34,6 +35,13 @@ export default function MentionCommentInput({
   onKeyDown,
 }: MentionCommentInputProps) {
   const [friends, setFriends] = useState<Friend[]>([]);
+  const theme = useThemeStore((s) => s.theme);
+  const isDark = useMemo(() => {
+    if (theme === 'dark') return true;
+    if (theme === 'system' && typeof window !== 'undefined')
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return false;
+  }, [theme]);
 
   useEffect(() => {
     api
@@ -117,14 +125,31 @@ export default function MentionCommentInput({
           item: 'mc-suggestions-item',
         },
       }}
-      style={{ control: { width: '100%' } }}
+      style={{
+        control: { width: '100%' },
+        suggestions: {
+          list: {
+            backgroundColor: isDark ? '#1e293b' : '#ffffff',
+            border: isDark ? '1px solid #334155' : '1px solid #e5e7eb',
+            borderRadius: '12px',
+            boxShadow: isDark ? '0 4px 20px rgba(0,0,0,0.35)' : '0 4px 20px rgba(0,0,0,0.12)',
+            overflow: 'hidden',
+            maxHeight: '200px',
+            minWidth: '200px',
+            zIndex: 100,
+          },
+          item: {
+            color: isDark ? '#f1f5f9' : '#1f2937',
+          },
+        },
+      }}
     >
       <Mention
         trigger="@"
         data={queryFriends}
         renderSuggestion={renderSuggestion}
         displayTransform={(_id: string, display: string) => `@${display}`}
-        style={{ backgroundColor: 'rgba(6,182,212,0.15)', borderRadius: '4px', padding: '0 2px' }}
+        style={{ backgroundColor: 'rgba(0,0,0,0.75)', borderRadius: '4px', padding: '0 2px' }}
         appendSpaceOnAdd
       />
     </MentionsInput>

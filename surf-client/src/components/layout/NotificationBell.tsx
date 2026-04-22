@@ -127,12 +127,16 @@ export default function NotificationBell() {
     return `${Math.floor(diff / 86400)}d`;
   };
 
+  const stripMentionMarkup = (text: string) =>
+    text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
+
   const notifLabel = (n: Notification) => {
     const name = <span className="font-semibold text-gray-900 dark:text-gray-100">{n.actorName}</span>;
-    const snippet = (n.postSnippet || n.commentSnippet)
+    const rawSnippet = n.commentSnippet ?? n.postSnippet;
+    const snippet = rawSnippet
       ? (
           <span className="block text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate max-w-[220px]">
-            “{n.commentSnippet ?? n.postSnippet}”
+            "{stripMentionMarkup(rawSnippet)}"
           </span>
         )
       : null;
