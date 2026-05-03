@@ -40,8 +40,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       res.json({ friends: [] });
       return;
     }
-    const usersSnap = await db().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+    const usersDocs = friendIds.length > 0 
+      ? await db().getAll(...friendIds.map((id) => db().collection('users').doc(id))) 
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, { id: d.id, ...d.data() }]));
     const myFriendsSet = new Set(friendIds);
     // Batch-load friend lists to compute mutual counts
     const fDocs = await db().getAll(...friendIds.map((id) => db().collection('friends').doc(id)));
@@ -85,8 +87,10 @@ router.get('/requests', requireAuth, async (req: AuthRequest, res) => {
       res.json({ requests: [] });
       return;
     }
-    const usersSnap = await db().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+    const usersDocs = fromIds.length > 0 
+      ? await db().getAll(...fromIds.map((id) => db().collection('users').doc(id))) 
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, { id: d.id, ...d.data() }]));
     const requests = snap.docs.map((d) => {
       const data = d.data();
       const u = usersMap.get(data.fromUid);
@@ -291,8 +295,11 @@ router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
       res.json({ sent: [] });
       return;
     }
-    const usersSnap = await db().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, d.data()]));
+    const toIds = snap.docs.map((d) => d.data().toUid);
+    const usersDocs = toIds.length > 0 
+      ? await db().getAll(...toIds.map((id) => db().collection('users').doc(id))) 
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, d.data()]));
     const sent = snap.docs.map((d) => {
       const data = d.data();
       const u = usersMap.get(data.toUid);

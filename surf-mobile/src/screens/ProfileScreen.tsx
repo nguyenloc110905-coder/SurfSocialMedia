@@ -4,7 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
 import { signOut } from '@/lib/firebase/auth';
 
-export default function ProfileScreen() {
+import { Ionicons } from '@expo/vector-icons';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/navigation';
+
+type Props = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
+};
+
+export default function ProfileScreen({ navigation }: Props) {
   const { user } = useAuthStore();
 
   return (
@@ -22,6 +30,15 @@ export default function ProfileScreen() {
         <Text style={styles.name}>{user?.displayName ?? 'Người dùng'}</Text>
         <Text style={styles.email}>{user?.email}</Text>
       </View>
+
+      <TouchableOpacity 
+        style={styles.settingsButton} 
+        onPress={() => navigation.navigate('Settings')}
+      >
+        <Ionicons name="settings-outline" size={24} color="#f1f5f9" />
+        <Text style={styles.settingsText}>Cài đặt tài khoản</Text>
+        <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
         <Text style={styles.logoutText}>Đăng xuất</Text>
@@ -59,4 +76,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  settingsButton: {
+    marginHorizontal: 24,
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+  },
+  settingsText: {
+    flex: 1,
+    color: '#f1f5f9',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 12,
+  },
 });

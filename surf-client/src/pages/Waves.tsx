@@ -7,6 +7,7 @@ import {
   useState,
   type FormEvent,
   type ReactNode,
+  Fragment,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
@@ -691,6 +692,7 @@ export default function Waves() {
   const [draft, setDraft] = useState('');
   const [replyTargetMessage, setReplyTargetMessage] = useState<UiMessage | null>(null);
   const [openedReactionMessageId, setOpenedReactionMessageId] = useState<string | null>(null);
+  const [openedAvatarMenuMessageId, setOpenedAvatarMenuMessageId] = useState<string | null>(null);
   const [hoveredReactionBadgeKey, setHoveredReactionBadgeKey] = useState<string | null>(null);
   const [reactionDetailsState, setReactionDetailsState] = useState<ReactionDetailsState | null>(
     null
@@ -1747,7 +1749,7 @@ export default function Waves() {
   }, [deletingMessageId]);
 
   useEffect(() => {
-    if (!openedMessageActionId && !openedReactionMessageId) return;
+    if (!openedMessageActionId && !openedReactionMessageId && !openedAvatarMenuMessageId) return;
 
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1757,24 +1759,28 @@ export default function Waves() {
         target.closest('[data-message-actions-menu]') ||
         target.closest('[data-message-actions-trigger]') ||
         target.closest('[data-message-reaction-picker]') ||
-        target.closest('[data-message-reaction-trigger]')
+        target.closest('[data-message-reaction-trigger]') ||
+        target.closest('[data-avatar-menu]') ||
+        target.closest('[data-avatar-trigger]')
       ) {
         return;
       }
 
       setOpenedMessageActionId(null);
       setOpenedReactionMessageId(null);
+      setOpenedAvatarMenuMessageId(null);
     };
 
     document.addEventListener('mousedown', onPointerDown);
     return () => {
       document.removeEventListener('mousedown', onPointerDown);
     };
-  }, [openedMessageActionId, openedReactionMessageId]);
+  }, [openedMessageActionId, openedReactionMessageId, openedAvatarMenuMessageId]);
 
   useEffect(() => {
     setOpenedMessageActionId(null);
     setOpenedReactionMessageId(null);
+    setOpenedAvatarMenuMessageId(null);
     setHoveredReactionBadgeKey(null);
     setReactionDetailsState(null);
     setShowPinnedMessagesModal(false);
@@ -2035,7 +2041,7 @@ export default function Waves() {
     const maxTooltipActors = 7;
 
     return (
-      <div className={`mt-1 flex flex-wrap gap-1 ${outgoing ? 'justify-end' : 'justify-start'}`}>
+      <div className="absolute -bottom-3.5 right-1 z-20 flex flex-wrap gap-1">
         <div
           className="relative"
           onMouseEnter={() => setHoveredReactionBadgeKey(badgeKey)}
@@ -3365,24 +3371,76 @@ export default function Waves() {
                             const isReplyTargetHighlighted =
                               highlightedReplyMessageId === message.id;
 
+                            const messageTime = new Date(message.createdAt);
+                            const prevMessageTime = previousMessage ? new Date(previousMessage.createdAt) : null;
+                            const showTimeSeparator = !prevMessageTime || (messageTime.getTime() - prevMessageTime.getTime()) > 30 * 60000;
+                            
+                            const h = messageTime.getHours().toString().padStart(2, '0');
+                            const m = messageTime.getMinutes().toString().padStart(2, '0');
+                            const d = messageTime.getDate();
+                            const mo = messageTime.getMonth() + 1;
+                            const y = messageTime.getFullYear().toString().slice(-2);
+                            const yFull = messageTime.getFullYear();
+                            
+                            const separatorTimeLabel = `${h}:${m} ${d}/${mo}/${y}`;
+                            const hoverTimeLabel = `${h}:${m} ${d} Tháng ${mo}, ${yFull}`;
+
                             if (message.type === 'call_log') {
                               return (
-                                <div
-                                  key={message.id}
-                                  id={`wave-message-${message.id}`}
-                                  data-message-id={message.id}
-                                  className={`group/message-row flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
-                                >
+                                <Fragment key={message.id}>
+                                  {showTimeSeparator && (
+                                    <div className="flex justify-center my-5">
+                                      <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                                        {separatorTimeLabel}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div
+                                    id={`wave-message-${message.id}`}
+                                    data-message-id={message.id}
+                                    className={`group/message-row flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
+                                  >
                                   {!outgoing &&
                                     (shouldShowIncomingAvatar ? (
-                                      <WaveAvatar
-                                        src={senderAvatar}
-                                        uid={senderUid}
-                                        name={senderName}
-                                        presenceSize="sm"
-                                        className="h-10 w-10 rounded-full object-cover"
-                                        fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white"
-                                      />
+                                      <div className="relative z-10">
+                                        <button 
+                                          type="button" 
+                                          data-avatar-trigger
+                                          onClick={() => setOpenedAvatarMenuMessageId(current => current === message.id ? null : message.id)}
+                                        >
+                                          <WaveAvatar
+                                            src={senderAvatar}
+                                            uid={senderUid}
+                                            name={senderName}
+                                            presenceSize="sm"
+                                            className="h-10 w-10 rounded-full object-cover transition hover:opacity-90 hover:shadow-sm"
+                                            fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white transition hover:opacity-90 hover:shadow-sm"
+                                          />
+                                        </button>
+                                        {openedAvatarMenuMessageId === message.id && (
+                                          <div 
+                                            data-avatar-menu
+                                            className="absolute left-0 top-[110%] z-40 w-[220px] overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1.5 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-[#202020]"
+                                          >
+                                            <Link
+                                              to={`/profile/${senderUid}`}
+                                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                              onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                            >
+                                              <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                              Xem trang cá nhân
+                                            </Link>
+                                            <button
+                                              type="button"
+                                              onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                            >
+                                              <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                                              Chặn
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     ) : (
                                       <div className="h-10 w-10 shrink-0" />
                                     ))}
@@ -3395,8 +3453,13 @@ export default function Waves() {
                                       </p>
                                     )}
                                     <div
-                                      className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''}`}
+                                      className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''} relative`}
                                     >
+                                      <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message-row:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 ${outgoing ? 'right-full mr-3' : 'left-full ml-3'}`}>
+                                        <span className="text-[12px] font-medium text-slate-600 bg-slate-100/90 dark:bg-slate-800/90 dark:text-slate-300 backdrop-blur-sm px-3 py-1.5 rounded-[14px] shadow-sm">
+                                          {hoverTimeLabel}
+                                        </span>
+                                      </div>
                                       <div
                                         className={`w-full rounded-[22px] border px-3.5 py-2.5 shadow-[0_16px_40px_-32px_rgba(8,145,178,0.45)] ${
                                           outgoing
@@ -3471,26 +3534,65 @@ export default function Waves() {
                                     {renderSeenReceipts(receiptMembers)}
                                   </div>
                                 </div>
+                                </Fragment>
                               );
                             }
 
                             return (
-                              <div
-                                key={message.id}
-                                id={`wave-message-${message.id}`}
-                                data-message-id={message.id}
-                                className={`group/message-row flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
-                              >
+                              <Fragment key={message.id}>
+                                {showTimeSeparator && (
+                                  <div className="flex justify-center my-5">
+                                    <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                                      {separatorTimeLabel}
+                                    </span>
+                                  </div>
+                                )}
+                                <div
+                                  id={`wave-message-${message.id}`}
+                                  data-message-id={message.id}
+                                  className={`group/message-row flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
+                                >
                                 {!outgoing &&
                                   (shouldShowIncomingAvatar ? (
-                                    <WaveAvatar
-                                      src={senderAvatar}
-                                      uid={senderUid}
-                                      name={senderName}
-                                      presenceSize="sm"
-                                      className="h-10 w-10 rounded-full object-cover"
-                                      fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white"
-                                    />
+                                    <div className="relative z-10">
+                                      <button 
+                                        type="button" 
+                                        data-avatar-trigger
+                                        onClick={() => setOpenedAvatarMenuMessageId(current => current === message.id ? null : message.id)}
+                                      >
+                                        <WaveAvatar
+                                          src={senderAvatar}
+                                          uid={senderUid}
+                                          name={senderName}
+                                          presenceSize="sm"
+                                          className="h-10 w-10 rounded-full object-cover transition hover:opacity-90 hover:shadow-sm"
+                                          fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white transition hover:opacity-90 hover:shadow-sm"
+                                        />
+                                      </button>
+                                      {openedAvatarMenuMessageId === message.id && (
+                                        <div 
+                                          data-avatar-menu
+                                          className="absolute left-0 top-[110%] z-40 w-[220px] overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1.5 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-[#202020]"
+                                        >
+                                          <Link
+                                            to={`/profile/${senderUid}`}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                            onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                          >
+                                            <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                            Xem trang cá nhân
+                                          </Link>
+                                          <button
+                                            type="button"
+                                            onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                          >
+                                            <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                                            Chặn
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
                                   ) : (
                                     <div className="h-10 w-10 shrink-0" />
                                   ))}
@@ -3503,14 +3605,19 @@ export default function Waves() {
                                     </p>
                                   )}
                                   <div
-                                    className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''}`}
+                                    className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''} relative`}
                                   >
+                                    <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message-row:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 ${outgoing ? 'right-full mr-3' : 'left-full ml-3'}`}>
+                                      <span className="text-[12px] font-medium text-slate-600 bg-slate-100/90 dark:bg-slate-800/90 dark:text-slate-300 backdrop-blur-sm px-3 py-1.5 rounded-[14px] shadow-sm">
+                                        {hoverTimeLabel}
+                                      </span>
+                                    </div>
                                     <div
                                       className={`max-w-[82%] rounded-[26px] px-4 py-3 shadow-sm lg:max-w-[46rem] ${outgoing ? 'bg-gradient-to-r from-surf-primary to-cyan-500 text-white' : 'border border-cyan-100/80 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'} ${
                                         isReplyTargetHighlighted
                                           ? 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-white dark:ring-cyan-500/80 dark:ring-offset-slate-900'
                                           : ''
-                                      }`}
+                                      } relative ${Object.keys(message.reactions || {}).length > 0 ? 'mb-3.5' : ''}`}
                                     >
                                       {parsedReplyQuote && (
                                         <button
@@ -3623,13 +3730,14 @@ export default function Waves() {
                                           Đang xử lý thu hồi...
                                         </p>
                                       )}
+                                      {renderMessageReactions(message, outgoing)}
                                     </div>
                                     {renderMessageActions(message, outgoing)}
                                   </div>
-                                  {renderMessageReactions(message, outgoing)}
                                   {renderSeenReceipts(receiptMembers)}
                                 </div>
                               </div>
+                              </Fragment>
                             );
                           })}
                           {renderSeenReceipts(
@@ -4392,7 +4500,10 @@ export default function Waves() {
                       <p className="min-w-0 flex-1 truncate text-base font-semibold text-slate-100">
                         {actor.name}
                       </p>
-                      <span className="text-xl">{actor.reaction}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[17px]">{actor.reaction}</span>
+                        <span className="text-sm font-semibold text-slate-300">1</span>
+                      </div>
                     </div>
                   ))
                 )}

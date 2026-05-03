@@ -81,7 +81,7 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
     const [myUserDoc, blockedByMeSnap, snap] = await Promise.all([
       getDb().collection('users').doc(uid).get(),
       getDb().collection('users').where('blockedBy', 'array-contains', uid).get(),
-      getDb().collection('users').get(),
+      getDb().collection('users').limit(300).get(),
     ]);
     const blockedByOthers = new Set<string>(
       myUserDoc.exists ? ((myUserDoc.data()?.blockedBy ?? []) as string[]) : []
@@ -621,15 +621,15 @@ router.get('/:uid/friends', requireAuth, async (req, res) => {
       res.json({ friends: [] });
       return;
     }
-    const usersSnap = await getDb().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
-    const friends = friendIds
-      .map((id) => usersMap.get(id))
-      .filter(Boolean)
-      .map((u) => ({
-        id: u!.id,
-        displayName: (u as { displayName?: string }).displayName ?? 'User',
-        photoURL: (u as { photoURL?: string }).photoURL,
+    const friendDocs = friendIds.length > 0
+      ? await getDb().getAll(...friendIds.map((id) => getDb().collection('users').doc(id)))
+      : [];
+    const friends = friendDocs
+      .filter((d) => d.exists)
+      .map((d) => ({
+        id: d.id,
+        displayName: (d.data() as { displayName?: string }).displayName ?? 'User',
+        photoURL: (d.data() as { photoURL?: string }).photoURL,
       }));
     res.json({ friends });
   } catch (e) {

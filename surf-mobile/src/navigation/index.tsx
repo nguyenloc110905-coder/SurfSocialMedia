@@ -9,6 +9,8 @@ import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
+import SettingsScreen from '@/screens/SettingsScreen';
+import CreatePostScreen from '@/screens/CreatePostScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -19,6 +21,8 @@ export type RootStackParamList = {
   Profile: { userId?: string };
   AI: undefined;
   Messages: undefined;
+  Settings: undefined;
+  CreatePost: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -38,6 +42,12 @@ export default function Navigation() {
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="AI" component={AIScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen 
+              name="CreatePost" 
+              component={CreatePostScreen} 
+              options={{ presentation: 'fullScreenModal' }} 
+            />
           </>
         ) : (
           <>

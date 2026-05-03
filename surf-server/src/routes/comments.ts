@@ -410,8 +410,10 @@ router.get('/:postId/:commentId/reactions', requireAuth, async (req, res) => {
     const reactions: Record<string, string> = commentDoc.data()?.reactions ?? {};
     const uids = Object.keys(reactions);
     if (uids.length === 0) { res.json([]); return; }
-    const usersSnap = await db.collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, d.data()]));
+    const usersDocs = uids.length > 0 
+      ? await db.getAll(...uids.map((id) => db.collection('users').doc(id))) 
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, d.data()]));
     const result = uids.map((uid) => ({
       uid,
       displayName: usersMap.get(uid)?.displayName ?? 'User',

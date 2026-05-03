@@ -81,12 +81,12 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const handleTab = useCallback((tab: Tab) => {
     if (tab === 'create') {
-      // TODO: open create post modal
+      navigation.navigate('CreatePost');
       return;
     }
     visited.add(tab);
     setActive(tab);
-  }, [visited]);
+  }, [visited, navigation]);
 
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
 
