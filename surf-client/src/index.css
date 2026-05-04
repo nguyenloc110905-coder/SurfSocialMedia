@@ -557,3 +557,149 @@ body {
   max-height: 0;
   overflow: hidden;
 }
+
+.market-theme {
+  --market-bg: #f8fafc;
+  --market-panel: #ffffff;
+  --market-panel-soft: #f1f5f9;
+  --market-card: #ffffff;
+  --market-card-hover: #f8fafc;
+  --market-muted-panel: #e2e8f0;
+  --market-border: rgb(226 232 240 / 0.95);
+  --market-text: #0f172a;
+  --market-soft-text: #334155;
+  --market-muted-text: #64748b;
+  --market-faint-text: #94a3b8;
+  background-color: var(--market-bg) !important;
+  color: var(--market-text) !important;
+}
+
+.dark .market-theme {
+  --market-bg: #0b0f14;
+  --market-panel: #0d1117;
+  --market-panel-soft: #10161e;
+  --market-card: #151a22;
+  --market-card-hover: #171e28;
+  --market-muted-panel: #202733;
+  --market-border: rgb(255 255 255 / 0.08);
+  --market-text: #ffffff;
+  --market-soft-text: #cbd5e1;
+  --market-muted-text: #94a3b8;
+  --market-faint-text: #64748b;
+}
+
+.market-theme > .sticky {
+  background-color: rgb(248 250 252 / 0.9) !important;
+  border-color: var(--market-border) !important;
+}
+
+.dark .market-theme > .sticky {
+  background-color: rgb(11 15 20 / 0.9) !important;
+}
+
+.market-theme .bg-\[\#0d1117\],
+.market-theme .bg-\[\#11161d\],
+.market-theme .bg-\[\#10161e\],
+.market-theme .bg-\[\#121821\],
+.market-theme .bg-\[\#151a22\],
+.market-theme .bg-surf-card {
+  background-color: var(--market-card) !important;
+}
+
+.market-theme .bg-\[\#0f141b\],
+.market-theme .bg-\[\#151b24\],
+.market-theme .bg-surf-dark,
+.market-theme .bg-slate-900,
+.market-theme .bg-slate-900\/70,
+.market-theme .bg-slate-800,
+.market-theme .bg-slate-800\/70,
+.market-theme .bg-slate-700,
+.market-theme .bg-slate-700\/70 {
+  background-color: var(--market-panel-soft) !important;
+}
+
+.market-theme .bg-\[\#1b222d\],
+.market-theme .bg-\[\#26303b\],
+.market-theme .bg-\[\#202733\],
+.market-theme .bg-slate-200 {
+  background-color: var(--market-muted-panel) !important;
+}
+
+.market-theme .hover\:bg-\[\#171e28\]:hover,
+.market-theme .hover\:bg-\[\#1b222d\]:hover {
+  background-color: var(--market-card-hover) !important;
+}
+
+.market-theme .border-white\/\[0\.08\],
+.market-theme .border-white\/\[0\.1\],
+.market-theme .border-white\/\[0\.12\],
+.market-theme .border-slate-700\/70,
+.market-theme .ring-white\/\[0\.08\] {
+  border-color: var(--market-border) !important;
+  --tw-ring-color: var(--market-border) !important;
+}
+
+.market-theme .bg-white\/\[0\.03\],
+.market-theme .bg-white\/\[0\.04\],
+.market-theme .bg-white\/\[0\.08\],
+.market-theme .bg-white\/\[0\.1\],
+.market-theme .bg-white\/\[0\.12\] {
+  background-color: rgb(241 245 249 / 0.9) !important;
+}
+
+.dark .market-theme .bg-white\/\[0\.03\],
+.dark .market-theme .bg-white\/\[0\.04\],
+.dark .market-theme .bg-white\/\[0\.08\],
+.dark .market-theme .bg-white\/\[0\.1\],
+.dark .market-theme .bg-white\/\[0\.12\] {
+  background-color: rgb(255 255 255 / 0.08) !important;
+}
+
+.market-theme .text-white,
+.market-theme .text-slate-50,
+.market-theme .text-slate-100 {
+  color: var(--market-text) !important;
+}
+
+.market-theme .text-slate-200,
+.market-theme .text-slate-300,
+.market-theme .text-slate-400 {
+  color: var(--market-soft-text) !important;
+}
+
+.market-theme .text-slate-500,
+.market-theme .text-slate-600 {
+  color: var(--market-muted-text) !important;
+}
+
+.market-theme .text-slate-700 {
+  color: var(--market-faint-text) !important;
+}
+
+.market-theme .placeholder\:text-slate-500::placeholder,
+.market-theme .placeholder\:text-slate-600::placeholder {
+  color: var(--market-faint-text) !important;
+}
+
+.market-theme .bg-surf-primary.text-white,
+.market-theme .bg-surf-primary .text-white,
+.market-theme .text-surf-secondary,
+.market-theme .text-surf-primary {
+  color: #ffffff;
+}
+
+.market-theme .text-surf-secondary,
+.market-theme .text-surf-primary {
+  color: #0ea5e9 !important;
+}
+
+.market-theme .bg-surf-primary.text-white,
+.market-theme .bg-surf-primary .text-white {
+  color: #ffffff !important;
+}
+
+.market-theme input,
+.market-theme select,
+.market-theme textarea {
+  color: var(--market-text);
+}

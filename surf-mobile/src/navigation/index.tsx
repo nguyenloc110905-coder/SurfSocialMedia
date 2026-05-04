@@ -11,6 +11,10 @@ import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import CreatePostScreen from '@/screens/CreatePostScreen';
+import MarketplaceScreen from '@/screens/MarketplaceScreen';
+import MarketplaceDetailScreen from '@/screens/MarketplaceDetailScreen';
+import CreateListingScreen from '@/screens/CreateListingScreen';
+import MyListingsScreen from '@/screens/MyListingsScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -23,6 +27,10 @@ export type RootStackParamList = {
   Messages: undefined;
   Settings: undefined;
   CreatePost: undefined;
+  Marketplace: undefined;
+  MarketplaceDetail: { listingId: string };
+  CreateListing: undefined;
+  MyListings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -48,6 +56,14 @@ export default function Navigation() {
               component={CreatePostScreen} 
               options={{ presentation: 'fullScreenModal' }} 
             />
+            <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
+            <Stack.Screen name="MarketplaceDetail" component={MarketplaceDetailScreen} />
+            <Stack.Screen 
+              name="CreateListing" 
+              component={CreateListingScreen} 
+              options={{ presentation: 'fullScreenModal' }} 
+            />
+            <Stack.Screen name="MyListings" component={MyListingsScreen} />
           </>
         ) : (
           <>

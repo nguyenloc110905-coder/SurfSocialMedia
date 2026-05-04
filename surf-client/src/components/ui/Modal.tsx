@@ -5,9 +5,24 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
 }
 
-export default function Modal({ open, onClose, title, children }: ModalProps) {
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+  '5xl': 'max-w-5xl',
+  '6xl': 'max-w-6xl',
+  '7xl': 'max-w-7xl',
+  full: 'max-w-[95%] md:max-w-[90%] lg:max-w-[1200px]',
+};
+
+export default function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onEscape = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -23,12 +38,12 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/50 dark:bg-black/60"
+        className="absolute inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-[2px] transition-all"
         aria-hidden
         onClick={onClose}
       />
       <div
-        className="relative w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl"
+        className={`relative w-full ${sizeClasses[size]} rounded-3xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl overflow-hidden transform transition-all`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

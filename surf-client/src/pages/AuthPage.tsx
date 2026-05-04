@@ -30,6 +30,12 @@ const ERRORS: Record<string, string> = {
   'auth/account-exists-with-different-credential': 'Email đã liên kết với phương thức khác.',
 };
 
+function getAuthErrorMessage(err: unknown, fallback: string) {
+  const code =
+    err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+  return ERRORS[code] || fallback;
+}
+
 function validatePassword(pw: string, name: string, email: string): string | null {
   if (pw.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự.';
   if (!/[A-Z]/.test(pw)) return 'Cần ít nhất 1 chữ viết hoa.';
@@ -249,6 +255,8 @@ export default function AuthPage() {
       localStorage.setItem('surf_last_email', loginEmail.trim());
       setLoginPassword('');
       navigate('/feed', { replace: true });
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Đăng nhập thất bại. Vui lòng kiểm tra lại email hoặc mật khẩu.'));
     } finally {
       setLoading(false);
     }
@@ -263,6 +271,8 @@ export default function AuthPage() {
       await syncUserProfile();
       api.post('/api/auth/notify-register').catch(() => {});
       navigate('/onboarding', { replace: true });
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Đăng ký thất bại. Vui lòng thử lại.'));
     } finally {
       setLoading(false);
     }
@@ -292,7 +302,7 @@ export default function AuthPage() {
         setLoading(false);
         return;
       }
-      setError(ERRORS[code] || 'Đăng nhập Google thất bại.');
+      setError(getAuthErrorMessage(err, 'Đăng nhập Google thất bại.'));
     } finally {
       setLoading(false);
     }
@@ -303,9 +313,7 @@ export default function AuthPage() {
     try {
       await signInWithFacebook(); // triggers redirect, page will reload
     } catch (err: unknown) {
-      const code =
-        err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
+      setError(getAuthErrorMessage(err, 'Đăng nhập Facebook thất bại.'));
       setLoading(false);
     }
   };
@@ -325,7 +333,7 @@ export default function AuthPage() {
       .catch((err: unknown) => {
         const code =
           err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-        if (code) setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
+        if (code) setError(getAuthErrorMessage(err, 'Đăng nhập Facebook thất bại.'));
       })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

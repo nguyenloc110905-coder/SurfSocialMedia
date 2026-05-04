@@ -22,6 +22,7 @@ import messagesRoutes from './routes/messages.js';
 import groupsRoutes from './routes/groups.js';
 import presenceRoutes from './routes/presence.js';
 import callsRoutes from './routes/calls.js';
+import marketplaceRoutes from './routes/marketplace.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 import { initIo } from './realtime/io.js';
 import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
@@ -107,6 +108,7 @@ app.use('/api/messages', messagesRoutes);
 app.use('/api/groups', groupsRoutes);
 app.use('/api/presence', presenceRoutes);
 app.use('/api/calls', callsRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
 
 initRedis()
   .then(() => initSocketRedisAdapter(io))
