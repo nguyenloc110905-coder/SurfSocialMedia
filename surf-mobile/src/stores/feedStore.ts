@@ -35,6 +35,7 @@ type FeedState = {
   fetchMore: () => Promise<void>;
   setRefreshing: (v: boolean) => void;
   updatePost: (updated: Partial<FeedPost> & { id: string }) => void;
+  addPost: (post: FeedPost) => void;
 };
 
 export const useFeedStore = create<FeedState>((set, get) => ({
@@ -52,6 +53,12 @@ export const useFeedStore = create<FeedState>((set, get) => ({
   updatePost: (updated) =>
     set((s) => ({
       posts: s.posts.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
+    })),
+
+  addPost: (post) =>
+    set((s) => ({
+      posts: [post, ...s.posts.filter((p) => p.id !== post.id)],
+      lastFetched: Date.now(),
     })),
 
   fetch: async (force = false) => {
