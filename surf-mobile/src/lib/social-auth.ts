@@ -5,6 +5,9 @@ import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, FacebookAuthProvider, signInWithCredential } from 'firebase/auth';
 import { auth } from '@/lib/firebase/auth';
 
+const MISSING_GOOGLE_CLIENT_ID = 'missing-google-client-id';
+const MISSING_FACEBOOK_CLIENT_ID = 'missing-facebook-client-id';
+
 // Bắt buộc gọi để khép flow sau khi redirect trên Android/web
 WebBrowser.maybeCompleteAuthSession();
 
@@ -16,7 +19,8 @@ export function useGoogleSignIn(onError?: (msg: string) => void) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const configuredWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const webClientId = configuredWebClientId || MISSING_GOOGLE_CLIENT_ID;
   // Android và iOS yêu cầu client ID riêng. Khi chưa có, dùng webClientId làm fallback
   // để tránh crash trong Expo Go. Production cần tạo đủ client ID.
   const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || webClientId;
@@ -52,7 +56,7 @@ export function useGoogleSignIn(onError?: (msg: string) => void) {
     // type === 'cancel' hoặc 'dismiss' — không báo lỗi
   }, [response]);
 
-  return { promptAsync, disabled: !request };
+  return { promptAsync, disabled: !configuredWebClientId || !request };
 }
 
 /**
@@ -64,8 +68,11 @@ export function useFacebookSignIn(onError?: (msg: string) => void) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const [request, response, promptAsync] = Facebook.use({
-    clientId: process.env.EXPO_PUBLIC_FACEBOOK_APP_ID ?? '',
+  const configuredClientId = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
+  const clientId = configuredClientId || MISSING_FACEBOOK_CLIENT_ID;
+
+  const [request, response, promptAsync] = Facebook.useAuthRequest({
+    clientId,
   });
 
   useEffect(() => {
@@ -91,5 +98,5 @@ export function useFacebookSignIn(onError?: (msg: string) => void) {
     }
   }, [response]);
 
-  return { promptAsync, disabled: !request };
+  return { promptAsync, disabled: !configuredClientId || !request };
 }

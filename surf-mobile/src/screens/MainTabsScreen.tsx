@@ -81,7 +81,7 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const handleTab = useCallback((tab: Tab) => {
     if (tab === 'create') {
-      // TODO: open create post modal
+      navigation.navigate('CreatePost');
       return;
     }
     visited.add(tab);
@@ -127,7 +127,7 @@ export default function MainTabsScreen({ navigation }: Props) {
       </View>
 
       {/* ── Bottom tab bar — hidden on Home and Feed entry, visible on tab pages ── */}
-      {active !== 'home' && <View
+      <View
         style={[
           s.bar,
           {
@@ -170,7 +170,7 @@ export default function MainTabsScreen({ navigation }: Props) {
             </TouchableOpacity>
           );
         })}
-      </View>}
+      </View>
     </View>
   );
 }

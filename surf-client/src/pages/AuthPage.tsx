@@ -8,7 +8,9 @@ import {
   signUp,
   setAuthPersistence,
   markTabAuthAction,
+  auth,
 } from '@/lib/firebase/auth';
+import { fetchSignInMethodsForEmail } from 'firebase/auth';
 import { syncUserProfile, api } from '@/lib/api';
 import { PHONE_COUNTRIES } from '@/lib/phone-countries';
 
@@ -281,9 +283,10 @@ export default function AuthPage() {
       await syncUserProfile();
       api.post('/api/auth/notify-login').catch(() => {});
       navigate('/feed', { replace: true });
-    } catch (err: unknown) {
-      const code =
-        err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+    } catch (err: any) {
+      const code = err?.code || '';
+      const email = err?.customData?.email || '';
+      
       if (
         [
           'auth/popup-closed-by-user',
@@ -296,7 +299,15 @@ export default function AuthPage() {
         setLoading(false);
         return;
       }
-      setError(ERRORS[code] || 'Đăng nhập Google thất bại.');
+      
+      if (code === 'auth/account-exists-with-different-credential' && email) {
+        const provider = await getProviderName(email);
+        setError(
+          `Tài khoản ${email} đã được đăng ký bằng ${provider}. Vui lòng đăng nhập bằng ${provider}.`
+        );
+      } else {
+        setError(ERRORS[code] || 'Đăng nhập Google thất bại.');
+      }
     } finally {
       setLoading(false);
     }
@@ -315,22 +326,62 @@ export default function AuthPage() {
     }
   };
 
+  // Kiểm tra provider đã liên kết với email
+  const getProviderName = async (email: string): Promise<string> => {
+    try {
+      const methods = await fetchSignInMethodsForEmail(auth, email);
+      if (methods.includes('password')) return 'Email/Password';
+      if (methods.includes('google.com')) return 'Google';
+      if (methods.includes('facebook.com')) return 'Facebook';
+      return 'phương thức khác';
+    } catch {
+      return 'phương thức khác';
+    }
+  };
+
   // Handle Facebook redirect result when page loads after redirect
   useEffect(() => {
+    console.log('[AuthPage] Checking Facebook redirect result...');
     getFacebookRedirectResult()
       .then(async (result) => {
-        if (!result) return;
+        console.log('[AuthPage] Redirect result:', result);
+        if (!result) {
+          console.log('[AuthPage] No redirect result - checking if user already signed in');
+          // Check if already authenticated (Firebase auto-signin after redirect)
+          const currentUser = auth.currentUser;
+          if (currentUser) {
+            console.log('[AuthPage] User already signed in:', currentUser.email);
+            setLoading(true);
+            await currentUser.getIdToken();
+            await syncUserProfile();
+            api.post('/api/auth/notify-login').catch(() => {});
+            navigate('/feed', { replace: true });
+          }
+          return;
+        }
         setLoading(true);
+        console.log('[AuthPage] Processing Facebook login for:', result.user.email);
         await result.user.getIdToken();
         await new Promise((r) => setTimeout(r, 800));
         await syncUserProfile();
         api.post('/api/auth/notify-login').catch(() => {});
         navigate('/feed', { replace: true });
       })
-      .catch((err: unknown) => {
-        const code =
-          err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-        if (code) setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
+      .catch(async (err: any) => {
+        console.error('[AuthPage] Facebook redirect error:', err);
+        const code = err?.code || '';
+        const email = err?.customData?.email || '';
+        
+        if (code === 'auth/account-exists-with-different-credential' && email) {
+          const provider = await getProviderName(email);
+          setError(
+            `Tài khoản ${email} đã được đăng ký bằng ${provider}. Vui lòng đăng nhập bằng ${provider}.`
+          );
+        } else if (code) {
+          setError(ERRORS[code as keyof typeof ERRORS] || 'Đăng nhập Facebook thất bại.');
+        } else {
+          setError('Đăng nhập Facebook thất bại. Vui lòng thử lại.');
+        }
       })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

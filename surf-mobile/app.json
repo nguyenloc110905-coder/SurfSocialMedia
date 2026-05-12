@@ -14,10 +14,20 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.surf.app"
+      "bundleIdentifier": "com.surf.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Surf needs camera access to capture photos and videos for posts.",
+        "NSPhotoLibraryUsageDescription": "Surf needs photo library access to select photos and videos for posts."
+      }
     },
     "android": {
       "package": "com.surf.app",
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -30,6 +40,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Surf needs photo library access to select photos and videos for posts.",
+          "cameraPermission": "Surf needs camera access to capture photos and videos for posts."
+        }
+      ],
       "expo-web-browser",
       "expo-video"
     ]
