@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@/stores/authStore';
+import { useAuthStore, refreshAuthUser, patchAuthPhoto } from '@/stores/authStore';
 import {
   getProfile,
   updateProfileFields,
@@ -81,6 +81,7 @@ export default function Profile() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutDraft, setAboutDraft] = useState<AboutDetail[]>([]);
 
+  const [avatarImgError, setAvatarImgError] = useState(false);
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
@@ -99,8 +100,8 @@ export default function Profile() {
   const initial = displayName.charAt(0).toUpperCase();
   const profileEmail = isOwnProfile ? user?.email : profile?.email;
   const photoURL = isOwnProfile
-    ? (user?.photoURL ?? profile?.photoURL)
-    : (profile?.photoURL ?? null);
+    ? (user?.photoURL || profile?.photoURL || null)
+    : (profile?.photoURL || null);
   const coverImageUrl = profile?.coverImageUrl ?? null;
   const bio = profile?.bio ?? null;
   const aboutDetails = profile?.aboutDetails ?? [];
@@ -507,9 +508,12 @@ export default function Profile() {
     try {
       const blob = await resizeAvatar(pendingAvatarFile);
       const url = await uploadProfileImage(user.uid, blob, 'avatar');
+      patchAuthPhoto(url);
       await updateUserProfile({ photoURL: url });
       await updateProfileFields(user.uid, { photoURL: url });
       setProfile((prev) => (prev ? { ...prev, photoURL: url } : null));
+      setAvatarImgError(false);
+      refreshAuthUser();
     } catch (err) {
       console.error('Avatar upload failed:', err);
       setError(err instanceof Error ? err.message : 'Tải ảnh đại diện thất bại.');
@@ -572,6 +576,7 @@ export default function Profile() {
       await updateUserProfile({ displayName: name });
       await updateProfileFields(user.uid, { displayName: name });
       setProfile((prev) => (prev ? { ...prev, displayName: name } : null));
+      refreshAuthUser();
       setEditProfileOpen(false);
     } catch {
       setError('Cập nhật tên thất bại.');
@@ -982,8 +987,13 @@ export default function Profile() {
             {/* Glow ring behind avatar */}
             <div className="surf-glow-ring absolute inset-0 rounded-full bg-gradient-to-br from-surf-primary/35 to-surf-secondary/35 blur-xl -z-10" />
             <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full ring-4 ring-white dark:ring-gray-900 shadow-2xl overflow-hidden bg-gradient-to-br from-surf-primary to-surf-secondary flex items-center justify-center">
-              {photoURL ? (
-                <img src={optimizeImageUrl(photoURL)} alt={displayName} className="w-full h-full object-cover" />
+              {photoURL && !avatarImgError ? (
+                <img
+                  src={optimizeImageUrl(photoURL)}
+                  alt={displayName}
+                  className="w-full h-full object-cover"
+                  onError={() => setAvatarImgError(true)}
+                />
               ) : (
                 <span className="text-4xl sm:text-5xl font-bold text-white select-none">
                   {initial}

@@ -43,6 +43,8 @@ type HeaderProps = { hideCenterNav?: boolean };
 
 export default function Header({ hideCenterNav = false }: HeaderProps) {
   const user = useAuthStore((s) => s.user);
+  const storePhotoURL = useAuthStore((s) => s.photoURL);
+  const storeDisplayName = useAuthStore((s) => s.displayName);
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const location = useLocation();
@@ -63,8 +65,15 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
     return () => document.removeEventListener('mousedown', onOutside);
   }, [open]);
 
-  const avatarSeed = user?.displayName?.trim() || user?.email?.trim() || 'Người dùng';
+  const avatarSeed = (storeDisplayName ?? user?.displayName)?.trim() || user?.email?.trim() || 'Người dùng';
   const initial = avatarSeed.charAt(0).toUpperCase();
+  const currentPhotoURL = storePhotoURL ?? user?.photoURL ?? null;
+  const [avatarImgError, setAvatarImgError] = useState(false);
+  const prevPhotoURLRef = useRef(currentPhotoURL);
+  if (prevPhotoURLRef.current !== currentPhotoURL) {
+    prevPhotoURLRef.current = currentPhotoURL;
+    if (avatarImgError) setAvatarImgError(false);
+  }
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 safe-area-header flex items-center justify-between h-12 sm:h-14 px-3 sm:px-6 lg:px-8 gap-2 sm:gap-4 relative">
@@ -146,8 +155,8 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
           aria-expanded={open}
           aria-haspopup="true"
         >
-          {user?.photoURL ? (
-            <img src={optimizeImageUrl(user.photoURL)} alt="" className="w-full h-full rounded-full object-cover" />
+          {currentPhotoURL && !avatarImgError ? (
+            <img src={optimizeImageUrl(currentPhotoURL)} alt="" className="w-full h-full rounded-full object-cover" onError={() => setAvatarImgError(true)} />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">{initial}</span>
@@ -168,11 +177,12 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                   onClick={() => setMenuPath(null)}
                   className="flex items-center gap-3 px-3 py-2.5 mx-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 >
-                  {user?.photoURL ? (
+                  {currentPhotoURL && !avatarImgError ? (
                     <img
-                      src={optimizeImageUrl(user.photoURL)}
+                      src={optimizeImageUrl(currentPhotoURL)}
                       alt=""
                       className="w-10 h-10 rounded-full object-cover"
+                      onError={() => setAvatarImgError(true)}
                     />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">

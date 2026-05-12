@@ -1,0 +1,39 @@
+Summary,Priority,Description
+MOB-AUTH-1 Mobile Registration UI and Flow,High,As a mobile user I can register using email/password. AC: Mobile optimized forms keyboard handling error states
+MOB-AUTH-2 Mobile Login UI and Flow,High,As a mobile user I can log in. AC: Remember me biometric login support FaceID/TouchID
+MOB-AUTH-3 Google Apple OAuth Login,High,As a mobile user I can log in via Google or Apple Sign-In. AC: Native SDK integration for OAuth
+MOB-AUTH-4 Forgot Password Screen,Medium,As a mobile user I can reset my password. AC: Send reset link deep linking back to app
+MOB-AUTH-5 Persistent Session and Splash Screen,High,App remembers session. AC: Splash screen checks token navigates to Main App or Auth Stack
+MOB-FEED-1 Mobile News Feed UI,High,Feed with infinite scroll using FlatList/FlashList. AC: Pull to refresh smooth scrolling skeleton loaders
+MOB-FEED-2 Create Post Screen,High,Screen to create posts. AC: Request camera/storage permissions select images/videos from gallery text input
+MOB-FEED-3 Post UI Component Card,High,Reusable post card. AC: Tap avatar to profile tap image for fullscreen lightbox with pinch-to-zoom
+MOB-FEED-4 Post Privacy Selector,Medium,Bottom sheet to select post privacy: Public Friends Only Me
+MOB-FEED-5 Mobile Reaction Bar,High,Long press Like to show reaction emojis. AC: Haptic feedback on react animation
+MOB-FEED-6 Share Post Bottom Sheet,Medium,Native share sheet integration and in-app sharing to chat/feed
+MOB-CMT-1 Comment Bottom Sheet,High,Tap comment opens a draggable bottom sheet. AC: View comments input field pinned above keyboard
+MOB-CMT-2 Reply to Comment,Medium,Tap reply on a comment to mention user and thread the comment
+MOB-CMT-3 React to Comment,Medium,Double tap or long press comment to like/react
+MOB-FRD-1 Friends Tab Screen,High,List of friends pull to refresh search bar
+MOB-FRD-2 Friend Requests UI,High,Screen showing incoming/outgoing requests with Accept/Reject buttons
+MOB-FRD-3 Sync Phone Contacts,Low,Request contacts permission to find friends using phone numbers
+MOB-PRF-1 Mobile Profile Screen,High,Scrollable profile screen with parallax cover image avatar bio and tabbed views: Posts Photos Friends
+MOB-PRF-2 Edit Profile Screen,High,Form to edit profile details. AC: Keyboard avoiding view save button
+MOB-PRF-3 Change Avatar Cover Camera,Medium,Tap avatar opens Action Sheet: Take Photo or Choose from Gallery then Crop then Upload
+MOB-RT-1 Push Notifications Setup FCM,High,Integrate Firebase Cloud Messaging for iOS/Android. AC: Request notification permissions handle foreground/background/quit states
+MOB-RT-2 Notification Center Screen,High,Screen listing notifications. AC: Tap notification deep links to specific post/profile/chat
+MOB-RT-3 Real-time Badges,Medium,Bottom tab bar shows red badges for unread notifications and messages
+MOB-VID-1 Short Video Feed Vertical Scroll,High,TikTok-like vertical swiping feed. AC: Preload next video auto-pause off-screen videos double tap to like
+MOB-VID-2 Record and Upload Video,High,Camera view to record short video apply simple filters/crop add caption upload
+MOB-GRP-1 Groups Tab and Discovery,Medium,Browse and search groups join buttons
+MOB-GRP-2 Group Detail and Feed,Medium,Group specific feed and member list
+MOB-MKT-1 Marketplace Feed,Medium,Grid view of products filter bottom sheet
+MOB-MKT-2 Create Listing Mobile,Medium,Quickly snap photos from phone and create a listing
+MOB-MSG-1 Chat List Screen,High,List of recent conversations unread indicators swipe to delete/mute
+MOB-MSG-2 Chat Room Screen,High,Real-time messaging UI. AC: Inverted FlatList typing indicators image picker for sending media keyboard avoiding view
+MOB-MSG-3 Push Notification to Chat Deep Link,High,Tapping message push notification opens the specific chat room directly
+MOB-SET-1 Settings and Privacy Screen,Low,Navigation list for settings: Account Notifications Dark Mode toggle Logout
+MOB-SET-2 App Navigation Bottom Tabs,High,Setup React Navigation bottom tabs: Feed Video Create Notifications Menu and stack navigators
+MOB-INF-1 Mobile Project Initialization,High,Initialize React Native/Expo project setup Tailwind/NativeWind configure absolute imports
+MOB-INF-2 App Icon and Splash Screen,Medium,Generate and configure iOS/Android app icons and native splash screens
+MOB-INF-3 Offline Caching Strategy,Medium,Implement local storage caching using MMKV or WatermelonDB for feed and messages to work offline
+MOB-INF-4 Fastlane App Center CI CD,Low,Automate build and deployment to TestFlight and Google Play Console
