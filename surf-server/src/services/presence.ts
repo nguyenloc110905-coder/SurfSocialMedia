@@ -61,7 +61,11 @@ export const markOffline = async (userId: string, socketId: string): Promise<num
 export const refreshPresence = async (userId: string): Promise<void> => {
   const redis = getRedis();
   if (redis) {
-    await redis.expire(`presence:${userId}`, TTL);
+    const refreshed = await redis.expire(`presence:${userId}`, TTL);
+    if (refreshed === 0) {
+      await redis.set(`presence:${userId}`, '1', { EX: TTL });
+      await redis.del(`presence:lastseen:${userId}`);
+    }
     await redis.expire(`presence:sockets:${userId}`, TTL + 10);
   }
   // in-memory: no TTL needed

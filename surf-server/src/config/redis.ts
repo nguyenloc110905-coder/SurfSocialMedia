@@ -15,19 +15,20 @@ const createRedisConnection = (): AppRedisClient | null => {
   return client;
 };
 
-export const initRedis = async (): Promise<void> => {
+export const initRedis = async (): Promise<boolean> => {
   if (!process.env.REDIS_URL) {
     console.warn('Redis url is empty, continue without Redis');
-    return;
+    return false;
   }
-  if (redisClient) return;
+  if (redisClient) return true;
 
   const client = createRedisConnection();
-  if (!client) return;
+  if (!client) return false;
 
   await client.connect();
   redisClient = client;
   console.log('Connected to Redis');
+  return true;
 };
 
 export const getRedis = (): AppRedisClient | null => redisClient;

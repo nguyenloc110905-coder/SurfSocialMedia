@@ -44,6 +44,7 @@ const CATEGORIES = [
   { key: 'electronics', label: 'Điện tử', icon: 'phone-portrait-outline' },
   { key: 'clothing',    label: 'Thời trang', icon: 'shirt-outline' },
   { key: 'vehicles',   label: 'Xe cộ', icon: 'car-outline' },
+  { key: 'property',   label: 'Bất động sản', icon: 'business-outline' },
   { key: 'home',       label: 'Gia dụng', icon: 'home-outline' },
   { key: 'sports',     label: 'Thể thao', icon: 'football-outline' },
   { key: 'other',      label: 'Khác', icon: 'ellipsis-horizontal-outline' },
@@ -88,8 +89,8 @@ export default function CreateListingScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handlePickImages = async () => {
-    if (selectedImages.length >= 10) {
-      Alert.alert('Đã đủ ảnh', 'Bạn chỉ có thể thêm tối đa 10 ảnh.');
+    if (selectedImages.length >= 5) {
+      Alert.alert('Đã đủ ảnh', 'Bạn chỉ có thể thêm tối đa 5 ảnh.');
       return;
     }
 
@@ -102,12 +103,12 @@ export default function CreateListingScreen({ navigation }: Props) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
-      selectionLimit: 10 - selectedImages.length,
+      selectionLimit: 5 - selectedImages.length,
       quality: 0.85,
     });
 
     if (result.canceled) return;
-    setSelectedImages((prev) => [...prev, ...result.assets].slice(0, 10));
+    setSelectedImages((prev) => [...prev, ...result.assets].slice(0, 5));
   };
 
   const handleRemoveImage = (uri: string) => {
@@ -140,9 +141,19 @@ export default function CreateListingScreen({ navigation }: Props) {
         condition,
         mediaUrls,
         location: location.trim(),
+        availability: 'in_stock',
+        saleStatus: 'available',
+        tags: [],
+        meetingPreferences: ['public_meetup'],
+        hideFromFriends: false,
+        boostEnabled: false,
+        boostPlan: null,
       };
       const listing = await createListing(input);
-      Alert.alert('Thành công', 'Tin đăng của bạn đã được đăng lên!', [
+      const successMessage = listing.status === 'active'
+        ? 'Tin đăng của bạn đã được hiển thị trên Surf Market.'
+        : 'Tin đăng đã được gửi và đang chờ kiểm duyệt trước khi hiển thị.';
+      Alert.alert('Đã gửi tin đăng', successMessage, [
         {
           text: 'Xem tin',
           onPress: () => {
@@ -201,7 +212,7 @@ export default function CreateListingScreen({ navigation }: Props) {
             >
               <Ionicons name="camera-outline" size={36} color={C.subtext} />
               <Text style={[s.imgPickerText, { color: C.subtext }]}>Thêm ảnh sản phẩm</Text>
-              <Text style={{ color: C.placeholder, fontSize: 11, marginTop: 2 }}>Tối đa 10 ảnh</Text>
+              <Text style={{ color: C.placeholder, fontSize: 11, marginTop: 2 }}>Tối đa 5 ảnh</Text>
             </TouchableOpacity>
           ) : (
             <View style={{ marginBottom: 20 }}>
@@ -218,7 +229,7 @@ export default function CreateListingScreen({ navigation }: Props) {
                     </TouchableOpacity>
                   </View>
                 ))}
-                {selectedImages.length < 10 && (
+                {selectedImages.length < 5 && (
                   <TouchableOpacity
                     style={[s.addImageBtn, { backgroundColor: C.card, borderColor: C.border }]}
                     onPress={handlePickImages}
@@ -229,7 +240,7 @@ export default function CreateListingScreen({ navigation }: Props) {
                 )}
               </ScrollView>
               <Text style={{ color: C.subtext, fontSize: 12, marginTop: 8 }}>
-                {selectedImages.length}/10 ảnh đã chọn
+                {selectedImages.length}/5 ảnh đã chọn
               </Text>
             </View>
           )}

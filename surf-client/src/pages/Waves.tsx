@@ -10,13 +10,14 @@ import {
   Fragment,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { api } from '@/lib/api';
 import PresenceBadge from '@/components/ui/PresenceBadge';
 import { uploadFile, uploadImage } from '@/lib/cloudinary';
 import { optimizeImageUrl } from '@/lib/image-cdn';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { type Listing } from '@/stores/marketplaceStore';
 import { useGlobalCall } from '@/components/call/GlobalCallProvider';
 
 type ConversationItem = {
@@ -245,6 +246,52 @@ const REPLY_SENDER_MARKER_LINE_PATTERN = /^__reply_sender:[^\n]+__\n?/;
 const REPLY_TARGET_MARKER_INLINE_PATTERN = /__reply_to:[^\s]+__/g;
 const REPLY_SENDER_MARKER_INLINE_PATTERN = /__reply_sender:[^\s]+__/g;
 const COMPOSER_MAX_LINES = 10;
+
+function formatBoostListingPrice(price: number) {
+  if (price === 0) return 'Miễn phí';
+  return price.toLocaleString('vi-VN') + ' ₫';
+}
+
+function isChatBoostListing(listing: Listing) {
+  return listing.boostEnabled && listing.boostStatus === 'active' && listing.boostPlan?.placements?.includes('surf_chat');
+}
+
+function WavesBoostPlacement({ listing }: { listing: Listing }) {
+  const imageUrl = listing.mediaUrls?.[0];
+  return (
+    <Link
+      to="/feed/market"
+      className="mb-3 block overflow-hidden rounded-[24px] border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-3 text-left shadow-sm transition hover:border-cyan-300 hover:shadow-md dark:border-cyan-900/50 dark:from-cyan-950/30 dark:via-slate-900 dark:to-slate-900"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-300">
+          Sponsored · Surf Boost
+        </span>
+        <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-700 dark:text-cyan-200">
+          Market
+        </span>
+      </div>
+      <div className="flex gap-3">
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
+          {imageUrl ? (
+            <img src={optimizeImageUrl(imageUrl)} alt={listing.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-600">
+              <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor">
+                <path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm-1 14H6l3.5-4.5 2.5 3.01L15.5 11 18 14.3V17Z" />
+              </svg>
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-white">{listing.title}</div>
+          <div className="mt-1 text-xs font-black text-cyan-700 dark:text-cyan-300">{formatBoostListingPrice(listing.price)}</div>
+          <div className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{listing.location || 'Surf Market'}</div>
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 const unwrapReplyPrefix = (value: string) => {
   let normalized = value.trim();
@@ -680,6 +727,7 @@ async function downloadFile(url: string, fileName: string) {
 }
 
 export default function Waves() {
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -703,6 +751,14 @@ export default function Waves() {
   const [recallTargetMessage, setRecallTargetMessage] = useState<UiMessage | null>(null);
   const [recallAudience, setRecallAudience] = useState<RecallAudience>('everyone');
   const [showPinnedMessagesModal, setShowPinnedMessagesModal] = useState(false);
+  const [chatBoostListings, setChatBoostListings] = useState<Listing[]>([]);
+  const targetConversationId =
+    typeof location.state === 'object' &&
+    location.state !== null &&
+    'conversationId' in location.state &&
+    typeof location.state.conversationId === 'string'
+      ? location.state.conversationId
+      : null;
   const wavesImageInputRef = useRef<HTMLInputElement>(null);
   const wavesFileInputRef = useRef<HTMLInputElement>(null);
   const wavesTextInputRef = useRef<HTMLTextAreaElement>(null);
@@ -2247,6 +2303,19 @@ export default function Waves() {
   }, [activeConversationId]);
 
   useEffect(() => {
+    const loadChatBoostListings = async () => {
+      try {
+        const data = await api.get<{ items: Listing[]; nextCursor: string | null }>('/api/marketplace');
+        setChatBoostListings((data.items ?? []).filter(isChatBoostListing).slice(0, 1));
+      } catch {
+        setChatBoostListings([]);
+      }
+    };
+
+    void loadChatBoostListings();
+  }, []);
+
+  useEffect(() => {
     const socket = getSocket();
     if (!activeConversationId) return;
 
@@ -2264,7 +2333,8 @@ export default function Waves() {
         const data = await api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30');
         const items = sortConversations(data.items ?? []);
         setConversations(items);
-        setActiveConversationId((current) => current ?? items[0]?.id ?? null);
+        setActiveConversationId((current) => current ?? targetConversationId ?? items[0]?.id ?? null);
+        if (targetConversationId) setMobileView('thread');
       } catch (e) {
         setError((e as Error).message);
       } finally {
@@ -2273,7 +2343,7 @@ export default function Waves() {
     };
 
     void load();
-  }, []);
+  }, [targetConversationId]);
 
   useEffect(() => {
     const loadFriends = async () => {
@@ -3043,6 +3113,7 @@ export default function Waves() {
                 </>
               ) : (
                 <>
+                  {chatBoostListings[0] && <WavesBoostPlacement listing={chatBoostListings[0]} />}
                   {loading && (
                     <div className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
                       Đang tải conversations...

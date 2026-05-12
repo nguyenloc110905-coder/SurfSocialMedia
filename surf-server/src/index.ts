@@ -109,9 +109,10 @@ app.use('/api/groups', groupsRoutes);
 app.use('/api/presence', presenceRoutes);
 app.use('/api/calls', callsRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/market', marketplaceRoutes);
 
 initRedis()
-  .then(() => initSocketRedisAdapter(io))
+  .then((redisReady) => (redisReady ? initSocketRedisAdapter(io) : undefined))
   .catch((err) => {
     console.error('Failed to initialize Redis:', err);
   });

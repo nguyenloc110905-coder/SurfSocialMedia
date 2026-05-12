@@ -4,9 +4,22 @@ import { auth } from '@/lib/firebase/auth';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type Category = 'all' | 'electronics' | 'clothing' | 'vehicles' | 'home' | 'sports' | 'other';
+export type Category = 'all' | 'electronics' | 'clothing' | 'vehicles' | 'property' | 'home' | 'sports' | 'other';
 export type Condition = 'new' | 'like_new' | 'good' | 'fair';
-export type ListingStatus = 'active' | 'sold' | 'deleted';
+export type ListingStatus = 'pending' | 'active' | 'rejected' | 'sold' | 'deleted';
+export type MarketplaceModerationMode = 'auto' | 'manual';
+export type ListingAvailability = 'in_stock' | 'single_item';
+export type SellerSaleStatus = 'available' | 'pending';
+export type BoostStatus = 'none' | 'awaiting_moderation' | 'active' | 'completed' | 'cancelled' | 'rejected';
+export type BoostPaymentMode = 'sandbox' | 'live';
+export type BoostPaymentStatus = 'none' | 'sandbox_authorized' | 'sandbox_voided' | 'paid' | 'refunded';
+
+export interface BoostMetrics {
+  impressions: number;
+  clicks: number;
+  saves: number;
+  spent: number;
+}
 
 export interface Listing {
   id: string;
@@ -21,9 +34,40 @@ export interface Listing {
   condition: Condition;
   mediaUrls: string[];
   location: string;
+  brand?: string;
+  productType?: string;
+  material?: string;
+  availability?: ListingAvailability;
+  saleStatus?: SellerSaleStatus;
+  tags?: string[];
+  sku?: string;
+  meetingPreferences?: string[];
+  hideFromFriends?: boolean;
+  boostEnabled?: boolean;
+  boostPlan?: {
+    dailyBudget: number;
+    durationDays: number;
+    placements: string[];
+  } | null;
+  boostStatus?: BoostStatus;
+  boostCampaignId?: string | null;
+  boostStartedAt?: unknown;
+  boostEndsAt?: unknown;
+  boostPaymentMode?: BoostPaymentMode | null;
+  boostPaymentStatus?: BoostPaymentStatus;
+  boostBudgetTotal?: number;
+  boostEstimatedTax?: number;
+  boostTotal?: number;
+  boostMetrics?: BoostMetrics;
+  boostScore?: number;
   status: ListingStatus;
   savedBy: string[];
   viewCount: number;
+  moderationMode?: MarketplaceModerationMode;
+  moderationReason?: string | null;
+  moderationFlags?: string[];
+  moderatedBy?: 'ai' | 'admin' | null;
+  reviewedBy?: string | null;
   createdAt: { _seconds?: number; seconds?: number } | number | string;
   updatedAt: { _seconds?: number; seconds?: number } | number | string;
 }
@@ -76,6 +120,21 @@ export interface CreateListingInput {
   condition: Condition;
   mediaUrls: string[];
   location: string;
+  brand?: string;
+  productType?: string;
+  material?: string;
+  availability?: ListingAvailability;
+  saleStatus?: SellerSaleStatus;
+  tags?: string[];
+  sku?: string;
+  meetingPreferences?: string[];
+  hideFromFriends?: boolean;
+  boostEnabled?: boolean;
+  boostPlan?: {
+    dailyBudget: number;
+    durationDays: number;
+    placements: string[];
+  } | null;
 }
 
 function setSavedBy(listing: Listing, id: string, userId: string | undefined, saved: boolean): Listing {
@@ -255,7 +314,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   createListing: async (data) => {
     const listing = await api.post<Listing>('/api/marketplace', data);
     set((s) => ({
-      listings: s.activeCategory === 'all' || s.activeCategory === listing.category ? [listing, ...s.listings] : s.listings,
+      listings:
+        listing.status === 'active' && (s.activeCategory === 'all' || s.activeCategory === listing.category)
+          ? [listing, ...s.listings]
+          : s.listings,
       myListings: [listing, ...s.myListings],
     }));
     return listing;

@@ -1,0 +1,24 @@
+Surf Market Boost - Sandbox payment test cards
+
+Card thanh toán thành công:
+- Tên trên thẻ: Surf Sandbox Buyer
+- Số thẻ: 4242 4242 4242 4242
+- Hạn dùng: 12/34
+- CVV: 123
+- Kết quả: Thanh toán sandbox thành công, không trừ tiền thật.
+
+Card test lỗi bị từ chối:
+- Tên trên thẻ: Surf Declined Buyer
+- Số thẻ: 4000 0000 0000 0002
+- Hạn dùng: 12/34
+- CVV: 123
+- Kết quả: Hiển thị lỗi bị từ chối.
+
+Cách test trên web:
+1. Vào Surf Market.
+2. Bật quảng bá khi tạo sản phẩm hoặc bấm Quảng bá bài niêm yết ở listing đã đăng.
+3. Chọn ngân sách.
+4. Bấm Đăng/Quảng bá để mở modal thanh toán.
+5. Chọn phương thức thẻ.
+6. Ở màn nhập thẻ, bấm Điền ở card Thanh toán thành công hoặc copy dữ liệu ở trên.
+7. Bấm Lưu để hoàn tất sandbox.

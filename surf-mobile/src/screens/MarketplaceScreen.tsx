@@ -69,6 +69,7 @@ const CATEGORIES: { key: Category; label: string; icon: keyof typeof Ionicons.gl
   { key: 'electronics', label: 'Điện tử',   icon: 'phone-portrait-outline' },
   { key: 'clothing',    label: 'Thời trang', icon: 'shirt-outline' },
   { key: 'vehicles',   label: 'Xe cộ',      icon: 'car-outline' },
+  { key: 'property',   label: 'Bất động sản', icon: 'business-outline' },
   { key: 'home',       label: 'Gia dụng',   icon: 'home-outline' },
   { key: 'sports',     label: 'Thể thao',   icon: 'football-outline' },
   { key: 'other',      label: 'Khác',       icon: 'ellipsis-horizontal-outline' },

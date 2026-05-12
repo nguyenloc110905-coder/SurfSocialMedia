@@ -33,6 +33,7 @@ export default function PresenceBadge({
     uid && showLabel ? state.lastSeen.get(uid) : undefined
   );
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const hasLastSeen = typeof lastSeenTs === 'number' && Number.isFinite(lastSeenTs);
 
   useEffect(() => {
     if (!uid || !showLabel) return;
@@ -48,17 +49,17 @@ export default function PresenceBadge({
 
   const offlineLabel = useMemo(() => {
     if (!showLabel) return null;
-    if (typeof lastSeenTs !== 'number') return null;
+    if (!hasLastSeen) return null;
     const { label } = formatLastSeen(lastSeenTs, nowMs);
     return label;
-  }, [lastSeenTs, nowMs, showLabel]);
+  }, [hasLastSeen, lastSeenTs, nowMs, showLabel]);
 
   if (!uid) return null;
 
   if (!showLabel) {
     return (
       <span
-        title={isOnline ? 'Đang hoạt động' : 'Hoạt động hơn 7 ngày trước'}
+        title={isOnline ? 'Đang hoạt động' : hasLastSeen ? 'Đã offline' : 'Chưa có dữ liệu hoạt động'}
         className={`absolute bottom-0 right-0 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-400'} ${dotClasses[size]} border-white dark:border-slate-800 ${className}`}
       />
     );
@@ -80,7 +81,11 @@ export default function PresenceBadge({
       className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium leading-none text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 ${className}`}
     >
       <span className="h-2 w-2 rounded-full bg-slate-400" />
-      {offlineLabel ? `Hoạt động ${offlineLabel} trước` : 'Hoạt động hơn 7 ngày trước'}
+      {!hasLastSeen
+        ? 'Chưa có dữ liệu hoạt động'
+        : offlineLabel
+          ? `Hoạt động ${offlineLabel} trước`
+          : 'Hoạt động hơn 7 ngày trước'}
     </span>
   );
 }

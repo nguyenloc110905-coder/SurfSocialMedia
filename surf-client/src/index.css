@@ -559,28 +559,33 @@ body {
 }
 
 .market-theme {
-  --market-bg: #f8fafc;
+  --market-bg: #f6f9ff;
   --market-panel: #ffffff;
-  --market-panel-soft: #f1f5f9;
+  --market-panel-soft: #eef6ff;
   --market-card: #ffffff;
-  --market-card-hover: #f8fafc;
-  --market-muted-panel: #e2e8f0;
-  --market-border: rgb(226 232 240 / 0.95);
+  --market-card-hover: #f4f9ff;
+  --market-muted-panel: #e8f2ff;
+  --market-control: #f1f7ff;
+  --market-border: rgb(203 213 225 / 0.9);
   --market-text: #0f172a;
   --market-soft-text: #334155;
   --market-muted-text: #64748b;
   --market-faint-text: #94a3b8;
-  background-color: var(--market-bg) !important;
+  background:
+    radial-gradient(circle at top left, rgb(14 165 233 / 0.1), transparent 32rem),
+    var(--market-bg) !important;
   color: var(--market-text) !important;
 }
 
-.dark .market-theme {
+.dark .market-theme,
+.market-theme.market-theme-dark {
   --market-bg: #0b0f14;
   --market-panel: #0d1117;
   --market-panel-soft: #10161e;
   --market-card: #151a22;
   --market-card-hover: #171e28;
   --market-muted-panel: #202733;
+  --market-control: #202733;
   --market-border: rgb(255 255 255 / 0.08);
   --market-text: #ffffff;
   --market-soft-text: #cbd5e1;
@@ -589,26 +594,33 @@ body {
 }
 
 .market-theme > .sticky {
-  background-color: rgb(248 250 252 / 0.9) !important;
+  background-color: color-mix(in srgb, var(--market-panel) 88%, transparent) !important;
   border-color: var(--market-border) !important;
 }
 
-.dark .market-theme > .sticky {
-  background-color: rgb(11 15 20 / 0.9) !important;
+.market-theme .bg-\[\#0b0f14\],
+.market-theme .bg-\[\#18191a\],
+.market-theme .bg-surf-dark {
+  background-color: var(--market-bg) !important;
 }
 
 .market-theme .bg-\[\#0d1117\],
 .market-theme .bg-\[\#11161d\],
-.market-theme .bg-\[\#10161e\],
-.market-theme .bg-\[\#121821\],
 .market-theme .bg-\[\#151a22\],
+.market-theme .bg-\[\#202327\],
+.market-theme .bg-\[\#242526\],
+.market-theme .bg-\[\#24272c\],
 .market-theme .bg-surf-card {
   background-color: var(--market-card) !important;
 }
 
 .market-theme .bg-\[\#0f141b\],
+.market-theme .bg-\[\#10161e\],
+.market-theme .bg-\[\#121821\],
+.market-theme .bg-\[\#15171b\],
 .market-theme .bg-\[\#151b24\],
-.market-theme .bg-surf-dark,
+.market-theme .bg-black,
+.market-theme .bg-slate-950\/95,
 .market-theme .bg-slate-900,
 .market-theme .bg-slate-900\/70,
 .market-theme .bg-slate-800,
@@ -618,23 +630,45 @@ body {
   background-color: var(--market-panel-soft) !important;
 }
 
+.dark .market-theme .bg-black,
+.dark .market-theme .bg-slate-950\/95,
+.market-theme.market-theme-dark .bg-black,
+.market-theme.market-theme-dark .bg-slate-950\/95 {
+  background-color: rgb(2 6 23 / 0.95) !important;
+}
+
 .market-theme .bg-\[\#1b222d\],
-.market-theme .bg-\[\#26303b\],
 .market-theme .bg-\[\#202733\],
+.market-theme .bg-\[\#26303b\],
+.market-theme .bg-\[\#2d333a\],
+.market-theme .bg-\[\#303134\],
+.market-theme .bg-\[\#303338\],
+.market-theme .bg-\[\#3a3b3c\],
+.market-theme .bg-\[\#3a3d42\],
+.market-theme .bg-\[\#4a4b4d\],
+.market-theme .bg-slate-100,
 .market-theme .bg-slate-200 {
   background-color: var(--market-muted-panel) !important;
 }
 
 .market-theme .hover\:bg-\[\#171e28\]:hover,
-.market-theme .hover\:bg-\[\#1b222d\]:hover {
+.market-theme .hover\:bg-\[\#1b222d\]:hover,
+.market-theme .hover\:bg-\[\#24282d\]:hover,
+.market-theme .hover\:bg-\[\#4a4b4d\]:hover,
+.market-theme .hover\:bg-\[\#4a4e55\]:hover {
   background-color: var(--market-card-hover) !important;
 }
 
+.market-theme .border-\[\#3e4042\],
+.market-theme .border-white\/\[0\.06\],
 .market-theme .border-white\/\[0\.08\],
 .market-theme .border-white\/\[0\.1\],
 .market-theme .border-white\/\[0\.12\],
+.market-theme .border-white\/\[0\.16\],
+.market-theme .border-white\/10,
 .market-theme .border-slate-700\/70,
-.market-theme .ring-white\/\[0\.08\] {
+.market-theme .ring-white\/\[0\.08\],
+.market-theme .ring-white\/20 {
   border-color: var(--market-border) !important;
   --tw-ring-color: var(--market-border) !important;
 }
@@ -643,21 +677,39 @@ body {
 .market-theme .bg-white\/\[0\.04\],
 .market-theme .bg-white\/\[0\.08\],
 .market-theme .bg-white\/\[0\.1\],
-.market-theme .bg-white\/\[0\.12\] {
-  background-color: rgb(241 245 249 / 0.9) !important;
+.market-theme .bg-white\/\[0\.12\],
+.market-theme .bg-white\/5,
+.market-theme .bg-white\/10,
+.market-theme .bg-white\/15,
+.market-theme .bg-black\/20 {
+  background-color: var(--market-control) !important;
 }
 
 .dark .market-theme .bg-white\/\[0\.03\],
 .dark .market-theme .bg-white\/\[0\.04\],
 .dark .market-theme .bg-white\/\[0\.08\],
 .dark .market-theme .bg-white\/\[0\.1\],
-.dark .market-theme .bg-white\/\[0\.12\] {
+.dark .market-theme .bg-white\/\[0\.12\],
+.dark .market-theme .bg-white\/5,
+.dark .market-theme .bg-white\/10,
+.dark .market-theme .bg-white\/15,
+.dark .market-theme .bg-black\/20,
+.market-theme.market-theme-dark .bg-white\/\[0\.03\],
+.market-theme.market-theme-dark .bg-white\/\[0\.04\],
+.market-theme.market-theme-dark .bg-white\/\[0\.08\],
+.market-theme.market-theme-dark .bg-white\/\[0\.1\],
+.market-theme.market-theme-dark .bg-white\/\[0\.12\],
+.market-theme.market-theme-dark .bg-white\/5,
+.market-theme.market-theme-dark .bg-white\/10,
+.market-theme.market-theme-dark .bg-white\/15,
+.market-theme.market-theme-dark .bg-black\/20 {
   background-color: rgb(255 255 255 / 0.08) !important;
 }
 
 .market-theme .text-white,
 .market-theme .text-slate-50,
-.market-theme .text-slate-100 {
+.market-theme .text-slate-100,
+.market-theme .text-slate-900 {
   color: var(--market-text) !important;
 }
 
@@ -683,19 +735,18 @@ body {
 
 .market-theme .bg-surf-primary.text-white,
 .market-theme .bg-surf-primary .text-white,
-.market-theme .text-surf-secondary,
-.market-theme .text-surf-primary {
-  color: #ffffff;
-}
-
-.market-theme .text-surf-secondary,
-.market-theme .text-surf-primary {
-  color: #0ea5e9 !important;
-}
-
-.market-theme .bg-surf-primary.text-white,
-.market-theme .bg-surf-primary .text-white {
+.market-theme .bg-\[\#1877f2\],
+.market-theme .bg-\[\#2d88ff\],
+.market-theme .from-surf-primary,
+.market-theme .to-surf-secondary {
   color: #ffffff !important;
+}
+
+.market-theme .text-surf-secondary,
+.market-theme .text-surf-primary,
+.market-theme .text-\[\#2d88ff\],
+.market-theme .text-\[\#2d9bf0\] {
+  color: #0ea5e9 !important;
 }
 
 .market-theme input,

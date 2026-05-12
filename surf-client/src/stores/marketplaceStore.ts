@@ -2,8 +2,32 @@ import { create } from 'zustand';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/firebase/auth';
 
-export type Category = 'all' | 'electronics' | 'clothing' | 'vehicles' | 'home' | 'sports' | 'other';
+export type Category = 'all' | 'electronics' | 'clothing' | 'vehicles' | 'property' | 'home' | 'sports' | 'other';
 export type Condition = 'new' | 'like_new' | 'good' | 'fair';
+export type ListingStatus = 'pending' | 'active' | 'rejected' | 'sold' | 'deleted';
+export type MyListingsFilter = 'all' | 'error' | 'active';
+export type MarketplaceModerationMode = 'auto' | 'manual';
+export type MarketplaceModerationDecision = 'approved' | 'rejected' | 'needs_review';
+export type ListingAvailability = 'in_stock' | 'single_item';
+export type SellerSaleStatus = 'available' | 'pending';
+export type BoostStatus = 'none' | 'awaiting_moderation' | 'active' | 'completed' | 'cancelled' | 'rejected';
+export type BoostPaymentMode = 'sandbox' | 'live';
+export type BoostPaymentStatus = 'none' | 'sandbox_authorized' | 'sandbox_voided' | 'paid' | 'refunded';
+
+export interface BoostMetrics {
+  impressions: number;
+  clicks: number;
+  saves: number;
+  spent: number;
+}
+
+export interface MarketplaceModerationResult {
+  decision: MarketplaceModerationDecision;
+  reason?: string;
+  confidence?: number;
+  flags: string[];
+  provider: 'gemini';
+}
 
 export interface Listing {
   id: string;
@@ -18,9 +42,41 @@ export interface Listing {
   condition: Condition;
   mediaUrls: string[];
   location: string;
-  status: 'active' | 'sold' | 'deleted';
+  brand?: string;
+  productType?: string;
+  material?: string;
+  availability?: ListingAvailability;
+  saleStatus?: SellerSaleStatus;
+  tags?: string[];
+  sku?: string;
+  meetingPreferences?: string[];
+  hideFromFriends?: boolean;
+  boostEnabled?: boolean;
+  boostPlan?: {
+    dailyBudget: number;
+    durationDays: number;
+    placements: string[];
+  } | null;
+  boostStatus?: BoostStatus;
+  boostCampaignId?: string | null;
+  boostStartedAt?: unknown;
+  boostEndsAt?: unknown;
+  boostPaymentMode?: BoostPaymentMode | null;
+  boostPaymentStatus?: BoostPaymentStatus;
+  boostBudgetTotal?: number;
+  boostEstimatedTax?: number;
+  boostTotal?: number;
+  boostMetrics?: BoostMetrics;
+  boostScore?: number;
+  status: ListingStatus;
   savedBy: string[];
   viewCount: number;
+  moderationMode?: MarketplaceModerationMode;
+  moderationResult?: MarketplaceModerationResult | null;
+  moderationReason?: string | null;
+  moderationFlags?: string[];
+  moderatedBy?: 'ai' | 'admin' | null;
+  reviewedBy?: string | null;
   createdAt: { _seconds?: number; seconds?: number } | string | number | null;
   updatedAt: { _seconds?: number; seconds?: number } | string | number | null;
 }
@@ -33,234 +89,76 @@ export interface CreateListingInput {
   condition: Condition;
   mediaUrls: string[];
   location: string;
+  brand?: string;
+  productType?: string;
+  material?: string;
+  availability?: ListingAvailability;
+  saleStatus?: SellerSaleStatus;
+  tags?: string[];
+  sku?: string;
+  meetingPreferences?: string[];
+  hideFromFriends?: boolean;
+  boostEnabled?: boolean;
+  boostPlan?: {
+    dailyBudget: number;
+    durationDays: number;
+    placements: string[];
+  } | null;
 }
 
-const SEED_NOW = Date.now();
-const SEED_LISTINGS: Listing[] = [
-  {
-    id: 'seed-1',
-    sellerId: 'seed-user-1',
-    sellerDisplayName: 'Minh Anh',
-    sellerPhotoURL: null,
-    title: 'Tai nghe Bluetooth Baseus E13',
-    description: 'Con moi, day du hop, pin tot.',
-    price: 100000,
-    currency: 'VND',
-    category: 'electronics',
-    condition: 'like_new',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1518441902115-48a0f4f1bb2f?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Quan 3, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 142,
-    createdAt: SEED_NOW - 1000 * 60 * 35,
-    updatedAt: SEED_NOW - 1000 * 60 * 20,
-  },
-  {
-    id: 'seed-2',
-    sellerId: 'seed-user-2',
-    sellerDisplayName: 'Quoc Huy',
-    sellerPhotoURL: null,
-    title: 'Iphone 12 64GB xanh',
-    description: 'May zin, pin 86%, co sac nhanh.',
-    price: 5200000,
-    currency: 'VND',
-    category: 'electronics',
-    condition: 'good',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Quan 10, TP.HCM',
-    status: 'active',
-    savedBy: ['me'],
-    viewCount: 318,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 3,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 2,
-  },
-  {
-    id: 'seed-3',
-    sellerId: 'seed-user-3',
-    sellerDisplayName: 'Lan Phuong',
-    sellerPhotoURL: null,
-    title: 'May anh film 35mm',
-    description: 'Da bao duong, kem bao da.',
-    price: 1800000,
-    currency: 'VND',
-    category: 'electronics',
-    condition: 'good',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1519183071298-a2962eadc9c2?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Quan 1, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 97,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 6,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 5,
-  },
-  {
-    id: 'seed-4',
-    sellerId: 'seed-user-4',
-    sellerDisplayName: 'Gia Bao',
-    sellerPhotoURL: null,
-    title: 'Ban phim co mini',
-    description: 'Switch brown, co den nen.',
-    price: 450000,
-    currency: 'VND',
-    category: 'electronics',
-    condition: 'like_new',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Tan Binh, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 204,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 24,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 22,
-  },
-  {
-    id: 'seed-5',
-    sellerId: 'seed-user-5',
-    sellerDisplayName: 'Khanh Linh',
-    sellerPhotoURL: null,
-    title: 'Xe may tay ga 110cc',
-    description: 'Giay to day du, may em ru.',
-    price: 11500000,
-    currency: 'VND',
-    category: 'vehicles',
-    condition: 'good',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1502877338535-766e1452684a?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Go Vap, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 73,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 10,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 9,
-  },
-  {
-    id: 'seed-6',
-    sellerId: 'seed-user-6',
-    sellerDisplayName: 'Thu Trang',
-    sellerPhotoURL: null,
-    title: 'Ao khoac denim',
-    description: 'Size M, mac 2 lan.',
-    price: 120000,
-    currency: 'VND',
-    category: 'clothing',
-    condition: 'like_new',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Quan 7, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 56,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 14,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 12,
-  },
-  {
-    id: 'seed-7',
-    sellerId: 'seed-user-7',
-    sellerDisplayName: 'Tuan Kiet',
-    sellerPhotoURL: null,
-    title: 'Ghe luoi phong khach',
-    description: 'Mau xanh dam, ngoi rat em.',
-    price: 250000,
-    currency: 'VND',
-    category: 'home',
-    condition: 'good',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Binh Thanh, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 89,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 20,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 18,
-  },
-  {
-    id: 'seed-8',
-    sellerId: 'seed-user-8',
-    sellerDisplayName: 'Hoai Nam',
-    sellerPhotoURL: null,
-    title: 'Noi chien khong dau 4L',
-    description: 'Chay tot, phu kien day du.',
-    price: 690000,
-    currency: 'VND',
-    category: 'home',
-    condition: 'good',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1520848315518-b991dd16a2b0?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Thu Duc, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 131,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 8,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 7,
-  },
-  {
-    id: 'seed-9',
-    sellerId: 'seed-user-9',
-    sellerDisplayName: 'Bao Tran',
-    sellerPhotoURL: null,
-    title: 'Giay chay bo size 42',
-    description: 'Da ve sinh, it su dung.',
-    price: 320000,
-    currency: 'VND',
-    category: 'sports',
-    condition: 'like_new',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Quan 2, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 64,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 28,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 26,
-  },
-  {
-    id: 'seed-10',
-    sellerId: 'seed-user-10',
-    sellerDisplayName: 'Duc Thien',
-    sellerPhotoURL: null,
-    title: 'Ke sach go mini',
-    description: 'Rong 80cm, cao 120cm.',
-    price: 0,
-    currency: 'VND',
-    category: 'home',
-    condition: 'fair',
-    mediaUrls: [
-      'https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=800&q=80',
-    ],
-    location: 'Quan 11, TP.HCM',
-    status: 'active',
-    savedBy: [],
-    viewCount: 41,
-    createdAt: SEED_NOW - 1000 * 60 * 60 * 32,
-    updatedAt: SEED_NOW - 1000 * 60 * 60 * 30,
-  },
-];
+export interface UpdateListingInput {
+  title?: string;
+  description?: string;
+  price?: number;
+  category?: Exclude<Category, 'all'>;
+  condition?: Condition;
+  mediaUrls?: string[];
+  location?: string;
+  brand?: string;
+  productType?: string;
+  material?: string;
+  status?: Extract<ListingStatus, 'active' | 'sold'>;
+  saleStatus?: SellerSaleStatus;
+}
 
-const getSeedListings = (category: Category) =>
-  category === 'all' ? SEED_LISTINGS : SEED_LISTINGS.filter((item) => item.category === category);
+export interface BoostListingInput {
+  boostPlan: {
+    dailyBudget: number;
+    durationDays: number;
+    placements: string[];
+  };
+}
 
-const searchSeedListings = (query: string, category: Category) => {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return getSeedListings(category).filter((item) =>
-    item.title.toLowerCase().includes(q) ||
-    item.description.toLowerCase().includes(q) ||
-    item.location.toLowerCase().includes(q)
-  );
-};
+export interface MarketplaceModerationSettings {
+  mode: MarketplaceModerationMode;
+  priority: 'auto';
+  provider: 'gemini';
+  hasGeminiKey: boolean;
+  updatedAt?: unknown;
+  updatedBy?: string | null;
+}
+
+export interface MarketplaceModerationAccess {
+  isAdmin: boolean;
+  settings: MarketplaceModerationSettings | null;
+}
+
+export interface MyListingsCounts {
+  all: number;
+  error: number;
+  active: number;
+  pending: number;
+  rejected: number;
+  sold: number;
+}
+
+export interface MyListingsSummary {
+  views: number;
+  saves: number;
+  activeBoosts: number;
+  boostImpressions: number;
+  boostSpent: number;
+}
 
 function setSavedBy(listing: Listing, id: string, userId: string | undefined, saved: boolean): Listing {
   if (listing.id !== id || !userId) return listing;
@@ -271,6 +169,12 @@ function setSavedBy(listing: Listing, id: string, userId: string | undefined, sa
       ? Array.from(new Set([...savedBy, userId]))
       : savedBy.filter((uid) => uid !== userId),
   };
+}
+
+function matchesMyListingsFilter(listing: Listing, filter: MyListingsFilter): boolean {
+  if (filter === 'active') return listing.status === 'active';
+  if (filter === 'error') return listing.status === 'pending' || listing.status === 'rejected';
+  return listing.status !== 'deleted';
 }
 
 interface MarketplaceState {
@@ -287,6 +191,11 @@ interface MarketplaceState {
   detailLoading: boolean;
   myListings: Listing[];
   myListingsLoading: boolean;
+  myListingsLoadingMore: boolean;
+  myListingsNextCursor: string | null;
+  myListingsFilter: MyListingsFilter;
+  myListingsCounts: MyListingsCounts;
+  myListingsSummary: MyListingsSummary;
   savedListings: Listing[];
   savedLoading: boolean;
 
@@ -297,12 +206,23 @@ interface MarketplaceState {
   setSearchMode: (v: boolean) => void;
   fetchDetail: (id: string) => Promise<void>;
   clearDetail: () => void;
-  fetchMyListings: () => Promise<void>;
+  fetchMyListings: (reset?: boolean, filter?: MyListingsFilter) => Promise<void>;
   fetchSavedListings: () => Promise<void>;
   toggleSave: (id: string) => Promise<boolean>;
   createListing: (data: CreateListingInput) => Promise<Listing>;
+  boostListing: (id: string, data: BoostListingInput) => Promise<Listing>;
+  updateListing: (id: string, data: UpdateListingInput) => Promise<Listing>;
   deleteListing: (id: string) => Promise<void>;
   markAsSold: (id: string) => Promise<void>;
+  reportListing: (id: string, reason: string) => Promise<{ reportId: string }>;
+  fetchModerationAccess: () => Promise<MarketplaceModerationAccess>;
+  fetchModerationSettings: () => Promise<MarketplaceModerationSettings>;
+  setModerationMode: (mode: MarketplaceModerationMode) => Promise<MarketplaceModerationSettings>;
+  fetchPendingModerationListings: (status?: Extract<ListingStatus, 'pending' | 'rejected' | 'active'>) => Promise<Listing[]>;
+  bulkApproveAiFailedListings: (demoOnly?: boolean) => Promise<{ updated: number; items: Listing[] }>;
+  rerunAiModeration: (id: string) => Promise<Listing>;
+  approveListing: (id: string, reason?: string) => Promise<Listing>;
+  rejectListing: (id: string, reason: string) => Promise<Listing>;
 }
 
 export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
@@ -319,6 +239,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   detailLoading: false,
   myListings: [],
   myListingsLoading: false,
+  myListingsLoadingMore: false,
+  myListingsNextCursor: null,
+  myListingsFilter: 'all',
+  myListingsCounts: { all: 0, error: 0, active: 0, pending: 0, rejected: 0, sold: 0 },
+  myListingsSummary: { views: 0, saves: 0, activeBoosts: 0, boostImpressions: 0, boostSpent: 0 },
   savedListings: [],
   savedLoading: false,
 
@@ -333,26 +258,15 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       const data = await api.get<{ items: Listing[]; nextCursor: string | null }>(
         `/api/marketplace?${params.toString()}`
       );
-      const shouldSeed = import.meta.env.DEV && reset && data.items.length === 0;
-      const seedListings = shouldSeed ? getSeedListings(activeCategory) : data.items;
       set((s) => ({
         listings: reset
-          ? seedListings
+          ? data.items
           : [...s.listings, ...data.items.filter((item) => !s.listings.some((l) => l.id === item.id))],
-        nextCursor: shouldSeed ? null : data.nextCursor,
+        nextCursor: data.nextCursor,
         loading: false,
         refreshing: false,
       }));
     } catch {
-      if (import.meta.env.DEV && reset) {
-        set({
-          listings: getSeedListings(activeCategory),
-          nextCursor: null,
-          loading: false,
-          refreshing: false,
-        });
-        return;
-      }
       set({ loading: false, refreshing: false });
     }
   },
@@ -373,17 +287,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       const params = new URLSearchParams({ q: query });
       if (activeCategory !== 'all') params.set('category', activeCategory);
       const data = await api.get<{ items: Listing[] }>(`/api/marketplace/search?${params}`);
-      const shouldSeed = import.meta.env.DEV && data.items.length === 0;
       set({
-        searchResults: shouldSeed ? searchSeedListings(query, activeCategory) : data.items,
+        searchResults: data.items,
         searching: false,
       });
     } catch {
-      if (import.meta.env.DEV) {
-        const { activeCategory } = get();
-        set({ searchResults: searchSeedListings(query, activeCategory), searching: false });
-        return;
-      }
       set({ searching: false });
     }
   },
@@ -398,12 +306,36 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
 
   clearDetail: () => set({ detailListing: null }),
 
-  fetchMyListings: async () => {
-    set({ myListingsLoading: true });
+  fetchMyListings: async (reset = true, filter = get().myListingsFilter) => {
+    const { myListingsLoading, myListingsLoadingMore, myListingsNextCursor } = get();
+    if (reset && myListingsLoading) return;
+    if (!reset && (myListingsLoading || myListingsLoadingMore || !myListingsNextCursor)) return;
+    set({
+      myListingsFilter: filter,
+      ...(reset
+        ? { myListingsLoading: true, myListingsLoadingMore: false, myListingsNextCursor: null }
+        : { myListingsLoadingMore: true }),
+    });
     try {
-      const data = await api.get<{ items: Listing[] }>('/api/marketplace/my?status=all');
-      set({ myListings: data.items, myListingsLoading: false });
-    } catch { set({ myListingsLoading: false }); }
+      const params = new URLSearchParams({ status: filter, limit: '10' });
+      if (!reset && myListingsNextCursor) params.set('cursor', myListingsNextCursor);
+      const data = await api.get<{
+        items: Listing[];
+        nextCursor: string | null;
+        counts?: MyListingsCounts;
+        summary?: MyListingsSummary;
+      }>(`/api/marketplace/my?${params}`);
+      set((s) => ({
+        myListings: reset
+          ? data.items
+          : [...s.myListings, ...data.items.filter((item) => !s.myListings.some((listing) => listing.id === item.id))],
+        myListingsNextCursor: data.nextCursor,
+        myListingsCounts: data.counts ?? s.myListingsCounts,
+        myListingsSummary: data.summary ?? s.myListingsSummary,
+        myListingsLoading: false,
+        myListingsLoadingMore: false,
+      }));
+    } catch { set({ myListingsLoading: false, myListingsLoadingMore: false }); }
   },
 
   fetchSavedListings: async () => {
@@ -430,8 +362,44 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
 
   createListing: async (data) => {
     const listing = await api.post<Listing>('/api/marketplace', data);
-    set((s) => ({ listings: [listing, ...s.listings], myListings: [listing, ...s.myListings] }));
+    set((s) => ({
+      listings: listing.status === 'active' ? [listing, ...s.listings] : s.listings,
+      myListings: matchesMyListingsFilter(listing, s.myListingsFilter) ? [listing, ...s.myListings] : s.myListings,
+      myListingsCounts: {
+        ...s.myListingsCounts,
+        all: s.myListingsCounts.all + 1,
+        active: s.myListingsCounts.active + (listing.status === 'active' ? 1 : 0),
+        error: s.myListingsCounts.error + (listing.status === 'pending' || listing.status === 'rejected' ? 1 : 0),
+        pending: s.myListingsCounts.pending + (listing.status === 'pending' ? 1 : 0),
+        rejected: s.myListingsCounts.rejected + (listing.status === 'rejected' ? 1 : 0),
+        sold: s.myListingsCounts.sold + (listing.status === 'sold' ? 1 : 0),
+      },
+    }));
     return listing;
+  },
+
+  boostListing: async (id, data) => {
+    const updated = await api.post<Listing>(`/api/marketplace/${id}/boost`, data);
+    set((s) => ({
+      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
+      searchResults: updated.status === 'active' ? s.searchResults.map((l) => (l.id === id ? updated : l)) : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings: updated.status === 'active' ? s.savedListings.map((l) => (l.id === id ? updated : l)) : s.savedListings.filter((l) => l.id !== id),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
+  },
+
+  updateListing: async (id, data) => {
+    const updated = await api.patch<Listing>(`/api/marketplace/${id}`, data);
+    set((s) => ({
+      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
+      searchResults: updated.status === 'active' ? s.searchResults.map((l) => (l.id === id ? updated : l)) : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings: updated.status === 'active' ? s.savedListings.map((l) => (l.id === id ? updated : l)) : s.savedListings.filter((l) => l.id !== id),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
   },
 
   deleteListing: async (id) => {
@@ -446,13 +414,91 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
 
   markAsSold: async (id) => {
-    const updated = await api.patch<Listing>(`/api/marketplace/${id}`, { status: 'sold' });
+    const updated = await api.patch<Listing>(`/api/marketplace/${id}/sell`);
     set((s) => ({
       listings: s.listings.filter((l) => l.id !== id),
       searchResults: s.searchResults.filter((l) => l.id !== id),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)),
+      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
       savedListings: s.savedListings.filter((l) => l.id !== id),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
+  },
+
+  reportListing: async (id, reason) => {
+    return api.post<{ reportId: string }>(`/api/marketplace/${id}/report`, { reason });
+  },
+
+  fetchModerationAccess: async () =>
+    api.get<MarketplaceModerationAccess>('/api/marketplace/moderation/access'),
+
+  fetchModerationSettings: async () =>
+    api.get<MarketplaceModerationSettings>('/api/marketplace/moderation/settings'),
+
+  setModerationMode: async (mode) =>
+    api.patch<MarketplaceModerationSettings>('/api/marketplace/moderation/settings', { mode }),
+
+  fetchPendingModerationListings: async (status = 'pending') => {
+    const data = await api.get<{ items: Listing[] }>(`/api/marketplace/moderation/pending?status=${status}`);
+    return data.items;
+  },
+
+  bulkApproveAiFailedListings: async (demoOnly = true) => {
+    const result = await api.patch<{ updated: number; items: Listing[] }>('/api/marketplace/moderation/bulk-approve-ai-failed', {
+      demoOnly,
+      limit: 100,
+    });
+    set((s) => {
+      const updatedIds = new Set(result.items.map((item) => item.id));
+      return {
+        listings: [
+          ...result.items.filter((item) => item.status === 'active'),
+          ...s.listings.filter((item) => !updatedIds.has(item.id)),
+        ],
+        searchResults: s.searchResults.map((item) => result.items.find((updated) => updated.id === item.id) ?? item),
+        myListings: s.myListings
+          .map((item) => result.items.find((updated) => updated.id === item.id) ?? item)
+          .filter((item) => matchesMyListingsFilter(item, s.myListingsFilter)),
+        detailListing: s.detailListing
+          ? result.items.find((updated) => updated.id === s.detailListing?.id) ?? s.detailListing
+          : null,
+      };
+    });
+    return result;
+  },
+
+  rerunAiModeration: async (id) => {
+    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/rerun-ai`);
+    set((s) => ({
+      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
+      searchResults: updated.status === 'active' ? s.searchResults.map((l) => (l.id === id ? updated : l)) : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings: updated.status === 'active' ? s.savedListings.map((l) => (l.id === id ? updated : l)) : s.savedListings.filter((l) => l.id !== id),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
+  },
+
+  approveListing: async (id, reason) => {
+    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/approve`, { reason });
+    set((s) => ({
+      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
+      searchResults: s.searchResults.map((l) => (l.id === id ? updated : l)),
+      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings: s.savedListings.map((l) => (l.id === id ? updated : l)),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
+  },
+
+  rejectListing: async (id, reason) => {
+    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/reject`, { reason });
+    set((s) => ({
+      listings: s.listings.filter((l) => l.id !== id),
+      searchResults: s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings: s.savedListings.filter((l) => l.id !== id),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
   },
 }));
