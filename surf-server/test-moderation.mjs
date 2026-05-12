@@ -3,7 +3,7 @@ dotenv.config();
 import { GoogleGenAI } from '@google/genai';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const MODEL = 'gemini-2.5-flash'; // working model
+const MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash-lite'; // working model
 
 const testCases = [
   'Tao ghét người da đen',

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import { getRedis } from '../config/redis.js';
 
 const router = Router();
 
@@ -40,14 +41,49 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const limitNum = Math.min(parseInt(req.query.limit as string) || 20, 50);
     const lastId = req.query.lastId as string | undefined;
 
-    // Lấy danh sách bạn bè + đang theo dõi + nhóm đã tham gia
-    const [friendDoc, followDoc, groupsSnap] = await Promise.all([
-      getDb().collection('friends').doc(uid).get(),
-      getDb().collection('follows').doc(uid).get(),
-      getDb().collection('groups').where('memberIds', 'array-contains', uid).get(),
-    ]);
-    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
-    const followingIds: string[] = followDoc.exists ? (followDoc.data()?.followingIds ?? []) : [];
+    // Lấy danh sách bạn bè + đang theo dõi (sử dụng Redis cache) + nhóm đã tham gia
+    const redis = getRedis();
+    let friendIds: string[] = [];
+    let followingIds: string[] = [];
+    let groupsSnap: any;
+
+    if (redis) {
+      const [cachedFriends, cachedFollows, gSnap] = await Promise.all([
+        redis.get(`friends:${uid}`),
+        redis.get(`follows:${uid}`),
+        getDb().collection('groups').where('memberIds', 'array-contains', uid).get()
+      ]);
+      groupsSnap = gSnap;
+      
+      if (cachedFriends) friendIds = JSON.parse(cachedFriends);
+      if (cachedFollows) followingIds = JSON.parse(cachedFollows);
+      
+      if (!cachedFriends || !cachedFollows) {
+        const [friendDoc, followDoc] = await Promise.all([
+          !cachedFriends ? getDb().collection('friends').doc(uid).get() : Promise.resolve(null),
+          !cachedFollows ? getDb().collection('follows').doc(uid).get() : Promise.resolve(null),
+        ]);
+        
+        if (!cachedFriends && friendDoc) {
+          friendIds = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+          await redis.set(`friends:${uid}`, JSON.stringify(friendIds), { EX: 300 }); // 5 minutes cache
+        }
+        
+        if (!cachedFollows && followDoc) {
+          followingIds = followDoc.exists ? (followDoc.data()?.followingIds ?? []) : [];
+          await redis.set(`follows:${uid}`, JSON.stringify(followingIds), { EX: 300 }); // 5 minutes cache
+        }
+      }
+    } else {
+      const [friendDoc, followDoc, gSnap] = await Promise.all([
+        getDb().collection('friends').doc(uid).get(),
+        getDb().collection('follows').doc(uid).get(),
+        getDb().collection('groups').where('memberIds', 'array-contains', uid).get(),
+      ]);
+      friendIds = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
+      followingIds = followDoc.exists ? (followDoc.data()?.followingIds ?? []) : [];
+      groupsSnap = gSnap;
+    }
 
     const joinedGroupIds = new Set(groupsSnap.docs.map(d => d.id));
     const groupDetails = new Map(groupsSnap.docs.map(d => [d.id, { name: d.data().name, coverImageUrl: d.data().coverImageUrl }]));
@@ -59,7 +95,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     let q = postsRef
       .where('parentId', '==', null)
       .orderBy('createdAt', 'desc')
-      .limit(limitNum * 4);
+      .limit(limitNum * 2);
 
     if (lastId) {
       const lastDoc = await postsRef.doc(lastId).get();

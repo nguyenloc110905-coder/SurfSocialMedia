@@ -1,24 +1,140 @@
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' });
-const MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
 
 export interface ModerationResult {
   allowed: boolean;
   reason?: string;
 }
 
+export type MarketplaceModerationDecision = 'approved' | 'rejected' | 'needs_review';
+
+export interface MarketplaceModerationInput {
+  title: string;
+  description: string;
+  price: number;
+  category: string;
+  condition: string;
+  location: string;
+  mediaUrls: string[];
+}
+
+export interface MarketplaceModerationResult {
+  decision: MarketplaceModerationDecision;
+  reason?: string;
+  confidence?: number;
+  flags: string[];
+  provider: 'gemini';
+}
+
+function parseMarketplaceModeration(raw: string): MarketplaceModerationResult | null {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  const parsed = JSON.parse(match[0]) as {
+    decision?: unknown;
+    reason?: unknown;
+    confidence?: unknown;
+    flags?: unknown;
+  };
+  const decision =
+    parsed.decision === 'approved' || parsed.decision === 'rejected' || parsed.decision === 'needs_review'
+      ? parsed.decision
+      : null;
+  if (!decision) return null;
+  const result: MarketplaceModerationResult = {
+    decision,
+    flags: Array.isArray(parsed.flags) ? parsed.flags.filter((flag): flag is string => typeof flag === 'string') : [],
+    provider: 'gemini',
+  };
+  if (typeof parsed.reason === 'string' && parsed.reason.trim()) result.reason = parsed.reason.trim();
+  if (typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)) {
+    result.confidence = Math.min(1, Math.max(0, parsed.confidence));
+  }
+  return result;
+}
+
+function getGeminiApiKey() {
+  return (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '').trim();
+}
+
+function getGeminiClient() {
+  return new GoogleGenAI({ apiKey: getGeminiApiKey() });
+}
+
+function getGeminiModel() {
+  return (process.env.GEMINI_MODEL ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+}
+
+function getMarketplaceImageModerationLimit() {
+  const configured = Number(process.env.MARKETPLACE_AI_IMAGE_LIMIT ?? 1);
+  if (!Number.isFinite(configured)) return 1;
+  return Math.max(0, Math.min(3, Math.floor(configured)));
+}
+
+function getErrorText(err: unknown) {
+  const message = err instanceof Error ? err.message : '';
+  let raw = '';
+  try {
+    raw = JSON.stringify(err);
+  } catch {
+    raw = '';
+  }
+  return `${message} ${raw}`;
+}
+
+function getMarketplaceGeminiFailure(err: unknown): MarketplaceModerationResult {
+  const text = getErrorText(err);
+  if (/API_KEY_INVALID|API key not valid|INVALID_ARGUMENT/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'GEMINI_API_KEY không hợp lệ hoặc đã bị thu hồi. Hãy tạo/copy lại key từ Google AI Studio.',
+      flags: ['invalid_gemini_key'],
+      provider: 'gemini',
+    };
+  }
+  if (/RESOURCE_EXHAUSTED|quota|rate limit|429/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'Gemini đã hết quota hoặc bị giới hạn tần suất, cần thử lại sau.',
+      flags: ['gemini_quota_exceeded'],
+      provider: 'gemini',
+    };
+  }
+  if (/model|not found|404/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'Model Gemini đang cấu hình không khả dụng.',
+      flags: ['gemini_model_unavailable'],
+      provider: 'gemini',
+    };
+  }
+  if (/UNAVAILABLE|high demand|503/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'Model Gemini đang quá tải, cần thử lại sau hoặc đổi sang model nhẹ hơn.',
+      flags: ['gemini_unavailable'],
+      provider: 'gemini',
+    };
+  }
+  return {
+    decision: 'needs_review',
+    reason: 'AI kiểm duyệt gặp lỗi, cần admin duyệt thủ công.',
+    flags: ['ai_error'],
+    provider: 'gemini',
+  };
+}
+
 async function callGemini(prompt: string): Promise<string> {
-  const response = await ai.models.generateContent({
-    model: MODEL,
+  const response = await getGeminiClient().models.generateContent({
+    model: getGeminiModel(),
     contents: prompt,
   });
   return response.text ?? '';
 }
 
 async function callGeminiWithImage(prompt: string, base64: string, mimeType: string): Promise<string> {
-  const response = await ai.models.generateContent({
-    model: MODEL,
+  const response = await getGeminiClient().models.generateContent({
+    model: getGeminiModel(),
     contents: [
       { parts: [{ inlineData: { data: base64, mimeType } }, { text: prompt }] },
     ],
@@ -178,4 +294,94 @@ export async function moderatePost(
   }
 
   return { allowed: true };
+}
+
+export async function moderateMarketplaceListing(
+  input: MarketplaceModerationInput,
+): Promise<MarketplaceModerationResult> {
+  if (!getGeminiApiKey()) {
+    return {
+      decision: 'needs_review',
+      reason: 'Chưa cấu hình GEMINI_API_KEY nên cần admin duyệt thủ công.',
+      flags: ['missing_gemini_key'],
+      provider: 'gemini',
+    };
+  }
+
+  const textPrompt = `Bạn là hệ thống kiểm duyệt Marketplace. Hãy đánh giá bài niêm yết dưới đây trước khi cho hiển thị công khai.
+
+Chính sách cần chặn:
+- Hàng cấm hoặc nguy hiểm: vũ khí, chất cấm, thuốc không rõ nguồn gốc, giấy tờ giả, tài khoản/ngân hàng, nội dung 18+.
+- Lừa đảo, giả mạo thương hiệu, yêu cầu chuyển tiền đáng ngờ, link/SDT spam.
+- Mô tả gây hại, kích động bạo lực, thù ghét, quấy rối hoặc vi phạm pháp luật.
+- Sản phẩm thiếu thông tin nghiêm trọng hoặc có dấu hiệu rủi ro cao thì chọn needs_review.
+
+Bài niêm yết:
+Tên: ${input.title}
+Mô tả: ${input.description}
+Giá: ${input.price} VND
+Danh mục: ${input.category}
+Tình trạng: ${input.condition}
+Vị trí: ${input.location}
+Số ảnh: ${input.mediaUrls.length}
+
+Trả lời đúng JSON, không thêm nội dung ngoài JSON:
+{"decision":"approved","confidence":0.9,"flags":[]}
+{"decision":"rejected","reason":"lý do ngắn gọn tiếng Việt","confidence":0.95,"flags":["policy_violation"]}
+{"decision":"needs_review","reason":"lý do cần admin xem","confidence":0.6,"flags":["suspicious"]}`;
+
+  try {
+    const textRaw = (await callGemini(textPrompt)).trim();
+    const textResult = parseMarketplaceModeration(textRaw);
+    if (!textResult) {
+      return {
+        decision: 'needs_review',
+        reason: 'AI trả về kết quả không đọc được, cần admin duyệt.',
+        flags: ['invalid_ai_response'],
+        provider: 'gemini',
+      };
+    }
+    if (textResult.decision !== 'approved') return textResult;
+
+    const imageUrls = input.mediaUrls
+      .filter((url) => !url.includes('/video/upload/') && !/\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url))
+      .slice(0, getMarketplaceImageModerationLimit());
+
+    for (const imageUrl of imageUrls) {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        return {
+          decision: 'needs_review',
+          reason: 'Không tải được ảnh sản phẩm để AI kiểm duyệt.',
+          flags: ['image_fetch_failed'],
+          provider: 'gemini',
+        };
+      }
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mimeType = response.headers.get('content-type') ?? 'image/jpeg';
+      const imagePrompt = `Kiểm duyệt ảnh sản phẩm Marketplace này. Chặn hàng cấm, vũ khí, chất cấm, ảnh 18+, bạo lực, lừa đảo, giấy tờ/tài khoản nhạy cảm. Nếu không chắc chắn hãy chọn needs_review.
+
+Trả lời đúng JSON:
+{"decision":"approved","confidence":0.9,"flags":[]}
+{"decision":"rejected","reason":"lý do ngắn gọn tiếng Việt","confidence":0.95,"flags":["policy_violation"]}
+{"decision":"needs_review","reason":"lý do cần admin xem","confidence":0.6,"flags":["suspicious_image"]}`;
+      const imageRaw = (await callGeminiWithImage(imagePrompt, base64, mimeType)).trim();
+      const imageResult = parseMarketplaceModeration(imageRaw);
+      if (!imageResult) {
+        return {
+          decision: 'needs_review',
+          reason: 'AI trả về kết quả kiểm duyệt ảnh không đọc được.',
+          flags: ['invalid_image_ai_response'],
+          provider: 'gemini',
+        };
+      }
+      if (imageResult.decision !== 'approved') return imageResult;
+    }
+
+    return textResult;
+  } catch (err) {
+    console.error('[Moderation] Marketplace check error:', err);
+    return getMarketplaceGeminiFailure(err);
+  }
 }

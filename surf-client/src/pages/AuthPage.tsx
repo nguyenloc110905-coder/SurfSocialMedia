@@ -33,6 +33,12 @@ const ERRORS: Record<string, string> = {
   'auth/account-exists-with-different-credential': 'Email đã liên kết với phương thức khác.',
 };
 
+function getAuthErrorMessage(err: unknown, fallback: string) {
+  const code =
+    err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+  return ERRORS[code] || fallback;
+}
+
 function validatePassword(pw: string, name: string, email: string): string | null {
   if (pw.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự.';
   if (!/[A-Z]/.test(pw)) return 'Cần ít nhất 1 chữ viết hoa.';
@@ -249,10 +255,12 @@ export default function AuthPage() {
       await result.user.getIdToken();
       await new Promise((r) => setTimeout(r, 800));
       await syncUserProfile();
-      api.post('/api/auth/notify-login').catch(() => {});
+      api.post('/api/auth/notify-login').catch(() => { });
       localStorage.setItem('surf_last_email', loginEmail.trim());
       setLoginPassword('');
       navigate('/feed', { replace: true });
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Đăng nhập thất bại. Vui lòng kiểm tra lại email hoặc mật khẩu.'));
     } finally {
       setLoading(false);
     }
@@ -266,8 +274,10 @@ export default function AuthPage() {
       await result.user.getIdToken();
       await new Promise((r) => setTimeout(r, 800));
       await syncUserProfile();
-      api.post('/api/auth/notify-register').catch(() => {});
+      api.post('/api/auth/notify-register').catch(() => { });
       navigate('/onboarding', { replace: true });
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Đăng ký thất bại. Vui lòng thử lại.'));
     } finally {
       setLoading(false);
     }
@@ -281,12 +291,12 @@ export default function AuthPage() {
       await result.user.getIdToken();
       await new Promise((r) => setTimeout(r, 800));
       await syncUserProfile();
-      api.post('/api/auth/notify-login').catch(() => {});
+      api.post('/api/auth/notify-login').catch(() => { });
       navigate('/feed', { replace: true });
     } catch (err: any) {
       const code = err?.code || '';
       const email = err?.customData?.email || '';
-      
+
       if (
         [
           'auth/popup-closed-by-user',
@@ -299,7 +309,7 @@ export default function AuthPage() {
         setLoading(false);
         return;
       }
-      
+
       if (code === 'auth/account-exists-with-different-credential' && email) {
         const provider = await getProviderName(email);
         setError(
@@ -319,9 +329,7 @@ export default function AuthPage() {
     try {
       await signInWithFacebook(); // triggers redirect, page will reload
     } catch (err: unknown) {
-      const code =
-        err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
-      setError(ERRORS[code] || 'Đăng nhập Facebook thất bại.');
+      setError(getAuthErrorMessage(err, 'Đăng nhập Facebook thất bại.'));
       setLoading(false);
     }
   };
@@ -354,7 +362,7 @@ export default function AuthPage() {
             setLoading(true);
             await currentUser.getIdToken();
             await syncUserProfile();
-            api.post('/api/auth/notify-login').catch(() => {});
+            api.post('/api/auth/notify-login').catch(() => { });
             navigate('/feed', { replace: true });
           }
           return;
@@ -364,14 +372,14 @@ export default function AuthPage() {
         await result.user.getIdToken();
         await new Promise((r) => setTimeout(r, 800));
         await syncUserProfile();
-        api.post('/api/auth/notify-login').catch(() => {});
+        api.post('/api/auth/notify-login').catch(() => { });
         navigate('/feed', { replace: true });
       })
       .catch(async (err: any) => {
         console.error('[AuthPage] Facebook redirect error:', err);
         const code = err?.code || '';
         const email = err?.customData?.email || '';
-        
+
         if (code === 'auth/account-exists-with-different-credential' && email) {
           const provider = await getProviderName(email);
           setError(
@@ -460,22 +468,20 @@ export default function AuthPage() {
               <button
                 type="button"
                 onClick={() => switchMode('login')}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                  mode === 'login'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20'
-                    : 'text-white/50 hover:text-white/80'
-                }`}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${mode === 'login'
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20'
+                  : 'text-white/50 hover:text-white/80'
+                  }`}
               >
                 Đăng nhập
               </button>
               <button
                 type="button"
                 onClick={() => switchMode('register')}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                  mode === 'register'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20'
-                    : 'text-white/50 hover:text-white/80'
-                }`}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${mode === 'register'
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20'
+                  : 'text-white/50 hover:text-white/80'
+                  }`}
               >
                 Đăng ký
               </button>

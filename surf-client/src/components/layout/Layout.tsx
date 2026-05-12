@@ -33,9 +33,11 @@ export default function Layout() {
   const isProfile = location.pathname.startsWith('/feed/profile/');
   const isSettings = location.pathname === '/feed/settings';
   const isWaves = location.pathname === '/feed/waves';
+  const isMarket = location.pathname.startsWith('/feed/market');
   const useThreeColumn = isMainPage(location.pathname);
   const showFriendsLeftNav = isFriendsSection(location.pathname);
   const isShortVideo = location.pathname === '/feed/short-video';
+  const showQuickContactBar = useThreeColumn;
   const [mainNavCollapsed, setMainNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('surf:main-left-nav-collapsed') === '1';
@@ -45,6 +47,20 @@ export default function Layout() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem('surf:main-left-nav-collapsed', mainNavCollapsed ? '1' : '0');
   }, [mainNavCollapsed]);
+
+  // Determine grid columns
+  let gridCols = 'grid-cols-1';
+  if (showFriendsLeftNav) {
+    gridCols = 'md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%]';
+  } else if (isWaves || isMarket) {
+    gridCols = mainNavCollapsed 
+      ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr]' 
+      : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr]';
+  } else {
+    gridCols = mainNavCollapsed
+      ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr_22%]'
+      : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr_22%]';
+  }
 
   return (
     <div
@@ -70,18 +86,7 @@ export default function Layout() {
               </div>
             ) : (
               <div
-                className={[
-                  'flex-1 min-h-0 w-full grid grid-cols-1 gap-1 md:gap-2 overflow-hidden lg:pr-[90px] transition-[grid-template-columns] duration-300 ease-out',
-                  showFriendsLeftNav
-                    ? 'md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%]'
-                    : isWaves
-                      ? mainNavCollapsed
-                        ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr]'
-                        : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr]'
-                      : mainNavCollapsed
-                        ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr_22%]'
-                        : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr_22%]',
-                ].join(' ')}
+                className={`flex-1 min-h-0 w-full grid ${gridCols} overflow-hidden transition-[grid-template-columns] duration-300 ease-out ${!isWaves && !isMarket ? 'gap-1 md:gap-2' : ''} ${showQuickContactBar ? 'lg:pr-[90px]' : ''}`}
               >
                 <div className="min-h-0 overflow-hidden">
                   {showFriendsLeftNav ? (
@@ -96,16 +101,16 @@ export default function Layout() {
                 <div
                   id="main-feed-scroll"
                   className={
-                    isWaves
+                    isWaves || isMarket
                       ? 'min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden'
                       : 'min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide'
                   }
                 >
-                  <div className={isWaves ? 'flex h-full min-h-0 min-w-0 w-full flex-1' : 'flex-1 w-full'}>
+                  <div className={isWaves || isMarket ? 'flex h-full min-h-0 min-w-0 w-full flex-1' : 'flex-1 w-full'}>
                     <Outlet />
                   </div>
                 </div>
-                {!isWaves && (
+                {!isWaves && !isMarket && (
                   <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
                     <MainRightSidebar />
                   </div>
@@ -118,7 +123,7 @@ export default function Layout() {
         )}
       </main>
       <BottomNav />
-      {useThreeColumn && <QuickContactBar isShortVideo={isShortVideo} />}
+      {showQuickContactBar && <QuickContactBar isShortVideo={isShortVideo} />}
     </div>
   );
 }
