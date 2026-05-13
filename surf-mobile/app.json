@@ -4,7 +4,7 @@
     "slug": "surf-mobile",
     "version": "1.0.0",
     "scheme": "surf",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
@@ -48,6 +48,7 @@
         }
       ],
       "expo-web-browser",
+      "expo-screen-orientation",
       "expo-video"
     ]
   }
