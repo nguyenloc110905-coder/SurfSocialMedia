@@ -11,6 +11,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
+import { useSidebarStore } from '@/stores/sidebarStore';
+import Sidebar from '@/components/Sidebar';
 
 // Lazy-import tab content screens
 import HomeScreen from './HomeScreen';
@@ -78,6 +80,8 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const [active, setActive] = useState<Tab>('home');
   const [visited] = useState<Set<Tab>>(new Set<Tab>(['home']));
+  
+  const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
 
   const handleTab = useCallback((tab: Tab) => {
     if (tab === 'create') {
@@ -89,9 +93,21 @@ export default function MainTabsScreen({ navigation }: Props) {
   }, [visited]);
 
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
+  const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+      {/* ── Header with menu button ── */}
+      <View style={[s.header, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
+        <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar}>
+          <Ionicons name="menu-outline" size={24} color={C.text} />
+        </TouchableOpacity>
+        <Text style={[s.headerTitle, { color: C.text }]}>Surf</Text>
+        <TouchableOpacity hitSlop={HIT}>
+          <Ionicons name="search-outline" size={24} color={C.text} />
+        </TouchableOpacity>
+      </View>
+
       {/* ── Tab content area ── */}
       <View style={{ flex: 1 }}>
         {/* Home */}
@@ -125,6 +141,9 @@ export default function MainTabsScreen({ navigation }: Props) {
           </View>
         )}
       </View>
+
+      {/* ── Sidebar ── */}
+      <Sidebar visible={sidebarOpen} onClose={closeSidebar} navigation={navigation} />
 
       {/* ── Bottom tab bar — hidden on Home and Feed entry, visible on tab pages ── */}
       {active !== 'home' && <View
@@ -171,11 +190,20 @@ export default function MainTabsScreen({ navigation }: Props) {
           );
         })}
       </View>}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  headerTitle: { fontSize: 20, fontWeight: '700', letterSpacing: 1 },
   bar: {
     flexDirection: 'row',
     borderTopWidth: 1,

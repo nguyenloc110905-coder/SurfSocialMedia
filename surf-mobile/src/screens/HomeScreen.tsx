@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useFeedStore } from '@/stores/feedStore';
+import { useAuthStore } from '@/stores/authStore';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -79,6 +80,16 @@ export default function HomeScreen({ navigation, onFeedPress }: Props) {
   const C = scheme === 'dark' ? DARK : LIGHT;
   const posts = useFeedStore((s) => s.posts);
   const loading = useFeedStore((s) => s.loading);
+  
+  const user = useAuthStore((s) => s.user);
+  
+  // Watch user state - if it becomes null, Navigation will auto-handle logout
+  useEffect(() => {
+    if (user === null) {
+      console.log('👤 User logged out - Navigation will redirect to Login');
+    }
+  }, [user]);
+  
   // Ưu tiên bài có ảnh, fallback về bài đầu tiên
   const isImgUrl = (u: string) => !u.match(/\/video\/upload\//i) && !u.match(/\.(mp4|mov|webm|m4v)(\?|$)/i);
   const postWithImg = posts.find(p => p.mediaUrls?.some(isImgUrl)) ?? null;
@@ -90,18 +101,6 @@ export default function HomeScreen({ navigation, onFeedPress }: Props) {
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]}>
-
-      {/* ── Header ── */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
-        <TouchableOpacity hitSlop={HIT}>
-          <Ionicons name="menu-outline" size={24} color={C.text} />
-        </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: C.text }]}>Surf</Text>
-        <TouchableOpacity hitSlop={HIT}>
-          <Ionicons name="search-outline" size={24} color={C.text} />
-        </TouchableOpacity>
-      </View>
-
       {/* ── Stories — chỉ hiện khi có story ── */}
       {stories.length > 0 && (
         <View style={[s.storiesWrap, { backgroundColor: C.card, borderBottomColor: C.border }]}>
@@ -272,17 +271,6 @@ function ActionItem({ icon, color, count = 0 }: { icon: string; color: string; c
 const s = StyleSheet.create({
   root: { flex: 1 },
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', letterSpacing: 1 },
-
   // Stories
   storiesWrap: { borderBottomWidth: 1, paddingVertical: 10 },
   storiesList: { paddingHorizontal: 10, gap: 14 },
@@ -363,3 +351,4 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 });
+

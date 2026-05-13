@@ -1,18 +1,20 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect, useRef } from 'react';
+import { NavigationContainer, NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '@/stores/authStore';
-import LoginScreen from '@/screens/LoginScreen';
-import RegisterScreen from '@/screens/RegisterScreen';
+import AuthScreen from '@/screens/AuthScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
+import { isDevModeEnabled, getDebugScreen } from '@/lib/debug-config';
+
+import ForgotPasswordScreen from '@/screens/ForgotPasswordScreen';
 
 export type RootStackParamList = {
-  Login: undefined;
-  Register: undefined;
+  Auth: { initialTab?: 'login' | 'register' };
+  ForgotPassword: undefined;
   MainTabs: undefined;
   Home: undefined;
   Feed: undefined;
@@ -25,13 +27,40 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function Navigation() {
   const { user, loading } = useAuthStore();
+  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+  const devMode = isDevModeEnabled();
 
+  console.log(`🧭 Navigation render - user=${user ? user.email : 'null'}, loading=${loading}, devMode=${devMode}`);
+
+  // Normal mode: auth flow
   // Chỉ hiện splash khi Firebase đang kiểm tra auth (~200-500ms thực tế)
   if (loading) return <SplashScreen />;
 
+  if (!user) {
+    console.log('📱 No user logged in, showing auth screens');
+  } else {
+    console.log(`✅ User logged in: ${user.email}`);
+  }
+
+  const initialRoute = devMode ? getDebugScreen() : undefined;
+
+  const navTheme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      background: '#0c1929',
+    },
+  };
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false,
+          contentStyle: { backgroundColor: '#0c1929' }
+        }}
+        initialRouteName={initialRoute as any}
+      >
         {user ? (
           <>
             <Stack.Screen name="MainTabs" component={MainTabsScreen} />
@@ -41,8 +70,11 @@ export default function Navigation() {
           </>
         ) : (
           <>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen 
+              name="Auth" 
+              component={AuthScreen} 
+            />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
         )}
       </Stack.Navigator>

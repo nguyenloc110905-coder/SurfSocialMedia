@@ -27,8 +27,30 @@ try {
 }
 export { auth };
 
+/**
+ * Set Firebase persistence.
+ * On React Native, persistence is always enabled via AsyncStorage by default.
+ * This is for compatibility with web-like API.
+ */
+export async function setAuthPersistence(rememberMe: boolean): Promise<void> {
+  // On React Native, persistence is automatic via AsyncStorage
+  // This function exists for API compatibility with surf-client
+  if (rememberMe) {
+    // When Remember me is true, we let AsyncStorage handle persistence
+    await AsyncStorage.setItem('firebase_persist_mode', 'local');
+  } else {
+    // When unchecked, clear future persistence (for next login)
+    await AsyncStorage.removeItem('firebase_persist_mode');
+  }
+}
+
 export async function signIn(email: string, password: string) {
-  return signInWithEmailAndPassword(auth, email, password);
+  const result = await signInWithEmailAndPassword(auth, email, password);
+  return result;
+}
+
+export function getCurrentUser() {
+  return auth.currentUser;
 }
 
 export async function signUp(email: string, password: string, displayName?: string) {
@@ -50,8 +72,8 @@ export async function signInWithGoogleCredential(idToken: string) {
   return signInWithCredential(auth, credential);
 }
 
-export function sendPasswordResetEmail(email: string) {
-  return fbSendPasswordResetEmail(auth, email);
+export function sendPasswordResetEmail(email: string, actionCodeSettings?: any) {
+  return fbSendPasswordResetEmail(auth, email, actionCodeSettings);
 }
 
 export async function signOut() {
@@ -59,7 +81,13 @@ export async function signOut() {
 }
 
 export function subscribeAuth(callback: (user: User | null) => void) {
-  return onAuthStateChanged(auth, callback);
+  console.log('🎧 subscribeAuth: Setting up onAuthStateChanged listener');
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    console.log(`📡 onAuthStateChanged fired: user=${user ? user.email : 'null'}`);
+    callback(user);
+  });
+  console.log('✅ subscribeAuth: onAuthStateChanged listener registered');
+  return unsubscribe;
 }
 
 export async function updateUserProfile(updates: { displayName?: string; photoURL?: string }) {

@@ -64,7 +64,7 @@ export function useFacebookSignIn(onError?: (msg: string) => void) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const [request, response, promptAsync] = Facebook.use({
+  const [request, response, promptAsync] = Facebook.useAuthRequest({
     clientId: process.env.EXPO_PUBLIC_FACEBOOK_APP_ID ?? '',
   });
 
