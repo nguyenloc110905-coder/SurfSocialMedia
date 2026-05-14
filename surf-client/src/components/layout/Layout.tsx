@@ -88,7 +88,7 @@ export default function Layout() {
               <div
                 className={`flex-1 min-h-0 w-full grid ${gridCols} overflow-hidden transition-[grid-template-columns] duration-300 ease-out ${!isWaves && !isMarket ? 'gap-1 md:gap-2' : ''} ${showQuickContactBar ? 'lg:pr-[90px]' : ''}`}
               >
-                <div className="min-h-0 overflow-hidden">
+                <div className="min-h-0 overflow-hidden flex flex-col">
                   {showFriendsLeftNav ? (
                     <FriendsLeftNav />
                   ) : (

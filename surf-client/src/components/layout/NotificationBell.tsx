@@ -15,6 +15,9 @@ interface Notification {
   commentSnippet?: string;
   reaction?: string;
   requestId?: string;
+  message?: string;
+  entityType?: string;
+  entityId?: string;
   read: boolean;
   createdAt: { _seconds?: number; seconds?: number } | string;
 }
@@ -98,6 +101,13 @@ export default function NotificationBell() {
       case 'friend_request':
         navigate('/feed/friends/requests');
         break;
+      case 'system':
+        if (notif.entityType === 'group' && notif.entityId) {
+          navigate(`/feed/groups/${notif.entityId}`);
+        } else {
+          navigate('/feed');
+        }
+        break;
       case 'tag':
       case 'reaction':
       case 'comment':
@@ -107,7 +117,11 @@ export default function NotificationBell() {
         if (notif.postId) navigate(`/feed/post/${notif.postId}`);
         break;
       default:
-        navigate('/feed');
+        if (notif.entityType === 'group' && notif.entityId) {
+          navigate(`/feed/groups/${notif.entityId}`);
+        } else {
+          navigate('/feed');
+        }
     }
   };
 
@@ -147,6 +161,7 @@ export default function NotificationBell() {
     if (n.type === 'reply') return <>{name}{' đã trả lời bình luận của bạn'}{snippet}</>;
     if (n.type === 'comment_reaction') return <>{name}{` đã thả ${n.reaction ?? '❤️'} vào bình luận của bạn`}{snippet}</>;
     if (n.type === 'mention') return <>{name}{' đã nhắc đến bạn trong một bình luận'}{snippet}</>;
+    if (n.message) return <>{n.message}</>;
     return <>{name}{' đã thông báo cho bạn'}</>;
   };
 
