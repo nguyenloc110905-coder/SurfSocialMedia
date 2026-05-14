@@ -286,7 +286,9 @@ router.post('/:id/requests/:userId', requireAuth, async (req: AuthRequest, res) 
            message: `Yêu cầu tham gia nhóm ${groupResult.item?.name} của bạn đã được phê duyệt bởi ${actorName}.`
          });
          const unreadCount = await getUnreadNotificationCount(req.params.userId);
-         emitNotificationNew(req.params.userId, toApiNotification(notification));
+         if (notification) {
+           emitNotificationNew(req.params.userId, toApiNotification(notification));
+         }
          emitNotificationUnreadCount(req.params.userId, unreadCount);
        }
     }
@@ -361,7 +363,9 @@ router.post('/:id/invites', requireAuth, async (req: AuthRequest, res) => {
       });
 
       const unreadCount = await getUnreadNotificationCount(userId);
-      emitNotificationNew(userId, toApiNotification(notification));
+      if (notification) {
+        emitNotificationNew(userId, toApiNotification(notification));
+      }
       emitNotificationUnreadCount(userId, unreadCount);
     });
 

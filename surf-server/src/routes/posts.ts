@@ -221,7 +221,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const hashtag = typeof req.query.hashtag === 'string' ? req.query.hashtag.trim() : '';
     const postsRef = getDb().collection('posts');
-    let posts: { id: string; [key: string]: unknown }[] = [];
+    let posts: any[] = [];
     
     if (hashtag) {
       // Search posts containing the hashtag
@@ -229,8 +229,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       const snap = await postsRef.get();
       posts = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((p) => !p.deleted && p.privacy !== 'only-me')
-        .filter((p) => {
+        .filter((p: any) => !p.deleted && p.privacy !== 'only-me')
+        .filter((p: any) => {
           const content = (p.content as string) ?? '';
           // Match both #hashtag and #hashtag-with-dashes or any non-space chars
           const regex = new RegExp(`#${hashtag.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}(?=\\s|$|[^a-zA-Z0-9_])`, 'i');

@@ -85,8 +85,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       groupsSnap = gSnap;
     }
 
-    const joinedGroupIds = new Set(groupsSnap.docs.map(d => d.id));
-    const groupDetails = new Map(groupsSnap.docs.map(d => [d.id, { name: d.data().name, coverImageUrl: d.data().coverImageUrl }]));
+    const joinedGroupIds = new Set(groupsSnap.docs.map((d: any) => d.id));
+    const groupDetails = new Map(groupsSnap.docs.map((d: any) => [d.id, { name: d.data().name, coverImageUrl: d.data().coverImageUrl }]));
 
     // Tập hợp người quen (bản thân + bạn + đang follow)
     const visibleAuthors = new Set([uid, ...friendIds, ...followingIds]);
@@ -188,7 +188,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       if (modified.groupId && groupDetails.has(modified.groupId)) {
         modified.group = {
           id: modified.groupId,
-          ...groupDetails.get(modified.groupId)
+          ...(groupDetails.get(modified.groupId) || {})
         };
       }
       return modified;
