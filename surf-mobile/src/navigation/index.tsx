@@ -9,7 +9,12 @@ import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
+import SettingsScreen from '@/screens/SettingsScreen';
 import CreatePostScreen from '@/screens/CreatePostScreen';
+import MarketplaceScreen from '@/screens/MarketplaceScreen';
+import MarketplaceDetailScreen from '@/screens/MarketplaceDetailScreen';
+import CreateListingScreen from '@/screens/CreateListingScreen';
+import MyListingsScreen from '@/screens/MyListingsScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -20,7 +25,12 @@ export type RootStackParamList = {
   Profile: { userId?: string };
   AI: undefined;
   Messages: undefined;
+  Settings: undefined;
   CreatePost: undefined;
+  Marketplace: undefined;
+  MarketplaceDetail: { listingId: string };
+  CreateListing: undefined;
+  MyListings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -36,11 +46,24 @@ export default function Navigation() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>
-            <Stack.Screen name="MainTabs" component={MainTabsScreen} /> 
+            <Stack.Screen name="MainTabs" component={MainTabsScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="AI" component={AIScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />
-            <Stack.Screen name="CreatePost" component={CreatePostScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen
+              name="CreatePost"
+              component={CreatePostScreen}
+              options={{ presentation: 'fullScreenModal' }}
+            />
+            <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
+            <Stack.Screen name="MarketplaceDetail" component={MarketplaceDetailScreen} />
+            <Stack.Screen
+              name="CreateListing"
+              component={CreateListingScreen}
+              options={{ presentation: 'fullScreenModal' }}
+            />
+            <Stack.Screen name="MyListings" component={MyListingsScreen} />
           </>
         ) : (
           <>

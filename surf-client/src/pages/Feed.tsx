@@ -1,24 +1,100 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore, type FeedPost } from '../stores/feedStore';
+import { type Listing } from '../stores/marketplaceStore';
 import CreatePost from '../components/feed/CreatePost';
 import MomentsBar from '../components/feed/MomentsBar';
 import PostCard from '../components/feed/PostCard';
+import Avatar from '../components/ui/Avatar';
 
 type Post = FeedPost;
 
+function formatListingPrice(price: number) {
+  if (price === 0) return 'Miễn phí';
+  return price.toLocaleString('vi-VN') + ' ₫';
+}
+
+function isFeedBoostListing(listing: Listing) {
+  return listing.boostEnabled && listing.boostStatus === 'active' && listing.boostPlan?.placements?.includes('surf_feed');
+}
+
+function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (listing: Listing) => void }) {
+  const imageUrl = listing.mediaUrls?.[0];
+  return (
+    <article className="mt-4 overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-500/20 dark:bg-slate-800/50">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-slate-700/60">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar src={listing.sellerPhotoURL} name={listing.sellerDisplayName} size="md" />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-gray-900 dark:text-white">{listing.sellerDisplayName}</div>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-sky-600 dark:text-sky-300">
+              <span className="font-black">Sponsored</span>
+              <span>Surf Boost · Feed</span>
+            </div>
+          </div>
+        </div>
+        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-black text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
+          Surf Market
+        </span>
+      </div>
+      <div className="px-4 pb-4 pt-3">
+        <p className="text-sm text-gray-600 dark:text-slate-300">Mặt hàng đang được quảng bá trên Surf Market.</p>
+        <button
+          type="button"
+          onClick={() => onOpen(listing)}
+          className="mt-3 w-full overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 text-left transition hover:border-sky-300 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/10"
+        >
+          {imageUrl ? (
+            <div className="aspect-[16/10] bg-gray-100 dark:bg-slate-900">
+              <img src={imageUrl} alt={listing.title} className="h-full w-full object-cover" />
+            </div>
+          ) : (
+            <div className="flex aspect-[16/10] items-center justify-center bg-gray-100 text-gray-400 dark:bg-slate-900 dark:text-slate-600">
+              <svg className="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.4} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+          )}
+          <div className="p-4">
+            <div className="text-base font-black text-gray-900 dark:text-white">{listing.title}</div>
+            <div className="mt-1 text-sm font-bold text-sky-600 dark:text-sky-300">{formatListingPrice(listing.price)}</div>
+            <div className="mt-2 line-clamp-2 text-sm text-gray-500 dark:text-slate-400">{listing.description || listing.location || 'Khám phá mặt hàng này trên Surf Market.'}</div>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <span className="truncate text-xs font-semibold text-gray-500 dark:text-slate-500">{listing.location || 'Surf Market'}</span>
+              <span className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-black text-white">Xem trong Market</span>
+            </div>
+          </div>
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export default function Feed() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const { posts, hasMore, nextCursor, loaded, setPosts, appendPosts, prependPost, updatePost, scrollTop, setScrollTop } =
     useFeedStore();
   const [loading, setLoading] = useState(!loaded);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedBoostListings, setFeedBoostListings] = useState<Listing[]>([]);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const handlePostUpdated = (updated: Post & Record<string, unknown>) => {
     updatePost(updated as Post);
+  };
+
+  const loadFeedBoostListings = async () => {
+    try {
+      const response = await api.get<{ items: Listing[]; nextCursor: string | null }>('/api/marketplace');
+      setFeedBoostListings((response.items || []).filter(isFeedBoostListing).slice(0, 3));
+    } catch (err) {
+      console.error('Failed to load Surf Boost feed placements:', err);
+      setFeedBoostListings([]);
+    }
   };
 
   const loadPosts = async () => {
@@ -73,6 +149,10 @@ export default function Feed() {
     if (!loaded) void loadPosts();
   }, []);
 
+  useEffect(() => {
+    void loadFeedBoostListings();
+  }, []);
+
   // Save scroll position on unmount, restore on mount
   useEffect(() => {
     const container = document.getElementById('main-feed-scroll');
@@ -87,6 +167,10 @@ export default function Feed() {
 
   const handlePostCreated = (newPost: Record<string, unknown>) => {
     prependPost(newPost as unknown as Post);
+  };
+
+  const handleOpenBoostListing = (listing: Listing) => {
+    navigate('/feed/market', { state: { sponsoredListingId: listing.id } });
   };
 
   // Vị trí đầu tiên của bài "Khám phá" để hiện divider
@@ -127,7 +211,11 @@ export default function Feed() {
         </div>
       )}
 
-      {!loading && !error && posts.length === 0 && (
+      {!loading && !error && feedBoostListings[0] && (
+        <FeedBoostPlacement listing={feedBoostListings[0]} onOpen={handleOpenBoostListing} />
+      )}
+
+      {!loading && !error && posts.length === 0 && feedBoostListings.length === 0 && (
         <div className="bg-white dark:bg-slate-800/40 backdrop-blur-sm rounded-2xl p-12 text-center border border-gray-200 dark:border-slate-700/50 shadow-sm">
           <svg
             className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-600"
@@ -169,6 +257,12 @@ export default function Feed() {
               </div>
             )}
             <PostCard post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} />
+            {idx === 2 && feedBoostListings[1] && (
+              <FeedBoostPlacement listing={feedBoostListings[1]} onOpen={handleOpenBoostListing} />
+            )}
+            {idx === 6 && feedBoostListings[2] && (
+              <FeedBoostPlacement listing={feedBoostListings[2]} onOpen={handleOpenBoostListing} />
+            )}
           </div>
         ))}
 

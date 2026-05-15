@@ -92,7 +92,7 @@ export default function MainLeftNav({
   const list = shortcuts.slice(0, SHORTCUTS_MAX);
 
   return (
-    <aside className="hidden md:flex flex-col w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
+    <aside className="hidden md:flex flex-col flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden transition-[width] duration-300 ease-in-out scrollbar-hide">
       {onToggleCollapse && (
         <div className="sticky top-0 z-10 border-b border-gray-100 bg-white/90 px-3 py-3 backdrop-blur dark:border-gray-700/80 dark:bg-gray-900/85">
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>

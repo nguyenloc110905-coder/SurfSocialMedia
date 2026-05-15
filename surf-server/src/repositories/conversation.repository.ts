@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { buildDmConversationId, ConservationDoc } from '../types/conversation.js';
 import { getDb } from '../config/firebase-admin.js';
+import { getRedis } from '../config/redis.js';
 
 const col = () => getDb().collection('conversations');
 
@@ -124,11 +125,25 @@ export const conversationRepository = {
   },
 
   async sumUnreadByUser(userId: string): Promise<number> {
+    const redis = getRedis();
+    const cacheKey = `unreadCount:${userId}`;
+    
+    if (redis) {
+      const cached = await redis.get(cacheKey);
+      if (cached) return parseInt(cached, 10) || 0;
+    }
+
     const snap = await col().where('memberIds', 'array-contains', userId).get();
-    return snap.docs.reduce((total, doc) => {
+    const total = snap.docs.reduce((sum, doc) => {
       const data = (doc.data() ?? {}) as Record<string, unknown>;
-      return total + getUnreadCountForUser(data, userId);
+      return sum + getUnreadCountForUser(data, userId);
     }, 0);
+    
+    if (redis) {
+      await redis.set(cacheKey, total.toString(), { EX: 3600 }); // cache for 1 hour
+    }
+    
+    return total;
   },
 
   async markReadByUser(conversationId: string, userId: string): Promise<void> {
@@ -136,6 +151,11 @@ export const conversationRepository = {
       [`unreadCountByUser.${userId}`]: 0,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    
+    const redis = getRedis();
+    if (redis) {
+      await redis.del(`unreadCount:${userId}`);
+    }
   },
 
   async createGroup(
@@ -174,6 +194,11 @@ export const conversationRepository = {
       updates[`unreadCountByUser.${uid}`] = 0;
     }
     await col().doc(conversationId).update(updates);
+    
+    const redis = getRedis();
+    if (redis) {
+      await Promise.all(newMemberIds.map(uid => redis.del(`unreadCount:${uid}`)));
+    }
   },
 
   async refreshPreviewIfLatestMessage(

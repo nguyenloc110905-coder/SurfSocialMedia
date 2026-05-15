@@ -49,13 +49,16 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       res.json({ friends: [] });
       return;
     }
+    const usersDocs = friendIds.length > 0
+      ? await db().getAll(...friendIds.map((id) => db().collection('users').doc(id)))
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, { id: d.id, ...d.data() }]));
     const myFriendsSet = new Set(friendIds);
     // Batch-load only the needed user + friend documents (avoid full collection scan)
     const [userDocs, fDocs] = await Promise.all([
       db().getAll(...friendIds.map((id) => db().collection('users').doc(id))),
       db().getAll(...friendIds.map((id) => db().collection('friends').doc(id))),
     ]);
-    const usersMap = new Map(userDocs.map((d) => [d.id, { id: d.id, ...d.data() }]));
     const friendFriendsMap = new Map<string, string[]>();
     fDocs.forEach((d) => {
       if (d.exists) friendFriendsMap.set(d.id, d.data()?.friendIds ?? []);
@@ -121,8 +124,10 @@ router.get('/requests', requireAuth, async (req: AuthRequest, res) => {
       res.json({ requests: [] });
       return;
     }
-    const usersSnap = await db().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+    const usersDocs = fromIds.length > 0
+      ? await db().getAll(...fromIds.map((id) => db().collection('users').doc(id)))
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, { id: d.id, ...d.data() }]));
     const requests = snap.docs.map((d) => {
       const data = d.data();
       const u = usersMap.get(data.fromUid);
@@ -370,8 +375,11 @@ router.get('/sent', requireAuth, async (req: AuthRequest, res) => {
       res.json({ sent: [] });
       return;
     }
-    const usersSnap = await db().collection('users').get();
-    const usersMap = new Map(usersSnap.docs.map((d) => [d.id, d.data()]));
+    const toIds = snap.docs.map((d) => d.data().toUid);
+    const usersDocs = toIds.length > 0
+      ? await db().getAll(...toIds.map((id) => db().collection('users').doc(id)))
+      : [];
+    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, d.data()]));
     const sent = snap.docs.map((d) => {
       const data = d.data();
       const u = usersMap.get(data.toUid);
@@ -455,26 +463,26 @@ router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
       foafIds.length === 0
         ? []
         : (
-            await db().getAll(
-              ...foafIds.slice(0, 200).map((id) => db().collection('users').doc(id))
-            )
+          await db().getAll(
+            ...foafIds.slice(0, 200).map((id) => db().collection('users').doc(id))
           )
-            .filter((d) => d.exists)
-            .map((d) => {
-              const data = d.data()!;
-              return {
-                id: d.id,
-                name: (data.displayName as string) ?? 'Unknown',
-                avatarUrl: data.photoURL as string | undefined,
-                mutualCount: mutualCountMap.get(d.id) ?? 0,
-              };
-            })
-            .sort((a, b) => {
-              const diff = b.mutualCount - a.mutualCount;
-              if (diff !== 0) return diff;
-              return a.name.localeCompare(b.name);
-            })
-            .slice(0, maxSuggestions);
+        )
+          .filter((d) => d.exists)
+          .map((d) => {
+            const data = d.data()!;
+            return {
+              id: d.id,
+              name: (data.displayName as string) ?? 'Unknown',
+              avatarUrl: data.photoURL as string | undefined,
+              mutualCount: mutualCountMap.get(d.id) ?? 0,
+            };
+          })
+          .sort((a, b) => {
+            const diff = b.mutualCount - a.mutualCount;
+            if (diff !== 0) return diff;
+            return a.name.localeCompare(b.name);
+          })
+          .slice(0, maxSuggestions);
 
     // Phần còn lại: người dùng chưa bị loại, không trùng nhóm FOAF
     const remainingSlots = Math.max(0, maxSuggestions - mutualSuggestions.length);
@@ -484,17 +492,17 @@ router.get('/suggestions', requireAuth, async (req: AuthRequest, res) => {
       remainingSlots === 0
         ? []
         : (await db().collection('users').limit(500).get()).docs
-            .filter((d) => !excludeForOthers.has(d.id))
-            .map((d) => {
-              const data = d.data();
-              return {
-                id: d.id,
-                name: (data.displayName as string) ?? 'Unknown',
-                avatarUrl: data.photoURL as string | undefined,
-                mutualCount: 0,
-              };
-            })
-            .slice(0, remainingSlots);
+          .filter((d) => !excludeForOthers.has(d.id))
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: (data.displayName as string) ?? 'Unknown',
+              avatarUrl: data.photoURL as string | undefined,
+              mutualCount: 0,
+            };
+          })
+          .slice(0, remainingSlots);
 
     res.json({ suggestions: [...mutualSuggestions, ...otherSuggestions] });
   } catch (e) {

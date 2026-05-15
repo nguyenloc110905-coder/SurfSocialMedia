@@ -17,8 +17,9 @@ import type { RootStackParamList } from '@/navigation';
 import HomeScreen from './HomeScreen';
 import FeedScreen from './FeedScreen';
 import ShortVideoScreen from './ShortVideoScreen';
+import MarketplaceScreen from './MarketplaceScreen';
 
-type Tab = 'home' | 'feed' | 'video' | 'create' | 'friends' | 'notifications';
+type Tab = 'home' | 'feed' | 'video' | 'create' | 'friends' | 'notifications' | 'marketplace';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -55,7 +56,7 @@ const TABS: TabDef[] = [
   { key: 'home',          icon: 'home-outline',          iconActive: 'home',               label: 'Trang chủ' },
   { key: 'video',         icon: 'videocam-outline',       iconActive: 'videocam',           label: 'Video' },
   { key: 'create',        icon: 'add-circle-outline',     iconActive: 'add-circle',         label: 'Tạo',     isCreate: true },
-  { key: 'friends',       icon: 'people-outline',         iconActive: 'people',             label: 'Bạn bè' },
+  { key: 'marketplace',  icon: 'storefront-outline',     iconActive: 'storefront',         label: 'Chợ' },
   { key: 'notifications', icon: 'notifications-outline',  iconActive: 'notifications',      label: 'Thông báo' },
 ];
 
@@ -101,7 +102,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     }
     visited.add(tab);
     setActive(tab);
-  }, [visited]);
+  }, [visited, navigation]);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -135,6 +136,12 @@ export default function MainTabsScreen({ navigation }: Props) {
         {visited.has('notifications') && (
           <View style={{ flex: 1, display: active === 'notifications' ? 'flex' : 'none' }}>
             <PlaceholderTab label="Thông báo" icon="notifications-outline" />
+          </View>
+        )}
+        {/* Marketplace */}
+        {visited.has('marketplace') && (
+          <View style={{ flex: 1, display: active === 'marketplace' ? 'flex' : 'none' }}>
+            <MarketplaceScreen navigation={navigation as any} />
           </View>
         )}
       </View>

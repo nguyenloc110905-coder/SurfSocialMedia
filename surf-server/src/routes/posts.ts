@@ -280,7 +280,7 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     const normQ = normalizePost(raw);
-    const snap = await getDb().collection('posts').get();
+    const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(100).get();
     type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; [key: string]: unknown };
     let posts = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
@@ -347,6 +347,7 @@ router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
     const snap = await getDb()
       .collection('posts')
       .where('savedBy', 'array-contains', req.uid!)
+      .limit(20)
       .get();
     const posts = snap.docs
       .filter((d) => !d.data().deleted)
@@ -592,6 +593,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     const post = { id: postDoc.id, ...postDoc.data() };
     const repliesSnap = await postsRef
       .where('parentId', '==', req.params.id)
+      .limit(50)
       .get();
     type RDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
     const replies = (repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as RDoc[])

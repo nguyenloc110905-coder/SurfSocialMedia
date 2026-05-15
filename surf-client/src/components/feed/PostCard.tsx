@@ -332,8 +332,9 @@ function UserPresenceAvatar({
   presenceSize?: 'sm' | 'md' | 'lg';
   showOfflineLabel?: boolean;
 }) {
+  const [imgError, setImgError] = useState(false);
   const initial = (() => {
-    const value = name || 'U';
+    const value = (name || 'U').replace(/^[^a-zA-Z\u00C0-\u024F]+/, '').trim() || 'U';
     const words = value.split(' ').filter(Boolean);
     if (words.length >= 2) {
       return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -343,8 +344,13 @@ function UserPresenceAvatar({
 
   return (
     <span className="relative inline-flex flex-shrink-0 overflow-visible">
-      {photoURL ? (
-        <img src={optimizeImageUrl(photoURL)} alt={name} className={imgClassName} />
+      {photoURL && !imgError ? (
+        <img
+          src={optimizeImageUrl(photoURL)}
+          alt={name}
+          className={imgClassName}
+          onError={() => setImgError(true)}
+        />
       ) : (
         <div className={fallbackClassName}>
           <span className={fallbackTextClassName}>{initial}</span>

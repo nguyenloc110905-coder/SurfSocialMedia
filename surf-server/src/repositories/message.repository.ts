@@ -1,5 +1,6 @@
 import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getDb } from '../config/firebase-admin.js';
+import { getRedis } from '../config/redis.js';
 import type {
   CreateCallLogInput,
   MessageDoc,
@@ -291,6 +292,11 @@ export const messageRepository = {
 
     await batch.commit();
 
+    const redis = getRedis();
+    if (redis) {
+      await Promise.all(recipientIds.map(uid => redis.del(`unreadCount:${uid}`)));
+    }
+
     const snap = await messageRef.get();
     return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
   },
@@ -340,6 +346,11 @@ export const messageRepository = {
 
     await batch.commit();
 
+    const redis = getRedis();
+    if (redis) {
+      await Promise.all(recipientIds.map(uid => redis.del(`unreadCount:${uid}`)));
+    }
+
     const snap = await messageRef.get();
     return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
   },
@@ -377,6 +388,11 @@ export const messageRepository = {
     batch.update(conversationRef, conversationUpdates);
 
     await batch.commit();
+
+    const redis = getRedis();
+    if (redis) {
+      await Promise.all(input.recipientIds.map(uid => redis.del(`unreadCount:${uid}`)));
+    }
 
     const snap = await messageRef.get();
     return mapMessageDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
