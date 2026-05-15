@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { uploadVideo } from '../lib/cloudinary';
 import PresenceBadge from '../components/ui/PresenceBadge';
@@ -183,9 +183,12 @@ function ClipCard({
         if (!found) { showToast('\u274C Không thể mở cuộc trò chuyện'); return; }
         convId = found.id;
       }
-      const shareUrl = `${window.location.origin}/feed/clips`;
+      const shareUrl = `${window.location.origin}/feed/short-video?v=${video.id}`;
       const text = `\ud83c\udfa5 ${video.title || 'Surf Clip'}: ${shareUrl}`;
       await api.post(`/api/conversations/${convId}/messages`, { text });
+      if (video._source !== 'post') {
+        api.post(`/api/videos/${video.id}/share`).catch(() => {});
+      }
       showToast(`\u2705 Đã chia sẻ với ${friend.name}`);
       setShowFriendPicker(false);
     } catch {
@@ -454,9 +457,12 @@ function ClipCard({
                 <div className="border-t border-slate-200 dark:border-slate-700" />
                 <button
                   onClick={() => {
-                    const url = `${window.location.origin}/feed/clips`;
+                    const url = `${window.location.origin}/feed/short-video?v=${video.id}`;
                     navigator.clipboard.writeText(url).then(() => showToast('🔗 Đã sao chép link')).catch(() => {});
                     setShowShare(false);
+                    if (video._source !== 'post') {
+                      api.post(`/api/videos/${video.id}/share`).catch(() => {});
+                    }
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
@@ -799,6 +805,7 @@ function UploadModal({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -816,8 +823,19 @@ function UploadModal({
     setPreviewUrl(URL.createObjectURL(f));
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragging(false);
     const f = e.dataTransfer.files[0];
     if (f) {
       const fakeEvent = { target: { files: [f] } } as unknown as React.ChangeEvent<HTMLInputElement>;
@@ -863,39 +881,46 @@ function UploadModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Đăng Surf Clip</h2>
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 dark:border-slate-800/60 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
+          <h2 className="text-xl font-black bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">Đăng Surf Clip</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
-            ✕
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto custom-scrollbar">
           {/* Drop zone / preview */}
           {!previewUrl ? (
             <div
               onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-2xl p-10 flex flex-col items-center gap-3 cursor-pointer hover:border-cyan-500 dark:hover:border-cyan-400 transition-colors select-none"
+              className={`border-2 border-dashed rounded-3xl p-10 flex flex-col items-center gap-4 cursor-pointer transition-all duration-300 select-none group ${
+                isDragging 
+                  ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-900/20 scale-[1.02] shadow-xl shadow-cyan-500/10' 
+                  : 'border-gray-300 dark:border-slate-600 hover:border-cyan-400 hover:bg-gray-50 dark:hover:bg-slate-800/50'
+              }`}
             >
-              <div className="w-16 h-16 rounded-full bg-cyan-50 dark:bg-cyan-900/30 flex items-center justify-center">
-                <svg className="w-8 h-8 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5 4.72 4.72a.75.75 0 0 0-1.28.531v15.88a.75.75 0 0 0 1.28.53l11.03-5.78M15.75 10.5l4.72-4.72a.75.75 0 0 1 1.28.531v7.438a.75.75 0 0 1-1.28.53l-4.72-4.96" />
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-transform duration-300 ${
+                isDragging ? 'bg-cyan-100 dark:bg-cyan-900/50 scale-110' : 'bg-gray-100 dark:bg-slate-800 group-hover:bg-cyan-50 dark:group-hover:bg-cyan-900/30 group-hover:scale-105'
+              }`}>
+                <svg className={`w-10 h-10 transition-colors duration-300 ${isDragging ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-400 group-hover:text-cyan-500 dark:group-hover:text-cyan-400'}`} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
                 </svg>
               </div>
               <div className="text-center">
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Kéo thả hoặc nhấn để chọn video
+                <p className={`text-base font-bold transition-colors ${isDragging ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-700 dark:text-gray-200'}`}>
+                  {isDragging ? 'Thả video vào đây...' : 'Kéo thả hoặc nhấn để chọn video'}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">MP4, MOV, WebM — tối đa 200MB</p>
+                <p className="text-xs text-gray-500 mt-1.5 font-medium">MP4, MOV, WebM — tối đa 200MB</p>
               </div>
             </div>
           ) : (
-            <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] max-h-60 mx-auto w-fit">
+            <div className="relative rounded-3xl overflow-hidden bg-black aspect-[9/16] max-h-72 mx-auto w-fit shadow-2xl shadow-black/50 border border-gray-800">
               <video
                 src={previewUrl}
                 className="h-full w-auto mx-auto object-contain"
@@ -904,9 +929,9 @@ function UploadModal({
               />
               <button
                 onClick={() => { setFile(null); setPreviewUrl(null); }}
-                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white text-xs flex items-center justify-center hover:bg-black/80"
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 backdrop-blur-md text-white flex items-center justify-center hover:bg-black/70 hover:scale-110 active:scale-95 transition-all"
               >
-                ✕
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
           )}
@@ -915,7 +940,7 @@ function UploadModal({
 
           {/* Title */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
               Tiêu đề
             </label>
             <input
@@ -923,17 +948,17 @@ function UploadModal({
               onChange={(e) => setTitle(e.target.value)}
               maxLength={100}
               placeholder="Thêm tiêu đề hấp dẫn..."
-              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full bg-white dark:bg-slate-900/50 border-2 border-gray-100 dark:border-slate-800 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-cyan-500 dark:focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 transition-all shadow-sm"
             />
           </div>
 
           {/* Description / Caption */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Caption
               </label>
-              <span className="text-[10px] text-gray-400">{description.length}/500</span>
+              <span className={`text-[10px] font-bold ${description.length >= 500 ? 'text-red-500' : 'text-gray-400'}`}>{description.length}/500</span>
             </div>
             <textarea
               value={description}
@@ -941,34 +966,35 @@ function UploadModal({
               maxLength={500}
               rows={3}
               placeholder="Mô tả clip... Dùng #hashtag và @mention để tiếp cận nhiều người hơn!"
-              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none"
+              className="w-full bg-white dark:bg-slate-900/50 border-2 border-gray-100 dark:border-slate-800 rounded-xl px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-cyan-500 dark:focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 transition-all shadow-sm resize-none"
             />
-            <p className="text-[10px] text-gray-400 mt-1">
-              Dùng <span className="text-cyan-500 font-semibold">#hashtag</span> và <span className="text-cyan-500 font-semibold">@tên_người_dùng</span> trong caption
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5">
+              Dùng <span className="text-cyan-500 font-bold">#hashtag</span> và <span className="text-cyan-500 font-bold">@tên_người_dùng</span> trong caption
             </p>
           </div>
 
           {/* Privacy selector */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
               Quyền riêng tư
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               {([
-                { value: 'public', label: '🌍 Công khai' },
-                { value: 'friends', label: '👥 Bạn bè' },
-                { value: 'only-me', label: '🔒 Chỉ mình tôi' },
-              ] as const).map(({ value, label }) => (
+                { value: 'public', label: 'Công khai', icon: '🌍' },
+                { value: 'friends', label: 'Bạn bè', icon: '👥' },
+                { value: 'only-me', label: 'Chỉ mình tôi', icon: '🔒' },
+              ] as const).map(({ value, label, icon }) => (
                 <button
                   key={value}
                   onClick={() => setPrivacy(value)}
-                  className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-all ${
+                  className={`flex-1 py-2.5 px-2 rounded-xl text-sm font-semibold border-2 transition-all flex flex-col items-center gap-1 ${
                     privacy === value
-                      ? 'bg-cyan-500 text-white border-cyan-500'
-                      : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:border-cyan-400'
+                      ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400 border-cyan-500 shadow-md shadow-cyan-500/10'
+                      : 'border-gray-100 dark:border-slate-800 text-gray-500 dark:text-gray-400 hover:border-gray-200 dark:hover:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50'
                   }`}
                 >
-                  {label}
+                  <span className="text-lg">{icon}</span>
+                  <span className="text-[11px] leading-none">{label}</span>
                 </button>
               ))}
             </div>
@@ -976,23 +1002,30 @@ function UploadModal({
 
           {/* Error */}
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-xl px-4 py-3">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 text-sm font-medium rounded-xl px-4 py-3 flex items-start gap-2">
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
               {error}
             </div>
           )}
 
           {/* Progress bar */}
           {uploading && (
-            <div>
-              <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                <span>
-                  {progress < 80 ? 'Đang tải lên Cloudinary...' : progress < 100 ? 'Đang lưu metadata...' : '✅ Hoàn thành!'}
+            <div className="bg-gray-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-gray-100 dark:border-slate-700">
+              <div className="flex justify-between text-sm font-bold text-gray-700 dark:text-gray-300 mb-2.5">
+                <span className="flex items-center gap-2">
+                  {progress < 100 && (
+                    <svg className="w-4 h-4 animate-spin text-cyan-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  )}
+                  {progress < 80 ? 'Đang tải lên...' : progress < 100 ? 'Đang xử lý...' : '✅ Hoàn tất!'}
                 </span>
-                <span>{progress}%</span>
+                <span className="text-cyan-600 dark:text-cyan-400">{progress}%</span>
               </div>
-              <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div className="h-2.5 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden relative">
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
+                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-300 ease-out shadow-[0_0_10px_rgba(6,182,212,0.5)]"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -1003,9 +1036,10 @@ function UploadModal({
           <button
             onClick={() => void handleSubmit()}
             disabled={uploading || !file}
-            className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-xl hover:opacity-90 disabled:opacity-50 active:scale-[0.98] transition-all"
+            className="relative w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-base rounded-xl hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/30 active:scale-[0.98] transition-all overflow-hidden group mt-2"
           >
-            {uploading ? 'Đang đăng...' : 'Đăng clip'}
+            <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-full duration-1000 skew-x-12 ease-in-out transition-transform" />
+            <span className="relative z-10">{uploading ? 'Đang đăng tải...' : 'Đăng clip ngay'}</span>
           </button>
         </div>
       </div>
@@ -1017,6 +1051,8 @@ function UploadModal({
 export default function ShortVideo() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sharedVideoId = searchParams.get('v');
   const { videos, hasMore, nextCursor, loaded, setFeed, appendFeed, removeVideo, prependVideo } =
     useClipFeedStore();
   const [loading, setLoading] = useState(!loaded);
@@ -1052,6 +1088,29 @@ export default function ShortVideo() {
   useEffect(() => {
     if (!loaded) void loadFeed();
   }, [loaded, loadFeed]);
+
+  // Xử lý shared video
+  useEffect(() => {
+    if (!sharedVideoId) return;
+    let isMounted = true;
+    
+    const currentVideos = useClipFeedStore.getState().videos;
+    const existing = currentVideos.find(v => v.id === sharedVideoId);
+    if (existing) {
+      if (currentVideos[0]?.id !== sharedVideoId) {
+        removeVideo(sharedVideoId);
+        prependVideo(existing);
+      }
+      return;
+    }
+    
+    // Nếu chưa có trong store, fetch nó (chỉ support clip, không post)
+    api.get(`/api/videos/${sharedVideoId}`).then((v: any) => {
+      if (isMounted) prependVideo({ ...v, _source: 'clip' });
+    }).catch(() => {});
+    
+    return () => { isMounted = false; };
+  }, [sharedVideoId, prependVideo, removeVideo]);
 
   // Load more when scrolled near the end
   const handleScroll = useCallback(() => {

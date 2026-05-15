@@ -10,6 +10,7 @@ import EditPostModal from './EditPostModal';
 import { getSocket } from '../../lib/socket';
 import MentionCommentInput from './MentionCommentInput';
 import { markupToPlain, extractMentions, renderCommentContent } from '../../lib/mentionUtils';
+import { renderPostContent } from '../../lib/hashtagUtils';
 
 interface Comment {
   id: string;
@@ -331,8 +332,9 @@ function UserPresenceAvatar({
   presenceSize?: 'sm' | 'md' | 'lg';
   showOfflineLabel?: boolean;
 }) {
+  const [imgError, setImgError] = useState(false);
   const initial = (() => {
-    const value = name || 'U';
+    const value = (name || 'U').replace(/^[^a-zA-Z\u00C0-\u024F]+/, '').trim() || 'U';
     const words = value.split(' ').filter(Boolean);
     if (words.length >= 2) {
       return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -342,8 +344,13 @@ function UserPresenceAvatar({
 
   return (
     <span className="relative inline-flex flex-shrink-0 overflow-visible">
-      {photoURL ? (
-        <img src={optimizeImageUrl(photoURL)} alt={name} className={imgClassName} />
+      {photoURL && !imgError ? (
+        <img
+          src={optimizeImageUrl(photoURL)}
+          alt={name}
+          className={imgClassName}
+          onError={() => setImgError(true)}
+        />
       ) : (
         <div className={fallbackClassName}>
           <span className={fallbackTextClassName}>{initial}</span>
@@ -1254,7 +1261,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{post.authorDisplayName}</span>
                 </div>
                 {post.content && (
-                  <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">{post.content}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">
+                    {renderPostContent(post.content, { maxLength: 200 })}
+                  </p>
                 )}
               </div>
               {post.mediaUrls?.length > 0 && (
@@ -1761,8 +1770,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 <div className="mb-2">
                   <p className="text-white/90 text-sm leading-snug">
                     {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
-                      ? post.content
-                      : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
+                      ? renderPostContent(post.content)
+                      : renderPostContent(post.content, { maxLength: CONTENT_COLLAPSE_LIMIT })}
                   </p>
                   {post.content.length > CONTENT_COLLAPSE_LIMIT && (
                     <button
@@ -2107,8 +2116,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
               <div className="mb-3">
                 <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap text-[15px]">
                   {contentExpanded || post.content.length <= CONTENT_COLLAPSE_LIMIT
-                    ? post.content
-                    : post.content.slice(0, CONTENT_COLLAPSE_LIMIT) + '…'}
+                    ? renderPostContent(post.content)
+                    : renderPostContent(post.content, { maxLength: CONTENT_COLLAPSE_LIMIT })}
                 </p>
                 {post.content.length > CONTENT_COLLAPSE_LIMIT && (
                   <button
@@ -3182,7 +3191,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   </div>
                   {post.content && (
                     <p className="text-sm text-gray-700 dark:text-gray-300 leading-snug line-clamp-3">
-                      {post.content}
+                      {renderPostContent(post.content, { maxLength: 200 })}
                     </p>
                   )}
                 </div>

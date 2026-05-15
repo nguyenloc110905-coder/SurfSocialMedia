@@ -204,6 +204,56 @@ function normalizePost(s: string): string {
 
 /**
  * @swagger
+ * /api/posts:
+ *   get:
+ *     tags: [Posts]
+ *     summary: Lấy danh sách bài viết (có thể lọc theo hashtag)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: hashtag
+ *         schema: { type: string, description: 'Lọc bài viết theo hashtag (không cần dấu #)' }
+ *     responses:
+ *       200: { description: Danh sách bài viết }
+ */
+// GET /?hashtag=x — lọc bài viết theo hashtag (phải đặt trước /:id)
+router.get('/', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const hashtag = typeof req.query.hashtag === 'string' ? req.query.hashtag.trim() : '';
+    const postsRef = getDb().collection('posts');
+    let posts: { id: string; [key: string]: unknown }[] = [];
+    
+    if (hashtag) {
+      // Search posts containing the hashtag
+      const tagQuery = `#${hashtag}`;
+      const snap = await postsRef.get();
+      posts = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((p) => !p.deleted && p.privacy !== 'only-me')
+        .filter((p) => {
+          const content = (p.content as string) ?? '';
+          // Match both #hashtag and #hashtag-with-dashes or any non-space chars
+          const regex = new RegExp(`#${hashtag.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}(?=\\s|$|[^a-zA-Z0-9_])`, 'i');
+          return regex.test(content);
+        });
+    } else {
+      // Return recent public posts
+      const snap = await postsRef
+        .where('privacy', 'in', ['public', 'friends'])
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+      posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+    
+    res.json({ posts });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
  * /api/posts/search:
  *   get:
  *     tags: [Posts]
@@ -230,7 +280,7 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     const normQ = normalizePost(raw);
-    const snap = await getDb().collection('posts').get();
+    const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(100).get();
     type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; [key: string]: unknown };
     let posts = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
@@ -297,6 +347,7 @@ router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
     const snap = await getDb()
       .collection('posts')
       .where('savedBy', 'array-contains', req.uid!)
+      .limit(20)
       .get();
     const posts = snap.docs
       .filter((d) => !d.data().deleted)
@@ -542,6 +593,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     const post = { id: postDoc.id, ...postDoc.data() };
     const repliesSnap = await postsRef
       .where('parentId', '==', req.params.id)
+      .limit(50)
       .get();
     type RDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
     const replies = (repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as RDoc[])

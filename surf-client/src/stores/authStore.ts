@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from 'firebase/auth';
-import { subscribeAuth, isRecentTabAuthAction } from '@/lib/firebase/auth';
+import { subscribeAuth, isRecentTabAuthAction, auth } from '@/lib/firebase/auth';
 import { syncUserProfile } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 import { musicStore } from '@/lib/musicStore';
@@ -8,11 +8,15 @@ import { musicStore } from '@/lib/musicStore';
 interface AuthState {
   user: User | null;
   loading: boolean;
+  photoURL: string | null;
+  displayName: string | null;
 }
 
 export const useAuthStore = create<AuthState>(() => ({
   user: null,
   loading: true,
+  photoURL: null,
+  displayName: null,
 }));
 
 let hasInitialSync = false;
@@ -59,7 +63,12 @@ subscribeAuth((user) => {
 
   console.log('🔐 Auth state changed:', user?.email ?? 'null');
   const wasLoading = prevState.loading;
-  useAuthStore.setState({ user, loading: false });
+  useAuthStore.setState({
+    user,
+    loading: false,
+    photoURL: user?.photoURL ?? null,
+    displayName: user?.displayName ?? null,
+  });
 
   // Connect/disconnect Socket.io
   if (user) {
@@ -85,3 +94,22 @@ subscribeAuth((user) => {
     }, 1500); // Tăng lên 1.5s để đảm bảo token sẵn sàng
   }
 });
+
+/**
+ * Force-sync Firebase Auth currentUser vào Zustand store sau khi
+ * updateProfile() không tự fire onAuthStateChanged.
+ */
+export function refreshAuthUser() {
+  const current = auth.currentUser;
+  if (current) {
+    useAuthStore.setState({
+      user: current,
+      photoURL: current.photoURL ?? null,
+      displayName: current.displayName ?? null,
+    });
+  }
+}
+
+export function patchAuthPhoto(url: string) {
+  useAuthStore.setState({ photoURL: url });
+}

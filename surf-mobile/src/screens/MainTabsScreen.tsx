@@ -17,8 +17,10 @@ import Sidebar from '@/components/Sidebar';
 // Lazy-import tab content screens
 import HomeScreen from './HomeScreen';
 import FeedScreen from './FeedScreen';
+import ShortVideoScreen from './ShortVideoScreen';
+import MarketplaceScreen from './MarketplaceScreen';
 
-type Tab = 'home' | 'feed' | 'video' | 'create' | 'friends' | 'notifications';
+type Tab = 'home' | 'feed' | 'video' | 'create' | 'friends' | 'notifications' | 'marketplace';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -52,11 +54,11 @@ type TabDef = {
 };
 
 const TABS: TabDef[] = [
-  { key: 'home',          icon: 'home-outline',          iconActive: 'home',               label: 'Trang chủ' },
-  { key: 'video',         icon: 'videocam-outline',       iconActive: 'videocam',           label: 'Video' },
-  { key: 'create',        icon: 'add-circle-outline',     iconActive: 'add-circle',         label: 'Tạo',     isCreate: true },
-  { key: 'friends',       icon: 'people-outline',         iconActive: 'people',             label: 'Bạn bè' },
-  { key: 'notifications', icon: 'notifications-outline',  iconActive: 'notifications',      label: 'Thông báo' },
+  { key: 'home', icon: 'home-outline', iconActive: 'home', label: 'Trang chủ' },
+  { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', label: 'Video' },
+  { key: 'create', icon: 'add-circle-outline', iconActive: 'add-circle', label: 'Tạo', isCreate: true },
+  { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', label: 'Chợ' },
+  { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', label: 'Thông báo' },
 ];
 
 // Placeholder for unbuilt tabs
@@ -80,17 +82,17 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const [active, setActive] = useState<Tab>('home');
   const [visited] = useState<Set<Tab>>(new Set<Tab>(['home']));
-  
+
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
 
   const handleTab = useCallback((tab: Tab) => {
     if (tab === 'create') {
-      // TODO: open create post modal
+      navigation.navigate('CreatePost');
       return;
     }
     visited.add(tab);
     setActive(tab);
-  }, [visited]);
+  }, [visited, navigation]);
 
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
   const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
@@ -125,7 +127,7 @@ export default function MainTabsScreen({ navigation }: Props) {
         {/* Short Video */}
         {visited.has('video') && (
           <View style={{ flex: 1, display: active === 'video' ? 'flex' : 'none' }}>
-            <PlaceholderTab label="Short Video" icon="videocam-outline" />
+            <ShortVideoScreen />
           </View>
         )}
         {/* Friends */}
@@ -140,28 +142,47 @@ export default function MainTabsScreen({ navigation }: Props) {
             <PlaceholderTab label="Thông báo" icon="notifications-outline" />
           </View>
         )}
+        {/* Marketplace */}
+        {visited.has('marketplace') && (
+          <View style={{ flex: 1, display: active === 'marketplace' ? 'flex' : 'none' }}>
+            <MarketplaceScreen navigation={navigation as any} />
+          </View>
+        )}
       </View>
 
       {/* ── Sidebar ── */}
       <Sidebar visible={sidebarOpen} onClose={closeSidebar} navigation={navigation} />
 
-      {/* ── Bottom tab bar — hidden on Home and Feed entry, visible on tab pages ── */}
-      {active !== 'home' && <View
-        style={[
-          s.bar,
-          {
-            backgroundColor: C.bar,
-            borderTopColor: C.border,
-            paddingBottom: bottomPad,
-            height: TAB_H + bottomPad,
-          },
-        ]}
-      >
-        {TABS.map((tab) => {
-          const isActive = active === tab.key;
-          const color = isActive ? C.accent : C.subtext;
+      {/* ── Bottom tab bar ── */}
+      {active !== 'home' && (
+        <View
+          style={[
+            s.bar,
+            {
+              backgroundColor: C.bar,
+              borderTopColor: C.border,
+              paddingBottom: bottomPad,
+              height: TAB_H + bottomPad,
+            },
+          ]}
+        >
+          {TABS.map((tab) => {
+            const isActive = active === tab.key;
+            const color = isActive ? C.accent : C.subtext;
 
-          if (tab.isCreate) {
+            if (tab.isCreate) {
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={s.tabBtn}
+                  onPress={() => handleTab(tab.key)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add-circle" size={42} color={C.accent} />
+                </TouchableOpacity>
+              );
+            }
+
             return (
               <TouchableOpacity
                 key={tab.key}
@@ -169,27 +190,16 @@ export default function MainTabsScreen({ navigation }: Props) {
                 onPress={() => handleTab(tab.key)}
                 activeOpacity={0.7}
               >
-                <Ionicons name="add-circle" size={42} color={C.accent} />
+                <Ionicons
+                  name={isActive ? tab.iconActive : tab.icon}
+                  size={26}
+                  color={color}
+                />
               </TouchableOpacity>
             );
-          }
-
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={s.tabBtn}
-              onPress={() => handleTab(tab.key)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={isActive ? tab.iconActive : tab.icon}
-                size={26}
-                color={color}
-              />
-            </TouchableOpacity>
-          );
-        })}
-      </View>}
+          })}
+        </View>
+      )}
     </SafeAreaView>
   );
 }

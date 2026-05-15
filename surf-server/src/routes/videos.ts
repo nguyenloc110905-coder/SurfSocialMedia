@@ -330,6 +330,40 @@ router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
 
 /**
  * @swagger
+ * /api/videos/{id}/share:
+ *   post:
+ *     tags: [Videos]
+ *     summary: Tăng share count của video
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
+// ── POST /:id/share — increment share count (atomic) ─────────────────────────────────────
+router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const ref = db.collection('videos').doc(req.params.id);
+    const doc = await ref.get();
+
+    if (!doc.exists || doc.data()?.deletedAt) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    await ref.update({ shareCount: FieldValue.increment(1) });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
  * /api/videos/{id}:
  *   delete:
  *     tags: [Videos]
@@ -387,7 +421,39 @@ router.get('/:id', requireAuth, async (req, res) => {
     const doc = await db.collection('videos').doc(req.params.id).get();
 
     if (!doc.exists || doc.data()?.deletedAt) {
-      res.status(404).json({ error: 'Video not found' });
+      // Fallback to posts
+      const postDoc = await db.collection('posts').doc(req.params.id).get();
+      const data = postDoc.data();
+      if (!postDoc.exists || data?.deleted === true) {
+        res.status(404).json({ error: 'Video not found' });
+        return;
+      }
+      const isVideoUrl = (u: string) => u.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u);
+      const videoUrl = (data?.mediaUrls ?? []).find(isVideoUrl);
+      if (!videoUrl) {
+        res.status(404).json({ error: 'Video not found' });
+        return;
+      }
+      res.json({
+        id: postDoc.id,
+        _source: 'post',
+        authorId: data?.authorId ?? '',
+        authorDisplayName: data?.authorDisplayName ?? 'Anonymous',
+        authorPhotoURL: data?.authorPhotoURL ?? null,
+        title: '',
+        description: data?.content ?? '',
+        videoUrl,
+        thumbnailUrl: null,
+        duration: null,
+        tags: [],
+        privacy: data?.privacy ?? 'public',
+        likeCount: data?.likeCount ?? 0,
+        likedBy: data?.likedBy ?? [],
+        commentCount: data?.replyCount ?? 0,
+        viewCount: 0,
+        createdAt: data?.createdAt,
+        updatedAt: data?.updatedAt ?? data?.createdAt,
+      });
       return;
     }
 

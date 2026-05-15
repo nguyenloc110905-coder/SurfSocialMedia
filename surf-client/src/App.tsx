@@ -22,6 +22,7 @@ import Waves from './pages/Waves';
 import GroupLiveKitCallPage from './pages/GroupLiveKitCallPage';
 import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
+import HashtagPage from './pages/HashtagPage';
 import { useMessageSound } from './hooks/useMessageSound';
 
 function ThemeInit() {
@@ -142,6 +143,7 @@ export default function App() {
           <Route path="groups/:groupId" element={<GroupDetails />} />
           <Route path="market" element={<MarketPage />} />
           <Route path="saved" element={<SavedPage />} />
+          <Route path="hashtag/:tag" element={<HashtagPage />} />
           <Route
             path="events"
             element={
@@ -196,6 +198,7 @@ export default function App() {
             </Protected>
           }
         />
+        
       </Routes>
     </GlobalCallProvider>
   );

@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // User avatars - chỉ user đó được ghi, ai cũng đọc được
+    match /avatars/{uid}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    
+    // Post media - ai cũng đọc được, chỉ authenticated user được upload
+    match /posts/{uid}/{postId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    
+    // Chat attachments - chỉ participants được truy cập
+    match /chats/{chatId}/{allPaths=**} {
+      allow read: if request.auth != null && 
+        exists(/databases/$(database)/documents/chats/$(chatId)/participants/$(request.auth.uid));
+      allow write: if request.auth != null && 
+        exists(/databases/$(database)/documents/chats/$(chatId)/participants/$(request.auth.uid));
+    }
+    
+    // Group avatars - ai cũng đọc được, chỉ group members được ghi
+    match /groups/{groupId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+    
+    // Short videos - ai cũng đọc được, chỉ author được ghi
+    match /videos/{uid}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    
+    // Temp upload folder - authenticated users only, auto-delete after 7 days
+    match /temp/{uid}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

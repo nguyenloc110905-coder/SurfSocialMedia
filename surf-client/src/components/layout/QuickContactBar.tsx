@@ -16,6 +16,22 @@ interface Friend {
   avatarUrl?: string;
 }
 
+function FriendAvatar({ avatarUrl, name, textSize = 'text-sm' }: { avatarUrl?: string; name: string; textSize?: string }) {
+  const [imgError, setImgError] = useState(false);
+  return avatarUrl && !imgError ? (
+    <img
+      src={optimizeImageUrl(avatarUrl)}
+      alt={name}
+      className="w-full h-full object-cover"
+      onError={() => setImgError(true)}
+    />
+  ) : (
+    <span className={`w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white font-bold ${textSize}`}>
+      {getInitials(name)}
+    </span>
+  );
+}
+
 function getInitials(name: string) {
   const words = name.split(' ').filter(Boolean);
   if (words.length >= 2) return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -205,8 +221,8 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
 
   return (
     <>
-    <div className={`hidden lg:block fixed right-3 top-[72px] z-30 transition-opacity duration-300${isShortVideo ? ' opacity-20 hover:opacity-100' : ''}`}>
-      <div className="flex items-start gap-1">
+    <div className={`hidden lg:block fixed right-3 top-[72px] z-30 transition-opacity duration-300${isShortVideo ? ' opacity-20 hover:opacity-100' : ''}`} style={{ height: 'calc(100vh - 80px)' }}>
+      <div className="flex items-start gap-1 h-full">
         {/* ── Mini Chat panel ── */}
         <div
           className={`transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0 ${
@@ -773,17 +789,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
                   >
                     <span className="relative flex-shrink-0 w-9 h-9 rounded-full overflow-visible">
                       <span className="w-9 h-9 rounded-full overflow-hidden block">
-                        {friend.avatarUrl ? (
-                          <img
-                            src={optimizeImageUrl(friend.avatarUrl)}
-                            alt={friend.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-xs font-bold">
-                            {getInitials(friend.name)}
-                          </span>
-                        )}
+                        <FriendAvatar avatarUrl={friend.avatarUrl} name={friend.name} textSize="text-xs" />
                       </span>
                       <PresenceBadge uid={friend.id} size="sm" />
                     </span>
@@ -802,7 +808,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
         {/* ── Icon bar ── */}
         <div
           style={{ width: sidebarExpanded ? '13rem' : '68px' }}
-          className="flex flex-col gap-2 py-3 px-2 rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/10 h-[calc(100vh-88px)] overflow-y-hidden hover:overflow-y-auto transition-[width] duration-300 ease-in-out scrollbar-hide"
+          className="flex flex-col gap-2 py-3 px-2 rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border border-gray-200/60 dark:border-slate-700/60 shadow-xl shadow-black/10 h-full overflow-y-auto transition-[width] duration-300 ease-in-out [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:transparent"
         >
 
           {/* Toggle expand button */}
@@ -918,13 +924,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
             >
               <span className="relative flex-shrink-0">
                 <span className="w-9 h-9 rounded-full overflow-hidden block ring-2 ring-white dark:ring-slate-800 shadow-sm">
-                  {friend.avatarUrl ? (
-                    <img src={optimizeImageUrl(friend.avatarUrl)} alt={friend.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-sm font-bold">
-                      {getInitials(friend.name)}
-                    </span>
-                  )}
+                  <FriendAvatar avatarUrl={friend.avatarUrl} name={friend.name} />
                 </span>
                 <PresenceBadge uid={friend.id} />
                 {(unreadByFriend[friend.id] ?? 0) > 0 && (

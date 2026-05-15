@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { optimizeAvatar } from '../../lib/image-cdn';
 
 interface AvatarProps {
@@ -49,12 +49,18 @@ export default function Avatar({
     return cleanName.substring(0, 1).toUpperCase();
   }, [name]);
 
+  const [imgError, setImgError] = useState(false);
   const optimizedSrc = src ? optimizeAvatar(src, sizePixels[size]) : '';
 
   return (
     <div className={`relative ${sizeClasses[size]} ${className}`}>
-      {src ? (
-        <img src={optimizedSrc} alt={name || ''} className="w-full h-full rounded-full object-cover" />
+      {src && !imgError ? (
+        <img
+          src={optimizedSrc}
+          alt={name || ''}
+          className="w-full h-full rounded-full object-cover"
+          onError={() => setImgError(true)}
+        />
       ) : (
         <div className="w-full h-full rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 dark:from-cyan-600 dark:to-blue-700 flex items-center justify-center">
           <span className="font-bold text-white drop-shadow-md">{initials}</span>

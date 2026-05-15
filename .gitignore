@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+.expo/
+**/.expo/
 
 # Env (never commit secrets)
 .env
