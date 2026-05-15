@@ -767,23 +767,6 @@ export default function FeedScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
-      {/* Header */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
-        <TouchableOpacity onPress={() => navigation.navigate('Home')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="menu-outline" size={24} color={C.text} />
-        </TouchableOpacity>
-        {/* Absolute center so title stays centered regardless of side icon counts */}
-        <Text style={[s.headerTitle, { color: C.text }]} pointerEvents="none">Surf</Text>
-        <View style={{ flexDirection: 'row', gap: 14 }}>
-          <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="search-outline" size={24} color={C.text} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Messages')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="chatbubble-outline" size={23} color={C.text} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       <FlatList
         data={(isFirstLoad ? SKELETON_KEYS : posts) as (string | Post)[]}
         keyExtractor={(item) => (typeof item === 'string' ? item : (item as Post).id)}
@@ -849,8 +832,6 @@ export default function FeedScreen({ navigation }: Props) {
 // Styles
 const s = StyleSheet.create({
   root: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
-  headerTitle: { fontSize: 20, fontWeight: '700', letterSpacing: 0.5, position: 'absolute', left: 0, right: 0, textAlign: 'center' },
   list: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 16 },
   card: { borderRadius: 14, borderWidth: 1, marginBottom: 12, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },

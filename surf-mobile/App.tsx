@@ -4,16 +4,59 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Navigation from './src/navigation';
 import { useAuthStore } from './src/stores/authStore';
 import { useFeedStore } from './src/stores/feedStore';
+import { isDevModeEnabled, logDebugInfo, shouldClearAuthOnStartup } from './src/lib/debug-config';
 
 export default function App() {
   const initialize = useAuthStore((s) => s.initialize);
+  const setLoading = useAuthStore((s) => s.setLoading) as (loading: boolean) => void;
+  const resetAuth = useAuthStore((s) => s.resetAuth);
   const user = useAuthStore((s) => s.user);
   const fetchFeed = useFeedStore((s) => s.fetch);
 
   useEffect(() => {
-    const unsubscribe = initialize();
-    return unsubscribe;
-  }, [initialize]);
+    logDebugInfo();
+    const devMode = isDevModeEnabled();
+    const shouldClear = shouldClearAuthOnStartup();
+    
+    console.log(`📲 App init: devMode=${devMode}, shouldClear=${shouldClear}`);
+
+    // Clear auth if needed (async, but don't wait - just start it)
+    if (shouldClear) {
+      console.log('🔑 Clearing auth on startup');
+      resetAuth();
+    }
+
+    // Setup auth listener immediately (sync)
+    if (devMode) {
+      import('./src/lib/debug-config').then(({ getDebugScreen }) => {
+        const debugScreen = getDebugScreen();
+        if (debugScreen !== 'Login' && debugScreen !== 'Register') {
+          console.log('⚙️ Dev mode: setting mock user for Main screens');
+          useAuthStore.getState().setUser({
+            uid: 'dev-mock-uid',
+            email: 'dev@mock.com',
+            displayName: 'Dev Mode User',
+            photoURL: '',
+            emailVerified: true,
+          } as any);
+        } else {
+          console.log(`⚙️ Dev mode: testing ${debugScreen} screen, keeping user null`);
+          useAuthStore.getState().setUser(null);
+        }
+        setLoading(false);
+      });
+    } else {
+      console.log('🔐 Normal mode: initializing Firebase listener');
+      const unsubscribe = initialize();
+      console.log('✅ Firebase listener subscribed');
+      
+      // Cleanup on unmount
+      return () => {
+        console.log('🧹 Cleaning up Firebase listener');
+        unsubscribe();
+      };
+    }
+  }, [initialize, setLoading, resetAuth]);
 
   // Prefetch feed ngay khi auth xong — chạy song song với navigation render
   useEffect(() => {
@@ -21,8 +64,8 @@ export default function App() {
   }, [user, fetchFeed]);
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="auto" />
+    <SafeAreaProvider style={{ backgroundColor: '#0c1929' }}>
+      <StatusBar style="light" />
       <Navigation />
     </SafeAreaProvider>
   );
