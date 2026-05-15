@@ -72,13 +72,13 @@ export const useFeedStore = create<FeedState>((set, get) => ({
         '/api/feed'
       );
       set({
-        posts: data.posts ?? [],
+        posts: (data.posts ?? []).filter((p): p is FeedPost => p != null && typeof p.id === 'string'),
         hasMore: data.hasMore ?? !!data.nextLastId,
         nextCursor: data.nextLastId ?? null,
         lastFetched: Date.now(),
       });
       // Prefetch first batch of images so they render instantly
-      const toPreload = (data.posts ?? [])
+      const toPreload = (data.posts ?? []).filter((p) => p != null)
         .flatMap((p) => p.mediaUrls)
         .filter((u) => !u.includes('/video/upload/') && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(u))
         .slice(0, 20);
@@ -98,8 +98,8 @@ export const useFeedStore = create<FeedState>((set, get) => ({
       const data = await api.get<{ posts: FeedPost[]; nextLastId?: string; hasMore?: boolean }>(
         `/api/feed?lastId=${nextCursor}`
       );
-      const incoming = data.posts ?? [];
-      const existingIds = new Set(posts.map((p) => p.id));
+      const incoming = (data.posts ?? []).filter((p): p is FeedPost => p != null && typeof p.id === 'string');
+      const existingIds = new Set(posts.filter(p => p != null).map((p) => p.id));
       const filtered = incoming.filter((p) => !existingIds.has(p.id));
       set((s) => ({
         posts: [...s.posts, ...filtered],

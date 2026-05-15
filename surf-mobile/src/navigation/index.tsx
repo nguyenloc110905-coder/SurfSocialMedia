@@ -6,6 +6,7 @@ import AuthScreen from '@/screens/AuthScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
+import ChatScreen from '@/screens/ChatScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
 import { isDevModeEnabled, getDebugScreen } from '@/lib/debug-config';
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   Profile: { userId?: string };
   AI: undefined;
   Messages: undefined;
+  Chat: { conversationId: string; title: string; peerUid?: string | null; peerAvatar?: string | null; };
   Settings: undefined;
   CreatePost: undefined;
   Marketplace: undefined;
@@ -78,6 +80,7 @@ export default function Navigation() {
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="AI" component={AIScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen
               name="CreatePost"

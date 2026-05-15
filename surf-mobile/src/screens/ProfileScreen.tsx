@@ -106,6 +106,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [friendStatus, setFriendStatus] = useState<'loading' | 'friends' | 'request_sent' | 'stranger'>('loading');
   const [actionLoading, setActionLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
 
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -200,6 +201,26 @@ export default function ProfileScreen({ navigation, route }: Props) {
     }
   };
 
+  // ── Start chat ───────────────────────────────────────────────────────────────
+
+  const handleStartChat = async () => {
+    if (chatLoading || !targetUid) return;
+    setChatLoading(true);
+    try {
+      const res = await api.post<{ item: { id: string } }>('/api/conversations', { peerUid: targetUid });
+      const convId = res.item?.id;
+      if (!convId) return;
+      navigation.navigate('Chat', {
+        conversationId: convId,
+        title: displayName,
+        peerUid: targetUid,
+        peerAvatar: photoURL ?? null,
+      });
+    } catch { /* ignore */ } finally {
+      setChatLoading(false);
+    }
+  };
+
   // ── Derived display values ─────────────────────────────────────────────────
 
   const displayName = isOwn
@@ -281,8 +302,15 @@ export default function ProfileScreen({ navigation, route }: Props) {
                   {friendBtnLabel()}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.btnOutline, { borderColor: C.border }]}>
-                <Ionicons name="chatbubble-outline" size={16} color={C.text} />
+              <TouchableOpacity
+                style={[s.btnOutline, { borderColor: C.border }]}
+                onPress={handleStartChat}
+                disabled={chatLoading}
+              >
+                {chatLoading
+                  ? <ActivityIndicator size={14} color={C.text} />
+                  : <Ionicons name="chatbubble-outline" size={16} color={C.text} />
+                }
                 <Text style={[s.btnOutlineText, { color: C.text }]}>Nhắn tin</Text>
               </TouchableOpacity>
             </>
