@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
   useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -100,10 +101,21 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
 
           {/* User info */}
           {user && (
-            <View style={[s.userSection, { borderBottomColor: C.border }]}>
-              <View style={[s.avatar, { backgroundColor: C.border }]}>
-                <Ionicons name="person" size={24} color={C.subtext} />
-              </View>
+            <TouchableOpacity
+              style={[s.userSection, { borderBottomColor: C.border }]}
+              activeOpacity={0.7}
+              onPress={() => {
+                onClose();
+                navigation.navigate('Profile', { userId: user.uid });
+              }}
+            >
+              {user.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={s.avatar} />
+              ) : (
+                <View style={[s.avatar, { backgroundColor: C.border, alignItems: 'center', justifyContent: 'center' }]}>
+                  <Ionicons name="person" size={24} color={C.subtext} />
+                </View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={[s.userName, { color: C.text }]}>
                   {user.displayName || 'Người dùng'}
@@ -112,7 +124,8 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
                   {user.email}
                 </Text>
               </View>
-            </View>
+              <Ionicons name="chevron-forward" size={18} color={C.subtext} />
+            </TouchableOpacity>
           )}
 
           {/* Menu items */}
@@ -197,6 +210,7 @@ const s = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   userName: {
     fontSize: 14,
