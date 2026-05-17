@@ -7,6 +7,7 @@ import { useFeedStore } from './src/stores/feedStore';
 import { isDevModeEnabled, logDebugInfo, shouldClearAuthOnStartup } from './src/lib/debug-config';
 import { connectSocket, disconnectSocket, getSocket } from './src/lib/socket';
 import { useNotificationStore } from './src/stores/notificationStore';
+import { useFriendStore } from './src/stores/friendStore';
 
 export default function App() {
   const initialize = useAuthStore((s) => s.initialize);
@@ -32,7 +33,7 @@ export default function App() {
     if (devMode) {
       import('./src/lib/debug-config').then(({ getDebugScreen }) => {
         const debugScreen = getDebugScreen();
-        if (debugScreen !== 'Login' && debugScreen !== 'Register') {
+        if (debugScreen !== 'Auth') {
           console.log('⚙️ Dev mode: setting mock user for Main screens');
           useAuthStore.getState().setUser({
             uid: 'dev-mock-uid',
@@ -69,12 +70,14 @@ export default function App() {
     if (!user?.uid) {
       disconnectSocket();
       useNotificationStore.getState().clear();
+      useFriendStore.getState().clear();
       return;
     }
 
     connectSocket(user.uid);
     const socket = getSocket();
     const notificationStore = useNotificationStore.getState();
+    useFriendStore.getState().fetchRequests().catch(() => {});
     const handleNotification = (payload: unknown) => {
       notificationStore.upsertNotification(payload as any);
     };
@@ -83,6 +86,7 @@ export default function App() {
     };
     const handleFriendRequest = (payload: unknown) => {
       useNotificationStore.getState().upsertFriendRequest(payload as any);
+      useFriendStore.getState().upsertIncomingRequest(payload as any);
     };
 
     socket.on('notification:new', handleNotification);

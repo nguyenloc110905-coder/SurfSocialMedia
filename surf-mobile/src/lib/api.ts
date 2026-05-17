@@ -63,6 +63,8 @@ export const api = {
     request<T>(path, { method: 'GET', ...opts }),
   post: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
     request<T>(path, { method: 'POST', body, ...opts }),
+  put: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
+    request<T>(path, { method: 'PUT', body, ...opts }),
   patch: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
     request<T>(path, { method: 'PATCH', body, ...opts }),
   delete: <T>(path: string, opts?: Partial<RequestOptions>) =>
