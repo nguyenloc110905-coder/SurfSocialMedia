@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useSidebarStore } from '@/stores/sidebarStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 import Sidebar from '@/components/Sidebar';
 
 // Lazy-import tab content screens
@@ -19,6 +20,7 @@ import HomeScreen from './HomeScreen';
 import FeedScreen from './FeedScreen';
 import ShortVideoScreen from './ShortVideoScreen';
 import MarketplaceScreen from './MarketplaceScreen';
+import NotificationCenterScreen from './NotificationCenterScreen';
 
 type Tab = 'home' | 'feed' | 'video' | 'create' | 'friends' | 'notifications' | 'marketplace';
 
@@ -82,6 +84,9 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const [active, setActive] = useState<Tab>('home');
   const [visited] = useState<Set<Tab>>(new Set<Tab>(['home']));
+  const unreadNotifications = useNotificationStore((state) =>
+    state.items.filter((item) => !(item.read ?? item.isRead)).length
+  );
 
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
 
@@ -137,11 +142,9 @@ export default function MainTabsScreen({ navigation }: Props) {
           </View>
         )}
         {/* Notifications */}
-        {visited.has('notifications') && (
-          <View style={{ flex: 1, display: active === 'notifications' ? 'flex' : 'none' }}>
-            <PlaceholderTab label="Thông báo" icon="notifications-outline" />
-          </View>
-        )}
+        <View style={{ flex: 1, display: active === 'notifications' ? 'flex' : 'none' }}>
+          <NotificationCenterScreen navigation={navigation as any} isActive={active === 'notifications'} />
+        </View>
         {/* Marketplace */}
         {visited.has('marketplace') && (
           <View style={{ flex: 1, display: active === 'marketplace' ? 'flex' : 'none' }}>
@@ -190,13 +193,18 @@ export default function MainTabsScreen({ navigation }: Props) {
                 onPress={() => handleTab(tab.key)}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name={isActive ? tab.iconActive : tab.icon}
-                  size={26}
-                  color={color}
-                />
-              </TouchableOpacity>
-            );
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.icon}
+                size={26}
+                color={color}
+              />
+              {tab.key === 'notifications' && unreadNotifications > 0 && (
+                <View style={[s.badge, { backgroundColor: C.accent }]}>
+                  <Text style={s.badgeText}>{unreadNotifications > 99 ? '99+' : unreadNotifications}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
           })}
         </View>
       )}
@@ -224,6 +232,18 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  badge: {
+    position: 'absolute',
+    top: 10,
+    right: '28%',
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   floatingBtn: {
     position: 'absolute',
     bottom: 120,

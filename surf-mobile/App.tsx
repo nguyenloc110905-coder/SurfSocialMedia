@@ -5,6 +5,8 @@ import Navigation from './src/navigation';
 import { useAuthStore } from './src/stores/authStore';
 import { useFeedStore } from './src/stores/feedStore';
 import { isDevModeEnabled, logDebugInfo, shouldClearAuthOnStartup } from './src/lib/debug-config';
+import { connectSocket, disconnectSocket, getSocket } from './src/lib/socket';
+import { useNotificationStore } from './src/stores/notificationStore';
 
 export default function App() {
   const initialize = useAuthStore((s) => s.initialize);
@@ -62,6 +64,38 @@ export default function App() {
   useEffect(() => {
     if (user) fetchFeed();
   }, [user, fetchFeed]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      disconnectSocket();
+      useNotificationStore.getState().clear();
+      return;
+    }
+
+    connectSocket(user.uid);
+    const socket = getSocket();
+    const notificationStore = useNotificationStore.getState();
+    const handleNotification = (payload: unknown) => {
+      notificationStore.upsertNotification(payload as any);
+    };
+    const handleMessage = (payload: unknown) => {
+      useNotificationStore.getState().upsertMessage(payload as any, user.uid);
+    };
+    const handleFriendRequest = (payload: unknown) => {
+      useNotificationStore.getState().upsertFriendRequest(payload as any);
+    };
+
+    socket.on('notification:new', handleNotification);
+    socket.on('message:new', handleMessage);
+    socket.on('friendRequestReceived', handleFriendRequest);
+
+    return () => {
+      socket.off('notification:new', handleNotification);
+      socket.off('message:new', handleMessage);
+      socket.off('friendRequestReceived', handleFriendRequest);
+      disconnectSocket();
+    };
+  }, [user?.uid]);
 
   return (
     <SafeAreaProvider style={{ backgroundColor: '#0c1929' }}>
