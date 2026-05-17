@@ -43,7 +43,7 @@ const NOTIFICATION_LABELS: Record<NotificationType, string> = {
 
 const NOTIFICATION_ICONS: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
   friend_request: 'person-add-outline',
-  friend_accept: 'person-checkmark-outline',
+  friend_accept: 'checkmark-circle-outline',
   post_reaction: 'heart-outline',
   comment: 'chatbubble-outline',
   mention: 'at-outline',

@@ -19,6 +19,7 @@ import { useAuthStore } from '@/stores/authStore';
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
   onFeedPress?: () => void;
+  onFriendsPress?: () => void;
 };
 
 // ── Dimensions ───────────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ function timeAgo(raw: any): string {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function HomeScreen({ navigation, onFeedPress }: Props) {
+export default function HomeScreen({ navigation, onFeedPress, onFriendsPress }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const posts = useFeedStore((s) => s.posts);
@@ -222,12 +223,16 @@ export default function HomeScreen({ navigation, onFeedPress }: Props) {
           </View>
 
           {/* Đề xuất kết bạn — chỉ tiêu đề, không có mock row */}
-          <View style={[s.card, s.rightCardMid, { backgroundColor: C.card, borderColor: C.border }]}>
+          <TouchableOpacity
+            style={[s.card, s.rightCardMid, { backgroundColor: C.card, borderColor: C.border }]}
+            onPress={onFriendsPress}
+            activeOpacity={0.85}
+          >
             <Text style={[s.sectionTitle, { color: C.text }]}>Đề xuất kết bạn</Text>
             <View style={s.emptySection}>
               <Ionicons name="people-outline" size={22} color={C.placeholder} />
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Placeholder card */}
           <View style={[s.card, s.rightCardBot, { backgroundColor: C.card2, borderColor: C.border }]} />

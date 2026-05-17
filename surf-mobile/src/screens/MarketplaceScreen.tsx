@@ -509,7 +509,7 @@ const s = StyleSheet.create({
 
   // Empty
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
-  emptyTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center', tracking: -0.5 },
+  emptyTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center', letterSpacing: -0.5 },
   emptySub: { fontSize: 14, textAlign: 'center', opacity: 0.8 },
   retryBtn: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 18, marginTop: 4 },
   retryText: { color: '#fff', fontSize: 14, fontWeight: '700' },

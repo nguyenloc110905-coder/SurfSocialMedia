@@ -1,24 +1,27 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  View,
+  Platform,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
   useColorScheme,
-  Platform,
+  View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useSidebarStore } from '@/stores/sidebarStore';
+import { useNotificationStore } from '@/stores/notificationStore';
+import { useFriendStore } from '@/stores/friendStore';
 import Sidebar from '@/components/Sidebar';
 
-// Lazy-import tab content screens
 import HomeScreen from './HomeScreen';
 import FeedScreen from './FeedScreen';
 import ShortVideoScreen from './ShortVideoScreen';
 import MarketplaceScreen from './MarketplaceScreen';
+import NotificationCenterScreen from './NotificationCenterScreen';
+import FriendsScreen from './FriendsScreen';
 
 type Tab = 'home' | 'feed' | 'video' | 'create' | 'friends' | 'notifications' | 'marketplace';
 
@@ -34,6 +37,7 @@ const DARK = {
   subtext: '#64748b',
   accent: '#0ea5e9',
 };
+
 const LIGHT = {
   bg: '#f8fafc',
   bar: '#ffffff',
@@ -56,24 +60,14 @@ type TabDef = {
 const TABS: TabDef[] = [
   { key: 'home', icon: 'home-outline', iconActive: 'home', label: 'Trang chủ' },
   { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', label: 'Video' },
+<<<<<<< HEAD
+=======
+  { key: 'friends', icon: 'people-outline', iconActive: 'people', label: 'Bạn bè' },
+>>>>>>> 25c43014152352e381eaa9dbb7e62427ad3ab04c
   { key: 'create', icon: 'add-circle-outline', iconActive: 'add-circle', label: 'Tạo', isCreate: true },
   { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', label: 'Chợ' },
   { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', label: 'Thông báo' },
 ];
-
-// Placeholder for unbuilt tabs
-function PlaceholderTab({ label, icon }: { label: string; icon: keyof typeof Ionicons.glyphMap }) {
-  const scheme = useColorScheme();
-  const C = scheme === 'dark' ? DARK : LIGHT;
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 }}>
-        <Ionicons name={icon} size={52} color={C.subtext} />
-        <Text style={{ color: C.subtext, fontSize: 16 }}>{label}</Text>
-      </View>
-    </SafeAreaView>
-  );
-}
 
 export default function MainTabsScreen({ navigation }: Props) {
   const scheme = useColorScheme();
@@ -82,7 +76,10 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const [active, setActive] = useState<Tab>('home');
   const [visited] = useState<Set<Tab>>(new Set<Tab>(['home']));
-
+  const unreadNotifications = useNotificationStore((state) =>
+    state.items.filter((item) => !(item.read ?? item.isRead)).length
+  );
+  const incomingFriendRequests = useFriendStore((state) => state.incomingRequests.length);
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
 
   const handleTab = useCallback((tab: Tab) => {
@@ -92,14 +89,13 @@ export default function MainTabsScreen({ navigation }: Props) {
     }
     visited.add(tab);
     setActive(tab);
-  }, [visited, navigation]);
+  }, [navigation, visited]);
 
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
   const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      {/* ── Header with menu button ── */}
       <View style={[s.header, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
         <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar}>
           <Ionicons name="menu-outline" size={24} color={C.text} />
@@ -110,39 +106,39 @@ export default function MainTabsScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Tab content area ── */}
       <View style={{ flex: 1 }}>
-        {/* Home */}
         {visited.has('home') && (
           <View style={{ flex: 1, display: active === 'home' ? 'flex' : 'none' }}>
-            <HomeScreen navigation={navigation as any} onFeedPress={() => handleTab('feed')} />
+            <HomeScreen
+              navigation={navigation as any}
+              onFeedPress={() => handleTab('feed')}
+              onFriendsPress={() => handleTab('friends')}
+            />
           </View>
         )}
-        {/* Feed — hidden tab, no button in bar */}
+
         {visited.has('feed') && (
           <View style={{ flex: 1, display: active === 'feed' ? 'flex' : 'none' }}>
             <FeedScreen navigation={navigation as any} />
           </View>
         )}
-        {/* Short Video */}
+
         {visited.has('video') && (
           <View style={{ flex: 1, display: active === 'video' ? 'flex' : 'none' }}>
             <ShortVideoScreen />
           </View>
         )}
-        {/* Friends */}
+
         {visited.has('friends') && (
           <View style={{ flex: 1, display: active === 'friends' ? 'flex' : 'none' }}>
-            <PlaceholderTab label="Bạn bè" icon="people-outline" />
+            <FriendsScreen navigation={navigation as any} />
           </View>
         )}
-        {/* Notifications */}
-        {visited.has('notifications') && (
-          <View style={{ flex: 1, display: active === 'notifications' ? 'flex' : 'none' }}>
-            <PlaceholderTab label="Thông báo" icon="notifications-outline" />
-          </View>
-        )}
-        {/* Marketplace */}
+
+        <View style={{ flex: 1, display: active === 'notifications' ? 'flex' : 'none' }}>
+          <NotificationCenterScreen navigation={navigation as any} isActive={active === 'notifications'} />
+        </View>
+
         {visited.has('marketplace') && (
           <View style={{ flex: 1, display: active === 'marketplace' ? 'flex' : 'none' }}>
             <MarketplaceScreen navigation={navigation as any} />
@@ -150,10 +146,8 @@ export default function MainTabsScreen({ navigation }: Props) {
         )}
       </View>
 
-      {/* ── Sidebar ── */}
       <Sidebar visible={sidebarOpen} onClose={closeSidebar} navigation={navigation} />
 
-      {/* ── Bottom tab bar ── */}
       {active !== 'home' && (
         <View
           style={[
@@ -177,6 +171,7 @@ export default function MainTabsScreen({ navigation }: Props) {
                   style={s.tabBtn}
                   onPress={() => handleTab(tab.key)}
                   activeOpacity={0.7}
+                  accessibilityLabel={tab.label}
                 >
                   <Ionicons name="add-circle" size={42} color={C.accent} />
                 </TouchableOpacity>
@@ -189,12 +184,23 @@ export default function MainTabsScreen({ navigation }: Props) {
                 style={s.tabBtn}
                 onPress={() => handleTab(tab.key)}
                 activeOpacity={0.7}
+                accessibilityLabel={tab.label}
               >
                 <Ionicons
                   name={isActive ? tab.iconActive : tab.icon}
                   size={26}
                   color={color}
                 />
+                {tab.key === 'notifications' && unreadNotifications > 0 && (
+                  <View style={[s.badge, { backgroundColor: C.accent }]}>
+                    <Text style={s.badgeText}>{unreadNotifications > 99 ? '99+' : unreadNotifications}</Text>
+                  </View>
+                )}
+                {tab.key === 'friends' && incomingFriendRequests > 0 && (
+                  <View style={[s.badge, { backgroundColor: C.accent }]}>
+                    <Text style={s.badgeText}>{incomingFriendRequests > 99 ? '99+' : incomingFriendRequests}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}
@@ -224,4 +230,19 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+<<<<<<< HEAD
+=======
+  badge: {
+    position: 'absolute',
+    top: 10,
+    right: '24%',
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+>>>>>>> 25c43014152352e381eaa9dbb7e62427ad3ab04c
 });
