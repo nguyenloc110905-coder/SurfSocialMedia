@@ -54,11 +54,11 @@ type TabDef = {
 };
 
 const TABS: TabDef[] = [
-  { key: 'home',          icon: 'home-outline',          iconActive: 'home',               label: 'Trang chủ' },
-  { key: 'video',         icon: 'videocam-outline',       iconActive: 'videocam',           label: 'Video' },
-  { key: 'create',        icon: 'add-circle-outline',     iconActive: 'add-circle',         label: 'Tạo',     isCreate: true },
-  { key: 'marketplace',  icon: 'storefront-outline',     iconActive: 'storefront',         label: 'Chợ' },
-  { key: 'notifications', icon: 'notifications-outline',  iconActive: 'notifications',      label: 'Thông báo' },
+  { key: 'home', icon: 'home-outline', iconActive: 'home', label: 'Trang chủ' },
+  { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', label: 'Video' },
+  { key: 'create', icon: 'add-circle-outline', iconActive: 'add-circle', label: 'Tạo', isCreate: true },
+  { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', label: 'Chợ' },
+  { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', label: 'Thông báo' },
 ];
 
 // Placeholder for unbuilt tabs
@@ -223,21 +223,5 @@ const s = StyleSheet.create({
     height: TAB_H,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  floatingBtn: {
-    position: 'absolute',
-    bottom: 120,
-    right: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    zIndex: 10,
   },
 });
