@@ -732,42 +732,47 @@ body {
 
 .mc-control {
   width: 100%;
+  outline: none !important;
 }
 
 .mc-highlighter,
 .mc-input {
-  padding: 10px 48px 10px 16px;
-  font-size: 14px;
-  line-height: 1.4;
-  border-radius: 9999px;
-  box-sizing: border-box;
-  min-height: 40px;
+  padding: 10px 80px 10px 16px !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  border-radius: 9999px !important;
+  box-sizing: border-box !important;
+  min-height: 40px !important;
 }
 
 .mc-highlighter {
-  border: 2px solid transparent;
-  color: transparent;
-  overflow: hidden;
+  border: 2px solid transparent !important;
+  color: transparent !important;
+  overflow: hidden !important;
 }
 
 .mc-input {
-  border: 2px solid #e5e7eb;
-  background: white;
-  color: #111827;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  width: 100%;
+  border: 2px solid #e5e7eb !important;
+  background: white !important;
+  color: #111827 !important;
+  outline: none !important;
+  resize: none !important;
+  overflow: hidden !important;
+  transition: border-color 0.15s, box-shadow 0.15s !important;
+  width: 100% !important;
 }
 
 .mc-input::placeholder {
-  color: #6b7280;
+  color: #6b7280 !important;
 }
 
-.mc-input:focus {
-  border-color: #22d3ee;
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
+.mc-input:focus,
+.mc-input:focus-visible {
+  outline: none !important;
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25) !important;
+  --tw-ring-shadow: none !important;
+  --tw-ring-offset-shadow: none !important;
 }
 
 .mc-input:disabled {
@@ -811,18 +816,22 @@ body {
 
 /* Dark mode */
 .dark .mc-input {
-  background: rgba(15, 23, 42, 0.5);
-  border-color: #334155;
-  color: #f3f4f6;
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: #334155 !important;
+  color: #f3f4f6 !important;
 }
 
-.dark .mc-input:focus {
-  border-color: #22d3ee;
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
+.dark .mc-input:focus,
+.dark .mc-input:focus-visible {
+  outline: none !important;
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2) !important;
+  --tw-ring-shadow: none !important;
+  --tw-ring-offset-shadow: none !important;
 }
 
 .dark .mc-input--sm {
-  border-color: #334155;
+  border-color: #334155 !important;
 }
 
 .dark .mc-suggestions-list {

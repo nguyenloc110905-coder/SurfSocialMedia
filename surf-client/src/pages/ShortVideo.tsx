@@ -8,6 +8,16 @@ import { useAuthStore } from '../stores/authStore';
 import { useClipFeedStore, type ClipVideo } from '../stores/clipFeedStore';
 import { getSocket } from '../lib/socket';
 
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
+];
+
 // Chuyển đổi URL Cloudinary video sang quality khác nhau
 function applyCloudinaryQuality(url: string, quality: string): string {
   if (!url.includes('/video/upload/')) return url;
@@ -103,6 +113,12 @@ function ClipCard({
   const [commentLoading, setCommentLoading] = useState(false);
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const commentInputRef = useRef<HTMLInputElement>(null);
+
+  // Report State
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportCategory, setReportCategory] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   // Real-time: listen for new comments on this video
   useEffect(() => {
@@ -267,6 +283,28 @@ function ClipCard({
       onDelete(video.id);
     } catch {
       alert('Không thể xóa video. Vui lòng thử lại.');
+    }
+  };
+
+  const submitReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (reportSubmitting || !reportCategory) return;
+    setReportSubmitting(true);
+    try {
+      const catLabel = REPORT_CATEGORIES.find((c) => c.key === reportCategory)?.label || reportCategory;
+      const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
+      
+      const endpoint = isPost ? `/api/posts/${video.id}/report` : `/api/videos/${video.id}/report`;
+      await api.post(endpoint, { reason: reasonText });
+      
+      showToast('🚩 Đã gửi báo cáo video');
+      setShowReportModal(false);
+      setReportCategory('');
+      setReportDetails('');
+    } catch {
+      showToast('❌ Không thể gửi báo cáo');
+    } finally {
+      setReportSubmitting(false);
     }
   };
 
@@ -517,6 +555,18 @@ function ClipCard({
                 >
                   <span className="text-lg">👎</span>
                   <span className="font-medium">Không quan tâm</span>
+                </button>
+
+                {/* Báo cáo video */}
+                <button
+                  onClick={() => {
+                    setShowOptions(false);
+                    setShowReportModal(true);
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 text-sm w-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-red-600 dark:text-red-400"
+                >
+                  <span className="text-lg">🚩</span>
+                  <span className="font-medium">Báo cáo video</span>
                 </button>
 
                 <div className="h-px bg-gray-100 dark:bg-slate-700 mx-3" />
@@ -783,6 +833,73 @@ function ClipCard({
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Report Modal ─────────────────────────────── */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-4">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">Báo cáo video</h2>
+              <button
+                type="button"
+                onClick={() => setShowReportModal(false)}
+                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-white"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={submitReport} className="p-4">
+              <div className="mb-4 text-sm text-slate-600 dark:text-slate-300">
+                Vui lòng chọn lý do báo cáo để chúng tôi có thể xem xét và xử lý theo Tiêu chuẩn Cộng đồng của Surf.
+              </div>
+              <div className="mb-4 max-h-[250px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
+                {REPORT_CATEGORIES.map((category) => (
+                  <label key={category.key} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <input
+                      type="radio"
+                      name="reportCategory"
+                      value={category.key}
+                      checked={reportCategory === category.key}
+                      onChange={(e) => setReportCategory(e.target.value)}
+                      className="h-4 w-4 rounded-full border-slate-300 dark:border-slate-600 bg-transparent text-cyan-500 focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-slate-900"
+                    />
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{category.label}</span>
+                  </label>
+                ))}
+              </div>
+              {reportCategory && (
+                <div className="mb-6">
+                  <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">Chi tiết bổ sung (không bắt buộc)</label>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Vui lòng cung cấp thêm thông tin..."
+                    className="h-20 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowReportModal(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={reportSubmitting || !reportCategory}
+                  className="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-bold text-white transition hover:bg-cyan-600 disabled:opacity-50"
+                >
+                  {reportSubmitting ? 'Đang gửi...' : 'Gửi báo cáo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

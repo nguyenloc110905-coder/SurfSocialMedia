@@ -1514,6 +1514,7 @@ export default function Profile() {
                           });
                         });
                       }}
+                      onPostCreated={(newPost) => setPosts((prev) => [newPost as Post, ...prev])}
                     />
                   ))}
                 </div>

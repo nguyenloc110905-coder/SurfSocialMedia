@@ -1,12 +1,13 @@
 /**
  * Upload ảnh lên Cloudinary từ trình duyệt (unsigned upload).
- * Ưu tiên: 1) cloudinary-config.ts  2) window.__CLOUDINARY_CONFIG__  3) import.meta.env
+ * Hỗ trợ round-robin qua nhiều tài khoản để bypass limit bản free.
  */
 
 import {
   CLOUDINARY_CLOUD_NAME as CONFIG_CLOUD_NAME,
   CLOUDINARY_API_KEY as CONFIG_API_KEY,
   CLOUDINARY_UPLOAD_PRESET as CONFIG_UPLOAD_PRESET,
+  CLOUDINARY_ACCOUNTS,
 } from './cloudinary-config';
 
 declare global {
@@ -15,7 +16,17 @@ declare global {
   }
 }
 
-function getConfig() {
+function getRandomConfig() {
+  // Lấy danh sách hợp lệ
+  const validAccounts = CLOUDINARY_ACCOUNTS?.filter(acc => acc.cloudName && acc.apiKey && acc.uploadPreset);
+  if (validAccounts && validAccounts.length > 0) {
+    const randomIndex = Math.floor(Math.random() * validAccounts.length);
+    const selected = validAccounts[randomIndex];
+    console.log('[Cloudinary LoadBalancer] Đang upload qua tài khoản:', selected.cloudName);
+    return selected;
+  }
+
+  // Fallback
   const w = typeof window !== 'undefined' ? window.__CLOUDINARY_CONFIG__ : undefined;
   return {
     cloudName:
@@ -33,39 +44,6 @@ function getConfig() {
   };
 }
 
-const CLOUD_NAME = getConfig().cloudName;
-const API_KEY = getConfig().apiKey;
-const UPLOAD_PRESET = getConfig().uploadPreset;
-
-if (import.meta.env.DEV) {
-  const ok = !!(CLOUD_NAME && API_KEY && UPLOAD_PRESET);
-  console.log(
-    ok
-      ? '[Cloudinary] env OK'
-      : '[Cloudinary] env thiếu: cloud_name=' +
-          !!CLOUD_NAME +
-          ', api_key=' +
-          !!API_KEY +
-          ', preset=' +
-          !!UPLOAD_PRESET
-  );
-}
-
-const UPLOAD_URL = () => {
-  if (!CLOUD_NAME) throw new Error('VITE_CLOUDINARY_CLOUD_NAME is required');
-  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
-};
-
-const VIDEO_UPLOAD_URL = () => {
-  if (!CLOUD_NAME) throw new Error('VITE_CLOUDINARY_CLOUD_NAME is required');
-  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`;
-};
-
-const RAW_UPLOAD_URL = () => {
-  if (!CLOUD_NAME) throw new Error('VITE_CLOUDINARY_CLOUD_NAME is required');
-  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`;
-};
-
 export type UploadOptions = {
   folder?: string;
   publicId?: string;
@@ -81,22 +59,24 @@ interface CloudinaryUploadResponse {
  * Upload một file hoặc blob lên Cloudinary, trả về secure_url.
  */
 export async function uploadImage(file: File | Blob, options: UploadOptions = {}): Promise<string> {
-  if (!API_KEY || !UPLOAD_PRESET) {
-    throw new Error('VITE_CLOUDINARY_API_KEY and VITE_CLOUDINARY_UPLOAD_PRESET are required');
+  const conf = getRandomConfig();
+  if (!conf.apiKey || !conf.uploadPreset || !conf.cloudName) {
+    throw new Error('Cloudinary config is missing');
   }
 
+  const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${conf.cloudName}/image/upload`;
   const formData = new FormData();
   if (file instanceof File) {
     formData.append('file', file);
   } else {
     formData.append('file', file, 'image.jpg');
   }
-  formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('api_key', API_KEY);
+  formData.append('upload_preset', conf.uploadPreset);
+  formData.append('api_key', conf.apiKey);
   if (options.folder) formData.append('folder', options.folder);
   if (options.publicId) formData.append('public_id', options.publicId);
 
-  const res = await fetch(UPLOAD_URL(), {
+  const res = await fetch(UPLOAD_URL, {
     method: 'POST',
     body: formData,
   });
@@ -125,22 +105,24 @@ export async function uploadImage(file: File | Blob, options: UploadOptions = {}
  * Upload tệp (pdf/doc/xlsx/zip/...) lên Cloudinary raw endpoint, trả về secure_url.
  */
 export async function uploadFile(file: File | Blob, options: UploadOptions = {}): Promise<string> {
-  if (!API_KEY || !UPLOAD_PRESET) {
-    throw new Error('VITE_CLOUDINARY_API_KEY and VITE_CLOUDINARY_UPLOAD_PRESET are required');
+  const conf = getRandomConfig();
+  if (!conf.apiKey || !conf.uploadPreset || !conf.cloudName) {
+    throw new Error('Cloudinary config is missing');
   }
 
+  const RAW_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${conf.cloudName}/raw/upload`;
   const formData = new FormData();
   if (file instanceof File) {
     formData.append('file', file);
   } else {
     formData.append('file', file, 'file.bin');
   }
-  formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('api_key', API_KEY);
+  formData.append('upload_preset', conf.uploadPreset);
+  formData.append('api_key', conf.apiKey);
   if (options.folder) formData.append('folder', options.folder);
   if (options.publicId) formData.append('public_id', options.publicId);
 
-  const res = await fetch(RAW_UPLOAD_URL(), {
+  const res = await fetch(RAW_UPLOAD_URL, {
     method: 'POST',
     body: formData,
   });
@@ -169,18 +151,20 @@ export async function uploadFile(file: File | Blob, options: UploadOptions = {})
  * Upload một file video lên Cloudinary, trả về secure_url.
  */
 export async function uploadVideo(file: File, options: UploadOptions = {}): Promise<string> {
-  if (!API_KEY || !UPLOAD_PRESET) {
-    throw new Error('VITE_CLOUDINARY_API_KEY and VITE_CLOUDINARY_UPLOAD_PRESET are required');
+  const conf = getRandomConfig();
+  if (!conf.apiKey || !conf.uploadPreset || !conf.cloudName) {
+    throw new Error('Cloudinary config is missing');
   }
 
+  const VIDEO_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${conf.cloudName}/video/upload`;
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('api_key', API_KEY);
+  formData.append('upload_preset', conf.uploadPreset);
+  formData.append('api_key', conf.apiKey);
   if (options.folder) formData.append('folder', options.folder);
   if (options.publicId) formData.append('public_id', options.publicId);
 
-  const res = await fetch(VIDEO_UPLOAD_URL(), { method: 'POST', body: formData });
+  const res = await fetch(VIDEO_UPLOAD_URL, { method: 'POST', body: formData });
 
   let data: CloudinaryUploadResponse & { error?: { message: string } };
   try {

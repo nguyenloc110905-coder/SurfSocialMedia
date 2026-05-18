@@ -1,67 +1,68 @@
 import { NavLink, Link } from 'react-router-dom';
+import { useT, type I18nKey } from '@/lib/i18n';
 
-const MAIN_NAV_ITEMS = [
+const MAIN_NAV_ITEMS: { to: string; titleKey: I18nKey; path: string }[] = [
   {
     to: '/feed',
-    title: 'Feed',
+    titleKey: 'nav_feed',
     path: 'M10.3 2.7 3 9.19V20a2 2 0 0 0 2 2h5v-6h4v6h5a2 2 0 0 0 2-2V9.19L13.7 2.7a2 2 0 0 0-2.4 0Z',
   },
   {
     to: '/feed/short-video',
-    title: 'Surf Clips',
+    titleKey: 'nav_surf_clips',
     path: 'M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4Z',
   },
   {
     to: '/feed/friends',
-    title: 'Bạn bè',
+    titleKey: 'nav_friends',
     path: 'M12 12a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm5-3a2.5 2.5 0 1 0-2.5 2.5A2.5 2.5 0 0 0 17 9Zm-10 0A2.5 2.5 0 1 0 9.5 6.5 2.5 2.5 0 0 0 7 9Zm0 2a3.5 3.5 0 0 0-3.5 3.5V16a1 1 0 0 0 1 1h5v-2a4.986 4.986 0 0 1 1.29-3.33A3.482 3.482 0 0 0 7 11Zm5 1a3.5 3.5 0 0 0-3.5 3.5V17a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-1.5A3.5 3.5 0 0 0 12 12Zm5 0a3.482 3.482 0 0 0-3.79 2.67A4.986 4.986 0 0 1 14 16v1h5a1 1 0 0 0 1-1v-.5A3.5 3.5 0 0 0 17 12Z',
   },
   {
     to: '/feed/groups',
-    title: 'Nhóm',
+    titleKey: 'nav_groups',
     path: 'M12 2a4 4 0 0 1 4 4v1h.5a3.5 3.5 0 0 1 3.5 3.5v7a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 3.5 17.5v-7A3.5 3.5 0 0 1 7 7h.5V6a4 4 0 0 1 4-4Zm0 2a2 2 0 0 0-2 2v1h4V6a2 2 0 0 0-2-2Zm-2 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm-6 2.5a1.5 1.5 0 0 0-1.5 1.5v2.5h3v-2.5a1.5 1.5 0 0 0-1.5-1.5Zm6 0a1.5 1.5 0 0 0-1.5 1.5v2.5h3v-2.5a1.5 1.5 0 0 0-1.5-1.5Z',
   },
   {
     to: '/feed/market',
-    title: 'Surf Market',
+    titleKey: 'nav_market',
     path: 'M4 6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h4V6zm8 0V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2h8z',
   },
   {
     to: '/feed/saved',
-    title: 'Đã lưu',
+    titleKey: 'nav_saved',
     path: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z',
   },
   {
     to: '/feed/events',
-    title: 'Sự kiện',
+    titleKey: 'nav_events',
     path: 'M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.11-.9-2-2-2zm0 16H5V9h14v11zM9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z',
   },
   {
     to: '/feed/pages',
-    title: 'Trang',
+    titleKey: 'nav_pages',
     path: 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
   },
   {
     to: '/feed/waves',
-    title: 'Waves',
+    titleKey: 'nav_waves',
     path: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z',
   },
   {
     to: '/feed/explore',
-    title: 'Khám phá',
+    titleKey: 'nav_explore',
     path: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
   },
   {
     to: '/feed/moments',
-    title: 'Moments',
+    titleKey: 'nav_moments',
     path: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   },
   {
     to: '/feed/live',
-    title: 'Surf Live',
+    titleKey: 'nav_live',
     path: 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V19H3.1C1.39 19 0 17.71 0 16V12zm16.2 0c0 1.71-1.39 3.1-3.1 3.1H12V5h4.2c1.71 0 3.1 1.39 3.1 3.1V12z',
   },
-] as const;
+];
 
 const GROUP_ICON =
   'M12 2a4 4 0 0 1 4 4v1h.5a3.5 3.5 0 0 1 3.5 3.5v7a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 3.5 17.5v-7A3.5 3.5 0 0 1 7 7h.5V6a4 4 0 0 1 4-4Zm0 2a2 2 0 0 0-2 2v1h4V6a2 2 0 0 0-2-2Z';
@@ -89,6 +90,7 @@ export default function MainLeftNav({
   collapsed = false,
   onToggleCollapse,
 }: MainLeftNavProps) {
+  const t = useT();
   const list = shortcuts.slice(0, SHORTCUTS_MAX);
 
   return (
@@ -99,10 +101,10 @@ export default function MainLeftNav({
             {!collapsed && (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-400 dark:text-gray-500">
-                  Menu
+                  {t('sidebar_menu')}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  Điều hướng
+                  {t('sidebar_navigation')}
                 </p>
               </div>
             )}
@@ -110,8 +112,8 @@ export default function MainLeftNav({
               type="button"
               onClick={onToggleCollapse}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/80 text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:bg-gray-800"
-              title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-              aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+              title={collapsed ? t('sidebar_expand') : t('sidebar_collapse')}
+              aria-label={collapsed ? t('sidebar_expand') : t('sidebar_collapse')}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -126,13 +128,13 @@ export default function MainLeftNav({
         </div>
       )}
 
-      <nav className="p-3 space-y-1" aria-label="Điều hướng chính">
-        {MAIN_NAV_ITEMS.map(({ to, title, path }, i) => (
+      <nav className="p-3 space-y-1" aria-label={t('sidebar_navigation')}>
+        {MAIN_NAV_ITEMS.map(({ to, titleKey, path }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/feed'}
-            title={title}
+            title={t(titleKey)}
             className={({ isActive }) =>
               [
                 'flex items-center px-3 py-2.5 rounded-xl text-left transition-colors',
@@ -161,7 +163,7 @@ export default function MainLeftNav({
                     <path d={path} />
                   </svg>
                 </span>
-                {!collapsed && <span className="text-sm truncate flex-1 min-w-0">{title}</span>}
+                {!collapsed && <span className="text-sm truncate flex-1 min-w-0">{t(titleKey)}</span>}
                 {!collapsed && isActive && (
                   <span
                     className="w-1.5 h-1.5 rounded-full bg-surf-primary dark:bg-surf-secondary flex-shrink-0"
@@ -178,11 +180,11 @@ export default function MainLeftNav({
       {!collapsed && (
         <div className="flex-shrink-0 pt-2 pb-3 px-3 border-t border-gray-100 dark:border-gray-700/80">
           <h3 className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Lối tắt của bạn
+            {t('sidebar_shortcuts')}
           </h3>
           {list.length === 0 ? (
             <p className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">
-              Chưa có lối tắt. Truy cập Nhóm hoặc Trang để thấy lối tắt xuất hiện ở đây.
+              {t('sidebar_no_shortcuts')}
             </p>
           ) : (
             <ul className="mt-1 space-y-0.5">

@@ -4,13 +4,24 @@ import { api } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import Modal from '../ui/Modal';
 import PresenceBadge from '../ui/PresenceBadge';
-import { isVideoUrl } from '../../lib/cloudinary';
+import { isVideoUrl, uploadImage, uploadVideo } from '../../lib/cloudinary';
 import { optimizeImageUrl } from '../../lib/image-cdn';
 import EditPostModal from './EditPostModal';
 import { getSocket } from '../../lib/socket';
 import MentionCommentInput from './MentionCommentInput';
 import { markupToPlain, extractMentions, renderCommentContent } from '../../lib/mentionUtils';
 import { renderPostContent } from '../../lib/hashtagUtils';
+import { useT, useTimeFormatter } from '../../lib/i18n';
+
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
+];
 
 interface Comment {
   id: string;
@@ -19,6 +30,7 @@ interface Comment {
   authorDisplayName: string;
   authorPhotoURL: string | null;
   content: string;
+  mediaUrl?: string;
   createdAt:
     | import('firebase/firestore').Timestamp
     | { _seconds: number }
@@ -57,6 +69,8 @@ interface PostCardProps {
     location?: string;
     taggedFriends?: Array<{ uid: string; displayName: string }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
+    groupId?: string;
+    group?: { id: string; name: string; coverImageUrl?: string };
     isEdited?: boolean;
     isAnonymous?: boolean;
     poll?: { options: { id: string; text: string; votes: string[] }[] };
@@ -80,6 +94,7 @@ interface PostCardProps {
   };
   currentUserId?: string;
   onPostUpdated?: (updated: PostCardProps['post']) => void;
+  onPostCreated?: (post: PostCardProps['post']) => void;
   defaultOpenComments?: boolean;
   showPinOption?: boolean;
 }
@@ -96,6 +111,7 @@ function FeedVideo({
   style?: React.CSSProperties;
   onExpand?: () => void;
 }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -231,7 +247,7 @@ function FeedVideo({
             <button
               className="text-white hover:text-white/70 transition-colors"
               onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.max(0, el.currentTime - 5); }}
-              title="Tua lùi 5 giây"
+              title={t('video_rewind')}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
@@ -257,7 +273,7 @@ function FeedVideo({
             <button
               className="text-white hover:text-white/70 transition-colors"
               onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5); }}
-              title="Tua tới 5 giây"
+              title={t('video_forward')}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
@@ -294,7 +310,7 @@ function FeedVideo({
                   e.stopPropagation();
                   onExpand();
                 }}
-                title="Xem toàn màn hình"
+                title={t('video_fullscreen')}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -367,9 +383,11 @@ function UserPresenceAvatar({
   );
 }
 
-export default function PostCard({ post, currentUserId, onPostUpdated, defaultOpenComments, showPinOption = false }: PostCardProps) {
+export default function PostCard({ post, currentUserId, onPostUpdated, onPostCreated, defaultOpenComments, showPinOption = false }: PostCardProps) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const t = useT();
+  const tf = useTimeFormatter();
   const goToProfile = (uid?: string) => {
     if (post.isAnonymous) return;
     if (uid) navigate(`/feed/profile/${uid}`);
@@ -394,6 +412,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [shareCaption, setShareCaption] = useState('');
   const [shareReaction, setShareReaction] = useState<string | null>(null);
   const [showShareReactionPicker, setShowShareReactionPicker] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const [isPinned, setIsPinned] = useState(!!post.pinnedAt);
   const [isSaved, setIsSaved] = useState(
@@ -408,6 +427,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [sharingPost, setSharingPost] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [commentMediaFile, setCommentMediaFile] = useState<File | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
   const [loadingComments, setLoadingComments] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -440,6 +460,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportingCommentId, setReportingCommentId] = useState<string | null>(null);
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportToast, setReportToast] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -637,26 +659,36 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   }, [showComments]);
 
   const handleSubmitComment = async () => {
-    if (!markupToPlain(commentText).trim() || submittingComment) return;
+    if ((!markupToPlain(commentText).trim() && !commentMediaFile) || submittingComment) return;
     setCommentError(null);
 
     try {
       setSubmittingComment(true);
+      let mediaUrl: string | undefined = undefined;
+      if (commentMediaFile) {
+        if (commentMediaFile.type.startsWith('video/')) {
+          mediaUrl = await uploadVideo(commentMediaFile, { folder: 'surf/posts' });
+        } else {
+          mediaUrl = await uploadImage(commentMediaFile, { folder: 'surf/posts' });
+        }
+      }
+
       const mentions = extractMentions(commentText);
       console.log(`📤 Submitting comment to post ${post.id}:`, commentText.trim());
       const response = await api.post<Comment>(`/api/comments/${post.id}`, {
         content: commentText.trim(),
         mentions,
+        mediaUrl,
       });
       console.log(`✅ Comment created:`, response);
 
-      // Reload comments from server to get fresh data (also syncs commentCount)
       await loadComments();
       setCommentText('');
+      setCommentMediaFile(null);
     } catch (error) {
       console.error('❌ Error submitting comment:', error);
       const msg = error instanceof Error ? error.message : '';
-      setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
+      setCommentError(msg || t('post_comment_policy'));
     } finally {
       setSubmittingComment(false);
     }
@@ -781,7 +813,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       setExpandedReplies((prev) => ({ ...prev, [parentId]: true }));
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setCommentError(msg || 'Bình luận của bạn vi phạm chính sách của chúng tôi.');
+      setCommentError(msg || t('post_comment_policy'));
     } finally {
       setSubmittingReply(null);
     }
@@ -819,28 +851,26 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
     return map;
   }, [comments]);
 
-
-  // Reaction mapping
   const reactions: Record<
     string,
     { label: string; color: string; bgColor: string; borderColor: string; shadowColor: string }
   > = {
     '❤️': {
-      label: 'Thích',
+      label: t('post_reaction_like'), // Update the label to use the t function
       color: 'text-red-600 dark:text-red-400',
       bgColor: 'from-red-500/15 to-pink-500/15 hover:from-red-500/25 hover:to-pink-500/25',
       borderColor: 'border-red-200 dark:border-red-900/30',
       shadowColor: 'shadow-red-500/10',
     },
     '🌊': {
-      label: 'Sóng',
+      label: t('post_reaction_wave'),
       color: 'text-cyan-600 dark:text-cyan-400',
       bgColor: 'from-cyan-500/15 to-blue-500/15 hover:from-cyan-500/25 hover:to-blue-500/25',
       borderColor: 'border-cyan-200 dark:border-cyan-900/30',
       shadowColor: 'shadow-cyan-500/10',
     },
     '😂': {
-      label: 'Haha',
+      label: t('post_reaction_haha'),
       color: 'text-yellow-600 dark:text-yellow-400',
       bgColor:
         'from-yellow-500/15 to-orange-500/15 hover:from-yellow-500/25 hover:to-orange-500/25',
@@ -848,21 +878,21 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       shadowColor: 'shadow-yellow-500/10',
     },
     '😮': {
-      label: 'Wow',
+      label: t('post_reaction_wow'),
       color: 'text-orange-600 dark:text-orange-400',
       bgColor: 'from-orange-500/15 to-amber-500/15 hover:from-orange-500/25 hover:to-amber-500/25',
       borderColor: 'border-orange-200 dark:border-orange-900/30',
       shadowColor: 'shadow-orange-500/10',
     },
     '😢': {
-      label: 'Buồn',
+      label: t('post_reaction_sad'),
       color: 'text-blue-600 dark:text-blue-400',
       bgColor: 'from-blue-500/15 to-indigo-500/15 hover:from-blue-500/25 hover:to-indigo-500/25',
       borderColor: 'border-blue-200 dark:border-blue-900/30',
       shadowColor: 'shadow-blue-500/10',
     },
     '👍': {
-      label: 'Tuyệt',
+      label: t('post_reaction_cool'),
       color: 'text-indigo-600 dark:text-indigo-400',
       bgColor:
         'from-indigo-500/15 to-purple-500/15 hover:from-indigo-500/25 hover:to-purple-500/25',
@@ -883,9 +913,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
 
   const formatTime = (timestamp: Timestamp) => {
     try {
-      if (!timestamp) return 'vừa xong';
+      if (!timestamp) return tf.justNow;
 
-      // Handle different timestamp formats
       let date: Date;
       if (
         typeof timestamp === 'object' &&
@@ -893,67 +922,44 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
         'toDate' in timestamp &&
         typeof (timestamp as { toDate: unknown }).toDate === 'function'
       ) {
-        // Firestore Timestamp object (client SDK)
         date = (timestamp as { toDate: () => Date }).toDate();
       } else if (typeof timestamp === 'object' && timestamp !== null && '_seconds' in timestamp) {
-        // Serialized Firestore Timestamp { _seconds, _nanoseconds }
         date = new Date((timestamp as { _seconds: number })._seconds * 1000);
       } else if (typeof timestamp === 'object' && timestamp !== null && 'seconds' in timestamp) {
-        // Serialized Firestore Timestamp { seconds, nanoseconds }
         date = new Date((timestamp as { seconds: number }).seconds * 1000);
       } else if (typeof timestamp === 'string' || typeof timestamp === 'number') {
-        // ISO string or milliseconds
         date = new Date(timestamp);
       } else if (timestamp instanceof Date) {
         date = timestamp;
       } else {
-        return 'vừa xong';
+        return tf.justNow;
       }
 
-      // Validate date
-      if (isNaN(date.getTime())) {
-        return 'vừa xong';
-      }
+      if (isNaN(date.getTime())) return tf.justNow;
 
       const now = new Date();
       const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-      // Dưới 1 phút
-      if (diffInSeconds < 60) {
-        return 'vừa xong';
-      }
+      if (diffInSeconds < 60) return tf.justNow;
 
-      // Dưới 1 giờ - hiển thị phút
       const diffInMinutes = Math.floor(diffInSeconds / 60);
-      if (diffInMinutes < 60) {
-        return `${diffInMinutes} phút trước`;
-      }
+      if (diffInMinutes < 60) return tf.minutesAgo(diffInMinutes);
 
-      // Dưới 24 giờ - hiển thị giờ
       const diffInHours = Math.floor(diffInMinutes / 60);
-      if (diffInHours < 24) {
-        return `${diffInHours} giờ trước`;
-      }
+      if (diffInHours < 24) return tf.hoursAgo(diffInHours);
 
-      // Dưới 7 ngày - hiển thị ngày
       const diffInDays = Math.floor(diffInHours / 24);
-      if (diffInDays < 7) {
-        return `${diffInDays} ngày trước`;
-      }
+      if (diffInDays < 7) return tf.daysAgo(diffInDays);
 
-      // Từ 7 ngày trở lên - hiển thị ngày tháng năm cụ thể
       const day = date.getDate();
       const month = date.getMonth() + 1;
       const year = date.getFullYear();
       const currentYear = now.getFullYear();
-      // Nếu cùng năm thì bỏ năm, khác năm thì hiện đủ
-      if (year === currentYear) {
-        return `${day} tháng ${month}`;
-      }
-      return `${day} tháng ${month}, ${year}`;
+      if (year === currentYear) return tf.monthDay(day, month);
+      return tf.monthDayYear(day, month, year);
     } catch (error) {
       console.error('Error formatting time:', error, timestamp);
-      return 'vừa xong';
+      return tf.justNow;
     }
   };
 
@@ -1018,18 +1024,22 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
   const handleSharePost = async () => {
     if (sharingPost) return;
     try {
+      setShareError(null);
       setSharingPost(true);
+      const response = await api.post(`/api/posts/${post.id}/share`, {
+        content: shareCaption.trim(),
+        reaction: shareReaction ?? undefined,
+      });
       setShareCount((c) => c + 1);
       setShowShareModal(false);
       setShareCaption('');
       setShareReaction(null);
-      await api.post(`/api/posts/${post.id}/share`, {
-        content: shareCaption.trim(),
-        reaction: shareReaction ?? undefined,
-      });
-    } catch {
-      setShareCount((c) => Math.max(0, c - 1));
-      alert('Không thể chia sẻ bài viết. Vui lòng thử lại.');
+      if (onPostCreated) {
+        onPostCreated(response as unknown as PostCardProps['post']);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : t('post_share_error');
+      setShareError(msg);
     } finally {
       setSharingPost(false);
     }
@@ -1067,13 +1077,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
     if (!reportReason || reportSubmitting) return;
     setReportSubmitting(true);
     try {
-      await api.post(`/api/posts/${post.id}/report`, { reason: reportReason });
+      const catLabel = REPORT_CATEGORIES.find((c) => c.key === reportReason)?.label || reportReason;
+      const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
+
+      if (reportingCommentId) {
+        await api.post(`/api/comments/${post.id}/${reportingCommentId}/report`, { reason: reasonText });
+      } else {
+        await api.post(`/api/posts/${post.id}/report`, { reason: reasonText });
+      }
+      
       setShowReportModal(false);
       setReportReason('');
-      setReportToast('✅ Đã gửi báo cáo. Cảm ơn bạn!');
+      setReportDetails('');
+      setReportingCommentId(null);
+      setReportToast(t('post_report_toast_ok'));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '';
-      setReportToast(msg.includes('đã báo cáo') ? '⚠️ Bạn đã báo cáo bài viết này rồi' : '❌ Không thể gửi báo cáo. Thử lại sau.');
+      setReportToast(msg.includes('đã báo cáo') ? t('post_report_toast_dup') : t('post_report_toast_err'));
     } finally {
       setReportSubmitting(false);
       setTimeout(() => setReportToast(null), 3000);
@@ -1086,7 +1106,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       await api.delete(`/api/posts/${post.id}`);
       setIsDeleted(true);
     } catch {
-      alert('Không thể xóa bài viết. Vui lòng thử lại.');
+      alert(t('post_delete_error'));
     }
   };
 
@@ -1186,7 +1206,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
-              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Chia sẻ bài viết</h3>
+              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{t('post_share_title')}</h3>
               <button
                 onClick={() => setShowShareModal(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
@@ -1201,7 +1221,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             <div className="flex items-center gap-3 px-5 pt-4">
               <UserPresenceAvatar
                 uid={user?.uid}
-                name={user?.displayName ?? user?.email ?? 'Bạn'}
+                name={user?.displayName ?? user?.email ?? t('post_you')}
                 photoURL={user?.photoURL}
                 imgClassName="w-10 h-10 rounded-full object-cover flex-shrink-0"
                 fallbackClassName="w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
@@ -1209,17 +1229,24 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 presenceSize="sm"
               />
               <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                {user?.displayName ?? 'Bạn'}
+                {user?.displayName ?? t('post_you')}
               </div>
             </div>
 
             {/* Caption input */}
+            {shareError && (
+              <div className="px-5 pt-3">
+                <div className="rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-2 text-sm font-medium border border-red-100 dark:border-red-900/30">
+                  {shareError}
+                </div>
+              </div>
+            )}
             <div className="px-5 pt-3 pb-2">
               <textarea
                 autoFocus
                 value={shareCaption}
                 onChange={(e) => setShareCaption(e.target.value)}
-                placeholder="Nói điều gì đó về bài viết này..."
+                placeholder={t('post_caption_placeholder')}
                 rows={3}
                 className="w-full resize-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400 text-sm leading-relaxed outline-none"
               />
@@ -1286,14 +1313,14 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-                Sao chép liên kết
+                {t('post_copy_link_short')}
               </button>
               <button
                 onClick={() => void handleSharePost()}
                 disabled={sharingPost}
                 className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {sharingPost ? 'Đang chia sẻ...' : 'Chia sẻ ngay'}
+                {sharingPost ? t('post_sharing') : t('post_share_now')}
               </button>
             </div>
           </div>
@@ -1304,25 +1331,25 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
       <Modal
         open={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
-        title="Chuyển vào thùng rác?"
+        title={t('post_trash_title')}
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            Bài viết sẽ được chuyển vào thùng rác. Bạn có thể khôi phục trong vòng{' '}
-            <span className="font-semibold">36 ngày</span> trước khi bị xóa vĩnh viễn.
+            {t('post_trash_desc')}{' '}
+            <span className="font-semibold">{t('post_trash_days')}</span> {t('post_trash_permanent')}
           </p>
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowDeleteConfirm(false)}
               className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
             >
-              Hủy
+              {t('post_cancel')}
             </button>
             <button
               onClick={() => void confirmDeletePost()}
               className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
             >
-              Chuyển vào thùng rác
+              {t('post_trash_btn')}
             </button>
           </div>
         </div>
@@ -1330,55 +1357,64 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
 
       {/* Report post modal */}
       {showReportModal && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          onClick={() => { setShowReportModal(false); setReportReason(''); }}
-        >
-          <div
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-200 dark:border-slate-700">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Báo cáo bài viết</h3>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-4">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">{reportingCommentId ? t('post_report_title') + ' bình luận' : t('post_report_title')}</h2>
               <button
-                onClick={() => { setShowReportModal(false); setReportReason(''); }}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 text-sm transition-colors"
+                type="button"
+                onClick={() => { setShowReportModal(false); setReportReason(''); setReportDetails(''); setReportingCommentId(null); }}
+                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-white"
               >
-                ✕
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
-            <div className="p-5 space-y-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Hãy cho chúng tôi biết vấn đề với bài viết này.
-              </p>
-              <select
-                value={reportReason}
-                onChange={(e) => setReportReason(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
-              >
-                <option value="">Chọn lý do...</option>
-                <option value="spam">Spam</option>
-                <option value="inappropriate">Nội dung không phù hợp</option>
-                <option value="misinformation">Thông tin sai lệch</option>
-                <option value="hate_speech">Ngôn từ thù hận</option>
-                <option value="harassment">Quấy rối / Bắt nạt</option>
-                <option value="violence">Nội dung bạo lực</option>
-                <option value="copyright">Vi phạm bản quyền</option>
-                <option value="other">Khác</option>
-              </select>
-              <div className="flex gap-2 justify-end">
+            <div className="p-4">
+              <div className="mb-4 text-sm text-slate-600 dark:text-slate-300">
+                {t('post_report_desc')}
+              </div>
+              <div className="mb-4 max-h-[250px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
+                {REPORT_CATEGORIES.map((category) => (
+                  <label key={category.key} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <input
+                      type="radio"
+                      name="reportReason"
+                      value={category.key}
+                      checked={reportReason === category.key}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      className="h-4 w-4 rounded-full border-slate-300 dark:border-slate-600 bg-transparent text-cyan-500 focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-slate-900"
+                    />
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{category.label}</span>
+                  </label>
+                ))}
+              </div>
+              {reportReason && (
+                <div className="mb-6">
+                  <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">Chi tiết bổ sung (không bắt buộc)</label>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Vui lòng cung cấp thêm thông tin..."
+                    className="h-20 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
                 <button
-                  onClick={() => { setShowReportModal(false); setReportReason(''); }}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                  type="button"
+                  onClick={() => { setShowReportModal(false); setReportReason(''); setReportDetails(''); setReportingCommentId(null); }}
+                  className="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
-                  Hủy
+                  {t('post_cancel')}
                 </button>
                 <button
                   onClick={() => void handleReport()}
-                  disabled={!reportReason || reportSubmitting}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  disabled={reportSubmitting || !reportReason}
+                  className="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-bold text-white transition hover:bg-cyan-600 disabled:opacity-50"
                 >
-                  {reportSubmitting ? 'Đang gửi...' : 'Gửi báo cáo'}
+                  {reportSubmitting ? t('post_submitting') : t('post_report_submit')}
                 </button>
               </div>
             </div>
@@ -1423,7 +1459,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
         {isPinned && !showComments && (
           <div className="flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold text-cyan-600 dark:text-cyan-400">
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/></svg>
-            Bài viết đã ghim
+            {t('post_pinned')}
           </div>
         )}
         {/* ── MEDIA HERO LAYOUT — kept as dead code; media now rendered inside card ── */}
@@ -1703,7 +1739,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                           d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
                         />
                       </svg>
-                      Sao chép liên kết
+                      {t('post_copy_link')}
                     </button>
                   </div>
                 )}
@@ -1744,7 +1780,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                             d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                           />
                         </svg>
-                        Chuyển vào thùng rác
+                        {t('post_trash_btn')}
                       </button>
                     )}
                     {currentUserId !== post.authorId && (
@@ -1755,7 +1791,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
-                        Báo cáo bài viết
+                        {t('post_report_title')}
                       </button>
                     )}
                   </div>
@@ -1781,7 +1817,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       }}
                       className="text-white/60 text-xs hover:text-white mt-0.5 transition-colors"
                     >
-                      {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
+                      {contentExpanded ? t('post_see_less') : t('post_see_more')}
                     </button>
                   )}
                 </div>
@@ -1813,7 +1849,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     </span>
                     {(post.taggedFriends?.length ?? 0) > 0 && (
                       <span className="text-white/80 text-xs">
-                        cùng với{' '}
+                        {t('post_with')}{' '}
                         {post.taggedFriends!.map((f, i) => (
                           <span key={f.uid}>
                             <span
@@ -1841,7 +1877,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   onClick={() => setShowComments(true)}
                   className="mt-1 text-white/60 text-xs hover:text-white/90 transition-colors"
                 >
-                  {commentCount} bình luận
+                  {commentCount} {t('post_comments_label')}
                 </button>
               )}
             </div>
@@ -1946,30 +1982,54 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         className={`font-semibold ${!post.isAnonymous ? 'hover:underline cursor-pointer text-gray-700 dark:text-gray-300' : 'text-gray-500'}`}
                       >
                         {post.isAnonymous 
-                          ? (currentUserId === post.authorId ? 'Bạn (Ẩn danh)' : 'Người dùng ẩn danh') 
+                          ? (currentUserId === post.authorId ? t('post_anon_you') : t('post_anon_user')) 
                           : post.authorDisplayName}
                       </span>
+                      {post.sharedFrom && (
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {' '}{t('post_shared_from')}{' '}
+                          <span
+                            onClick={() => goToProfile(post.sharedFrom!.authorId)}
+                            className="font-semibold text-gray-700 dark:text-gray-300 hover:underline cursor-pointer"
+                          >
+                            {post.sharedFrom.authorDisplayName}
+                          </span>
+                        </span>
+                      )}
                     </>
                   ) : (
-                    <h3
-                      onClick={() => goToProfile(post.authorId)}
-                      className={`inline font-bold text-gray-900 dark:text-gray-100 ${post.isAnonymous ? '' : 'hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors'}`}
-                    >
-                      {post.isAnonymous 
-                        ? (currentUserId === post.authorId ? 'Bạn (Ẩn danh)' : 'Người dùng ẩn danh') 
-                        : post.authorDisplayName}
-                    </h3>
+                    <>
+                      <h3
+                        onClick={() => goToProfile(post.authorId)}
+                        className={`inline font-bold text-gray-900 dark:text-gray-100 ${post.isAnonymous ? '' : 'hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors'}`}
+                      >
+                        {post.isAnonymous 
+                          ? (currentUserId === post.authorId ? t('post_anon_you') : t('post_anon_user')) 
+                          : post.authorDisplayName}
+                      </h3>
+                      {post.sharedFrom && (
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {' '}{t('post_shared_from')}{' '}
+                          <span
+                            onClick={() => goToProfile(post.sharedFrom!.authorId)}
+                            className="font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
+                          >
+                            {post.sharedFrom.authorDisplayName}
+                          </span>
+                        </span>
+                      )}
+                    </>
                   )}
                   {post.feeling && (
                     <span className="text-gray-600 dark:text-gray-400">
                       {' '}
-                      đang cảm thấy <span className="font-medium">{post.feeling}</span>
+                      {t('post_feeling')} <span className="font-medium">{post.feeling}</span>
                     </span>
                   )}
                   {post.taggedFriends && post.taggedFriends.length > 0 && (
                     <span className="text-gray-600 dark:text-gray-400">
                       {' '}
-                      cùng với{' '}
+                      {t('post_with')}{' '}
                       {post.taggedFriends.map((friend, idx) => (
                         <span key={friend.uid}>
                           <span
@@ -1986,7 +2046,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   {post.location && (
                     <span className="text-gray-600 dark:text-gray-400">
                       {' '}
-                      tại <span className="font-medium">📍 {post.location}</span>
+                      {t('post_at')} <span className="font-medium">📍 {post.location}</span>
                     </span>
                   )}
                 </div>
@@ -1997,7 +2057,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   {post.isEdited && (
                     <>
                       <span>•</span>
-                      <span className="italic">Đã chỉnh sửa</span>
+                      <span className="italic">{t('post_editing')}</span>
                     </>
                   )}
                 </div>
@@ -2035,7 +2095,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                           d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
                         />
                       </svg>
-                      {isSaved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
+                      {t(isSaved ? 'post_unsave' : 'post_save')}
                     </button>
                     <hr className="my-2 border-gray-200 dark:border-slate-700" />
                     {currentUserId === post.authorId && (
@@ -2059,7 +2119,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                             d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                           />
                         </svg>
-                        Chỉnh sửa bài viết
+                        {t('post_edit')}
                       </button>
                     )}
                     {showPinOption && currentUserId === post.authorId && (
@@ -2068,7 +2128,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
                       >
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/></svg>
-                        {isPinned ? 'Bỏ ghim bài viết' : 'Ghim lên trang cá nhân'}
+                        {t(isPinned ? 'post_unpin' : 'post_pin')}
                       </button>
                     )}
                     {currentUserId === post.authorId && (
@@ -2092,7 +2152,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                             d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                           />
                         </svg>
-                        Xóa bài viết
+                        {t('post_delete')}
                       </button>
                     )}
                     {currentUserId !== post.authorId && (
@@ -2103,7 +2163,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
-                        Báo cáo bài viết
+                        {t('post_report_title')}
                       </button>
                     )}
                   </div>
@@ -2124,7 +2184,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     onClick={() => setContentExpanded((v) => !v)}
                     className="text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-200 mt-0.5 transition-colors"
                   >
-                    {contentExpanded ? 'Ẩn bớt' : 'Xem thêm'}
+                    {contentExpanded ? t('post_see_less') : t('post_see_more')}
                   </button>
                 )}
               </div>
@@ -2152,7 +2212,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                          </div>
                          {opt.text}
                        </span>
-                       <span className="relative z-10 text-xs text-slate-500 font-bold">{opt.votes?.length || 0} phiếu</span>
+                       <span className="relative z-10 text-xs text-slate-500 font-bold">{opt.votes?.length || 0} {t('post_votes')}</span>
                     </button>
                   );
                 })}
@@ -2177,10 +2237,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         </span>
                       </div>
                     )}
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div
                         onClick={() => goToProfile(post.sharedFrom!.authorId)}
-                        className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:underline"
+                        className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:underline truncate"
                       >
                         {post.sharedFrom.authorDisplayName}
                       </div>
@@ -2188,6 +2248,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         {formatTime(post.sharedFrom.createdAt)}
                       </div>
                     </div>
+                    <button
+                      onClick={() => navigate(`/feed/post/${post.sharedFrom!.id}`)}
+                      className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-full bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 transition-colors whitespace-nowrap"
+                    >
+                      {t('post_view_original')}
+                    </button>
                   </div>
                   {post.sharedFrom.content && (
                     <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
@@ -2369,11 +2435,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       onClick={() => setShowComments(!showComments)}
                       className="hover:underline"
                     >
-                      {commentCount} bình luận
+                      {commentCount} {t('post_comments_label')}
                     </button>
                   )}
                   {shareCount > 0 && (
-                    <span>{shareCount} lượt chia sẻ</span>
+                    <span>{shareCount} {t('post_shares_label')}</span>
                   )}
                 </div>
               </div>
@@ -2452,7 +2518,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                   />
                 </svg>
-                <span>Bình luận{commentCount > 0 ? ` (${commentCount})` : ''}</span>
+                <span>{t('post_comment_btn')}{commentCount > 0 ? ` (${commentCount})` : ''}</span>
               </button>
 
               {/* Share */}
@@ -2469,7 +2535,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
                     />
                   </svg>
-                  <span>Chia sẻ{shareCount > 0 ? ` (${shareCount})` : ''}</span>
+                  <span>{t('post_share_btn')}{shareCount > 0 ? ` (${shareCount})` : ''}</span>
                 </button>
               </div>
 
@@ -2513,7 +2579,14 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       onClick={() => setShowComments(true)}
                     >
                       <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{comment.authorDisplayName}</span>
-                      <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 break-words">{renderCommentContent(comment.content)}</p>
+                      <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 break-words">
+                        {renderCommentContent(comment.content)}
+                        {comment.mediaUrl && (
+                          <span className="block mt-1.5 text-cyan-600 text-xs italic">
+                            [Media attachment]
+                          </span>
+                        )}
+                      </p>
                       {comment.likeCount > 0 && (
                         <span className="text-xs text-gray-400 flex items-center gap-0.5 mt-1">
                           {(() => {
@@ -2534,7 +2607,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     onClick={() => setShowComments(true)}
                     className="text-sm text-gray-500 dark:text-gray-400 hover:text-cyan-600 dark:hover:text-cyan-400 font-medium transition-colors"
                   >
-                    Xem tất cả {commentCount} bình luận
+                    {t('post_see_all_comments')} {commentCount} {t('post_comments_label')}
                   </button>
                 )}
               </div>
@@ -2549,7 +2622,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                   </div>
                 ) : comments.length === 0 ? (
                   <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                    Chưa có bình luận nào
+                    {t('post_no_comments')}
                   </div>
                 ) : (
                   <div className="space-y-3 mb-4">
@@ -2586,13 +2659,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                 onClick={() => void handleEditComment(comment.id)}
                                 className="text-xs text-cyan-600 dark:text-cyan-400 font-semibold hover:underline"
                               >
-                                Lưu
+                                {t('post_send')}
                               </button>
                               <button
                                 onClick={() => { setEditingCommentId(null); setEditingText(''); }}
                                 className="text-xs text-gray-400 hover:underline"
                               >
-                                Hủy
+                                {t('post_cancel')}
                               </button>
                             </div>
                           ) : (
@@ -2605,8 +2678,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               </div>
                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
                                 {renderCommentContent(comment.content)}
+                                {comment.mediaUrl && (
+                                  <div className="mt-2">
+                                    {isVideoUrl(comment.mediaUrl) ? (
+                                      <video src={comment.mediaUrl} controls className="max-h-40 rounded-lg" />
+                                    ) : (
+                                      <img src={optimizeImageUrl(comment.mediaUrl)} alt="media" className="max-h-40 rounded-lg object-contain bg-black/5" />
+                                    )}
+                                  </div>
+                                )}
                                 {comment.isEdited && (
-                                  <span className="ml-1 text-xs text-gray-400 font-normal">• Đã chỉnh sửa</span>
+                                  <span className="ml-1 text-xs text-gray-400 font-normal">• {t('post_editing')}</span>
                                 )}
                               </div>
                             </div>
@@ -2627,7 +2709,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               >
                                 {commentLikes[comment.id] && commentReactions[comment.id]
                                   ? commentReactions[comment.id]
-                                  : 'Thích'}
+                                  : t('post_like_comment')}
                               </button>
                               {commentReactionPicker === comment.id && (
                                 <div
@@ -2663,7 +2745,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                 }
                               }}
                             >
-                              Trả lời
+                              {t('post_reply')}
                             </button>
                             <span className="text-gray-500 font-normal">
                               {comment.createdAt && formatTime(comment.createdAt)}
@@ -2689,15 +2771,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                   onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.content); }}
                                   className="text-gray-400 hover:text-cyan-600 hover:underline"
                                 >
-                                  Chỉnh sửa
+                                  {t('post_edit')}
                                 </button>
                                 <button
                                   onClick={() => handleDeleteComment(comment.id)}
                                   className="text-gray-400 hover:text-red-600 hover:underline ml-auto"
                                 >
-                                  Xóa
+                                  {t('post_delete_comment')}
                                 </button>
                               </>
+                            )}
+                            {currentUserId !== comment.authorId && (
+                              <button
+                                onClick={() => { setReportingCommentId(comment.id); setShowReportModal(true); }}
+                                className="text-gray-400 hover:text-red-500 hover:underline ml-auto"
+                              >
+                                Báo cáo
+                              </button>
                             )}
                           </div>
                           {/* Replies */}
@@ -2709,7 +2799,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                   className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-1 hover:underline"
                                 >
                                   <svg className={`w-3.5 h-3.5 transition-transform ${expandedReplies[comment.id] ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-                                  {expandedReplies[comment.id] ? 'Ẩn trả lời' : `Xem ${repliesMap[comment.id].length} trả lời`}
+                                  {expandedReplies[comment.id] ? t('post_hide_replies') : `${t('post_view_replies')} ${repliesMap[comment.id].length} ${t('post_replies_label')}`}
                                 </button>
                               )}
                               {expandedReplies[comment.id] && repliesMap[comment.id]?.map((reply) => (
@@ -2744,10 +2834,18 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                           setReplyTexts((p) => ({ ...p, [comment.id]: `@[${reply.authorDisplayName}](${reply.authorId}) ` }));
                                         }}
                                       >
-                                        Trả lời
+                                        {t('post_reply')}
                                       </button>
                                       {currentUserId === reply.authorId && (
-                                        <button onClick={() => handleDeleteComment(reply.id)} className="hover:text-red-500 hover:underline">Xóa</button>
+                                        <button onClick={() => handleDeleteComment(reply.id)} className="hover:text-red-500 hover:underline ml-auto">{t('post_delete_comment')}</button>
+                                      )}
+                                      {currentUserId !== reply.authorId && (
+                                        <button
+                                          onClick={() => { setReportingCommentId(reply.id); setShowReportModal(true); }}
+                                          className="text-gray-400 hover:text-red-500 hover:underline ml-auto"
+                                        >
+                                          Báo cáo
+                                        </button>
                                       )}
                                     </div>
                                   </div>
@@ -2771,7 +2869,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                       onChange={(v) => setReplyTexts((p) => ({ ...p, [comment.id]: v }))}
                                       onKeyDown={(e) => { if (e.key === 'Escape') setReplyingToId(null); }}
                                       onSubmit={() => void handleSubmitReply(comment.id)}
-                                      placeholder={`Trả lời ${comment.authorDisplayName}...`}
+                                      placeholder={`${t('post_reply')} ${comment.authorDisplayName}...`}
                                       disabled={submittingReply === comment.id}
                                       size="sm"
                                     />
@@ -2805,7 +2903,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     {loadingMoreComments && (
                       <span className="inline-block w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
                     )}
-                    {loadingMoreComments ? 'Đang tải...' : 'Xem thêm bình luận'}
+                    {loadingMoreComments ? t('post_loading_reactors') : t('post_loading_more')}
                   </button>
                 )}
                 {/* Comment Input */}
@@ -2827,24 +2925,45 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                         <button type="button" onClick={() => setCommentError(null)} className="shrink-0 hover:text-red-700">×</button>
                       </div>
                     )}
+                    {commentMediaFile && (
+                      <div className="mb-2 relative inline-block">
+                        {commentMediaFile.type.startsWith('video/') ? (
+                          <video src={URL.createObjectURL(commentMediaFile)} className="h-24 rounded-lg object-cover" />
+                        ) : (
+                          <img src={URL.createObjectURL(commentMediaFile)} alt="preview" className="h-24 rounded-lg object-cover" />
+                        )}
+                        <button onClick={() => setCommentMediaFile(null)} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow z-10">✕</button>
+                      </div>
+                    )}
                     <MentionCommentInput
                       value={commentText}
                       onChange={setCommentText}
                       onClearError={() => setCommentError(null)}
                       onSubmit={handleSubmitComment}
                       disabled={submittingComment}
-                      placeholder="Viết bình luận của bạn..."
+                      placeholder={t('post_write_your_comment')}
                       inputRef={commentInputRef}
                     />
-                    <button
-                      onClick={handleSubmitComment}
-                      disabled={!markupToPlain(commentText).trim() || submittingComment}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-cyan-600 hover:text-cyan-700 transition-colors disabled:opacity-50"
-                    >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                      </svg>
-                    </button>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <label className="cursor-pointer p-1.5 rounded-full text-gray-400 hover:text-cyan-600 transition-colors">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => {
+                          if (e.target.files?.[0]) setCommentMediaFile(e.target.files[0]);
+                          e.target.value = '';
+                        }} />
+                      </label>
+                      <button
+                        onClick={handleSubmitComment}
+                        disabled={(!markupToPlain(commentText).trim() && !commentMediaFile) || submittingComment}
+                        className="p-1.5 rounded-full text-cyan-600 hover:text-cyan-700 transition-colors disabled:opacity-50"
+                      >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3152,7 +3271,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
               >
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-                  <span className="font-semibold text-gray-900 dark:text-gray-100">Bình luận</span>
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">{t('post_comments_header')}</span>
                   <button
                     className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
                     onClick={() => setLightboxCommentOpen(false)}
@@ -3204,7 +3323,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                     </div>
                   ) : comments.length === 0 ? (
                     <div className="text-center text-sm text-gray-400 py-6">
-                      Chưa có bình luận nào
+                      {t('post_no_comments')}
                     </div>
                   ) : (
                     comments.map((comment) => (
@@ -3251,13 +3370,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                 onClick={() => void handleEditComment(comment.id)}
                                 className="text-xs text-cyan-600 font-semibold hover:underline"
                               >
-                                Lưu
+                                {t('post_send')}
                               </button>
                               <button
                                 onClick={() => { setEditingCommentId(null); setEditingText(''); }}
                                 className="text-xs text-gray-400 hover:underline"
                               >
-                                Hủy
+                                {t('post_cancel')}
                               </button>
                             </div>
                           ) : (
@@ -3267,8 +3386,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               </div>
                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
                                 {renderCommentContent(comment.content)}
+                                {comment.mediaUrl && (
+                                  <div className="mt-2">
+                                    {isVideoUrl(comment.mediaUrl) ? (
+                                      <video src={comment.mediaUrl} controls className="max-h-40 rounded-lg" />
+                                    ) : (
+                                      <img src={optimizeImageUrl(comment.mediaUrl)} alt="media" className="max-h-40 rounded-lg object-contain bg-black/5" />
+                                    )}
+                                  </div>
+                                )}
                                 {comment.isEdited && (
-                                  <span className="ml-1 text-xs text-gray-400 font-normal">• Đã chỉnh sửa</span>
+                                  <span className="ml-1 text-xs text-gray-400 font-normal">• {t('post_editing')}</span>
                                 )}
                               </div>
                             </div>
@@ -3278,7 +3406,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                               onClick={() => void handleLikeComment(comment.id)}
                               className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600' : 'text-gray-500'}`}
                             >
-                              Thích
+                              {t('post_like_comment')}
                             </button>
                             <span className="text-gray-400 font-normal">
                               {comment.createdAt && formatTime(comment.createdAt)}
@@ -3294,13 +3422,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                                   onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.content); }}
                                   className="text-gray-400 hover:text-cyan-600"
                                 >
-                                  Chỉnh sửa
+                                  {t('post_edit')}
                                 </button>
                                 <button
                                   onClick={() => void handleDeleteComment(comment.id)}
                                   className="text-gray-400 hover:text-red-500 ml-auto"
                                 >
-                                  Xóa
+                                  {t('post_delete_comment')}
                                 </button>
                               </>
                             )}
@@ -3328,23 +3456,44 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
                       </div>
                     )}
                     <div className="flex-1 relative">
+                      {commentMediaFile && (
+                        <div className="mb-2 relative inline-block">
+                          {commentMediaFile.type.startsWith('video/') ? (
+                            <video src={URL.createObjectURL(commentMediaFile)} className="h-20 rounded-lg object-cover" />
+                          ) : (
+                            <img src={URL.createObjectURL(commentMediaFile)} alt="preview" className="h-20 rounded-lg object-cover" />
+                          )}
+                          <button onClick={() => setCommentMediaFile(null)} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow z-10">✕</button>
+                        </div>
+                      )}
                       <MentionCommentInput
                         value={commentText}
                         onChange={setCommentText}
                         onSubmit={handleSubmitComment}
                         disabled={submittingComment}
-                        placeholder="Viết bình luận..."
+                        placeholder={t('post_write_comment')}
                         inputRef={lightboxCommentRef}
                       />
-                      <button
-                        onClick={() => void handleSubmitComment()}
-                        disabled={!markupToPlain(commentText).trim() || submittingComment}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-cyan-600 hover:text-cyan-700 disabled:opacity-40"
-                      >
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                        </svg>
-                      </button>
+                      <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
+                        <label className="cursor-pointer p-1 rounded-full text-gray-400 hover:text-cyan-600 transition-colors">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => {
+                            if (e.target.files?.[0]) setCommentMediaFile(e.target.files[0]);
+                            e.target.value = '';
+                          }} />
+                        </label>
+                        <button
+                          onClick={() => void handleSubmitComment()}
+                          disabled={(!markupToPlain(commentText).trim() && !commentMediaFile) || submittingComment}
+                          className="p-1 text-cyan-600 hover:text-cyan-700 disabled:opacity-40 transition-colors"
+                        >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3409,7 +3558,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             {/* List */}
             <div className="max-h-72 overflow-y-auto px-4 pb-4">
               {loadingReactors ? (
-                <div className="py-8 text-center text-gray-400 text-sm">Đang tải...</div>
+                <div className="py-8 text-center text-gray-400 text-sm">{t('post_loading_reactors')}</div>
               ) : (
                 reactors
                   .filter((r) => reactorFilter === null || r.reaction === reactorFilter)
@@ -3446,7 +3595,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-200 dark:border-slate-700">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Cảm xúc bình luận</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">{t('post_comment_reactions_title')}</h3>
               <button
                 onClick={() => setCommentReactorsModal(null)}
                 className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500"
@@ -3492,7 +3641,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, defaultOp
             {/* List */}
             <div className="max-h-72 overflow-y-auto px-4 pb-4">
               {loadingCommentReactors ? (
-                <div className="py-8 text-center text-gray-400 text-sm">Đang tải...</div>
+                <div className="py-8 text-center text-gray-400 text-sm">{t('post_loading_reactors')}</div>
               ) : (
                 commentReactors
                   .filter((r) => commentReactorFilter === null || r.reaction === commentReactorFilter)

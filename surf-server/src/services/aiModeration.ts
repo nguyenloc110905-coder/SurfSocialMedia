@@ -385,3 +385,43 @@ Trả lời đúng JSON:
     return getMarketplaceGeminiFailure(err);
   }
 }
+
+export async function moderateReportedComment(
+  commentText: string,
+  postText: string,
+  reportReason: string
+): Promise<{ violation: boolean; reason: string }> {
+  const prompt = `Bạn là hệ thống AI kiểm duyệt tự động mạng xã hội. Người dùng vừa báo cáo một bình luận với lý do: "${reportReason}".
+  
+Nội dung bài viết gốc:
+"""
+${postText}
+"""
+
+Nội dung bình luận bị báo cáo:
+"""
+${commentText}
+"""
+
+Dựa vào ngữ cảnh bài viết và lý do báo cáo, hãy đánh giá bình luận này có THỰC SỰ vi phạm Tiêu chuẩn cộng đồng (Spam, chửi bới, xúc phạm, bạo lực, 18+, thông tin sai lệch...) hay không.
+
+Trả lời duy nhất bằng JSON có định dạng sau:
+{"violation": true, "reason": "Lý do ngắn gọn tại sao xóa bình luận này"} (nếu cần gỡ bỏ)
+{"violation": false, "reason": "Lý do bình luận vẫn hợp lệ"} (nếu không vi phạm)`;
+
+  try {
+    const raw = (await callGemini(prompt)).trim();
+    console.log(`[Moderation] Report Comment result: ${raw}`);
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { violation: false, reason: "Không thể phân tích phản hồi từ AI" };
+    const parsed = JSON.parse(match[0]);
+    return {
+      violation: parsed.violation === true,
+      reason: parsed.reason || '',
+    };
+  } catch (err) {
+    console.error('[Moderation] Report Comment check error:', err);
+    return { violation: false, reason: "Lỗi hệ thống AI" };
+  }
+}
+

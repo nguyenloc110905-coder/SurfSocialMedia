@@ -22,6 +22,7 @@ const router = Router();
  *               properties:
  *                 online: { type: array, items: { type: string }, description: 'Danh sách uid đang online' }
  *                 lastSeen: { type: object, description: 'Map uid -> ISO timestamp' }
+ *                 friendIds: { type: array, items: { type: string }, description: 'Danh sách uid của tất cả bạn bè' }
  */
 router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -31,7 +32,7 @@ router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
       ? (friendDoc.data()?.friendIds ?? [])
       : [];
     const { online, lastSeen } = await getPresenceFromList(friendIds);
-    res.json({ online, lastSeen });
+    res.json({ online, lastSeen, friendIds });
   } catch {
     res.status(500).json({ error: 'Server error' });
   }

@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore, type FeedPost } from '../stores/feedStore';
 import { type Listing } from '../stores/marketplaceStore';
+import { useT } from '../lib/i18n';
 import CreatePost from '../components/feed/CreatePost';
 import MomentsBar from '../components/feed/MomentsBar';
 import PostCard from '../components/feed/PostCard';
@@ -11,8 +12,8 @@ import Avatar from '../components/ui/Avatar';
 
 type Post = FeedPost;
 
-function formatListingPrice(price: number) {
-  if (price === 0) return 'Miễn phí';
+function formatListingPrice(price: number, free: string) {
+  if (price === 0) return free;
   return price.toLocaleString('vi-VN') + ' ₫';
 }
 
@@ -21,6 +22,7 @@ function isFeedBoostListing(listing: Listing) {
 }
 
 function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (listing: Listing) => void }) {
+  const t = useT();
   const imageUrl = listing.mediaUrls?.[0];
   return (
     <article className="mt-4 overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-500/20 dark:bg-slate-800/50">
@@ -40,7 +42,7 @@ function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (li
         </span>
       </div>
       <div className="px-4 pb-4 pt-3">
-        <p className="text-sm text-gray-600 dark:text-slate-300">Mặt hàng đang được quảng bá trên Surf Market.</p>
+        <p className="text-sm text-gray-600 dark:text-slate-300">{t('feed_market_boost_desc')}</p>
         <button
           type="button"
           onClick={() => onOpen(listing)}
@@ -59,11 +61,11 @@ function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (li
           )}
           <div className="p-4">
             <div className="text-base font-black text-gray-900 dark:text-white">{listing.title}</div>
-            <div className="mt-1 text-sm font-bold text-sky-600 dark:text-sky-300">{formatListingPrice(listing.price)}</div>
-            <div className="mt-2 line-clamp-2 text-sm text-gray-500 dark:text-slate-400">{listing.description || listing.location || 'Khám phá mặt hàng này trên Surf Market.'}</div>
+            <div className="mt-1 text-sm font-bold text-sky-600 dark:text-sky-300">{formatListingPrice(listing.price, t('feed_free'))}</div>
+            <div className="mt-2 line-clamp-2 text-sm text-gray-500 dark:text-slate-400">{listing.description || listing.location || t('feed_market_explore')}</div>
             <div className="mt-3 flex items-center justify-between gap-3">
               <span className="truncate text-xs font-semibold text-gray-500 dark:text-slate-500">{listing.location || 'Surf Market'}</span>
-              <span className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-black text-white">Xem trong Market</span>
+              <span className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-black text-white">{t('feed_view_in_market')}</span>
             </div>
           </div>
         </button>
@@ -75,6 +77,7 @@ function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (li
 export default function Feed() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const t = useT();
   const { posts, hasMore, nextCursor, loaded, setPosts, appendPosts, prependPost, updatePost, scrollTop, setScrollTop } =
     useFeedStore();
   const [loading, setLoading] = useState(!loaded);
@@ -107,9 +110,9 @@ export default function Feed() {
       console.error('Failed to load feed:', err);
       const message = err instanceof Error ? err.message : '';
       if (message.includes('currently building')) {
-        setError('⏳ Database đang chuẩn bị... Vui lòng đợi 1-2 phút và reload lại trang!');
+        setError(t('feed_error_building'));
       } else {
-        setError('Không thể tải bảng tin. Vui lòng thử lại!');
+        setError(t('feed_error_load'));
       }
     } finally {
       setLoading(false);
@@ -154,10 +157,13 @@ export default function Feed() {
   }, []);
 
   // Save scroll position on unmount, restore on mount
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = document.getElementById('main-feed-scroll');
     if (container && scrollTop > 0) {
-      container.scrollTop = scrollTop;
+      // setTimeout to ensure images/components have rendered
+      setTimeout(() => {
+        container.scrollTop = scrollTop;
+      }, 10);
     }
     return () => {
       const c = document.getElementById('main-feed-scroll');
@@ -231,10 +237,10 @@ export default function Feed() {
             />
           </svg>
           <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Chưa có bài viết nào
+            {t('feed_no_posts')}
           </h3>
           <p className="text-gray-500 dark:text-gray-500">
-            Hãy là người đầu tiên chia sẻ điều gì đó!
+            {t('feed_be_first')}
           </p>
         </div>
       )}
@@ -251,12 +257,12 @@ export default function Feed() {
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
                   </svg>
-                  Khám phá
+                  {t('feed_discover')}
                 </div>
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent" />
               </div>
             )}
-            <PostCard post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} />
+            <PostCard post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} onPostCreated={handlePostCreated} />
             {idx === 2 && feedBoostListings[1] && (
               <FeedBoostPlacement listing={feedBoostListings[1]} onOpen={handleOpenBoostListing} />
             )}
@@ -295,7 +301,7 @@ export default function Feed() {
 
       {!loading && !hasMore && posts.length > 0 && (
         <p className="text-center text-sm text-gray-400 dark:text-gray-600 py-6">
-          Bạn đã xem hết bảng tin 🎉
+          {t('feed_all_caught_up')}
         </p>
       )}
     </div>

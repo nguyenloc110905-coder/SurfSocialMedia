@@ -204,6 +204,48 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
 
 /**
  * @swagger
+ * /api/users/me/reports:
+ *   get:
+ *     tags: [Users]
+ *     summary: Lấy danh sách báo cáo của bản thân
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Danh sách báo cáo }
+ */
+router.get('/me/reports', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    
+    // Báo cáo bài viết (dùng reporterId)
+    const postReportsSnap = await db.collection('reports')
+      .where('reporterId', '==', req.uid!)
+      .get();
+      
+    // Báo cáo bình luận (dùng reportedBy)
+    const commentReportsSnap = await db.collection('reports')
+      .where('reportedBy', '==', req.uid!)
+      .get();
+    
+    const allDocs = [...postReportsSnap.docs, ...commentReportsSnap.docs];
+    
+    const reports = allDocs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        resolvedAt: data.resolvedAt?.toDate?.()?.toISOString()
+      };
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    res.json({ reports });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
  * /api/users/me:
  *   put:
  *     tags: [Users]
@@ -306,6 +348,43 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     }
     const updated = await ref.get();
     const updatedData = updated.data() ?? {};
+
+    // --- Fan-out profile update (Chạy ngầm để cập nhật ảnh/tên cũ trên các bài viết) ---
+    if (displayName !== undefined || photoURL !== undefined) {
+      setImmediate(async () => {
+        try {
+          const db = getDb();
+          const updateObj: Record<string, any> = {};
+          if (displayName !== undefined) updateObj.authorDisplayName = displayName;
+          if (photoURL !== undefined) updateObj.authorPhotoURL = photoURL;
+
+          const updateDocs = async (collectionName: string) => {
+             const snap = await db.collection(collectionName).where('authorId', '==', req.uid).get();
+             let count = 0;
+             const promises = [];
+             for (const d of snap.docs) {
+               promises.push(d.ref.update(updateObj));
+               count++;
+               if (promises.length >= 100) {
+                 await Promise.all(promises);
+                 promises.length = 0;
+               }
+             }
+             if (promises.length > 0) await Promise.all(promises);
+             return count;
+          };
+
+          const pCount = await updateDocs('posts');
+          const cCount = await updateDocs('comments');
+          const vCount = await updateDocs('videos');
+          console.log(`[ProfileSync] Updated profile for user ${req.uid} in ${pCount} posts, ${cCount} comments, ${vCount} videos.`);
+        } catch (err) {
+          console.error('[ProfileSync] Failed to sync profile updates:', err);
+        }
+      });
+    }
+    // --- End Fan-out ---
+
     res.json({
       id: updated.id,
       ...updatedData,
@@ -345,6 +424,48 @@ router.get('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => 
     const doc = await getDb().collection('users').doc(req.uid!).get();
     const recentSearches = doc.exists ? (doc.data()?.recentSearches ?? []) : [];
     res.json({ recentSearches });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** PUT /api/users/me/fcm-token */
+router.put('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { fcmToken } = req.body as { fcmToken?: string };
+    if (!fcmToken || typeof fcmToken !== 'string') {
+      res.status(400).json({ error: 'fcmToken is required and must be a string' });
+      return;
+    }
+    await getDb()
+      .collection('users')
+      .doc(req.uid!)
+      .set({ 
+        fcmTokens: FieldValue.arrayUnion(fcmToken),
+        updatedAt: new Date()
+      }, { merge: true });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/** DELETE /api/users/me/fcm-token */
+router.delete('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { fcmToken } = req.body as { fcmToken?: string };
+    if (!fcmToken || typeof fcmToken !== 'string') {
+      res.status(400).json({ error: 'fcmToken is required and must be a string' });
+      return;
+    }
+    await getDb()
+      .collection('users')
+      .doc(req.uid!)
+      .set({ 
+        fcmTokens: FieldValue.arrayRemove(fcmToken),
+        updatedAt: new Date()
+      }, { merge: true });
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

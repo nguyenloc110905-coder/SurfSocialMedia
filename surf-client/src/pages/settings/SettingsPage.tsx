@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { useT } from '@/lib/i18n';
 import { ITEM_TO_SECTION } from '@/lib/settings-constants';
 import SettingsSidebar from './SettingsSidebar';
 import PrivacyCheckupPanel from './PrivacyCheckupPanel';
@@ -13,11 +14,38 @@ import SettingsSectionPage from './SettingsSectionPage';
 import BlockListPanel from './BlockListPanel';
 import NotificationPreferencesPanel from './NotificationPreferencesPanel';
 import FriendRequestPrivacyPanel from './FriendRequestPrivacyPanel';
+import LanguagePanel from './LanguagePanel';
+import ReportsPanel from './ReportsPanel';
 
 export default function SettingsPage() {
-  const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedDetail, setSelectedDetail] = useState<string | null>(
+    searchParams.get('detail')
+  );
   const [reviewAudience, setReviewAudience] = useState<'public' | 'friends' | null>(null);
   const [showCustomModal, setShowCustomModal] = useState(false);
+
+  const t = useT();
+
+  useEffect(() => {
+    const detail = searchParams.get('detail');
+    if (detail) {
+      if (detail === 'policy') {
+        navigate('/policy');
+      } else {
+        setSelectedDetail(detail);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, []);
+
+  // Effect to handle navigation when selectedDetail changes from sidebar
+  useEffect(() => {
+    if (selectedDetail === 'policy') {
+      navigate('/policy');
+    }
+  }, [selectedDetail, navigate]);
 
   const sectionKey = selectedDetail ? ITEM_TO_SECTION[selectedDetail] : null;
 
@@ -33,7 +61,7 @@ export default function SettingsPage() {
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
             </svg>
-            <span className="font-medium">Quay lại</span>
+            <span className="font-medium">{t('settings_back')}</span>
           </Link>
         </div>
       </div>
@@ -60,6 +88,10 @@ export default function SettingsPage() {
             <FriendRequestPrivacyPanel />
           ) : selectedDetail === 'notifications' ? (
             <NotificationPreferencesPanel />
+          ) : selectedDetail === 'language-timezone' ? (
+            <LanguagePanel />
+          ) : selectedDetail === 'reports' ? (
+            <ReportsPanel />
           ) : sectionKey ? (
             <SettingsSectionPage sectionKey={sectionKey} activeItem={selectedDetail} />
           ) : (

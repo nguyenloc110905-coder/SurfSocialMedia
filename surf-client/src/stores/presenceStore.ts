@@ -6,7 +6,7 @@ interface PresenceStore {
   visibleUsers: Set<string>; // users whose presence can be shown (friends)
   setOnline: (uid: string) => void;
   setOffline: (uid: string, ts: number) => void;
-  setInitial: (uids: string[], lastSeen: Record<string, number>) => void;
+  setInitial: (friendIds: string[], onlineIds: string[], lastSeen: Record<string, number>) => void;
   isOnline: (uid: string) => boolean;
   getLastSeen: (uid: string) => number | undefined;
   canViewStatus: (uid: string) => boolean;
@@ -39,11 +39,11 @@ export const usePresenceStore = create<PresenceStore>((set, get) => ({
       return { onlineUsers: nextOnline, lastSeen: nextLastSeen, visibleUsers: nextVisibleUsers };
     }),
 
-  setInitial: (uids, lastSeenRecord) =>
+  setInitial: (friendIds, onlineIds, lastSeenRecord) =>
     set({
-      onlineUsers: new Set(uids),
+      onlineUsers: new Set(onlineIds),
       lastSeen: new Map(Object.entries(lastSeenRecord)),
-      visibleUsers: new Set([...uids, ...Object.keys(lastSeenRecord)]),
+      visibleUsers: new Set(friendIds),
     }),
 
   isOnline: (uid) => get().onlineUsers.has(uid),

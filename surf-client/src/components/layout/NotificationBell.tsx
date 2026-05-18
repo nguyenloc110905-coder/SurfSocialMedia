@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { useT } from '@/lib/i18n';
 
 interface Notification {
   id: string;
@@ -18,6 +19,7 @@ interface Notification {
   message?: string;
   entityType?: string;
   entityId?: string;
+  link?: string;
   read: boolean;
   createdAt: { _seconds?: number; seconds?: number } | string;
 }
@@ -25,6 +27,7 @@ interface Notification {
 export default function NotificationBell() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -102,7 +105,9 @@ export default function NotificationBell() {
         navigate('/feed/friends/requests');
         break;
       case 'system':
-        if (notif.entityType === 'group' && notif.entityId) {
+        if (notif.link) {
+          navigate(notif.link);
+        } else if (notif.entityType === 'group' && notif.entityId) {
           navigate(`/feed/groups/${notif.entityId}`);
         } else {
           navigate('/feed');
@@ -154,15 +159,15 @@ export default function NotificationBell() {
           </span>
         )
       : null;
-    if (n.type === 'tag') return <>{name}{' đã gắn thẻ bạn trong một bài viết'}{snippet}</>;
-    if (n.type === 'friend_request') return <>{name}{' đã gửi lời mời kết bạn với bạn'}</>;
-    if (n.type === 'reaction') return <>{name}{` đã bày tỏ cảm xúc ${n.reaction ?? '❤️'} với bài viết của bạn`}{snippet}</>;
-    if (n.type === 'comment') return <>{name}{' đã bình luận về bài viết của bạn'}{snippet}</>;
-    if (n.type === 'reply') return <>{name}{' đã trả lời bình luận của bạn'}{snippet}</>;
-    if (n.type === 'comment_reaction') return <>{name}{` đã thả ${n.reaction ?? '❤️'} vào bình luận của bạn`}{snippet}</>;
-    if (n.type === 'mention') return <>{name}{' đã nhắc đến bạn trong một bình luận'}{snippet}</>;
+    if (n.type === 'tag') return <>{name}{' '}{t('notif_tagged')}{snippet}</>;
+    if (n.type === 'friend_request') return <>{name}{' '}{t('notif_friend_request')}</>;
+    if (n.type === 'reaction') return <>{name}{` ${t('notif_reaction')} ${n.reaction ?? '❤️'} ${t('notif_reaction_post')}`}{snippet}</>;
+    if (n.type === 'comment') return <>{name}{' '}{t('notif_comment')}{snippet}</>;
+    if (n.type === 'reply') return <>{name}{' '}{t('notif_reply')}{snippet}</>;
+    if (n.type === 'comment_reaction') return <>{name}{` ${t('notif_comment_reaction')} ${n.reaction ?? '❤️'} ${t('notif_comment_reaction_on')}`}{snippet}</>;
+    if (n.type === 'mention') return <>{name}{' '}{t('notif_mention')}{snippet}</>;
     if (n.message) return <>{n.message}</>;
-    return <>{name}{' đã thông báo cho bạn'}</>;
+    return <>{name}{' '}{t('notif_default')}</>;
   };
 
   return (
@@ -171,7 +176,7 @@ export default function NotificationBell() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors relative"
-        title="Thông báo"
+        title={t('notif_title')}
       >
         <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
           <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
@@ -187,13 +192,13 @@ export default function NotificationBell() {
         <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100">Thông báo</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">{t('notif_title')}</h3>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
                 className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
               >
-                Đánh dấu đã đọc
+                {t('notif_mark_all_read')}
               </button>
             )}
           </div>
@@ -202,7 +207,7 @@ export default function NotificationBell() {
           <div className="max-h-[400px] overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                Chưa có thông báo
+                {t('notif_empty')}
               </div>
             ) : (
               notifications.map((n) => (

@@ -24,6 +24,7 @@ import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
 import HashtagPage from './pages/HashtagPage';
 import { useMessageSound } from './hooks/useMessageSound';
+import PolicyPage from './pages/PolicyPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -198,6 +199,7 @@ export default function App() {
             </Protected>
           }
         />
+        <Route path="/policy" element={<PolicyPage />} />
         
       </Routes>
     </GlobalCallProvider>

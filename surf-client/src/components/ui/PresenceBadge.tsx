@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatLastSeen } from '@/lib/utils/lastSeen';
 import { usePresenceStore } from '@/stores/presenceStore';
+import { useAuthStore } from '@/stores/authStore';
 
 type PresenceBadgeSize = 'sm' | 'md' | 'lg';
 type PresenceBadgeVariant = 'dot' | 'label';
@@ -28,10 +29,15 @@ export default function PresenceBadge({
   className = '',
 }: PresenceBadgeProps) {
   const showLabel = variant === 'label' || showOfflineLabel;
+  const currentUser = useAuthStore((state) => state.user);
+  const isSelf = currentUser?.uid === uid;
+  
   const isOnline = usePresenceStore((state) => (uid ? state.onlineUsers.has(uid) : false));
+  const canViewStatus = usePresenceStore((state) => (uid ? state.visibleUsers.has(uid) : false));
   const lastSeenTs = usePresenceStore((state) =>
     uid && showLabel ? state.lastSeen.get(uid) : undefined
   );
+  
   const [nowMs, setNowMs] = useState(() => Date.now());
   const hasLastSeen = typeof lastSeenTs === 'number' && Number.isFinite(lastSeenTs);
 
@@ -55,6 +61,9 @@ export default function PresenceBadge({
   }, [hasLastSeen, lastSeenTs, nowMs, showLabel]);
 
   if (!uid) return null;
+  
+  // Only show badge if it's the current user, or if we have permission to view their status (they are a friend)
+  if (!isSelf && !canViewStatus) return null;
 
   if (!showLabel) {
     return (

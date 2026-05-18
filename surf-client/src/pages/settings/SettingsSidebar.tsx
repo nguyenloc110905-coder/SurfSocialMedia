@@ -1,5 +1,6 @@
 import { SETTINGS_DETAIL_SECTIONS } from '@/lib/settings-constants';
 import { SettingsIcon } from '@/lib/settings-data';
+import { useT, useSettingsT } from '@/lib/i18n';
 import SettingsSearch from './SettingsSearch';
 
 interface SettingsSidebarProps {
@@ -8,12 +9,14 @@ interface SettingsSidebarProps {
 }
 
 export default function SettingsSidebar({ selectedDetail, onSelectDetail }: SettingsSidebarProps) {
+  const t = useT();
+  const { tSection, tSectionSub, tItem } = useSettingsT();
   return (
     <aside className="w-80 lg:w-96 flex-shrink-0 border-r border-slate-200/80 dark:border-slate-700/80 flex flex-col min-h-0 overflow-hidden border-l-4 border-l-surf-primary bg-white dark:bg-surf-card/50">
       <div className="flex-shrink-0 pt-5 pr-4 pb-4 pl-4 border-b border-slate-200/80 dark:border-slate-700/80">
-        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">Cài đặt</h1>
+        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">{t('settings_title')}</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-          Quản lý tài khoản và quyền riêng tư
+          {t('settings_subtitle')}
         </p>
         <SettingsSearch onSelectDetail={onSelectDetail} />
       </div>
@@ -21,11 +24,11 @@ export default function SettingsSidebar({ selectedDetail, onSelectDetail }: Sett
         {SETTINGS_DETAIL_SECTIONS.map((section) => (
           <div key={section.title} className="mb-6">
             <h2 className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-surf-primary dark:text-surf-secondary mb-1">
-              {section.title}
+              {tSection(section.key)}
             </h2>
             {section.subtitle && (
               <p className="px-3 text-xs text-slate-500 dark:text-slate-400 mb-2 line-clamp-2">
-                {section.subtitle}
+                {tSectionSub(section.key) ?? section.subtitle}
               </p>
             )}
             <ul className="space-y-0.5">
@@ -48,7 +51,7 @@ export default function SettingsSidebar({ selectedDetail, onSelectDetail }: Sett
                       >
                         <SettingsIcon name={item.icon} />
                       </span>
-                      <span className="text-sm font-medium flex-1">{item.label}</span>
+                      <span className="text-sm font-medium flex-1">{tItem(item.key)}</span>
                       <svg
                         className="w-4 h-4 text-slate-400 group-hover:text-surf-primary dark:group-hover:text-surf-secondary flex-shrink-0 transition-colors"
                         viewBox="0 0 24 24"

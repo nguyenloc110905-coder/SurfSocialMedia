@@ -7,13 +7,13 @@ import { useAuthStore } from '../stores/authStore';
 const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
 
 function fetchFriendPresence(
-    setInitial: (uids: string[], lastSeen: Record<string, number>) => void
+    setInitial: (friendIds: string[], onlineIds: string[], lastSeen: Record<string, number>) => void
 ) {
     api
-        .get<{ online: string[]; lastSeen: Record<string, number> }>('/api/presence/friends')
+        .get<{ online: string[]; lastSeen: Record<string, number>; friendIds: string[] }>('/api/presence/friends')
         .then((res) => {
             console.log('[presence] initial friends online:', res.online);
-            setInitial(res.online, res.lastSeen);
+            setInitial(res.friendIds, res.online, res.lastSeen);
         })
         .catch((err) => console.error('[presence] fetch failed:', err));
 }

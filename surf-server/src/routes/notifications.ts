@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
+import * as fs from 'fs';
 
 const router = Router();
 
@@ -58,6 +59,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       .slice(0, limit);
     res.json({ notifications });
   } catch (e) {
+    console.error('❌ GET /api/notifications error:', e);
+    fs.writeFileSync('d:\\DuanCode\\Surf\\surf-server\\error-notif.txt', String((e as Error).stack));
     res.status(500).json({ error: (e as Error).message });
   }
 });

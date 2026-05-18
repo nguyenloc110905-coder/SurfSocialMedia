@@ -29,6 +29,16 @@ const CATEGORIES: { key: Category; label: string; icon: string }[] = [
   { key: 'other', label: 'Khác', icon: 'M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0M19 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0M5 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0' },
 ];
 
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
+];
+
 const CONDITION_LABELS: Record<Condition, string> = {
   new: 'Mới',
   like_new: 'Như mới',
@@ -660,6 +670,9 @@ export default function MarketPage() {
   const [sellerMessageDraft, setSellerMessageDraft] = useState('Mặt hàng này còn chứ?');
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
   const [marketToast, setMarketToast] = useState('');
   const [billingCard, setBillingCard] = useState({
     name: '',
@@ -1208,15 +1221,23 @@ export default function MarketPage() {
     }
   };
 
-  const handleReportSelectedListing = async (listing: Listing) => {
-    if (reportSubmitting) return;
-    const reason = window.prompt('Lý do bạn muốn báo cáo bài niêm yết này là gì?');
-    if (!reason?.trim()) return;
+  const handleReportSelectedListing = (listing: Listing) => {
+    setIsReportModalOpen(true);
+    setReportCategory('');
+    setReportDetails('');
+  };
+
+  const submitReportListing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedListing || reportSubmitting || !reportCategory) return;
 
     setReportSubmitting(true);
     try {
-      await reportListing(listing.id, reason.trim());
+      const catLabel = REPORT_CATEGORIES.find((c) => c.key === reportCategory)?.label || reportCategory;
+      const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
+      await reportListing(selectedListing.id, reasonText);
       showMarketToast('Đã gửi báo cáo bài niêm yết.');
+      setIsReportModalOpen(false);
     } catch (err) {
       window.alert((err as Error).message || 'Không thể gửi báo cáo');
     } finally {
@@ -3926,6 +3947,73 @@ export default function MarketPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {isReportModalOpen && selectedListing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#1e2329] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
+              <h2 className="text-xl font-black text-white">Báo cáo bài niêm yết</h2>
+              <button
+                type="button"
+                onClick={() => setIsReportModalOpen(false)}
+                className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={submitReportListing} className="p-4">
+              <div className="mb-4 text-sm text-slate-300">
+                Bạn đang báo cáo bài niêm yết <strong>{selectedListing.title}</strong>. Vui lòng chọn lý do báo cáo để chúng tôi có thể xem xét và xử lý theo Tiêu chuẩn Cộng đồng của Surf.
+              </div>
+              <div className="mb-4 max-h-[300px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
+                {REPORT_CATEGORIES.map((category) => (
+                  <label key={category.key} className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/5 bg-white/5 p-3 hover:bg-white/10">
+                    <input
+                      type="radio"
+                      name="reportCategory"
+                      value={category.key}
+                      checked={reportCategory === category.key}
+                      onChange={(e) => setReportCategory(e.target.value)}
+                      className="h-4 w-4 rounded-full border-white/20 bg-transparent text-surf-primary focus:ring-2 focus:ring-surf-primary focus:ring-offset-1 focus:ring-offset-[#1e2329]"
+                    />
+                    <span className="text-sm font-semibold text-slate-200">{category.label}</span>
+                  </label>
+                ))}
+              </div>
+              {reportCategory && (
+                <div className="mb-6">
+                  <label className="mb-1.5 block text-xs font-bold text-slate-300">Chi tiết bổ sung (không bắt buộc)</label>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Vui lòng cung cấp thêm thông tin giúp chúng tôi hiểu rõ hơn..."
+                    className="h-24 w-full rounded-xl border border-white/10 bg-[#0f141b] p-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-surf-primary/50 focus:outline-none focus:ring-1 focus:ring-surf-primary/50"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-bold text-slate-300 transition hover:bg-white/5"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={reportSubmitting || !reportCategory}
+                  className="rounded-lg bg-surf-primary px-5 py-2 text-sm font-bold text-white transition hover:bg-surf-secondary disabled:opacity-50"
+                >
+                  {reportSubmitting ? 'Đang gửi...' : 'Gửi báo cáo'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

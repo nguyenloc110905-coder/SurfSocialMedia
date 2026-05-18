@@ -894,18 +894,56 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
-    const original = originalDoc.data()!;
+    let original = originalDoc.data()!;
+    let targetPostId = req.params.id;
+
+    // Nếu bài viết này đã là một bài chia sẻ, lấy thông tin bài gốc thay thế
+    if (original.sharedFrom) {
+      targetPostId = original.sharedFrom.id;
+      // Lưu ý: Dữ liệu của bài gốc đã được lưu sẵn trong sharedFrom,
+      // ta gán lại vào `original` để dùng cho việc tạo sharedFrom mới.
+      original = {
+        ...original,
+        authorId: original.sharedFrom.authorId,
+        authorDisplayName: original.sharedFrom.authorDisplayName,
+        authorPhotoURL: original.sharedFrom.authorPhotoURL,
+        content: original.sharedFrom.content,
+        mediaUrls: original.sharedFrom.mediaUrls,
+        createdAt: original.sharedFrom.createdAt,
+      };
+    }
+
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
 
     const { content = '', reaction } = req.body;
+    const shareContent = (content as string).trim();
+
+    // AI Moderation cho caption của bài share
+    const moderation = await moderatePost(shareContent, []);
+    if (!moderation.allowed) {
+      try {
+        await db.collection('moderation_logs').add({
+          userId: req.uid,
+          contentSnippet: shareContent.substring(0, 200),
+          mediaUrls: [],
+          reason: moderation.reason ?? 'Nội dung không phù hợp',
+          type: 'share_post',
+          createdAt: new Date(),
+        });
+      } catch {
+        // ignore log error
+      }
+      res.status(422).json({ error: `Caption vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      return;
+    }
 
     const sharedPostRef = postsRef.doc();
     await sharedPostRef.set({
       authorId: req.uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
       authorPhotoURL: user?.photoURL ?? null,
-      content: (content as string).trim(),
+      content: shareContent,
       mediaUrls: [],
       privacy: 'public',
       parentId: null,
@@ -918,7 +956,7 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
       reactions: reaction ? { [req.uid!]: reaction } : {},
       hasVideo: false,
       sharedFrom: {
-        id: req.params.id,
+        id: targetPostId,
         authorId: original.authorId ?? null,
         authorDisplayName: original.authorDisplayName ?? 'Unknown',
         authorPhotoURL: original.authorPhotoURL ?? null,
@@ -929,13 +967,13 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
     });
 
     // Increment shareCount on original post
-    await postsRef.doc(req.params.id).update({
+    await postsRef.doc(targetPostId).update({
       shareCount: FieldValue.increment(1),
     });
 
     const created = await sharedPostRef.get();
     // Emit real-time update for share count
-    getIo().emit('post:shared', { postId: req.params.id });
+    getIo().emit('post:shared', { postId: targetPostId });
     res.status(201).json({ id: created.id, ...created.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
