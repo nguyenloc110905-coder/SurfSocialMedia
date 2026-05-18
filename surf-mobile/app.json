@@ -3,11 +3,14 @@
     "name": "surf-mobile",
     "slug": "surf-mobile",
     "version": "1.0.0",
-    "scheme": "surf",
+    "scheme": [
+      "surf",
+      "com.surf.app"
+    ],
     "orientation": "default",
     "icon": "./assets/icon.png",
     "backgroundColor": "#0c1929",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -16,6 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.surf.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Surf needs camera access to capture photos and videos for posts.",
         "NSPhotoLibraryUsageDescription": "Surf needs photo library access to select photos and videos for posts."
@@ -23,11 +27,15 @@
     },
     "android": {
       "package": "com.surf.app",
+      "usesCleartextTraffic": true,
       "permissions": [
-        "CAMERA",
-        "READ_MEDIA_IMAGES",
-        "READ_MEDIA_VIDEO",
-        "READ_EXTERNAL_STORAGE"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0c1929",
@@ -49,8 +57,16 @@
         }
       ],
       "expo-web-browser",
+      "expo-apple-authentication",
+      "./plugins/withAndroidCleartext",
       "expo-screen-orientation",
       "expo-video"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ac18826d-7735-4a4d-ba38-aad8c1114679"
+      }
+    },
+    "owner": "tichne1625"
   }
 }

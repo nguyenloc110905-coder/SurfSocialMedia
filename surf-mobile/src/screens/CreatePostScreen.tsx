@@ -23,6 +23,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useFeedStore } from '@/stores/feedStore';
 import { api } from '@/lib/api';
 
 type Props = {
@@ -101,6 +102,7 @@ export default function CreatePostScreen({ navigation }: Props) {
 
   const { profile, fetchProfile } = useUserStore();
   const { user } = useAuthStore();
+  const refreshFeed = useFeedStore((s) => s.fetch);
 
   const [content, setContent] = useState('');
   const [privacy, setPrivacy] = useState<Privacy>('public');
@@ -182,6 +184,7 @@ export default function CreatePostScreen({ navigation }: Props) {
         location: location.trim() || null,
         privacy,
       });
+      await refreshFeed(true);
       navigation.goBack();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Không thể đăng bài. Vui lòng thử lại!';

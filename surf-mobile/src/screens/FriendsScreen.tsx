@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -25,6 +25,9 @@ import {
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showTitleBlock?: boolean;
 };
 
 type MainTab = 'friends' | 'requests' | 'suggestions';
@@ -86,9 +89,10 @@ function Avatar({ name, url, size = 52 }: { name: string; url?: string | null; s
   );
 }
 
-export default function FriendsScreen({ navigation }: Props) {
+export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = true, showTitleBlock = true }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
+  const listRef = useRef<FlatList<any>>(null);
   const [activeTab, setActiveTab] = useState<MainTab>('requests');
   const [requestTab, setRequestTab] = useState<RequestTab>('incoming');
   const [query, setQuery] = useState('');
@@ -114,6 +118,11 @@ export default function FriendsScreen({ navigation }: Props) {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [resetSignal]);
 
   const filteredFriends = useMemo(() => {
     const q = normalizeText(query.trim());
@@ -251,12 +260,12 @@ export default function FriendsScreen({ navigation }: Props) {
 
   const renderHeader = () => (
     <View>
-      <View style={s.titleBlock}>
+      {showTitleBlock && <View style={s.titleBlock}>
         <Text style={[s.headerTitle, { color: C.text }]}>Bạn bè</Text>
         <Text style={[s.headerSub, { color: C.subtext }]}>
           Quản lý danh sách, lời mời và gợi ý kết bạn
         </Text>
-      </View>
+      </View>}
 
       <ScrollView
         horizontal
@@ -350,9 +359,10 @@ export default function FriendsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {isLoading && listData.length === 0 ? (
         <FlatList
+          ref={listRef}
           data={[0, 1, 2, 3, 4]}
           keyExtractor={(item) => `skeleton-${item}`}
           ListHeaderComponent={renderHeader}
@@ -362,6 +372,7 @@ export default function FriendsScreen({ navigation }: Props) {
         />
       ) : (
         <FlatList
+          ref={listRef}
           data={listData}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderHeader}

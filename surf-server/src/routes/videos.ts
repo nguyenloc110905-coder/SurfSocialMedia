@@ -27,6 +27,9 @@ const router = Router();
  *               thumbnailUrl: { type: string, nullable: true }
  *               caption: { type: string, nullable: true }
  *               privacy: { type: string, enum: [public, friends, only-me], default: public }
+ *               location: { type: string, nullable: true }
+ *               allowComments: { type: boolean, default: true }
+ *               aiGenerated: { type: boolean, default: false }
  *     responses:
  *       201: { description: Video đã tạo }
  *       400: { description: Thiếu videoUrl }
@@ -43,6 +46,11 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       duration = null,
       tags = [],
       privacy = 'public',
+      location = null,
+      allowComments = true,
+      aiGenerated = false,
+      editOptions = {},
+      textOverlays = [],
     } = req.body as {
       title?: string;
       description?: string;
@@ -51,6 +59,20 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       duration?: number | null;
       tags?: string[];
       privacy?: string;
+      location?: string | null;
+      allowComments?: boolean;
+      aiGenerated?: boolean;
+      editOptions?: {
+        contentFit?: string;
+        mutedOriginal?: boolean;
+      };
+      textOverlays?: Array<{
+        id?: string;
+        text?: string;
+        color?: string;
+        fontSize?: number;
+        placement?: string;
+      }>;
     };
 
     if (!videoUrl?.trim()) {
@@ -62,6 +84,30 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const user = await getAuth().getUser(req.uid!);
 
     const now = new Date();
+    const normalizedPrivacy = ['public', 'friends', 'only-me'].includes(privacy) ? privacy : 'public';
+    const normalizedEditOptions = {
+      contentFit: editOptions?.contentFit === 'contain' ? 'contain' : 'cover',
+      mutedOriginal: editOptions?.mutedOriginal === true,
+    };
+    const normalizedTextOverlays = Array.isArray(textOverlays)
+      ? textOverlays
+          .map((overlay) => ({
+            id: String(overlay.id ?? Date.now()),
+            text: String(overlay.text ?? '').trim().slice(0, 90),
+            color: /^#[0-9A-Fa-f]{6}$/.test(String(overlay.color ?? '')) ? String(overlay.color) : '#ffffff',
+            fontSize: Math.min(40, Math.max(20, Number(overlay.fontSize) || 28)),
+            placement: ['top', 'center', 'bottom'].includes(String(overlay.placement)) ? String(overlay.placement) : 'center',
+          }))
+          .filter((overlay) => overlay.text)
+          .slice(0, 3)
+      : [];
+    const normalizedTags = Array.isArray(tags)
+      ? tags
+          .map((tag) => String(tag).trim().replace(/^#/, '').slice(0, 40))
+          .filter(Boolean)
+          .slice(0, 8)
+      : [];
+
     const videoData = {
       authorId: req.uid!,
       authorDisplayName: user.displayName ?? 'Anonymous',
@@ -71,8 +117,13 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       videoUrl: videoUrl.trim(),
       thumbnailUrl: thumbnailUrl ?? null,
       duration: duration ?? null,
-      tags: Array.isArray(tags) ? tags : [],
-      privacy,
+      tags: normalizedTags,
+      privacy: normalizedPrivacy,
+      location: typeof location === 'string' && location.trim() ? location.trim().slice(0, 120) : null,
+      allowComments: allowComments !== false,
+      aiGenerated: aiGenerated === true,
+      editOptions: normalizedEditOptions,
+      textOverlays: normalizedTextOverlays,
       likeCount: 0,
       likedBy: [] as string[],
       commentCount: 0,
@@ -190,6 +241,11 @@ router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
           duration: null,
           tags: [],
           privacy: data.privacy ?? 'public',
+          location: null,
+          allowComments: true,
+          aiGenerated: false,
+          editOptions: { contentFit: 'contain', mutedOriginal: false },
+          textOverlays: [],
           likeCount: data.likeCount ?? 0,
           likedBy: data.likedBy ?? [],
           commentCount: data.replyCount ?? 0,
@@ -447,6 +503,11 @@ router.get('/:id', requireAuth, async (req, res) => {
         duration: null,
         tags: [],
         privacy: data?.privacy ?? 'public',
+        location: null,
+        allowComments: true,
+        aiGenerated: false,
+        editOptions: { contentFit: 'contain', mutedOriginal: false },
+        textOverlays: [],
         likeCount: data?.likeCount ?? 0,
         likedBy: data?.likedBy ?? [],
         commentCount: data?.replyCount ?? 0,

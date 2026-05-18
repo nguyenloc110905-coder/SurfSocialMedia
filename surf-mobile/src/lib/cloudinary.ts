@@ -55,6 +55,9 @@ async function uploadAsset(asset: UploadableAsset, kind: 'image' | 'video', opti
   const data = (await res.json().catch(() => ({}))) as CloudinaryUploadResponse;
 
   if (!res.ok || data.error || !data.secure_url) {
+    if (res.status === 413) {
+      throw new Error('Video vượt giới hạn upload trực tiếp 100MB của Cloudinary.');
+    }
     throw new Error(data.error?.message || `Cloudinary upload failed (${res.status})`);
   }
 

@@ -13,6 +13,7 @@ import { isDevModeEnabled, getDebugScreen } from '@/lib/debug-config';
 import ForgotPasswordScreen from '@/screens/ForgotPasswordScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import CreatePostScreen from '@/screens/CreatePostScreen';
+import CreateClipScreen from '@/screens/CreateClipScreen';
 import MarketplaceScreen from '@/screens/MarketplaceScreen';
 import MarketplaceDetailScreen from '@/screens/MarketplaceDetailScreen';
 import CreateListingScreen from '@/screens/CreateListingScreen';
@@ -31,6 +32,7 @@ export type RootStackParamList = {
   Chat: { conversationId: string; title: string; peerUid?: string | null; peerAvatar?: string | null; };
   Settings: undefined;
   CreatePost: undefined;
+  CreateClip: undefined;
   Marketplace: undefined;
   MarketplaceDetail: { listingId: string };
   CreateListing: undefined;
@@ -72,7 +74,10 @@ export default function Navigation() {
       <Stack.Navigator 
         screenOptions={{ 
           headerShown: false,
-          contentStyle: { backgroundColor: '#0c1929' }
+          contentStyle: { backgroundColor: '#0c1929' },
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
         }}
         initialRouteName={initialRoute as any}
       >
@@ -87,7 +92,12 @@ export default function Navigation() {
             <Stack.Screen
               name="CreatePost"
               component={CreatePostScreen}
-              options={{ presentation: 'fullScreenModal' }}
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="CreateClip"
+              component={CreateClipScreen}
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
             />
             <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
             <Stack.Screen name="MarketplaceDetail" component={MarketplaceDetailScreen} />
@@ -95,7 +105,7 @@ export default function Navigation() {
             <Stack.Screen
               name="CreateListing"
               component={CreateListingScreen}
-              options={{ presentation: 'fullScreenModal' }}
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
             />
             <Stack.Screen name="MyListings" component={MyListingsScreen} />
           </>

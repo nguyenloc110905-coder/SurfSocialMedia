@@ -1,7 +1,7 @@
 import {
   initializeAuth,
   getAuth,
-  // @ts-ignore — chỉ available trong React Native bundler, không thấy trong Node
+  // @ts-ignore - available in the React Native Firebase Auth bundle.
   getReactNativePersistence,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -16,7 +16,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { app } from './config';
 
-// initializeAuth một lần, fallback getAuth nếu đã init rồi
+export const AUTH_PERSIST_MODE_KEY = 'firebase_persist_mode';
+export type AuthPersistMode = 'local' | 'session';
+
 let auth: ReturnType<typeof getAuth>;
 try {
   auth = initializeAuth(app, {
@@ -27,26 +29,24 @@ try {
 }
 export { auth };
 
-/**
- * Set Firebase persistence.
- * On React Native, persistence is always enabled via AsyncStorage by default.
- * This is for compatibility with web-like API.
- */
 export async function setAuthPersistence(rememberMe: boolean): Promise<void> {
-  // On React Native, persistence is automatic via AsyncStorage
-  // This function exists for API compatibility with surf-client
-  if (rememberMe) {
-    // When Remember me is true, we let AsyncStorage handle persistence
-    await AsyncStorage.setItem('firebase_persist_mode', 'local');
-  } else {
-    // When unchecked, clear future persistence (for next login)
-    await AsyncStorage.removeItem('firebase_persist_mode');
-  }
+  // React Native Firebase Auth uses durable AsyncStorage persistence.
+  // Store the user's preference so bootstrap can decide whether to restore
+  // the first hydrated Firebase user or treat it as a one-session login.
+  await AsyncStorage.setItem(AUTH_PERSIST_MODE_KEY, rememberMe ? 'local' : 'session');
+}
+
+export async function getAuthPersistMode(): Promise<AuthPersistMode | null> {
+  const mode = await AsyncStorage.getItem(AUTH_PERSIST_MODE_KEY);
+  return mode === 'local' || mode === 'session' ? mode : null;
+}
+
+export async function clearAuthPersistencePreference(): Promise<void> {
+  await AsyncStorage.removeItem(AUTH_PERSIST_MODE_KEY);
 }
 
 export async function signIn(email: string, password: string) {
-  const result = await signInWithEmailAndPassword(auth, email, password);
-  return result;
+  return signInWithEmailAndPassword(auth, email, password);
 }
 
 export function getCurrentUser() {
@@ -62,8 +62,6 @@ export async function signUp(email: string, password: string, displayName?: stri
 }
 
 export async function signInWithGoogle() {
-  // Google Sign-In trên mobile cần native SDK (expo-auth-session hoặc @react-native-google-signin)
-  // Tạm thời throw lỗi thân thiện để tránh crash
   throw new Error('Đăng nhập Google sẽ được hỗ trợ sớm trên mobile.');
 }
 
@@ -81,13 +79,7 @@ export async function signOut() {
 }
 
 export function subscribeAuth(callback: (user: User | null) => void) {
-  console.log('🎧 subscribeAuth: Setting up onAuthStateChanged listener');
-  const unsubscribe = onAuthStateChanged(auth, (user) => {
-    console.log(`📡 onAuthStateChanged fired: user=${user ? user.email : 'null'}`);
-    callback(user);
-  });
-  console.log('✅ subscribeAuth: onAuthStateChanged listener registered');
-  return unsubscribe;
+  return onAuthStateChanged(auth, callback);
 }
 
 export async function updateUserProfile(updates: { displayName?: string; photoURL?: string }) {

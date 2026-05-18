@@ -1,7 +1,11 @@
 import { create } from 'zustand';
-import { User } from 'firebase/auth';
-import { subscribeAuth, signOut } from '@/lib/firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { User } from 'firebase/auth';
+import {
+  clearAuthPersistencePreference,
+  getAuthPersistMode,
+  signOut,
+  subscribeAuth,
+} from '@/lib/firebase/auth';
 
 type AuthState = {
   user: User | null;
@@ -21,51 +25,66 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   unsubscribe: null,
 
   setUser: (user) => {
-    console.log(`📝 setUser called: user=${user ? user.email : 'null'}`);
     set({ user });
   },
-  
+
   setLoading: (loading) => set({ loading }),
 
   initialize: () => {
-    console.log('🎧 Setting up Firebase auth listener...');
-    const unsubscribe = subscribeAuth((user) => {
-      const email = user ? user.email : 'null';
-      console.log(`🔄 Auth state changed: user=${email}`);
+    const existingUnsubscribe = get().unsubscribe;
+    if (existingUnsubscribe) {
+      existingUnsubscribe();
+    }
+
+    let isInitialAuthEvent = true;
+    set({ loading: true, initialized: false, unsubscribe: null });
+
+    const resolveAuth = (user: User | null) => {
       set({ user, loading: false, initialized: true });
-      console.log(`✅ Store updated: user=${email}, loading=false`);
+    };
+
+    const unsubscribe = subscribeAuth((user) => {
+      const isInitial = isInitialAuthEvent;
+      isInitialAuthEvent = false;
+
+      if (!isInitial || !user) {
+        resolveAuth(user);
+        return;
+      }
+
+      void getAuthPersistMode()
+        .then(async (mode) => {
+          if (mode === 'session') {
+            await signOut();
+            resolveAuth(null);
+            return;
+          }
+
+          resolveAuth(user);
+        })
+        .catch((err) => {
+          console.warn('Failed to read auth persistence mode:', err);
+          resolveAuth(user);
+        });
     });
-    console.log('✅ Firebase auth listener subscribed (returned unsubscribe function)');
+
     set({ unsubscribe });
-    return unsubscribe;
+
+    return () => {
+      unsubscribe();
+      if (get().unsubscribe === unsubscribe) {
+        set({ unsubscribe: null });
+      }
+    };
   },
 
   resetAuth: async () => {
     try {
-      console.log('🔑 Starting logout...');
-      
-      // Unsubscribe Firebase listener first
-      const { unsubscribe } = get();
-      if (unsubscribe) {
-        console.log('🔓 Unsubscribing from auth listener');
-        unsubscribe();
-        set({ unsubscribe: null });
-      }
-      
-      // Sign out from Firebase
       await signOut();
-      console.log('✅ Firebase signOut completed');
-      
-      // Clear AsyncStorage
-      await AsyncStorage.removeItem('firebase_persist_mode');
-      console.log('✅ AsyncStorage cleared');
-      
-      // Set store to logged out state
+      await clearAuthPersistencePreference();
       set({ user: null, loading: false, initialized: true });
-      console.log('✅ Auth store reset - user=null');
     } catch (err) {
-      console.error('❌ Error in resetAuth:', err);
-      // Still set to null even if there's an error
+      console.error('Error resetting auth:', err);
       set({ user: null, loading: false, initialized: true });
     }
   },

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Navigation from './src/navigation';
@@ -10,6 +11,9 @@ import { useNotificationStore } from './src/stores/notificationStore';
 import { useFriendStore } from './src/stores/friendStore';
 
 export default function App() {
+  const scheme = useColorScheme();
+  const isDark = scheme === 'dark';
+  const appBg = isDark ? '#0f172a' : '#f8fafc';
   const initialize = useAuthStore((s) => s.initialize);
   const setLoading = useAuthStore((s) => s.setLoading) as (loading: boolean) => void;
   const resetAuth = useAuthStore((s) => s.resetAuth);
@@ -102,8 +106,8 @@ export default function App() {
   }, [user?.uid]);
 
   return (
-    <SafeAreaProvider style={{ backgroundColor: '#0c1929' }}>
-      <StatusBar style="light" />
+    <SafeAreaProvider style={{ backgroundColor: appBg }}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={appBg} translucent={false} />
       <Navigation />
     </SafeAreaProvider>
   );
