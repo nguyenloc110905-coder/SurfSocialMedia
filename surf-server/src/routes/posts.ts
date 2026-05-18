@@ -280,15 +280,57 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     const normQ = normalizePost(raw);
-    const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(100).get();
-    type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; [key: string]: unknown };
+    const searchTerms = normQ.split(/\s+/).filter(Boolean);
+    
+    const isMatch = (text: string) => {
+      if (!text) return false;
+      const normalized = normalizePost(text);
+      return searchTerms.every(term => normalized.includes(term));
+    };
+
+    const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(500).get();
+    type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; authorDisplayName?: string; [key: string]: unknown };
     let posts = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
       .filter((p) => !p.deleted && p.privacy !== 'only-me')
-      .filter((p) => normalizePost(p.content ?? '').includes(normQ));
+      .filter((p) => isMatch(p.content ?? '') || isMatch(p.authorDisplayName ?? ''));
 
     if (type === 'videos') {
       posts = posts.filter((p) => p.hasVideo === true);
+      
+      const videosSnap = await getDb().collection('videos').orderBy('createdAt', 'desc').limit(500).get();
+      const mappedVideos = videosSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me')
+        .filter((v: any) => 
+          isMatch(v.description || v.title || '') ||
+          isMatch(v.authorDisplayName || '')
+        )
+        .map((v: any) => ({
+          id: v.id,
+          content: v.description || v.title || '',
+          authorId: v.authorId,
+          authorDisplayName: v.authorDisplayName,
+          authorPhotoURL: v.authorPhotoURL,
+          mediaUrls: v.videoUrl ? [v.videoUrl] : [],
+          createdAt: v.createdAt,
+          likeCount: v.likeCount || 0,
+          replyCount: v.commentCount || 0,
+          likedBy: v.likedBy || [],
+          privacy: v.privacy,
+          hasVideo: true,
+          _source: 'clip'
+        }));
+        
+      posts = [...posts, ...mappedVideos].sort((a, b) => {
+        const timeA = typeof a.createdAt === 'object' && a.createdAt !== null 
+          ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000 
+          : new Date(a.createdAt as string).getTime() || 0;
+        const timeB = typeof b.createdAt === 'object' && b.createdAt !== null 
+          ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000 
+          : new Date(b.createdAt as string).getTime() || 0;
+        return timeB - timeA;
+      });
     } else {
       posts = posts.filter((p) => !p.hasVideo);
     }
