@@ -192,8 +192,12 @@ export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const q = searchParams.get('q') ?? '';
-  const tabParam = (searchParams.get('tab') as Tab) ?? 'people';
+  const source = searchParams.get('source');
+  const isFromClip = source === 'clip';
+  const tabParam = (searchParams.get('tab') as Tab) ?? (isFromClip ? 'videos' : 'people');
   const [activeTab, setActiveTab] = useState<Tab>(tabParam);
+
+  const tabsToShow = isFromClip ? TABS.filter(t => t.key === 'videos') : TABS;
 
   const [users, setUsers] = useState<SearchUser[]>([]);
   const [posts, setPosts] = useState<SearchPost[]>([]);
@@ -206,7 +210,7 @@ export default function SearchPage() {
   const [doneVideos, setDoneVideos] = useState(false);
 
   const fetchPeople = useCallback(async () => {
-    if (!q.trim()) { setUsers([]); setDonePeople(true); return; }
+    if (!q.trim() || isFromClip) { setUsers([]); setDonePeople(true); return; }
     setLoadingPeople(true);
     setDonePeople(false);
     try {
@@ -214,10 +218,10 @@ export default function SearchPage() {
       setUsers(res.users ?? []);
     } catch { setUsers([]); }
     finally { setLoadingPeople(false); setDonePeople(true); }
-  }, [q]);
+  }, [q, isFromClip]);
 
   const fetchPosts = useCallback(async () => {
-    if (!q.trim()) { setPosts([]); setDonePosts(true); return; }
+    if (!q.trim() || isFromClip) { setPosts([]); setDonePosts(true); return; }
     setLoadingPosts(true);
     setDonePosts(false);
     try {
@@ -225,7 +229,7 @@ export default function SearchPage() {
       setPosts(res.posts ?? []);
     } catch { setPosts([]); }
     finally { setLoadingPosts(false); setDonePosts(true); }
-  }, [q]);
+  }, [q, isFromClip]);
 
   const fetchVideos = useCallback(async () => {
     if (!q.trim()) { setVideos([]); setDoneVideos(true); return; }
@@ -278,25 +282,27 @@ export default function SearchPage() {
       </h2>
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-slate-700 mb-5 px-1">
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => switchTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap ${
-                isActive
-                  ? 'border-surf-primary text-surf-primary dark:text-cyan-400 dark:border-cyan-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {tabsToShow.length > 1 && (
+        <div className="flex gap-1 border-b border-gray-200 dark:border-slate-700 mb-5 px-1">
+          {tabsToShow.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => switchTab(tab.key)}
+                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'border-surf-primary text-surf-primary dark:text-cyan-400 dark:border-cyan-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Tab content */}
       <div className="px-2">

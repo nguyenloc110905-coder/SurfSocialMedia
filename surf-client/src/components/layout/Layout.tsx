@@ -70,12 +70,12 @@ export default function Layout() {
       <main
         className={
           isSettings
-            ? 'flex-1 w-full pt-0 pb-20 md:pb-6 flex flex-col min-h-0 overflow-hidden'
+            ? 'flex-1 w-full pt-0 pb-20 md:pb-0 flex flex-col min-h-0 overflow-hidden'
             : isProfile
-              ? 'flex-1 w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-20 md:pb-6 max-w-4xl'
+              ? 'flex-1 w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-20 md:pb-0 max-w-4xl'
               : useThreeColumn
-                ? 'flex-1 flex min-h-0 w-full pb-20 md:pb-6 overflow-hidden'
-                : 'flex-1 max-w-2xl w-full mx-auto px-4 py-4 sm:py-6 pb-20 md:pb-6'
+                ? 'flex-1 flex min-h-0 w-full pb-20 md:pb-0 overflow-hidden'
+                : 'flex-1 max-w-2xl w-full mx-auto px-4 py-4 sm:py-6 pb-20 md:pb-0'
         }
       >
         {useThreeColumn ? (

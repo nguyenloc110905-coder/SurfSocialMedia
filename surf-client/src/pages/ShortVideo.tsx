@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { uploadVideo } from '../lib/cloudinary';
 import PresenceBadge from '../components/ui/PresenceBadge';
@@ -7,6 +7,7 @@ import { optimizeImageUrl } from '../lib/image-cdn';
 import { useAuthStore } from '../stores/authStore';
 import { useClipFeedStore, type ClipVideo } from '../stores/clipFeedStore';
 import { getSocket } from '../lib/socket';
+import { extractHashtags } from '../lib/hashtagUtils';
 
 const REPORT_CATEGORIES = [
   { key: 'spam', label: 'Spam hoặc lừa đảo' },
@@ -48,13 +49,14 @@ function VideoCaptionText({
     const token = match[0];
     if (token.startsWith('#')) {
       parts.push(
-        <span
+        <Link
           key={match.index}
-          className="text-cyan-400 font-semibold cursor-pointer hover:text-cyan-300 transition-colors"
-          onClick={(e) => { e.stopPropagation(); }}
+          to={`/feed/hashtag/${token.substring(1)}`}
+          className="text-cyan-400 font-semibold hover:text-cyan-300 transition-colors"
+          onClick={(e) => e.stopPropagation()}
         >
           {token}
-        </span>
+        </Link>
       );
     } else {
       const name = token.slice(1);
@@ -311,8 +313,7 @@ function ClipCard({
   return (
     <div
       ref={cardRef}
-      className="relative flex flex-row items-center bg-black snap-start flex-shrink-0 overflow-hidden"
-      style={{ height: 'calc(100vh - 88px)' }}
+      className="relative flex flex-row items-center bg-black snap-start flex-shrink-0 overflow-hidden h-full"
     >
       {/* Video wrapper – flex-1 so it fills remaining space after comment panel */}
       <div className="flex-1 flex items-center justify-center h-full min-w-0">
@@ -977,6 +978,7 @@ function UploadModal({
         description: description.trim(),
         videoUrl,
         privacy,
+        tags: extractHashtags(description),
       })) as ClipVideo;
 
       setProgress(100);
@@ -1175,6 +1177,7 @@ export default function ShortVideo() {
   const [loading, setLoading] = useState(!loaded);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadFeed = useCallback(async (cursor?: number) => {
@@ -1182,16 +1185,19 @@ export default function ShortVideo() {
     else setLoading(true);
     try {
       const params = new URLSearchParams({ limit: '5' });
-      if (cursor) params.set('before', String(cursor));
-      const data = (await api.get(`/api/videos/feed?${params.toString()}`)) as {
+      if (cursor) params.set('page', String(cursor));
+      else params.set('page', '1');
+      
+      const data = (await api.get(`/api/videos/foryou?${params.toString()}`)) as {
         videos: ClipVideo[];
         hasMore: boolean;
-        nextCursor: number | null;
+        nextPage: number | null;
       };
+      
       if (cursor) {
-        appendFeed(data.videos, data.hasMore, data.nextCursor);
+        appendFeed(data.videos, data.hasMore, data.nextPage);
       } else {
-        setFeed(data.videos, data.hasMore, data.nextCursor);
+        setFeed(data.videos, data.hasMore, data.nextPage);
       }
     } catch (e) {
       console.error('Failed to load video feed:', e);
@@ -1249,7 +1255,7 @@ export default function ShortVideo() {
   }, [prependVideo]);
 
   return (
-    <div className="relative bg-black" style={{ height: 'calc(100vh - 88px)' }}>
+    <div className="relative bg-black h-full">
       {/* Vertical snap scroll container */}
       <div
         ref={scrollRef}
@@ -1258,10 +1264,7 @@ export default function ShortVideo() {
       >
         {loading ? (
           // Loading skeleton
-          <div
-            className="snap-start w-full flex items-center justify-center"
-            style={{ height: 'calc(100vh - 88px)' }}
-          >
+          <div className="snap-start w-full flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-3">
               <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
               <span className="text-white/60 text-sm">Đang tải clips...</span>
@@ -1269,10 +1272,7 @@ export default function ShortVideo() {
           </div>
         ) : videos.length === 0 ? (
           // Empty state
-          <div
-            className="snap-start w-full flex flex-col items-center justify-center"
-            style={{ height: 'calc(100vh - 88px)' }}
-          >
+          <div className="snap-start w-full flex flex-col items-center justify-center h-full">
             <div className="text-7xl mb-4 opacity-60">🎬</div>
             <p className="text-white/80 font-semibold text-lg">Chưa có clip nào</p>
             <p className="text-white/50 text-sm mt-1">Hãy là người đầu tiên đăng!</p>
@@ -1297,10 +1297,7 @@ export default function ShortVideo() {
 
             {/* Loading more spinner */}
             {loadingMore && (
-              <div
-                className="snap-start w-full flex items-center justify-center"
-                style={{ height: 'calc(100vh - 88px)' }}
-              >
+              <div className="snap-start w-full flex items-center justify-center h-full">
                 <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
               </div>
             )}
@@ -1315,26 +1312,59 @@ export default function ShortVideo() {
         )}
       </div>
 
-      {/* Back button + "Surf Clips" title + Upload */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/50 active:scale-90 transition-all"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-          </svg>
-        </button>
-        <span className="text-white font-bold text-lg drop-shadow-lg pointer-events-none">Surf Clips</span>
-        <button
-          onClick={() => setShowUpload(true)}
-          title="Đăng clip mới"
-          className="w-8 h-8 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center text-white hover:bg-white/35 active:scale-90 transition-all"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-        </button>
+      {/* Back button + "Surf Clips" title + Upload + Search */}
+      <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <button
+            onClick={() => navigate(-1)}
+            className="w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/50 active:scale-90 transition-all flex-shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+          </button>
+          <span className="text-white font-bold text-lg drop-shadow-lg hidden sm:block whitespace-nowrap">Surf Clips</span>
+          <button
+            onClick={() => setShowUpload(true)}
+            title="Đăng clip mới"
+            className="w-8 h-8 bg-white/20 backdrop-blur-md border border-white/30 rounded-full flex items-center justify-center text-white hover:bg-white/35 active:scale-90 transition-all flex-shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </button>
+          
+          {/* Search Bar */}
+          <form 
+            className="ml-2 w-48 sm:w-64"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const q = searchQuery.trim();
+              if (!q) return;
+              if (q.startsWith('#')) {
+                navigate(`/feed/hashtag/${q.substring(1)}`);
+              } else {
+                navigate(`/feed/search?q=${encodeURIComponent(q)}&tab=videos&source=clip`);
+              }
+            }}
+          >
+            <div className="relative flex items-center">
+              <svg className="absolute left-3 w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm #hashtag hoặc clip..."
+                className="w-full bg-black/30 backdrop-blur-md border border-white/20 text-white placeholder-white/60 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:border-cyan-400 focus:bg-black/50 transition-all"
+              />
+            </div>
+          </form>
+        </div>
+        
+        {/* Empty div for flex-between spacing if needed */}
+        <div></div>
       </div>
 
       {/* Upload modal */}
