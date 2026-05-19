@@ -499,6 +499,7 @@ export default function SearchPage() {
             Áp dụng
           </button>
         </form>
+      </div>
       {/* Tab content */}
       <div className="px-2">
         {activeTab === 'people' &&
