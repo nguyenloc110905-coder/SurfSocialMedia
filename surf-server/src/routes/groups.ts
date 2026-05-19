@@ -285,9 +285,11 @@ router.post('/:id/requests/:userId', requireAuth, async (req: AuthRequest, res) 
            entityId: req.params.id,
            message: `Yêu cầu tham gia nhóm ${groupResult.item?.name} của bạn đã được phê duyệt bởi ${actorName}.`
          });
-         const unreadCount = await getUnreadNotificationCount(req.params.userId);
-         emitNotificationNew(req.params.userId, toApiNotification(notification));
-         emitNotificationUnreadCount(req.params.userId, unreadCount);
+          if (notification) {
+            const unreadCount = await getUnreadNotificationCount(req.params.userId);
+            emitNotificationNew(req.params.userId, toApiNotification(notification));
+            emitNotificationUnreadCount(req.params.userId, unreadCount);
+          }
        }
     }
     res.json({ success: true });
@@ -360,9 +362,11 @@ router.post('/:id/invites', requireAuth, async (req: AuthRequest, res) => {
         message: `${actorName} đã mời bạn tham gia nhóm ${groupResult.item?.name}.`,
       });
 
-      const unreadCount = await getUnreadNotificationCount(userId);
-      emitNotificationNew(userId, toApiNotification(notification));
-      emitNotificationUnreadCount(userId, unreadCount);
+      if (notification) {
+        const unreadCount = await getUnreadNotificationCount(userId);
+        emitNotificationNew(userId, toApiNotification(notification));
+        emitNotificationUnreadCount(userId, unreadCount);
+      }
     });
 
     await Promise.allSettled(promises);

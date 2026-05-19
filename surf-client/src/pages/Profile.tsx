@@ -133,7 +133,6 @@ export default function Profile() {
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
     savedBy?: string[];
-    pinnedAt?: string | null;
     sharedFrom?: {
       id: string;
       authorId?: string;
@@ -1491,30 +1490,7 @@ export default function Profile() {
               {!postsLoading && !postsError && posts.length > 0 && viewMode === 'list' && (
                 <div className="space-y-4">
                   {posts.map((post) => (
-                    <PostCard
-                      key={post.id}
-                      post={post}
-                      currentUserId={user?.uid}
-                      showPinOption={isOwnProfile}
-                      onPostUpdated={(updated) => {
-                        setPosts((prev) => {
-                          const next = prev.map((p) =>
-                            p.id === updated.id ? { ...p, pinnedAt: updated.pinnedAt ?? null } : p
-                          );
-                          return next.sort((a, b) => {
-                            if (!!a.pinnedAt !== !!b.pinnedAt) return a.pinnedAt ? -1 : 1;
-                            const getTs = (p: Post): number => {
-                              const c = p.createdAt;
-                              if (!c) return 0;
-                              if (typeof c === 'object' && '_seconds' in c) return (c as { _seconds: number })._seconds;
-                              if (typeof c === 'object' && 'seconds' in c) return (c as { seconds: number }).seconds;
-                              return 0;
-                            };
-                            return getTs(b) - getTs(a);
-                          });
-                        });
-                      }}
-                    />
+                    <PostCard key={post.id} post={post} currentUserId={user?.uid} />
                   ))}
                 </div>
               )}

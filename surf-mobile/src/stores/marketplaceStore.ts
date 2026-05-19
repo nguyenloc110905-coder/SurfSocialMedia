@@ -178,6 +178,10 @@ function applySavedState(state: MarketplaceState, id: string, userId: string, sa
   };
 }
 
+function replaceListingById(listings: Listing[], updated: Listing): Listing[] {
+  return listings.map((listing) => (listing.id === updated.id ? updated : listing));
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
@@ -301,8 +305,18 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     set((s) => applySavedState(s, id, userId, nextSaved));
 
     try {
-      const res = await api.post<{ saved: boolean }>(`/api/marketplace/${id}/save`);
-      set((s) => applySavedState(s, id, userId, res.saved));
+      const res = await api.post<{ saved: boolean; item?: Listing }>(`/api/marketplace/${id}/save`);
+      set((s) => res.item
+        ? {
+            listings: replaceListingById(s.listings, res.item),
+            searchResults: replaceListingById(s.searchResults, res.item),
+            myListings: replaceListingById(s.myListings, res.item),
+            savedListings: res.saved
+              ? [res.item, ...s.savedListings.filter((l: Listing) => l.id !== id)]
+              : s.savedListings.filter((l: Listing) => l.id !== id),
+            detailListing: s.detailListing?.id === id ? res.item : s.detailListing,
+          }
+        : applySavedState(s, id, userId, res.saved));
       return res.saved;
     } catch (e) {
       set((s) => applySavedState(s, id, userId, wasSaved));

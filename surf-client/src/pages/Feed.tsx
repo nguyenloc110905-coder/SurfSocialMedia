@@ -30,7 +30,7 @@ function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (li
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-gray-900 dark:text-white">{listing.sellerDisplayName}</div>
             <div className="mt-0.5 flex items-center gap-2 text-xs text-sky-600 dark:text-sky-300">
-              <span className="font-black">Sponsored</span>
+              <span className="font-black">Được tài trợ</span>
               <span>Surf Boost · Feed</span>
             </div>
           </div>
@@ -170,7 +170,7 @@ export default function Feed() {
   };
 
   const handleOpenBoostListing = (listing: Listing) => {
-    navigate('/feed/market', { state: { sponsoredListingId: listing.id } });
+    navigate(`/feed/market/${listing.id}`);
   };
 
   // Vị trí đầu tiên của bài "Khám phá" để hiện divider

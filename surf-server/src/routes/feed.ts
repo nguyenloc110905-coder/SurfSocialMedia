@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
+import type { DocumentData, QuerySnapshot } from 'firebase-admin/firestore';
 
 const router = Router();
 
@@ -45,13 +46,13 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const redis = getRedis();
     let friendIds: string[] = [];
     let followingIds: string[] = [];
-    let groupsSnap: any;
+    let groupsSnap: QuerySnapshot<DocumentData>;
 
     if (redis) {
       const [cachedFriends, cachedFollows, gSnap] = await Promise.all([
         redis.get(`friends:${uid}`),
         redis.get(`follows:${uid}`),
-        getDb().collection('groups').where('memberIds', 'array-contains', uid).get()
+        getDb().collection('groups').where('memberIds', 'array-contains', uid).get(),
       ]);
       groupsSnap = gSnap;
       
@@ -85,8 +86,13 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       groupsSnap = gSnap;
     }
 
-    const joinedGroupIds = new Set(groupsSnap.docs.map(d => d.id));
-    const groupDetails = new Map(groupsSnap.docs.map(d => [d.id, { name: d.data().name, coverImageUrl: d.data().coverImageUrl }]));
+    const joinedGroupIds = new Set(groupsSnap.docs.map((d) => d.id));
+    const groupDetails = new Map(
+      groupsSnap.docs.map((d) => {
+        const data = d.data() as { name?: string; coverImageUrl?: string | null };
+        return [d.id, { name: data.name ?? 'Nhóm', coverImageUrl: data.coverImageUrl ?? null }] as const;
+      })
+    );
 
     // Tập hợp người quen (bản thân + bạn + đang follow)
     const visibleAuthors = new Set([uid, ...friendIds, ...followingIds]);
@@ -178,17 +184,18 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       posts = [...personalizedPosts, ...discoverPosts].slice(0, limitNum);
     }
 
-    posts = posts.map(p => {
+    posts = posts.map((p) => {
       const modified = { ...p };
       if (modified.isAnonymous && modified.authorId !== uid) {
         modified.authorId = `anon_${modified.id}`;
         modified.authorDisplayName = 'Thành viên ẩn danh';
         modified.authorPhotoURL = null;
       }
-      if (modified.groupId && groupDetails.has(modified.groupId)) {
+      const groupDetail = modified.groupId ? groupDetails.get(modified.groupId) : null;
+      if (modified.groupId && groupDetail) {
         modified.group = {
           id: modified.groupId,
-          ...groupDetails.get(modified.groupId)
+          ...groupDetail,
         };
       }
       return modified;

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { uploadFile, uploadImage } from '../../lib/cloudinary';
 import { getSocket } from '../../lib/socket';
@@ -11,12 +12,29 @@ interface ConversationItem {
   id: string;
   type?: 'dm' | 'group';
   title?: string;
+  marketplace?: MarketplaceConversationContext;
   peer: { uid: string; name: string; avatarUrl: string | null } | null;
   members?: { uid: string; name: string; avatarUrl: string | null }[];
   memberCount?: number;
   unreadCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
+}
+
+interface MarketplaceConversationContext {
+  kind: 'marketplace';
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  title: string;
+  price: number;
+  currency: 'VND';
+  imageUrl: string | null;
+  location: string;
+  status: string;
+  saleStatus?: string | null;
+  sellerDisplayName: string;
+  sellerPhotoURL: string | null;
 }
 
 interface UiMessage {
@@ -34,6 +52,11 @@ interface UiMessage {
 interface RealtimePayload {
   conversationId: string;
   message: UiMessage;
+}
+
+interface TypingPayload {
+  conversationId: string;
+  userId: string;
 }
 
 interface MessageSelfHiddenPayload {
@@ -134,6 +157,11 @@ function formatTime(iso: string) {
   return new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(d);
 }
 
+function formatMarketplacePrice(price: number) {
+  if (price === 0) return 'Miễn phí';
+  return price.toLocaleString('vi-VN') + ' ₫';
+}
+
 async function downloadFile(url: string, fileName: string) {
   try {
     const res = await fetch(url);
@@ -202,10 +230,18 @@ function Avatar({
 interface Props {
   onClose: () => void;
   initialPeerId?: string | null;
+  initialConversationId?: string | null;
+  initialConversation?: ConversationItem | null;
   compact?: boolean;
 }
 
-export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props) {
+export default function MiniChatPanel({
+  onClose,
+  initialPeerId,
+  initialConversationId,
+  initialConversation,
+  compact,
+}: Props) {
   const user = useAuthStore((s) => s.user);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,6 +249,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [draft, setDraft] = useState('');
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -223,16 +260,107 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const activeTypingConversationRef = useRef<string | null>(null);
+  const typingStopTimeoutRef = useRef<number | null>(null);
+  const typingClearTimeoutsRef = useRef<Record<string, number>>({});
 
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
+  const activeMarketplace = activeConv?.marketplace;
+  const marketplaceQuickReplies = [
+    'Có nhé. Bạn có thích không?',
+    'Tôi sẽ báo cho bạn biết.',
+    'Tiếc quá, hết hàng rồi bạn ạ.',
+  ];
+
+  const clearTypingUser = useCallback((userId: string) => {
+    const timeoutId = typingClearTimeoutsRef.current[userId];
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      delete typingClearTimeoutsRef.current[userId];
+    }
+    setTypingUserIds((prev) => prev.filter((id) => id !== userId));
+  }, []);
+
+  const scheduleTypingAutoClear = useCallback(
+    (userId: string) => {
+      const previousTimeoutId = typingClearTimeoutsRef.current[userId];
+      if (previousTimeoutId) {
+        window.clearTimeout(previousTimeoutId);
+      }
+      typingClearTimeoutsRef.current[userId] = window.setTimeout(() => {
+        clearTypingUser(userId);
+      }, 3000);
+    },
+    [clearTypingUser]
+  );
+
+  const emitTypingStop = useCallback(
+    (conversationId?: string | null) => {
+      const targetConversationId = conversationId ?? activeTypingConversationRef.current;
+      if (typingStopTimeoutRef.current) {
+        window.clearTimeout(typingStopTimeoutRef.current);
+        typingStopTimeoutRef.current = null;
+      }
+      if (!targetConversationId || !user?.uid) return;
+
+      getSocket().emit('typing:stop', { conversationId: targetConversationId });
+      if (activeTypingConversationRef.current === targetConversationId) {
+        activeTypingConversationRef.current = null;
+      }
+    },
+    [user?.uid]
+  );
+
+  const emitTypingStart = useCallback(() => {
+    if (!activeId || !user?.uid) return;
+
+    const socket = getSocket();
+    const previousConversationId = activeTypingConversationRef.current;
+    if (previousConversationId && previousConversationId !== activeId) {
+      socket.emit('typing:stop', { conversationId: previousConversationId });
+    }
+
+    if (previousConversationId !== activeId) {
+      socket.emit('typing:start', { conversationId: activeId });
+      activeTypingConversationRef.current = activeId;
+    }
+
+    if (typingStopTimeoutRef.current) {
+      window.clearTimeout(typingStopTimeoutRef.current);
+    }
+    typingStopTimeoutRef.current = window.setTimeout(() => {
+      emitTypingStop(activeId);
+    }, 1600);
+  }, [activeId, emitTypingStop, user?.uid]);
+
+  const handleDraftChange = useCallback(
+    (value: string) => {
+      setDraft(value);
+      if (value.trim()) {
+        emitTypingStart();
+      } else {
+        emitTypingStop(activeId);
+      }
+    },
+    [activeId, emitTypingStart, emitTypingStop]
+  );
 
   // Load conversation list
   useEffect(() => {
     api
       .get<{ items: ConversationItem[] }>('/api/conversations?limit=30')
       .then((data) => {
-        const items = data.items ?? [];
+        const items = initialConversation
+          ? [
+              initialConversation,
+              ...(data.items ?? []).filter((item) => item.id !== initialConversation.id),
+            ]
+          : data.items ?? [];
         setConversations(items);
+        if (initialConversationId) {
+          setActiveId(initialConversationId);
+          return;
+        }
         // Auto-open conversation with initial peer
         if (initialPeerId) {
           const existing = items.find((c) => c.peer?.uid === initialPeerId);
@@ -255,7 +383,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [initialPeerId]);
+  }, [initialConversation, initialConversationId, initialPeerId]);
 
   // Load messages when conversation selected
   useEffect(() => {
@@ -275,10 +403,33 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     );
   }, [activeId]);
 
+  useEffect(() => {
+    if (!activeId) return;
+    const socket = getSocket();
+    socket.emit('conversation:join', activeId);
+    setTypingUserIds([]);
+
+    return () => {
+      emitTypingStop(activeId);
+      socket.emit('conversation:leave', activeId);
+      setTypingUserIds([]);
+    };
+  }, [activeId, emitTypingStop]);
+
+  useEffect(() => {
+    return () => {
+      emitTypingStop();
+      Object.values(typingClearTimeoutsRef.current).forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      typingClearTimeoutsRef.current = {};
+    };
+  }, [emitTypingStop]);
+
   // Auto scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, typingUserIds.length]);
 
   // Focus input
   useEffect(() => {
@@ -290,6 +441,9 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     const socket = getSocket();
     const onMessageNew = (payload: RealtimePayload) => {
       const { conversationId, message } = payload;
+      if (message.senderId !== user?.uid) {
+        clearTypingUser(message.senderId);
+      }
       // Update messages if in this conversation
       if (message.conversationId === activeId) {
         setMessages((prev) => {
@@ -376,17 +530,39 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
       );
     };
 
+    const onTypingStart = (payload: TypingPayload) => {
+      if (payload.conversationId !== activeId || !payload.userId || payload.userId === user?.uid) {
+        return;
+      }
+
+      setTypingUserIds((prev) =>
+        prev.includes(payload.userId) ? prev : [...prev, payload.userId]
+      );
+      scheduleTypingAutoClear(payload.userId);
+    };
+
+    const onTypingStop = (payload: TypingPayload) => {
+      if (payload.conversationId !== activeId || !payload.userId || payload.userId === user?.uid) {
+        return;
+      }
+      clearTypingUser(payload.userId);
+    };
+
     socket.on('message:new', onMessageNew);
     socket.on('message:self-hidden', onMessageSelfHidden);
     socket.on('message:recalled', onMessageRecalled);
     socket.on('message:updated', onMessageUpdated);
+    socket.on('typing:start', onTypingStart);
+    socket.on('typing:stop', onTypingStop);
     return () => {
       socket.off('message:new', onMessageNew);
       socket.off('message:self-hidden', onMessageSelfHidden);
       socket.off('message:recalled', onMessageRecalled);
       socket.off('message:updated', onMessageUpdated);
+      socket.off('typing:start', onTypingStart);
+      socket.off('typing:stop', onTypingStop);
     };
-  }, [activeId, user?.uid]);
+  }, [activeId, clearTypingUser, scheduleTypingAutoClear, user?.uid]);
 
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
@@ -403,6 +579,7 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
     };
     setMessages((prev) => [...prev, optimistic]);
     setDraft('');
+    emitTypingStop(activeId);
     setSending(true);
     try {
       const data = await api.post<{ item: UiMessage }>(
@@ -508,20 +685,26 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
                 </span>
               ) : (
                 <Avatar
-                  src={activeConv.peer?.avatarUrl}
-                  name={activeConv.peer?.name}
+                  src={activeMarketplace?.imageUrl ?? activeConv.peer?.avatarUrl}
+                  name={activeMarketplace?.title ?? activeConv.peer?.name}
                   uid={activeConv.peer?.uid}
                   size="sm"
-                  showPresence
+                  showPresence={!activeMarketplace}
                 />
               )}
               <div className="min-w-0">
                 <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
-                  {activeConv.type === 'group'
-                    ? (activeConv.title ?? 'Nhóm')
-                    : (activeConv.peer?.name ?? 'Chat')}
+                  {activeMarketplace
+                    ? `${activeConv.peer?.name ?? 'Người mua'} · ${activeMarketplace.title}`
+                    : activeConv.type === 'group'
+                      ? (activeConv.title ?? 'Nhóm')
+                      : (activeConv.peer?.name ?? 'Chat')}
                 </span>
-                {activeConv.type !== 'group' && activeConv.peer?.uid && (
+                {activeMarketplace ? (
+                  <span className="mt-0.5 block truncate text-[11px] font-semibold text-cyan-600 dark:text-cyan-300">
+                    Surf Market · {formatMarketplacePrice(activeMarketplace.price)}
+                  </span>
+                ) : activeConv.type !== 'group' && activeConv.peer?.uid && (
                   <PresenceBadge uid={activeConv.peer.uid} variant="label" className="mt-0.5" />
                 )}
               </div>
@@ -610,6 +793,39 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
         /* ── Message thread ── */
         <>
           <div className="flex-1 overflow-y-auto scrollbar-hide px-3 py-3 flex flex-col gap-2">
+            {activeMarketplace && (
+              <div className="mb-2 rounded-2xl border border-cyan-100 bg-cyan-50/80 p-2.5 dark:border-slate-700 dark:bg-slate-900/70">
+                <Link to={`/feed/market/${activeMarketplace.listingId}`} className="flex items-center gap-2.5">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-white dark:bg-slate-800">
+                    {activeMarketplace.imageUrl ? (
+                      <img src={optimizeImageUrl(activeMarketplace.imageUrl)} alt={activeMarketplace.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-400">Market</div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-black text-slate-900 dark:text-white">{activeMarketplace.title}</div>
+                    <div className="mt-0.5 text-[11px] font-bold text-cyan-700 dark:text-cyan-300">{formatMarketplacePrice(activeMarketplace.price)}</div>
+                    <div className="mt-0.5 truncate text-[10px] text-slate-500 dark:text-slate-400">{activeMarketplace.location || 'Surf Market'}</div>
+                  </div>
+                </Link>
+                {user?.uid === activeMarketplace.sellerId && (
+                  <div className="mt-2 space-y-1.5">
+                    <div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Trả lời nhanh</div>
+                    {marketplaceQuickReplies.map((reply) => (
+                      <button
+                        key={reply}
+                        type="button"
+                        onClick={() => setDraft(reply)}
+                        className="block max-w-full truncate rounded-xl bg-white px-3 py-1.5 text-left text-[11px] font-bold text-slate-700 shadow-sm transition hover:bg-cyan-100 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                      >
+                        {reply}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {loadingMsgs ? (
               <div className="flex items-center justify-center h-full text-sm text-gray-400">Đang tải...</div>
             ) : messages.length === 0 ? (
@@ -655,6 +871,13 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
                 );
               })
             )}
+            {typingUserIds.length > 0 && (
+              <div className="flex items-end gap-2 justify-start">
+                <div className="rounded-2xl rounded-bl-sm bg-gray-100 px-3 py-2 text-sm font-black leading-none text-gray-500 dark:bg-slate-700 dark:text-slate-300">
+                  ...
+                </div>
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
 
@@ -683,7 +906,8 @@ export default function MiniChatPanel({ onClose, initialPeerId, compact }: Props
             <input
               ref={inputRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => handleDraftChange(e.target.value)}
+              onBlur={() => emitTypingStop(activeId)}
               placeholder={`Nhắn cho ${activeConv?.peer?.name ?? ''}...`}
               className="flex-1 min-w-0 h-9 px-3 rounded-full bg-gray-100 dark:bg-slate-700 text-sm text-gray-800 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-cyan-400/50 transition"
               autoComplete="off"

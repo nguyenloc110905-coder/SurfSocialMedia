@@ -37,4 +37,23 @@ router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+router.get('/users/:uid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if (!uid) {
+      res.status(400).json({ error: 'Missing uid' });
+      return;
+    }
+
+    const { online, lastSeen } = await getPresenceFromList([uid]);
+    res.json({
+      uid,
+      online: online.includes(uid),
+      lastSeen: lastSeen[uid] ?? null,
+    });
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

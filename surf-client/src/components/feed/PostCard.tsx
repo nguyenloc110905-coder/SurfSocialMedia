@@ -62,6 +62,11 @@ interface PostCardProps {
     poll?: { options: { id: string; text: string; votes: string[] }[] };
     savedBy?: string[];
     pinnedAt?: string | null;
+    group?: {
+      id: string;
+      name: string;
+      coverImageUrl?: string | null;
+    };
     sharedFrom?: {
       id: string;
       authorId?: string;

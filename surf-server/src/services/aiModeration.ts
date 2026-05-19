@@ -1,6 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 
-const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+type AiModerationProvider = 'openai' | 'gemini';
 
 export interface ModerationResult {
   allowed: boolean;
@@ -24,10 +26,10 @@ export interface MarketplaceModerationResult {
   reason?: string;
   confidence?: number;
   flags: string[];
-  provider: 'gemini';
+  provider: AiModerationProvider;
 }
 
-function parseMarketplaceModeration(raw: string): MarketplaceModerationResult | null {
+function parseMarketplaceModeration(raw: string, provider: AiModerationProvider): MarketplaceModerationResult | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
   const parsed = JSON.parse(match[0]) as {
@@ -44,7 +46,7 @@ function parseMarketplaceModeration(raw: string): MarketplaceModerationResult | 
   const result: MarketplaceModerationResult = {
     decision,
     flags: Array.isArray(parsed.flags) ? parsed.flags.filter((flag): flag is string => typeof flag === 'string') : [],
-    provider: 'gemini',
+    provider,
   };
   if (typeof parsed.reason === 'string' && parsed.reason.trim()) result.reason = parsed.reason.trim();
   if (typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)) {
@@ -57,12 +59,42 @@ function getGeminiApiKey() {
   return (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '').trim();
 }
 
+function getOpenAiApiKey() {
+  return (process.env.OPENAI_API_KEY ?? '').trim();
+}
+
 function getGeminiClient() {
   return new GoogleGenAI({ apiKey: getGeminiApiKey() });
 }
 
 function getGeminiModel() {
-  return (process.env.GEMINI_MODEL ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+  return (process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
+}
+
+function getOpenAiModel() {
+  return (process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
+}
+
+function getPreferredAiModerationProvider(): AiModerationProvider {
+  const configured = (process.env.MARKETPLACE_AI_PROVIDER ?? process.env.AI_MODERATION_PROVIDER ?? '').trim().toLowerCase();
+  if (configured === 'openai' || configured === 'gemini') return configured;
+  return getOpenAiApiKey() ? 'openai' : 'gemini';
+}
+
+function hasProviderKey(provider: AiModerationProvider) {
+  return provider === 'openai' ? Boolean(getOpenAiApiKey()) : Boolean(getGeminiApiKey());
+}
+
+export function getMarketplaceModerationProviderConfig() {
+  const provider = getPreferredAiModerationProvider();
+  const hasOpenAiKey = Boolean(getOpenAiApiKey());
+  const hasGeminiKey = Boolean(getGeminiApiKey());
+  return {
+    provider,
+    hasOpenAiKey,
+    hasGeminiKey,
+    hasAiKey: provider === 'openai' ? hasOpenAiKey : hasGeminiKey,
+  };
 }
 
 function getMarketplaceImageModerationLimit() {
@@ -124,6 +156,52 @@ function getMarketplaceGeminiFailure(err: unknown): MarketplaceModerationResult 
   };
 }
 
+function getMarketplaceOpenAiFailure(err: unknown): MarketplaceModerationResult {
+  const text = getErrorText(err);
+  if (/invalid_api_key|Incorrect API key|401/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'OPENAI_API_KEY không hợp lệ hoặc đã bị thu hồi. Hãy tạo key mới trong OpenAI dashboard.',
+      flags: ['invalid_openai_key'],
+      provider: 'openai',
+    };
+  }
+  if (/insufficient_quota|rate limit|429|quota/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'OpenAI đã hết quota hoặc bị giới hạn tần suất, cần thử lại sau.',
+      flags: ['openai_quota_exceeded'],
+      provider: 'openai',
+    };
+  }
+  if (/model_not_found|model|404/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'Model OpenAI đang cấu hình không khả dụng.',
+      flags: ['openai_model_unavailable'],
+      provider: 'openai',
+    };
+  }
+  if (/server_error|temporarily unavailable|503|502|500/i.test(text)) {
+    return {
+      decision: 'needs_review',
+      reason: 'OpenAI đang quá tải hoặc tạm thời không khả dụng, cần thử lại sau.',
+      flags: ['openai_unavailable'],
+      provider: 'openai',
+    };
+  }
+  return {
+    decision: 'needs_review',
+    reason: 'AI kiểm duyệt gặp lỗi, cần admin duyệt thủ công.',
+    flags: ['ai_error'],
+    provider: 'openai',
+  };
+}
+
+function getMarketplaceProviderFailure(provider: AiModerationProvider, err: unknown): MarketplaceModerationResult {
+  return provider === 'openai' ? getMarketplaceOpenAiFailure(err) : getMarketplaceGeminiFailure(err);
+}
+
 async function callGemini(prompt: string): Promise<string> {
   const response = await getGeminiClient().models.generateContent({
     model: getGeminiModel(),
@@ -141,6 +219,65 @@ async function callGeminiWithImage(prompt: string, base64: string, mimeType: str
   });
   return response.text ?? '';
 }
+
+async function callOpenAi(prompt: string): Promise<string> {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getOpenAiApiKey()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: getOpenAiModel(),
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'Bạn là hệ thống kiểm duyệt an toàn. Chỉ trả về JSON hợp lệ, không thêm giải thích.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+  const data = await response.json() as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
+  if (!response.ok) {
+    throw new Error(data.error?.message || `OpenAI request failed: ${response.status}`);
+  }
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+async function callOpenAiWithImage(prompt: string, imageUrl: string): Promise<string> {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getOpenAiApiKey()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: getOpenAiModel(),
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'Bạn là hệ thống kiểm duyệt hình ảnh. Chỉ trả về JSON hợp lệ, không thêm giải thích.' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+    }),
+  });
+  const data = await response.json() as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
+  if (!response.ok) {
+    throw new Error(data.error?.message || `OpenAI image request failed: ${response.status}`);
+  }
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+async function callAi(prompt: string, provider: AiModerationProvider): Promise<string> {
+  return provider === 'openai' ? callOpenAi(prompt) : callGemini(prompt);
+}
+
 
 /**
  * Kiểm duyệt nội dung văn bản (caption, content).
@@ -299,13 +436,21 @@ export async function moderatePost(
 export async function moderateMarketplaceListing(
   input: MarketplaceModerationInput,
 ): Promise<MarketplaceModerationResult> {
-  if (!getGeminiApiKey()) {
-    return {
-      decision: 'needs_review',
-      reason: 'Chưa cấu hình GEMINI_API_KEY nên cần admin duyệt thủ công.',
-      flags: ['missing_gemini_key'],
-      provider: 'gemini',
-    };
+  const provider = getPreferredAiModerationProvider();
+  if (!hasProviderKey(provider)) {
+    return provider === 'openai'
+      ? {
+          decision: 'needs_review',
+          reason: 'Chưa cấu hình OPENAI_API_KEY nên cần admin duyệt thủ công.',
+          flags: ['missing_openai_key'],
+          provider: 'openai',
+        }
+      : {
+          decision: 'needs_review',
+          reason: 'Chưa cấu hình GEMINI_API_KEY nên cần admin duyệt thủ công.',
+          flags: ['missing_gemini_key'],
+          provider: 'gemini',
+        };
   }
 
   const textPrompt = `Bạn là hệ thống kiểm duyệt Marketplace. Hãy đánh giá bài niêm yết dưới đây trước khi cho hiển thị công khai.
@@ -331,14 +476,14 @@ Trả lời đúng JSON, không thêm nội dung ngoài JSON:
 {"decision":"needs_review","reason":"lý do cần admin xem","confidence":0.6,"flags":["suspicious"]}`;
 
   try {
-    const textRaw = (await callGemini(textPrompt)).trim();
-    const textResult = parseMarketplaceModeration(textRaw);
+    const textRaw = (await callAi(textPrompt, provider)).trim();
+    const textResult = parseMarketplaceModeration(textRaw, provider);
     if (!textResult) {
       return {
         decision: 'needs_review',
         reason: 'AI trả về kết quả không đọc được, cần admin duyệt.',
         flags: ['invalid_ai_response'],
-        provider: 'gemini',
+        provider,
       };
     }
     if (textResult.decision !== 'approved') return textResult;
@@ -348,32 +493,37 @@ Trả lời đúng JSON, không thêm nội dung ngoài JSON:
       .slice(0, getMarketplaceImageModerationLimit());
 
     for (const imageUrl of imageUrls) {
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        return {
-          decision: 'needs_review',
-          reason: 'Không tải được ảnh sản phẩm để AI kiểm duyệt.',
-          flags: ['image_fetch_failed'],
-          provider: 'gemini',
-        };
-      }
-      const buffer = await response.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString('base64');
-      const mimeType = response.headers.get('content-type') ?? 'image/jpeg';
       const imagePrompt = `Kiểm duyệt ảnh sản phẩm Marketplace này. Chặn hàng cấm, vũ khí, chất cấm, ảnh 18+, bạo lực, lừa đảo, giấy tờ/tài khoản nhạy cảm. Nếu không chắc chắn hãy chọn needs_review.
 
 Trả lời đúng JSON:
 {"decision":"approved","confidence":0.9,"flags":[]}
 {"decision":"rejected","reason":"lý do ngắn gọn tiếng Việt","confidence":0.95,"flags":["policy_violation"]}
 {"decision":"needs_review","reason":"lý do cần admin xem","confidence":0.6,"flags":["suspicious_image"]}`;
-      const imageRaw = (await callGeminiWithImage(imagePrompt, base64, mimeType)).trim();
-      const imageResult = parseMarketplaceModeration(imageRaw);
+      let imageRaw = '';
+      if (provider === 'openai') {
+        imageRaw = (await callOpenAiWithImage(imagePrompt, imageUrl)).trim();
+      } else {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          return {
+            decision: 'needs_review',
+            reason: 'Không tải được ảnh sản phẩm để AI kiểm duyệt.',
+            flags: ['image_fetch_failed'],
+            provider,
+          };
+        }
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        const mimeType = response.headers.get('content-type') ?? 'image/jpeg';
+        imageRaw = (await callGeminiWithImage(imagePrompt, base64, mimeType)).trim();
+      }
+      const imageResult = parseMarketplaceModeration(imageRaw, provider);
       if (!imageResult) {
         return {
           decision: 'needs_review',
           reason: 'AI trả về kết quả kiểm duyệt ảnh không đọc được.',
           flags: ['invalid_image_ai_response'],
-          provider: 'gemini',
+          provider,
         };
       }
       if (imageResult.decision !== 'approved') return imageResult;
@@ -381,7 +531,7 @@ Trả lời đúng JSON:
 
     return textResult;
   } catch (err) {
-    console.error('[Moderation] Marketplace check error:', err);
-    return getMarketplaceGeminiFailure(err);
+    console.error('[Moderation] Marketplace ' + provider + ' check error:', err);
+    return getMarketplaceProviderFailure(provider, err);
   }
 }

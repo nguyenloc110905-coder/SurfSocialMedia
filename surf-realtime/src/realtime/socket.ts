@@ -154,6 +154,31 @@ export const createSocketServer = async (app: FastifyInstance): Promise<Server> 
       });
     });
 
+    const emitTyping = async (
+      payload: Partial<Pick<TypingPayload, 'conversationId'>> | undefined,
+      eventName: 'typing:start' | 'typing:stop'
+    ) => {
+      const conversationId =
+        typeof payload?.conversationId === 'string' ? payload.conversationId.trim() : '';
+      if (!conversationId) return;
+
+      const conversation = await getConversationById(conversationId);
+      if (!conversation || !conversation.memberIds.includes(uid)) return;
+
+      socket.to(roomForConversation(conversationId)).emit(eventName, {
+        conversationId,
+        userId: uid,
+      });
+    };
+
+    socket.on('typing:start', async (payload?: Partial<Pick<TypingPayload, 'conversationId'>>) => {
+      await emitTyping(payload, 'typing:start');
+    });
+
+    socket.on('typing:stop', async (payload?: Partial<Pick<TypingPayload, 'conversationId'>>) => {
+      await emitTyping(payload, 'typing:stop');
+    });
+
     socket.on('typing', async (payload: TypingPayload) => {
       const conversation = await getConversationById(payload.conversationId);
       if (!conversation || !conversation.memberIds.includes(uid)) return;
