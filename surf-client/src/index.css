@@ -884,7 +884,7 @@ body {
   --market-faint-text: #64748b;
 }
 
-.market-theme>.sticky {
+.market-theme .sticky {
   background-color: color-mix(in srgb, var(--market-panel) 88%, transparent) !important;
   border-color: var(--market-border) !important;
 }
@@ -1044,4 +1044,179 @@ body {
 .market-theme select,
 .market-theme textarea {
   color: var(--market-text);
+}
+
+.market-detail-view {
+  --market-detail-bg: linear-gradient(135deg, #f8fbff 0%, #edf6ff 45%, #ffffff 100%);
+  --market-detail-sidebar: rgb(255 255 255 / 0.92);
+  --market-detail-panel: rgb(255 255 255 / 0.96);
+  --market-detail-stage: radial-gradient(circle at 50% 35%, rgb(14 165 233 / 0.16), transparent 30rem), #eef6ff;
+  --market-detail-stage-soft: linear-gradient(135deg, rgb(255 255 255 / 0.78), rgb(224 242 254 / 0.52));
+  --market-detail-card: rgb(255 255 255 / 0.82);
+  --market-detail-card-hover: rgb(241 249 255 / 0.94);
+  --market-detail-glass: rgb(255 255 255 / 0.78);
+  --market-detail-control: rgb(255 255 255 / 0.9);
+  --market-detail-border: rgb(148 163 184 / 0.28);
+  --market-detail-shadow: 0 24px 60px -42px rgb(15 23 42 / 0.45);
+  background: var(--market-detail-bg) !important;
+  color: var(--market-text) !important;
+}
+
+.market-theme.market-theme-dark .market-detail-view {
+  --market-detail-bg: radial-gradient(circle at 50% 0%, rgb(14 165 233 / 0.12), transparent 28rem), #08111b;
+  --market-detail-sidebar: rgb(13 18 27 / 0.96);
+  --market-detail-panel: rgb(17 24 35 / 0.98);
+  --market-detail-stage: radial-gradient(circle at 50% 38%, rgb(56 189 248 / 0.12), transparent 30rem), linear-gradient(135deg, #111827 0%, #0f172a 55%, #111827 100%);
+  --market-detail-stage-soft: linear-gradient(135deg, rgb(148 163 184 / 0.1), rgb(15 23 42 / 0.18));
+  --market-detail-card: rgb(255 255 255 / 0.065);
+  --market-detail-card-hover: rgb(255 255 255 / 0.105);
+  --market-detail-glass: rgb(2 6 23 / 0.58);
+  --market-detail-control: rgb(255 255 255 / 0.085);
+  --market-detail-border: rgb(255 255 255 / 0.1);
+  --market-detail-shadow: 0 28px 70px -44px rgb(0 0 0 / 0.8);
+}
+
+.market-detail-sidebar,
+.market-detail-panel,
+.market-detail-mobile-bar,
+.market-detail-recommendations {
+  background: var(--market-detail-panel) !important;
+  border-color: var(--market-detail-border) !important;
+}
+
+.market-detail-sidebar {
+  background: var(--market-detail-sidebar) !important;
+}
+
+.market-detail-stage {
+  background: var(--market-detail-stage) !important;
+}
+
+.market-detail-stage-shell {
+  background: var(--market-detail-stage-soft) !important;
+}
+
+.market-detail-card,
+.market-detail-seller-card {
+  background: var(--market-detail-card) !important;
+  border-color: var(--market-detail-border) !important;
+  box-shadow: var(--market-detail-shadow);
+}
+
+.market-detail-card:hover,
+.market-detail-seller-card:hover {
+  background: var(--market-detail-card-hover) !important;
+}
+
+.market-detail-glass {
+  background: var(--market-detail-glass) !important;
+  border-color: var(--market-detail-border) !important;
+  box-shadow: var(--market-detail-shadow);
+}
+
+.market-detail-control,
+.market-detail-icon-button,
+.market-detail-floating-button,
+.market-detail-input {
+  background: var(--market-detail-control) !important;
+  border-color: var(--market-detail-border) !important;
+  color: var(--market-text) !important;
+}
+
+.market-detail-icon-button:hover,
+.market-detail-floating-button:hover,
+.market-detail-control:hover {
+  background: var(--market-detail-card-hover) !important;
+}
+
+.market-detail-image {
+  max-height: min(72vh, 760px);
+  border-radius: 1.75rem;
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 28px 90px -55px rgb(15 23 42 / 0.75);
+}
+
+.market-theme.market-theme-dark .market-detail-image {
+  background: rgb(255 255 255 / 0.04);
+}
+
+.market-detail-primary-action {
+  box-shadow: 0 16px 34px -20px rgb(14 165 233 / 0.72);
+}
+
+.market-detail-view .text-amber-100,
+.market-detail-view .text-amber-100\/75,
+.market-detail-view .text-amber-200 {
+  color: #92400e !important;
+}
+
+.market-theme.market-theme-dark .market-detail-view .text-amber-100,
+.market-theme.market-theme-dark .market-detail-view .text-amber-100\/75,
+.market-theme.market-theme-dark .market-detail-view .text-amber-200 {
+  color: #fde68a !important;
+}
+
+.market-seller-profile-modal {
+  background: var(--market-detail-panel, var(--market-panel)) !important;
+  border-color: var(--market-detail-border, var(--market-border)) !important;
+  color: var(--market-text) !important;
+  box-shadow: 0 32px 90px -42px rgb(15 23 42 / 0.75);
+}
+
+.market-seller-profile-hero {
+  background:
+    radial-gradient(circle at 18% 12%, rgb(14 165 233 / 0.22), transparent 19rem),
+    linear-gradient(135deg, rgb(240 249 255 / 0.96), rgb(255 255 255 / 0.98));
+  border-color: var(--market-detail-border, var(--market-border)) !important;
+}
+
+.market-theme.market-theme-dark .market-seller-profile-hero {
+  background:
+    radial-gradient(circle at 18% 12%, rgb(14 165 233 / 0.18), transparent 20rem),
+    linear-gradient(135deg, rgb(15 23 42 / 0.98), rgb(17 24 39 / 0.98));
+}
+
+.market-seller-profile-cover-art {
+  filter: blur(24px);
+  opacity: 0.2;
+  transform: scale(1.14);
+}
+
+.market-theme.market-theme-dark .market-seller-profile-cover-art {
+  opacity: 0.16;
+}
+
+.market-seller-profile-card,
+.market-seller-listing-card,
+.market-seller-profile-action,
+.market-seller-profile-input {
+  background: var(--market-detail-card, var(--market-card)) !important;
+  border-color: var(--market-detail-border, var(--market-border)) !important;
+  color: var(--market-text) !important;
+}
+
+.market-seller-profile-card,
+.market-seller-listing-card {
+  box-shadow: 0 18px 44px -34px rgb(15 23 42 / 0.58);
+}
+
+.market-seller-profile-action:hover,
+.market-seller-listing-card:hover {
+  background: var(--market-detail-card-hover, var(--market-card-hover)) !important;
+}
+
+.market-seller-profile-avatar {
+  box-shadow:
+    0 0 0 5px var(--market-detail-panel, var(--market-panel)),
+    0 18px 36px -24px rgb(15 23 42 / 0.8);
+}
+
+@media (max-width: 1279px) {
+  .market-detail-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px) !important;
+  }
+
+  .market-detail-left-rail {
+    display: none !important;
+  }
 }

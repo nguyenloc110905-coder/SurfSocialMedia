@@ -180,6 +180,7 @@ type ListConversationMessagesInput = {
   limit: number;
   beforeCursor?: string;
   viewerId?: string;
+  searchText?: string;
 };
 
 type ListConversationMessagesResult = {
@@ -192,7 +193,10 @@ export const messageRepository = {
     input: ListConversationMessagesInput
   ): Promise<ListConversationMessagesResult> {
     const targetLimit = Math.max(1, input.limit);
-    const scanLimit = Math.min(100, Math.max(targetLimit * 3, targetLimit + 1));
+    const normalizedSearchText = input.searchText?.trim().toLowerCase() ?? '';
+    const scanLimit = normalizedSearchText
+      ? Math.min(100, Math.max(targetLimit * 8, 50))
+      : Math.min(100, Math.max(targetLimit * 3, targetLimit + 1));
     const collected: MessageDoc[] = [];
 
     let cursorDate: Date | undefined;
@@ -203,7 +207,7 @@ export const messageRepository = {
 
     let exhausted = false;
 
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       let query = messagesCol(input.conversationId)
         .orderBy('createdAt', 'desc')
         .limit(scanLimit);
@@ -225,7 +229,15 @@ export const messageRepository = {
           continue;
         }
 
-        collected.push(mapMessageDoc(doc.id, data));
+        const message = mapMessageDoc(doc.id, data);
+        if (
+          normalizedSearchText &&
+          !`${message.text} ${message.fileName ?? ''}`.toLowerCase().includes(normalizedSearchText)
+        ) {
+          continue;
+        }
+
+        collected.push(message);
         if (collected.length > targetLimit) break;
       }
 
@@ -245,10 +257,13 @@ export const messageRepository = {
     }
 
     const hasMore =
-      collected.length > targetLimit || (!exhausted && collected.length >= targetLimit);
+      collected.length > targetLimit ||
+      (!exhausted && Boolean(cursorDate) && (normalizedSearchText || collected.length >= targetLimit));
     const page = hasMore ? collected.slice(0, targetLimit) : collected;
     const ascending = [...page].reverse();
-    const nextCursor = hasMore ? ascending[0]?.createdAt.toISOString() ?? null : null;
+    const nextCursor = hasMore
+      ? ascending[0]?.createdAt.toISOString() ?? cursorDate?.toISOString() ?? null
+      : null;
 
     return {
       items: ascending,

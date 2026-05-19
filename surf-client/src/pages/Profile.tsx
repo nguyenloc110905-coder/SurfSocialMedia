@@ -133,7 +133,6 @@ export default function Profile() {
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
     savedBy?: string[];
-    pinnedAt?: string | null;
     sharedFrom?: {
       id: string;
       authorId?: string;

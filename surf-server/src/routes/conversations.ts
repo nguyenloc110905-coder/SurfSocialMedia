@@ -154,6 +154,9 @@ router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
  *       - in: query
  *         name: cursor
  *         schema: { type: integer }
+ *       - in: query
+ *         name: q
+ *         schema: { type: string }
  *     responses:
  *       200: { description: OK }
  *       403: { description: Không phải thành viên }
@@ -182,10 +185,17 @@ router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
 router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const limit = Math.min(parseIntSafe(req.query.limit, 10), 20);
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 120) : '';
+    const limit = Math.min(parseIntSafe(req.query.limit, q ? 20 : 10), q ? 50 : 20);
     const cursor = parseCursorSafe(req.query.cursor);
 
-    const result = await listMessagesForConversation(uid, req.params.id, limit, cursor);
+    const result = await listMessagesForConversation(
+      uid,
+      req.params.id,
+      limit,
+      cursor,
+      q || undefined
+    );
     if (!result.ok) {
       if (result.reason === 'not_found') {
         res.status(404).json({ error: 'Conversation not found' });

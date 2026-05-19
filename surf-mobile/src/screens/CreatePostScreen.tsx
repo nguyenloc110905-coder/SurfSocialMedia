@@ -126,102 +126,6 @@ export default function CreatePostScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]}>
-<<<<<<< HEAD
-  <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <View style={[s.header, { borderBottomColor: C.border, backgroundColor: C.card }]}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={s.iconBtn}>
-        <Ionicons name="chevron-back" size={24} color={C.text} />
-      </TouchableOpacity>
-      <Text style={[s.title, { color: C.text }]}>Tạo bài viết</Text>
-      <TouchableOpacity
-        onPress={submit}
-        disabled={!canSubmit || submitting}
-        style={[s.postBtn, { backgroundColor: canSubmit ? C.accent : C.border, opacity: submitting ? 0.7 : 1 }]}
-      >
-        {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.postText}>Đăng</Text>}
-      </TouchableOpacity>
-    </View>
-
-    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-      <View style={[s.composer, { backgroundColor: C.card, borderColor: C.border }]}>
-        <TextInput
-          value={content}
-          onChangeText={setContent}
-          placeholder="Bạn đang nghĩ gì?"
-          placeholderTextColor={C.muted}
-          multiline
-          textAlignVertical="top"
-          style={[s.input, { color: C.text }]}
-          maxLength={3000}
-        />
-
-        <View style={s.privacyRow}>
-          {PRIVACY_OPTIONS.map((option) => {
-            const active = privacy === option.value;
-            return (
-              <TouchableOpacity
-                key={option.value}
-                onPress={() => setPrivacy(option.value)}
-                style={[
-                  s.privacyChip,
-                  {
-                    borderColor: active ? C.accent : C.border,
-                    backgroundColor: active ? `${C.accent}22` : C.panel,
-                  },
-                ]}
-              >
-                <Ionicons name={option.icon} size={15} color={active ? C.accent : C.subtext} />
-                <Text style={[s.privacyText, { color: active ? C.accent : C.subtext }]}>{option.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      <View style={s.actions}>
-        <TouchableOpacity style={[s.actionBtn, { backgroundColor: C.card, borderColor: C.border }]} onPress={pickFromGallery}>
-          <Ionicons name="images-outline" size={22} color={C.accent} />
-          <Text style={[s.actionText, { color: C.text }]}>Thư viện</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[s.actionBtn, { backgroundColor: C.card, borderColor: C.border }]} onPress={captureWithCamera}>
-          <Ionicons name="camera-outline" size={22} color={C.accent} />
-          <Text style={[s.actionText, { color: C.text }]}>Camera</Text>
-        </TouchableOpacity>
-      </View>
-
-      {assets.length > 0 && (
-        <View style={s.mediaGrid}>
-          {assets.map((asset) => {
-            const video = isVideoAsset(asset);
-            return (
-              <View key={asset.uri} style={[s.mediaTile, { backgroundColor: C.panel }]}>
-                {video ? (
-                  <View style={s.videoPreview}>
-                    <Ionicons name="play-circle" size={40} color="#fff" />
-                    <Text style={s.videoLabel} numberOfLines={1}>
-                      {asset.fileName || 'Video'}
-                    </Text>
-                  </View>
-                ) : (
-                  <Image source={{ uri: asset.uri }} style={s.mediaImage} />
-                )}
-                <TouchableOpacity style={s.removeBtn} onPress={() => removeAsset(asset.uri)}>
-                  <Ionicons name="close" size={16} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      {!!error && (
-        <View style={[s.errorBox, { borderColor: C.danger }]}>
-          <Text style={[s.errorText, { color: C.danger }]}>{error}</Text>
-        </View>
-      )}
-    </ScrollView>
-  </KeyboardAvoidingView>
-=======
       {/* Header */}
       <View style={[s.header, { borderBottomColor: C.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -282,12 +186,12 @@ export default function CreatePostScreen({ navigation }: Props) {
                 key={key}
                 style={[s.modalRow, { borderTopColor: C.border }]}
                 onPress={() => {
-                  setPrivacy(key);
+                  setPrivacy(key as any);
                   setShowPrivacyModal(false);
                 }}
               >
                 <Ionicons name={PRIVACY_ICONS[key]} size={22} color={C.text} />
-                <Text style={[s.modalRowText, { color: C.text, flex: 1 }]}>{PRIVACY_LABELS[key]}</Text>
+                <Text style={[s.modalRowText, { color: C.text, flex: 1 }]}>{PRIVACY_LABELS[key as keyof typeof PRIVACY_LABELS]}</Text>
                 {privacy === key && (
                   <Ionicons name="checkmark" size={24} color={C.accent} />
                 )}
@@ -296,90 +200,13 @@ export default function CreatePostScreen({ navigation }: Props) {
           </View>
         </TouchableOpacity>
       </Modal>
-
->>>>>>> ba81ee4a477f1741d045b27920d12c90b1b9b213
-    </SafeAreaView >
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1 },
   header: {
-<<<<<<< HEAD
-    height: 56,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-  },
-  iconBtn: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '700' },
-  postBtn: {
-    minWidth: 72,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  postText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  content: { padding: 14, paddingBottom: 32 },
-  composer: { borderWidth: 1, borderRadius: 12, padding: 12 },
-  input: { minHeight: 150, fontSize: 18, lineHeight: 25 },
-  privacyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  privacyChip: {
-    borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  privacyText: { fontSize: 12, fontWeight: '600' },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  actionBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionText: { fontSize: 14, fontWeight: '700' },
-  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  mediaTile: {
-    width: '48.8%',
-    aspectRatio: 1,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  mediaImage: { width: '100%', height: '100%' },
-  videoPreview: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-  },
-  videoLabel: { color: '#fff', fontSize: 12, marginTop: 6, maxWidth: '90%' },
-  removeBtn: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(15, 23, 42, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorBox: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 12 },
-  errorText: { fontSize: 13 },
-=======
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -433,5 +260,4 @@ const s = StyleSheet.create({
   modalRowText: {
     fontSize: 16,
   },
->>>>>>> ba81ee4a477f1741d045b27920d12c90b1b9b213
 });

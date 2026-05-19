@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -8,19 +8,20 @@ import { useT } from '@/lib/i18n';
 interface Notification {
   id: string;
   type: string;
-  actorId: string;
-  actorName: string;
-  actorPhoto: string | null;
+  actorId?: string;
+  actorName?: string;
+  actorPhoto?: string | null;
   postId?: string;
   postSnippet?: string;
   commentSnippet?: string;
   reaction?: string;
   requestId?: string;
+  read?: boolean;
+  isRead?: boolean;
   message?: string;
   entityType?: string;
   entityId?: string;
   link?: string;
-  read: boolean;
   createdAt: { _seconds?: number; seconds?: number } | string;
 }
 
@@ -30,24 +31,37 @@ export default function NotificationBell() {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [nowMs, setNowMs] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const fetchNotifications = useCallback(async () => {
-    if (!user) return;
-    try {
-      const res = await api.get<{ notifications: Notification[] }>('/api/notifications');
-      setNotifications(res.notifications ?? []);
-    } catch {
-      // silently ignore
-    }
-  }, [user]);
+  const unreadCount = notifications.filter((n) => !(n.read ?? n.isRead)).length;
 
   // Initial load
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    if (!user) return;
+
+    let cancelled = false;
+    const loadNotifications = async () => {
+      try {
+        const res = await api.get<{ notifications: Notification[] }>('/api/notifications');
+        if (!cancelled) setNotifications(res.notifications ?? []);
+      } catch {
+        // silently ignore
+      }
+    };
+
+    void loadNotifications();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    const updateNow = () => setNowMs(Date.now());
+    updateNow();
+    const timer = window.setInterval(updateNow, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Real-time socket listener
   useEffect(() => {
@@ -77,7 +91,7 @@ export default function NotificationBell() {
   const markAllRead = async () => {
     try {
       await api.patch('/api/notifications/read-all');
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true, isRead: true })));
     } catch {
       // silently ignore
     }
@@ -91,15 +105,25 @@ export default function NotificationBell() {
     }
     try {
       await api.patch(`/api/notifications/${id}/read`);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true, isRead: true } : n))
+      );
     } catch {
       // silently ignore
     }
   };
 
   const handleNotifClick = async (notif: Notification) => {
-    if (!notif.read) await markRead(notif.id);
+    if (!(notif.read ?? notif.isRead)) await markRead(notif.id);
     setOpen(false);
+    if (notif.entityType === 'event') {
+      navigate('/feed/events');
+      return;
+    }
+    if (notif.entityType === 'live_stream' && notif.entityId) {
+      navigate(`/feed/live/${notif.entityId}`);
+      return;
+    }
     switch (notif.type) {
       case 'friend_request':
         navigate('/feed/friends/requests');
@@ -138,19 +162,22 @@ export default function NotificationBell() {
       const s = createdAt._seconds ?? createdAt.seconds;
       if (s !== undefined) ts = s * 1000;
     }
-    if (!ts) return '';
-    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (!ts || !nowMs) return '';
+    const diff = Math.floor((nowMs - ts) / 1000);
     if (diff < 60) return `${diff}s`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
     return `${Math.floor(diff / 86400)}d`;
   };
 
-  const stripMentionMarkup = (text: string) =>
-    text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
+  const stripMentionMarkup = (text: string) => text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
 
   const notifLabel = (n: Notification) => {
-    const name = <span className="font-semibold text-gray-900 dark:text-gray-100">{n.actorName}</span>;
+    if (n.message && !n.actorName) return <>{n.message}</>;
+    const actorName = n.actorName ?? 'Surf';
+    const name = (
+      <span className="font-semibold text-gray-900 dark:text-gray-100">{actorName}</span>
+    );
     const rawSnippet = n.commentSnippet ?? n.postSnippet;
     const snippet = rawSnippet
       ? (
@@ -215,14 +242,14 @@ export default function NotificationBell() {
                   key={n.id}
                   onClick={() => handleNotifClick(n)}
                   className={`w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                    !n.read ? 'bg-cyan-50/60 dark:bg-cyan-900/20' : ''
+                    !(n.read ?? n.isRead) ? 'bg-cyan-50/60 dark:bg-cyan-900/20' : ''
                   }`}
                 >
                   {/* Avatar */}
                   {n.actorPhoto ? (
                     <img
                       src={n.actorPhoto}
-                      alt={n.actorName}
+                      alt={n.actorName ?? ''}
                       className="w-10 h-10 rounded-full flex-shrink-0 object-cover"
                     />
                   ) : (
@@ -240,7 +267,7 @@ export default function NotificationBell() {
                       {formatTime(n.createdAt)}
                     </span>
                   </div>
-                  {!n.read && (
+                  {!(n.read ?? n.isRead) && (
                     <span className="mt-1 w-2 h-2 rounded-full bg-cyan-500 flex-shrink-0" />
                   )}
                 </button>

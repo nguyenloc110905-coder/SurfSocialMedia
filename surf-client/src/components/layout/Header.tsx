@@ -160,7 +160,12 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
           aria-haspopup="true"
         >
           {currentPhotoURL && !avatarImgError ? (
-            <img src={optimizeImageUrl(currentPhotoURL)} alt="" className="w-full h-full rounded-full object-cover" onError={() => setAvatarImgError(true)} />
+            <img
+              src={optimizeImageUrl(currentPhotoURL)}
+              alt=""
+              className="w-full h-full rounded-full object-cover"
+              onError={() => setAvatarImgError(true)}
+            />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">{initial}</span>
@@ -347,7 +352,13 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
 
               {/* Panel 2: Trợ giúp và hỗ trợ */}
               <div className="w-80 flex-shrink-0">
-                <HelpSupport onBack={() => setPanel('main')} />
+                <HelpSupport
+                  onBack={() => setPanel('main')}
+                  onOpenHelpPage={() => {
+                    setMenuPath(null);
+                    navigate('/feed/help-support');
+                  }}
+                />
               </div>
 
               {/* Panel 3: Màn hình và trợ năng */}

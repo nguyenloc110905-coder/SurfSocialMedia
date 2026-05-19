@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatLastSeen } from '@/lib/utils/lastSeen';
+import { getPresenceStatusText } from '@/lib/utils/presenceStatusText';
 import { usePresenceStore } from '@/stores/presenceStore';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -12,6 +12,7 @@ type PresenceBadgeProps = {
   variant?: PresenceBadgeVariant;
   // Deprecated: kept for backward compatibility with old call sites.
   showOfflineLabel?: boolean;
+  fallbackLastSeenTs?: number | null;
   className?: string;
 };
 
@@ -26,6 +27,7 @@ export default function PresenceBadge({
   size = 'md',
   variant = 'dot',
   showOfflineLabel = false,
+  fallbackLastSeenTs,
   className = '',
 }: PresenceBadgeProps) {
   const showLabel = variant === 'label' || showOfflineLabel;
@@ -37,9 +39,15 @@ export default function PresenceBadge({
   const lastSeenTs = usePresenceStore((state) =>
     uid && showLabel ? state.lastSeen.get(uid) : undefined
   );
-  
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const hasLastSeen = typeof lastSeenTs === 'number' && Number.isFinite(lastSeenTs);
+  const normalizedFallbackLastSeenTs =
+    typeof fallbackLastSeenTs === 'number' && Number.isFinite(fallbackLastSeenTs)
+      ? fallbackLastSeenTs
+      : undefined;
+  const effectiveLastSeenTs =
+    typeof lastSeenTs === 'number' && Number.isFinite(lastSeenTs)
+      ? lastSeenTs
+      : normalizedFallbackLastSeenTs;
 
   useEffect(() => {
     if (!uid || !showLabel) return;
@@ -53,12 +61,10 @@ export default function PresenceBadge({
     };
   }, [uid, showLabel]);
 
-  const offlineLabel = useMemo(() => {
+  const statusText = useMemo(() => {
     if (!showLabel) return null;
-    if (!hasLastSeen) return null;
-    const { label } = formatLastSeen(lastSeenTs, nowMs);
-    return label;
-  }, [hasLastSeen, lastSeenTs, nowMs, showLabel]);
+    return getPresenceStatusText(isOnline, effectiveLastSeenTs, nowMs);
+  }, [effectiveLastSeenTs, isOnline, nowMs, showLabel]);
 
   if (!uid) return null;
   
@@ -68,7 +74,7 @@ export default function PresenceBadge({
   if (!showLabel) {
     return (
       <span
-        title={isOnline ? 'Đang hoạt động' : hasLastSeen ? 'Đã offline' : 'Chưa có dữ liệu hoạt động'}
+        title={getPresenceStatusText(isOnline, effectiveLastSeenTs, nowMs)}
         className={`absolute bottom-0 right-0 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-400'} ${dotClasses[size]} border-white dark:border-slate-800 ${className}`}
       />
     );
@@ -90,11 +96,7 @@ export default function PresenceBadge({
       className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium leading-none text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 ${className}`}
     >
       <span className="h-2 w-2 rounded-full bg-slate-400" />
-      {!hasLastSeen
-        ? 'Chưa có dữ liệu hoạt động'
-        : offlineLabel
-          ? `Hoạt động ${offlineLabel} trước`
-          : 'Hoạt động hơn 7 ngày trước'}
+      {statusText ?? 'Hoạt động mới đây'}
     </span>
   );
 }
