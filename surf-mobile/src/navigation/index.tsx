@@ -19,6 +19,8 @@ import MarketplaceDetailScreen from '@/screens/MarketplaceDetailScreen';
 import CreateListingScreen from '@/screens/CreateListingScreen';
 import MyListingsScreen from '@/screens/MyListingsScreen';
 import { NotificationPostDetailScreen } from '@/screens/NotificationCenterScreen';
+import EditProfileScreen from '@/screens/EditProfileScreen';
+import SearchScreen from '@/screens/SearchScreen';
 
 export type RootStackParamList = {
   Auth: { initialTab?: 'login' | 'register' };
@@ -38,6 +40,8 @@ export type RootStackParamList = {
   CreateListing: undefined;
   MyListings: undefined;
   NotificationPost: { postId: string };
+  EditProfile: undefined;
+  Search: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -102,6 +106,16 @@ export default function Navigation() {
             <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
             <Stack.Screen name="MarketplaceDetail" component={MarketplaceDetailScreen} />
             <Stack.Screen name="NotificationPost" component={NotificationPostDetailScreen} />
+            <Stack.Screen
+              name="EditProfile"
+              component={EditProfileScreen}
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="Search"
+              component={SearchScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
             <Stack.Screen
               name="CreateListing"
               component={CreateListingScreen}

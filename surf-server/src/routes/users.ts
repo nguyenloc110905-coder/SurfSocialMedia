@@ -275,6 +275,16 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       notificationPrefs,
       friendRequestPrivacy,
       privacySettings,
+      currentCity,
+      hometown,
+      work,
+      education,
+      relationship,
+      birthday,
+      gender,
+      customGender,
+      website,
+      phone,
     } = req.body as {
       displayName?: unknown;
       bio?: unknown;
@@ -284,6 +294,16 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       notificationPrefs?: unknown;
       friendRequestPrivacy?: unknown;
       privacySettings?: unknown;
+      currentCity?: unknown;
+      hometown?: unknown;
+      work?: unknown;
+      education?: unknown;
+      relationship?: unknown;
+      birthday?: unknown;
+      gender?: unknown;
+      customGender?: unknown;
+      website?: unknown;
+      phone?: unknown;
     };
 
     if (defaultPostPrivacy !== undefined && !isDefaultPostPrivacy(defaultPostPrivacy)) {
@@ -319,6 +339,16 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (photoURL !== undefined) data.photoURL = photoURL;
     if (defaultPostPrivacy !== undefined) data.defaultPostPrivacy = defaultPostPrivacy;
     if (friendRequestPrivacy !== undefined) data.friendRequestPrivacy = friendRequestPrivacy;
+    if (currentCity !== undefined) data.currentCity = currentCity;
+    if (hometown !== undefined) data.hometown = hometown;
+    if (work !== undefined) data.work = work;
+    if (education !== undefined) data.education = education;
+    if (relationship !== undefined) data.relationship = relationship;
+    if (birthday !== undefined) data.birthday = birthday;
+    if (gender !== undefined) data.gender = gender;
+    if (customGender !== undefined) data.customGender = customGender;
+    if (website !== undefined) data.website = website;
+    if (phone !== undefined) data.phone = phone;
     if (notificationPrefsPatch !== undefined) {
       const currentPrefs = normalizeNotificationPrefs(existing.notificationPrefs);
       data.notificationPrefs = {

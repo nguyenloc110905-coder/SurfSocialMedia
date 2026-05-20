@@ -298,7 +298,7 @@ export default function ProfileScreen({
           {isOwn ? (
             <TouchableOpacity
               style={[s.btnOutline, { borderColor: C.border }]}
-              onPress={() => navigation.navigate('Settings')}
+              onPress={() => navigation.navigate('EditProfile')}
             >
               <Ionicons name="create-outline" size={16} color={C.text} />
               <Text style={[s.btnOutlineText, { color: C.text }]}>Chỉnh sửa</Text>
@@ -341,7 +341,7 @@ export default function ProfileScreen({
         {bio ? (
           <Text style={[s.bio, { color: C.subtext }]}>{bio}</Text>
         ) : isOwn ? (
-          <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
+          <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
             <Text style={[s.addBio, { color: C.accent }]}>+ Thêm tiểu sử</Text>
           </TouchableOpacity>
         ) : null}

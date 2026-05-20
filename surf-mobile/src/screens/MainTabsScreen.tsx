@@ -538,6 +538,7 @@ export default function MainTabsScreen({ navigation }: Props) {
           hitSlop={HIT}
           accessibilityRole="button"
           accessibilityLabel="Tìm kiếm trong Surf Clips"
+          onPress={() => navigation.navigate('Search')}
         >
           <Ionicons name="search-outline" size={26} color="#fff" style={s.floatingIconShadow} />
         </TouchableOpacity>
@@ -557,7 +558,8 @@ export default function MainTabsScreen({ navigation }: Props) {
         <TouchableOpacity
           hitSlop={HIT}
           accessibilityRole="button"
-          accessibilityLabel={`TÃ¬m kiáº¿m trong ${title}`}
+          accessibilityLabel={`Tìm kiếm trong ${title}`}
+          onPress={() => navigation.navigate('Search')}
         >
           <Ionicons name="search-outline" size={24} color={C.text} />
         </TouchableOpacity>
@@ -592,7 +594,7 @@ export default function MainTabsScreen({ navigation }: Props) {
               >
                 <Ionicons name="add-circle-outline" size={28} color={C.text} />
               </TouchableOpacity>
-              <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel="Tìm kiếm">
+              <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel="Tìm kiếm" onPress={() => navigation.navigate('Search')}>
                 <Ionicons name="search-outline" size={26} color={C.text} />
               </TouchableOpacity>
             </View>
