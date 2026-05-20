@@ -17,6 +17,7 @@ import { useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useSidebarStore } from '@/stores/sidebarStore';
+import { gestureState } from '@/lib/gestureState';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useFriendStore } from '@/stores/friendStore';
 import Sidebar from '@/components/Sidebar';
@@ -248,7 +249,7 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const panResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => {
-      if (sidebarOpen || hideClipsChrome) return false;
+      if (sidebarOpen || hideClipsChrome || gestureState.reactionPickerActive) return false;
       return Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35;
     },
     onPanResponderGrant: () => {

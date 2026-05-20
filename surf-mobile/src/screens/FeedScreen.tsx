@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
+import { useGestureStore } from '@/lib/gestureState';
 import { useAuthStore } from '@/stores/authStore';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
@@ -85,6 +86,7 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
   const listRef = useRef<FlatList<string | Post>>(null);
   const isActiveRef = useRef(isActive);
   const user = useAuthStore((state) => state.user);
+  const reactionPickerActive = useGestureStore((s) => s.reactionPickerActive);
 
   const posts         = useFeedStore((s) => s.posts);
   const loading       = useFeedStore((s) => s.loading);
@@ -188,7 +190,7 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
         viewabilityConfig={viewabilityConfig}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={!isFirstLoad}
+        scrollEnabled={!isFirstLoad && !reactionPickerActive}
         onEndReached={() => { if (!isFirstLoad) fetchMore(); }}
         onEndReachedThreshold={0.4}
         refreshControl={

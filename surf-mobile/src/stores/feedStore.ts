@@ -14,6 +14,16 @@ export type FeedPost = {
   replyCount: number;
   likedBy: string[];
   reactions?: Record<string, string>;
+  savedBy?: string[];
+  sharedFrom?: {
+    id: string;
+    authorId: string | null;
+    authorDisplayName: string;
+    authorPhotoURL: string | null;
+    content: string;
+    mediaUrls: string[];
+    createdAt: FeedPost['createdAt'];
+  };
   feeling?: string;
   location?: string;
   taggedFriends?: Array<{ uid: string; displayName: string }>;

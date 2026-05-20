@@ -145,7 +145,18 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               style={[s.menuItem, { borderBottomColor: C.border }]}
               onPress={() => {
                 onClose();
-                // TODO: Navigate to settings
+                navigation.navigate('SavedPosts');
+              }}
+            >
+              <Ionicons name="bookmark-outline" size={20} color={C.text} />
+              <Text style={[s.menuText, { color: C.text }]}>Bài viết đã lưu</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.menuItem, { borderBottomColor: C.border }]}
+              onPress={() => {
+                onClose();
+                navigation.navigate('Settings');
               }}
             >
               <Ionicons name="settings-outline" size={20} color={C.text} />

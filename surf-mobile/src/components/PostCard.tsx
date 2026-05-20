@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
   FlatList,
   ScrollView,
   TextInput,
-  KeyboardAvoidingView,
+  Keyboard,
+  Share,
   Platform,
   ActivityIndicator,
   StyleSheet,
@@ -25,6 +26,7 @@ import type { RootStackParamList } from '@/navigation';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { gestureState, setReactionPickerActive } from '@/lib/gestureState';
 
 export type { FeedPost };
 
@@ -36,7 +38,22 @@ type Comment = {
   content: string;
   createdAt: Post['createdAt'];
   likeCount: number;
+  likedBy?: string[];
+  reactions?: Record<string, string>;
+  parentId?: string;
 };
+
+const REACTIONS = ['❤️', '🌊', '😂', '😮', '😢', '👍'] as const;
+
+function parseMentions(text: string): string {
+  return text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
+}
+
+function topReactions(map: Record<string, string>): string[] {
+  const freq: Record<string, number> = {};
+  for (const v of Object.values(map)) freq[v] = (freq[v] ?? 0) + 1;
+  return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+}
 
 export type PostCardProps = {
   post: FeedPost;
@@ -458,6 +475,170 @@ const mg = StyleSheet.create({
   moreText: { color: '#fff', fontSize: 24, fontWeight: '700' },
 });
 
+// ── ReactionPickerOverlay ─────────────────────────────────────────────────────
+type PickerAnchor = { px: number; py: number; pw: number; ph: number };
+
+function ReactionPickerOverlay({ visible, C, anchor, hovered }: {
+  visible: boolean;
+  C: typeof DARK;
+  anchor: PickerAnchor;
+  hovered: number | null;
+}) {
+  const PICKER_H = 70;
+  const PICKER_W = Math.min(SW - 16, REACTIONS.length * 50 + 28);
+  const pickerTop = anchor.py > PICKER_H + 12
+    ? anchor.py - PICKER_H - 8
+    : anchor.py + anchor.ph + 8;
+  const pickerLeft = Math.max(8, Math.min(SW - PICKER_W - 8, anchor.px + anchor.pw / 2 - PICKER_W / 2));
+
+  const scale = useRef(new Animated.Value(0.7)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      scale.setValue(0.7); opacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 100, friction: 8 }),
+        Animated.timing(opacity, { toValue: 1, duration: 120, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible, scale, opacity]);
+
+  if (!visible) return null;
+  return (
+    <Modal visible transparent animationType="none" statusBarTranslucent>
+      <Animated.View
+        style={[rp.picker, { top: pickerTop, left: pickerLeft, width: PICKER_W,
+          backgroundColor: C.card, borderColor: C.border, shadowColor: '#000',
+          transform: [{ scale }], opacity }]}
+        pointerEvents="none"
+      >
+        {REACTIONS.map((emoji, idx) => (
+          <View
+            key={emoji}
+            style={[
+              rp.emojiBtn,
+              hovered === idx && rp.emojiBtnHovered,
+            ]}
+          >
+            <Text style={[rp.emoji, hovered === idx && rp.emojiHovered]}>{emoji}</Text>
+          </View>
+        ))}
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const rp = StyleSheet.create({
+  picker: {
+    position: 'absolute', flexDirection: 'row', justifyContent: 'space-evenly',
+    paddingHorizontal: 8, paddingVertical: 10, borderRadius: 40, borderWidth: 1,
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 16, elevation: 20,
+  },
+  emojiBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4, borderRadius: 22 },
+  emojiBtnHovered: { transform: [{ scale: 1.35 }, { translateY: -8 }] },
+  emoji: { fontSize: 26 },
+  emojiHovered: { fontSize: 30 },
+});
+
+// ── CommentReactionButton ────────────────────────────────────────────────────
+function CommentReactionButton({ liked, reaction, C, onShortPress, onPickReaction }: {
+  liked: boolean;
+  reaction: string | null;
+  C: typeof DARK;
+  onShortPress: () => void;
+  onPickReaction: (emoji: string) => void;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
+  const [hoveredEmoji, setHoveredEmoji] = useState<number | null>(null);
+  const btnRef = useRef<View>(null);
+  const pickerActiveRef = useRef(false);
+  const pickerAnchorRef = useRef<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
+  const hoveredEmojiRef = useRef<number | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onShortPressRef = useRef(onShortPress);
+  const onPickReactionRef = useRef(onPickReaction);
+  onShortPressRef.current = onShortPress;
+  onPickReactionRef.current = onPickReaction;
+
+  const calcIdx = (pageX: number, pageY: number, anch: PickerAnchor): number | null => {
+    const PICKER_H = 70;
+    const PICKER_W = Math.min(SW - 16, REACTIONS.length * 50 + 28);
+    const pt = anch.py > PICKER_H + 12 ? anch.py - PICKER_H - 8 : anch.py + anch.ph + 8;
+    const pl = Math.max(8, Math.min(SW - PICKER_W - 8, anch.px + anch.pw / 2 - PICKER_W / 2));
+    if (pageY < pt - 24 || pageY > pt + PICKER_H + 24) return null;
+    const i = Math.floor((pageX - pl) / (PICKER_W / REACTIONS.length));
+    return i >= 0 && i < REACTIONS.length ? i : null;
+  };
+
+  const gesture = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      pickerActiveRef.current = false;
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        btnRef.current?.measure((_fx, _fy, pw, ph, px, py) => {
+          const a = { px, py, pw, ph };
+          pickerAnchorRef.current = a;
+          pickerActiveRef.current = true;
+          setReactionPickerActive(true);
+          setPickerAnchor(a);
+          setShowPicker(true);
+        });
+      }, 400);
+    },
+    onPanResponderMove: (e) => {
+      if (!pickerActiveRef.current) return;
+      const { pageX, pageY } = e.nativeEvent;
+      const i = calcIdx(pageX, pageY, pickerAnchorRef.current);
+      hoveredEmojiRef.current = i;
+      setHoveredEmoji(i);
+    },
+    onPanResponderRelease: () => {
+      if (longPressTimerRef.current !== null) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+        onShortPressRef.current();
+        return;
+      }
+      const wasActive = pickerActiveRef.current;
+      const i = hoveredEmojiRef.current;
+      pickerActiveRef.current = false;
+      hoveredEmojiRef.current = null;
+      setReactionPickerActive(false);
+      setShowPicker(false);
+      setHoveredEmoji(null);
+      if (wasActive && i !== null) onPickReactionRef.current(REACTIONS[i]);
+    },
+    onPanResponderTerminate: () => {
+      if (longPressTimerRef.current !== null) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      pickerActiveRef.current = false;
+      hoveredEmojiRef.current = null;
+      setReactionPickerActive(false);
+      setShowPicker(false);
+      setHoveredEmoji(null);
+    },
+    onPanResponderTerminationRequest: () => !pickerActiveRef.current,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  return (
+    <>
+      <View ref={btnRef} style={cs.cLikeBtn} {...gesture.panHandlers}>
+        {liked && reaction
+          ? <Text style={cs.cReactionEmoji}>{reaction}</Text>
+          : <Text style={[cs.cLikeText, { color: C.subtext }]}>Thích</Text>
+        }
+      </View>
+      <ReactionPickerOverlay visible={showPicker} C={C} anchor={pickerAnchor} hovered={hoveredEmoji} />
+    </>
+  );
+}
+
 // ── CommentSheet ──────────────────────────────────────────────────────────────
 function CommentSheet({ postId, onClose, onCountChange }: {
   postId: string; onClose: () => void; onCountChange: (n: number) => void;
@@ -471,10 +652,21 @@ function CommentSheet({ postId, onClose, onCountChange }: {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [commentLikes, setCommentLikes] = useState<Record<string, boolean>>({});
+  const [commentReactions, setCommentReactions] = useState<Record<string, string | null>>({});
+  const [replyTo, setReplyTo] = useState<{ commentId: string; authorDisplayName: string } | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [kbHeight, setKbHeight] = useState(0);
   const slideY = useRef(new Animated.Value(SH * 0.75)).current;
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, e => setKbHeight(e.endCoordinates.height));
+    const h = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { s.remove(); h.remove(); };
   }, []);
 
   const close = useCallback(() => {
@@ -502,20 +694,107 @@ function CommentSheet({ postId, onClose, onCountChange }: {
       const list = data.comments ?? [];
       setComments(list);
       onCountChangeRef.current(list.length);
+      const uid = user?.uid;
+      const likes: Record<string, boolean> = {};
+      const reactions: Record<string, string | null> = {};
+      list.forEach(c => {
+        likes[c.id] = uid ? (c.likedBy?.includes(uid) ?? false) : false;
+        reactions[c.id] = uid ? (c.reactions?.[uid] ?? null) : null;
+      });
+      setCommentLikes(likes);
+      setCommentReactions(reactions);
     } catch (e) {
       console.warn('Load comments error:', e);
     } finally { setLoading(false); }
-  }, [postId]);
+  }, [postId, user?.uid]);
 
   useEffect(() => { loadComments(); }, [loadComments]);
+
+  const handleReactComment = async (commentId: string, emoji: string) => {
+    const prevLiked = commentLikes[commentId] ?? false;
+    const prevReaction = commentReactions[commentId] ?? null;
+    const alreadyPicked = prevLiked && prevReaction === emoji;
+    const newLiked = !alreadyPicked;
+    setCommentLikes(p => ({ ...p, [commentId]: newLiked }));
+    setCommentReactions(p => ({ ...p, [commentId]: newLiked ? emoji : null }));
+    setComments(prev => prev.map(c => {
+      if (c.id !== commentId) return c;
+      const next = alreadyPicked ? Math.max(0, c.likeCount - 1) : prevLiked ? c.likeCount : c.likeCount + 1;
+      return { ...c, likeCount: next };
+    }));
+    try {
+      await api.post(`/api/comments/${postId}/${commentId}/react`, { reaction: emoji });
+    } catch {
+      setCommentLikes(p => ({ ...p, [commentId]: prevLiked }));
+      setCommentReactions(p => ({ ...p, [commentId]: prevReaction }));
+    }
+  };
+
+  const handleReply = (commentId: string, authorDisplayName: string) => {
+    setReplyTo({ commentId, authorDisplayName });
+    setText(`@${authorDisplayName} `);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const toggleReplies = (parentId: string) => {
+    setExpandedReplies(prev => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId); else next.add(parentId);
+      return next;
+    });
+  };
+
+  const renderCommentRow = (c: Comment, isReply = false) => {
+    const cLiked = commentLikes[c.id] ?? false;
+    const cReaction = commentReactions[c.id] ?? null;
+    const cTopReacts = topReactions(c.reactions ?? {});
+    return (
+      <View key={c.id} style={[cs.row, isReply && cs.replyRow]}>
+        {isReply && <View style={[cs.replyLine, { backgroundColor: C.accent + '55' }]} />}
+        {c.authorPhotoURL
+          ? <Image source={{ uri: c.authorPhotoURL }} style={[cs.avatar, isReply && cs.replyAvatar]} />
+          : <View style={[cs.avatar, isReply && cs.replyAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="person" size={isReply ? 10 : 13} color={C.subtext} />
+            </View>
+        }
+        <View style={{ flex: 1 }}>
+          <View style={[cs.bubble, { backgroundColor: C.card2 }]}>
+            <Text style={[cs.cAuthor, { color: C.text }]}>{c.authorDisplayName}</Text>
+            <Text style={[cs.cContent, { color: C.text }]}>{parseMentions(c.content)}</Text>
+          </View>
+          {c.likeCount > 0 && cTopReacts.length > 0 && (
+            <View style={cs.cReactBar}>
+              <Text style={cs.cReactEmoji}>{cTopReacts.join('')}</Text>
+              <Text style={[cs.cReactCount, { color: C.subtext }]}>{c.likeCount}</Text>
+            </View>
+          )}
+          <View style={cs.cActions}>
+            <CommentReactionButton liked={cLiked} reaction={cReaction} C={C}
+              onShortPress={() => handleReactComment(c.id, cReaction ?? '❤️')}
+              onPickReaction={(emoji) => handleReactComment(c.id, emoji)}
+            />
+            <TouchableOpacity style={cs.cLikeBtn} onPress={() => handleReply(isReply ? c.parentId! : c.id, c.authorDisplayName)}>
+              <Text style={[cs.cLikeText, { color: C.subtext }]}>Trả lời</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const clearReply = () => { setReplyTo(null); setText(''); };
 
   const submit = async () => {
     const tmp = text.trim();
     if (!tmp || submitting) return;
     setText('');
+    setReplyTo(null);
     setSubmitting(true);
     try {
-      await api.post(`/api/comments/${postId}`, { content: tmp });
+      await api.post(`/api/comments/${postId}`, {
+        content: tmp,
+        ...(replyTo ? { parentId: replyTo.commentId } : {}),
+      });
       await loadComments();
     } catch { setText(tmp); } finally { setSubmitting(false); }
   };
@@ -525,7 +804,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={close}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
       </TouchableOpacity>
-      <Animated.View style={[cs.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 4, transform: [{ translateY: slideY }] }]}>
+      <Animated.View style={[cs.sheet, { bottom: kbHeight, backgroundColor: C.card, paddingBottom: insets.bottom + 4, transform: [{ translateY: slideY }] }]}>
         <View {...panResponder.panHandlers} style={cs.handleArea}>
           <View style={[cs.handle, { backgroundColor: C.placeholder }]} />
         </View>
@@ -542,57 +821,87 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               </View>
             ))}
           </View>
-        ) : (
-          <ScrollView style={cs.list} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
-            {comments.length === 0 ? (
+        ) : (() => {
+          const topLevel = comments.filter(c => !c.parentId);
+          const repliesByParent: Record<string, Comment[]> = {};
+          comments.filter(c => c.parentId).forEach(c => {
+            if (!repliesByParent[c.parentId!]) repliesByParent[c.parentId!] = [];
+            repliesByParent[c.parentId!].push(c);
+          });
+          return (
+          <ScrollView
+            style={cs.list}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {topLevel.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 36 }}>
                 <Ionicons name="chatbubble-outline" size={40} color={C.subtext} />
                 <Text style={{ color: C.subtext, marginTop: 8, fontSize: 14 }}>Chưa có bình luận nào</Text>
               </View>
             ) : (
-              comments.map((c) => (
-                <View key={c.id} style={cs.row}>
-                  {c.authorPhotoURL ? (
-                    <Image source={{ uri: c.authorPhotoURL }} style={cs.avatar} />
-                  ) : (
-                    <View style={[cs.avatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
-                      <Ionicons name="person" size={13} color={C.subtext} />
-                    </View>
-                  )}
-                  <View style={[cs.bubble, { backgroundColor: C.card2 }]}>
-                    <Text style={[cs.cAuthor, { color: C.text }]}>{c.authorDisplayName}</Text>
-                    <Text style={[cs.cContent, { color: C.text }]}>{c.content}</Text>
+              topLevel.map(c => {
+                const replies = repliesByParent[c.id] ?? [];
+                const isExpanded = expandedReplies.has(c.id);
+                return (
+                  <View key={c.id}>
+                    {renderCommentRow(c, false)}
+                    {replies.length > 0 && (
+                      <View style={cs.repliesWrap}>
+                        <TouchableOpacity style={cs.toggleRepliesBtn} onPress={() => toggleReplies(c.id)}>
+                          <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={12} color={C.accent} />
+                          <Text style={[cs.toggleRepliesText, { color: C.accent }]}>
+                            {isExpanded ? 'Ẩn trả lời' : `Xem ${replies.length} trả lời`}
+                          </Text>
+                        </TouchableOpacity>
+                        {isExpanded && replies.map(r => renderCommentRow(r, true))}
+                      </View>
+                    )}
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
-        )}
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={[cs.inputRow, { borderTopColor: C.border }]}>
-            {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={cs.inputAvatar} />
-            ) : (
-              <View style={[cs.inputAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
-                <Ionicons name="person" size={12} color={C.subtext} />
+          );
+        })()}
+          <ScrollView scrollEnabled={false} keyboardShouldPersistTaps="handled" style={{ flexShrink: 0 }}>
+            {replyTo && (
+              <View style={[cs.replyChip, { backgroundColor: C.accent + '18', borderTopColor: C.border }]}>
+                <Ionicons name="return-down-forward-outline" size={13} color={C.accent} />
+                <Text style={[cs.replyChipText, { color: C.accent }]} numberOfLines={1}>
+                  Trả lời <Text style={{ fontWeight: '700' }}>@{replyTo.authorDisplayName}</Text>
+                </Text>
+                <TouchableOpacity onPress={clearReply} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close" size={14} color={C.accent} />
+                </TouchableOpacity>
               </View>
             )}
-            <TextInput
-              style={[cs.input, { backgroundColor: C.inputBg, color: C.text }]}
-              placeholder="Viết bình luận..."
-              placeholderTextColor={C.subtext}
-              value={text}
-              onChangeText={setText}
-              multiline
-              maxLength={500}
-            />
-            <TouchableOpacity onPress={submit} disabled={!text.trim() || submitting} style={[cs.sendBtn, { opacity: text.trim() ? 1 : 0.35 }]}>
-              {submitting
-                ? <ActivityIndicator size="small" color={C.accent} />
-                : <Ionicons name="send" size={20} color={C.accent} />}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+            <View style={[cs.inputRow, { borderTopColor: C.border }]}>
+              {user?.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={cs.inputAvatar} />
+              ) : (
+                <View style={[cs.inputAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="person" size={12} color={C.subtext} />
+                </View>
+              )}
+              <TextInput
+                ref={inputRef}
+                style={[cs.input, { backgroundColor: C.inputBg, color: C.text }]}
+                placeholder="Viết bình luận..."
+                placeholderTextColor={C.subtext}
+                value={text}
+                onChangeText={setText}
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity onPressIn={submit} disabled={!text.trim() || submitting} style={[cs.sendBtn, { opacity: text.trim() ? 1 : 0.35 }]}>
+                {submitting
+                  ? <ActivityIndicator size="small" color={C.accent} />
+                  : <Ionicons name="send" size={20} color={C.accent} />}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
       </Animated.View>
     </Modal>
   );
@@ -606,13 +915,282 @@ const cs = StyleSheet.create({
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
   row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, gap: 10 },
   avatar: { width: 32, height: 32, borderRadius: 16 },
-  bubble: { flex: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  bubble: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   cAuthor: { fontSize: 13, fontWeight: '700', marginBottom: 2 },
   cContent: { fontSize: 13, lineHeight: 18 },
+  cActions: { flexDirection: 'row', gap: 12, marginTop: 4, paddingHorizontal: 4 },
+  cLikeBtn: { paddingVertical: 2, paddingHorizontal: 4 },
+  cLikeText: { fontSize: 12, fontWeight: '600' },
+  cReactionEmoji: { fontSize: 16 },
+  cReactBar: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, paddingHorizontal: 4 },
+  cReactEmoji: { fontSize: 12 },
+  cReactCount: { fontSize: 11 },
+  cPickerRow: { flexDirection: 'row', gap: 2, marginTop: 6, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 24, borderWidth: 1, alignSelf: 'flex-start',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 10, elevation: 8 },
+  cPickerEmoji: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  repliesWrap: { paddingLeft: 44, marginTop: -4, marginBottom: 4 },
+  toggleRepliesBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 4, marginBottom: 4 },
+  toggleRepliesText: { fontSize: 12, fontWeight: '600' },
+  replyRow: { paddingLeft: 0, marginBottom: 8 },
+  replyLine: { position: 'absolute', left: -16, top: 6, bottom: 6, width: 2, borderRadius: 1 },
+  replyAvatar: { width: 26, height: 26, borderRadius: 13 },
+  replyChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth },
+  replyChipText: { flex: 1, fontSize: 12 },
   inputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, gap: 8 },
   inputAvatar: { width: 32, height: 32, borderRadius: 16 },
   input: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, maxHeight: 100 },
   sendBtn: { padding: 6 },
+});
+
+// ── ReactionsSheet ─────────────────────────────────────────────────────────
+type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
+
+function ReactionsSheet({ postId, onClose, C }: {
+  postId: string; onClose: () => void; C: typeof DARK;
+}) {
+  const insets = useSafeAreaInsets();
+  const [reactors, setReactors] = useState<Reactor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
+  const slideY = useRef(new Animated.Value(SH * 0.75)).current;
+
+  useEffect(() => {
+    Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+    api.get<Reactor[]>(`/api/posts/${postId}/reactions`)
+      .then(d => setReactors(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [postId, slideY]);
+
+  const close = useCallback(() => {
+    Animated.timing(slideY, { toValue: SH, duration: 260, useNativeDriver: true }).start(onClose);
+  }, [onClose, slideY]);
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, { dy }) => dy > 8,
+    onPanResponderMove: (_, { dy }) => { if (dy > 0) slideY.setValue(dy); },
+    onPanResponderRelease: (_, { dy, vy }) => {
+      if (dy > 100 || vy > 0.8) close();
+      else Animated.spring(slideY, { toValue: 0, useNativeDriver: true }).start();
+    },
+  })).current;
+
+  const uniqueReactions = useMemo(() => [...new Set(reactors.map(r => r.reaction))], [reactors]);
+  const tabs = useMemo(() => ['all', ...uniqueReactions], [uniqueReactions]);
+  const filtered = activeTab === 'all' ? reactors : reactors.filter(r => r.reaction === activeTab);
+
+  return (
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={close}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={close}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      </TouchableOpacity>
+      <Animated.View style={[rs.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 4, transform: [{ translateY: slideY }] }]}>
+        <View {...panResponder.panHandlers} style={rs.handleArea}>
+          <View style={[rs.handle, { backgroundColor: C.placeholder }]} />
+        </View>
+        <Text style={[rs.title, { color: C.text, borderBottomColor: C.border }]}>Cảm xúc</Text>
+
+        {/* Tabs */}
+        {tabs.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={rs.tabsRow} contentContainerStyle={{ gap: 6, paddingHorizontal: 16, paddingVertical: 8 }}>
+            {tabs.map(tab => (
+              <TouchableOpacity
+                key={tab}
+                style={[rs.tab, activeTab === tab && { backgroundColor: C.accent + '22', borderColor: C.accent }]}
+                onPress={() => setActiveTab(tab)}
+              >
+                <Text style={[rs.tabText, { color: activeTab === tab ? C.accent : C.subtext }]}>
+                  {tab === 'all' ? `Tất cả ${reactors.length}` : `${tab} ${reactors.filter(r => r.reaction === tab).length}`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
+        {loading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 32 }}>
+            <ActivityIndicator color={C.accent} />
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={item => item.uid}
+            style={rs.list}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            renderItem={({ item }) => (
+              <View style={rs.row}>
+                {item.photoURL
+                  ? <Image source={{ uri: item.photoURL }} style={rs.avatar} />
+                  : <View style={[rs.avatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
+                      <Ionicons name="person" size={14} color={C.subtext} />
+                    </View>
+                }
+                <Text style={[rs.name, { color: C.text }]} numberOfLines={1}>{item.displayName}</Text>
+                <Text style={rs.reactionEmoji}>{item.reaction}</Text>
+              </View>
+            )}
+            ListEmptyComponent={
+              <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                <Text style={{ color: C.subtext, fontSize: 14 }}>Chưa có cảm xúc nào</Text>
+              </View>
+            }
+          />
+        )}
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const rs = StyleSheet.create({
+  sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: SH * 0.65 },
+  handleArea: { paddingVertical: 10, alignItems: 'center' },
+  handle: { width: 40, height: 4, borderRadius: 2 },
+  title: { fontSize: 16, fontWeight: '700', paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  tabsRow: { flexGrow: 0 },
+  tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'transparent' },
+  tabText: { fontSize: 13, fontWeight: '600' },
+  list: { flex: 1, paddingHorizontal: 16, paddingTop: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
+  avatar: { width: 40, height: 40, borderRadius: 20 },
+  name: { flex: 1, fontSize: 14, fontWeight: '500' },
+  reactionEmoji: { fontSize: 22 },
+});
+
+// ── EmbedVideoItem ─────────────────────────────────────────────────────────
+function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean }) {
+  const [buffering, setBuffering] = useState(true);
+  const thumbnail = cloudinaryVideoThumbnail(url);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = false; });
+  useEffect(() => {
+    const sub = player.addListener('statusChange', (e: { status: string }) => setBuffering(e.status === 'idle' || e.status === 'loading'));
+    return () => { try { player.pause(); } catch {} sub.remove(); };
+  }, [player]);
+  useEffect(() => { try { isVisible ? player.play() : player.pause(); } catch {} }, [isVisible, player]);
+  return (
+    <View style={ev.wrap}>
+      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" />
+      {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+      {buffering && <View style={ev.loader}><ActivityIndicator color="#fff" size="small" /></View>}
+    </View>
+  );
+}
+const ev = StyleSheet.create({
+  wrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
+  loader: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+});
+
+// ── SharedPostEmbed ─────────────────────────────────────────────────────────
+function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sharedFrom']>; C: typeof LIGHT; isVisible?: boolean }) {
+  const text = parseMentions(sf.content ?? '');
+  const firstMedia = sf.mediaUrls?.find(u => u && !isVideoUrl(u));
+  const hasVideo = sf.mediaUrls?.some(u => u && isVideoUrl(u));
+  return (
+    <View style={[se.wrap, { borderColor: C.border, borderLeftColor: C.accent }]}>
+      <View style={[se.inner, { backgroundColor: C.card2 }]}>
+        <View style={se.header}>
+          {sf.authorPhotoURL
+            ? <Image source={{ uri: sf.authorPhotoURL }} style={se.avatar} />
+            : <View style={[se.avatar, { backgroundColor: C.placeholder, alignItems: 'center', justifyContent: 'center' }]}>
+                <Ionicons name="person" size={12} color={C.subtext} />
+              </View>
+          }
+          <Text style={[se.author, { color: C.text }]} numberOfLines={1}>{sf.authorDisplayName}</Text>
+        </View>
+        {text ? <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text> : null}
+        {hasVideo && !firstMedia && <EmbedVideoItem url={sf.mediaUrls.find(u => u && isVideoUrl(u))!} isVisible={isVisible} />}
+        {firstMedia && <Image source={{ uri: firstMedia }} style={se.media} resizeMode="cover" />}
+      </View>
+    </View>
+  );
+}
+
+const se = StyleSheet.create({
+  wrap: { marginHorizontal: 12, marginTop: 8, borderRadius: 10, borderWidth: 1, borderLeftWidth: 3 },
+  inner: { borderRadius: 9, overflow: 'hidden' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, paddingBottom: 4 },
+  avatar: { width: 24, height: 24, borderRadius: 12 },
+  author: { fontSize: 13, fontWeight: '700', flex: 1 },
+  content: { fontSize: 13, lineHeight: 19, paddingHorizontal: 10, paddingBottom: 10 },
+  media: { width: '100%', height: 180 },
+  videoTag: { flexDirection: 'row', alignItems: 'center', gap: 6, margin: 10, marginTop: 0, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
+  videoText: { fontSize: 12 },
+});
+
+// ── SharePostModal ────────────────────────────────────────────────────────────
+function SharePostModal({ post, C, onClose }: { post: Post; C: typeof LIGHT; onClose: () => void }) {
+  const [caption, setCaption] = useState('');
+  const [sharing, setSharing] = useState(false);
+  const addPost = useFeedStore((s) => s.addPost);
+  const insets = useSafeAreaInsets();
+
+  const handlePostShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const result = await api.post<Post>(`/api/posts/${post.id}/share`, { content: caption.trim() });
+      addPost(result as unknown as FeedPost);
+      onClose();
+    } catch {
+      setSharing(false);
+    }
+  };
+
+  const originalSf: NonNullable<Post['sharedFrom']> = post.sharedFrom ?? {
+    id: post.id,
+    authorId: post.authorId ?? null,
+    authorDisplayName: post.authorDisplayName,
+    authorPhotoURL: post.authorPhotoURL,
+    content: post.content ?? '',
+    mediaUrls: post.mediaUrls ?? [],
+    createdAt: post.createdAt,
+  };
+
+  return (
+    <Modal visible transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
+      </TouchableOpacity>
+      <View style={[sm.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 12 }]}>
+        <View style={[sm.header, { borderBottomColor: C.border }]}>
+          <Text style={[sm.title, { color: C.text }]}>Chia sẻ lên feed</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close" size={22} color={C.subtext} />
+          </TouchableOpacity>
+        </View>
+        <SharedPostEmbed sf={originalSf} C={C} isVisible={false} />
+        <TextInput
+          style={[sm.input, { backgroundColor: C.inputBg, color: C.text }]}
+          placeholder="Thêm ghi chú (tùy chọn)…"
+          placeholderTextColor={C.placeholder}
+          value={caption}
+          onChangeText={setCaption}
+          multiline
+          maxLength={300}
+        />
+        <TouchableOpacity
+          style={[sm.submitBtn, { backgroundColor: C.accent, opacity: sharing ? 0.6 : 1 }]}
+          onPress={handlePostShare}
+          disabled={sharing}
+        >
+          {sharing
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Text style={sm.submitText}>Đăng lên feed</Text>}
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+}
+
+const sm = StyleSheet.create({
+  sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  title: { fontSize: 16, fontWeight: '700' },
+  preview: { margin: 12, padding: 12, borderRadius: 12, borderWidth: 1 },
+  previewAuthor: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  previewContent: { fontSize: 13, lineHeight: 18 },
+  input: { marginHorizontal: 12, marginTop: 4, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, minHeight: 70, textAlignVertical: 'top' },
+  submitBtn: { marginHorizontal: 12, marginTop: 12, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
+  submitText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
 // ── PostCard ──────────────────────────────────────────────────────────────────
@@ -624,10 +1202,37 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   const updatePost = useFeedStore((s) => s.updatePost);
 
   const [liked, setLiked] = useState(uid ? (post.likedBy?.includes(uid) ?? false) : false);
+  const [selectedReaction, setSelectedReaction] = useState<string | null>(uid ? (post.reactions?.[uid] ?? null) : null);
+  const [saved, setSaved] = useState(uid ? (post.savedBy?.includes(uid) ?? false) : false);
+  const [reactionsMap, setReactionsMap] = useState<Record<string, string>>(post.reactions ?? {});
   const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [commentCount, setCommentCount] = useState(post.replyCount ?? 0);
   const [showComments, setShowComments] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showReactionsSheet, setShowReactionsSheet] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
+  const [hoveredEmoji, setHoveredEmoji] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const likeButtonRef = useRef<View>(null);
+  const pickerActiveRef = useRef(false);
+  const pickerAnchorRef = useRef<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
+  const hoveredEmojiRef = useRef<number | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleLikePressRef = useRef<() => void>(() => {});
+  const handleReactRef = useRef<(e: string) => void>(() => {});
+
+  const handleShare = () => setShowShareModal(true);
+
+  const handleSave = async () => {
+    if (!uid) return;
+    const next = !saved;
+    setSaved(next);
+    try {
+      if (next) await api.post(`/api/posts/${post.id}/save`, {});
+      else await api.delete(`/api/posts/${post.id}/save`);
+    } catch { setSaved(!next); }
+  };
 
   const MAX_CHARS = 150;
   const long = (post.content?.length ?? 0) > MAX_CHARS;
@@ -635,19 +1240,108 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
     ? post.content
     : long ? post.content.slice(0, MAX_CHARS).trimEnd() + '…' : post.content;
 
-  const handleLike = async () => {
+  const handleReact = async (emoji: string) => {
     if (!uid) return;
-    const newLiked = !liked;
+    const alreadyPicked = liked && selectedReaction === emoji;
+    const newLiked = !alreadyPicked;
+    const prevLiked = liked;
+    const prevReaction = selectedReaction;
+    const prevCount = likeCount;
+    const prevMap = reactionsMap;
     setLiked(newLiked);
-    setLikeCount((c) => (newLiked ? c + 1 : Math.max(0, c - 1)));
+    setSelectedReaction(newLiked ? emoji : null);
+    setLikeCount(c => alreadyPicked ? Math.max(0, c - 1) : prevLiked ? c : c + 1);
+    setShowReactionPicker(false);
+    setReactionsMap(prev => {
+      const next = { ...prev };
+      if (newLiked) next[uid] = emoji;
+      else delete next[uid];
+      return next;
+    });
     try {
-      await api.post(`/api/posts/${post.id}/like`, { reaction: '❤️' });
-      updatePost({ id: post.id, likeCount: newLiked ? (post.likeCount ?? 0) + 1 : Math.max(0, (post.likeCount ?? 0) - 1) });
+      if (alreadyPicked || !prevLiked) {
+        await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
+      } else {
+        await api.post(`/api/posts/${post.id}/like`, { reaction: prevReaction });
+        await api.post(`/api/posts/${post.id}/like`, { reaction: emoji });
+      }
+      updatePost({ id: post.id, likeCount: newLiked ? (prevLiked ? prevCount : prevCount + 1) : Math.max(0, prevCount - 1) });
     } catch {
-      setLiked(!newLiked);
-      setLikeCount((c) => (newLiked ? c - 1 : c + 1));
+      setLiked(prevLiked);
+      setSelectedReaction(prevReaction);
+      setLikeCount(prevCount);
+      setReactionsMap(prevMap);
     }
   };
+
+  const handleLikePress = () => handleReact(selectedReaction ?? '❤️');
+  handleLikePressRef.current = handleLikePress;
+  handleReactRef.current = handleReact;
+
+  const calcHoverIdx = (pageX: number, pageY: number, anch: PickerAnchor): number | null => {
+    const PICKER_H = 70;
+    const PICKER_W = Math.min(SW - 16, REACTIONS.length * 50 + 28);
+    const pickerTop = anch.py > PICKER_H + 12 ? anch.py - PICKER_H - 8 : anch.py + anch.ph + 8;
+    const pickerLeft = Math.max(8, Math.min(SW - PICKER_W - 8, anch.px + anch.pw / 2 - PICKER_W / 2));
+    const slot = PICKER_W / REACTIONS.length;
+    if (pageY < pickerTop - 24 || pageY > pickerTop + PICKER_H + 24) return null;
+    const idx = Math.floor((pageX - pickerLeft) / slot);
+    return idx >= 0 && idx < REACTIONS.length ? idx : null;
+  };
+
+  const likeGesture = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      pickerActiveRef.current = false;
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        likeButtonRef.current?.measure((_fx, _fy, pw, ph, px, py) => {
+          const anchor = { px, py, pw, ph };
+          pickerAnchorRef.current = anchor;
+          pickerActiveRef.current = true;
+          setReactionPickerActive(true);
+          setPickerAnchor(anchor);
+          setShowReactionPicker(true);
+        });
+      }, 400);
+    },
+    onPanResponderMove: (e) => {
+      if (!pickerActiveRef.current) return;
+      const { pageX, pageY } = e.nativeEvent;
+      const idx = calcHoverIdx(pageX, pageY, pickerAnchorRef.current);
+      hoveredEmojiRef.current = idx;
+      setHoveredEmoji(idx);
+    },
+    onPanResponderRelease: () => {
+      if (longPressTimerRef.current !== null) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+        handleLikePressRef.current();
+        return;
+      }
+      const wasActive = pickerActiveRef.current;
+      const idx = hoveredEmojiRef.current;
+      pickerActiveRef.current = false;
+      hoveredEmojiRef.current = null;
+      setReactionPickerActive(false);
+      setShowReactionPicker(false);
+      setHoveredEmoji(null);
+      if (wasActive && idx !== null) handleReactRef.current(REACTIONS[idx]);
+    },
+    onPanResponderTerminate: () => {
+      if (longPressTimerRef.current !== null) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      pickerActiveRef.current = false;
+      hoveredEmojiRef.current = null;
+      setReactionPickerActive(false);
+      setShowReactionPicker(false);
+      setHoveredEmoji(null);
+    },
+    onPanResponderTerminationRequest: () => !pickerActiveRef.current,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
 
   const goToProfile = () => {
     if (post.authorId) {
@@ -727,23 +1421,67 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
         </View>
       )}
 
+      {/* Shared post embed */}
+      {post.sharedFrom && <SharedPostEmbed sf={post.sharedFrom} C={C} isVisible={isVisible} />}
+
+      {/* Reactions summary */}
+      {Object.keys(reactionsMap).length > 0 && (
+        <TouchableOpacity
+          style={[s.reactionsBar, { borderTopColor: C.border }]}
+          onPress={() => setShowReactionsSheet(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={s.reactionsEmoji}>{topReactions(reactionsMap).join('')}</Text>
+          <Text style={[s.reactionsCount, { color: C.subtext }]}>{fmtCount(Object.keys(reactionsMap).length)}</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Actions */}
       <View style={[s.actionsRow, { borderTopColor: C.border }]}>
-        <TouchableOpacity style={s.actionBtn} onPress={handleLike}>
-          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? '#ef4444' : C.subtext} />
-          {likeCount > 0 && <Text style={[s.actionCount, { color: liked ? '#ef4444' : C.subtext }]}>{fmtCount(likeCount)}</Text>}
-        </TouchableOpacity>
+        <View
+          ref={likeButtonRef}
+          style={s.actionBtn}
+          {...likeGesture.panHandlers}
+        >
+          {liked && selectedReaction
+            ? <Text style={s.selectedEmoji}>{selectedReaction}</Text>
+            : <Ionicons name="heart-outline" size={22} color={C.subtext} />
+          }
+          {likeCount > 0 && (
+            <Text style={[s.actionCount, { color: liked ? '#ef4444' : C.subtext }]}>
+              {fmtCount(likeCount)}
+            </Text>
+          )}
+        </View>
         <TouchableOpacity style={s.actionBtn} onPress={() => setShowComments(true)}>
           <Ionicons name="chatbubble-outline" size={21} color={C.subtext} />
           {commentCount > 0 && <Text style={[s.actionCount, { color: C.subtext }]}>{fmtCount(commentCount)}</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={s.actionBtn}>
+        <TouchableOpacity style={s.actionBtn} onPress={handleShare}>
           <Ionicons name="arrow-redo-outline" size={22} color={C.subtext} />
         </TouchableOpacity>
-        <TouchableOpacity style={s.actionBtn}>
-          <Ionicons name="bookmark-outline" size={21} color={C.subtext} />
+        {showShareModal && (
+          <SharePostModal
+            post={post}
+            C={C}
+            onClose={() => setShowShareModal(false)}
+          />
+        )}
+        <TouchableOpacity style={s.actionBtn} onPress={handleSave}>
+          <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={21} color={saved ? C.accent : C.subtext} />
         </TouchableOpacity>
       </View>
+
+      <ReactionPickerOverlay
+        visible={showReactionPicker}
+        C={C}
+        anchor={pickerAnchor}
+        hovered={hoveredEmoji}
+      />
+
+      {showReactionsSheet && (
+        <ReactionsSheet postId={post.id} onClose={() => setShowReactionsSheet(false)} C={C} />
+      )}
 
       {showComments && (
         <CommentSheet
@@ -778,4 +1516,8 @@ const s = StyleSheet.create({
   actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1 },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 },
   actionCount: { fontSize: 13, fontWeight: '500' },
+  selectedEmoji: { fontSize: 22 },
+  reactionsBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth },
+  reactionsEmoji: { fontSize: 14 },
+  reactionsCount: { fontSize: 12, fontWeight: '500' },
 });
