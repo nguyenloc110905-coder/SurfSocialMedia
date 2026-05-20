@@ -20,11 +20,12 @@ import {
   type ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useClipStore } from '@/stores/clipStore';
 
 type ShortVideo = {
   _source?: 'clip' | 'post';
@@ -40,6 +41,18 @@ type ShortVideo = {
   likedBy?: string[];
   commentCount?: number;
   viewCount?: number;
+  allowComments?: boolean;
+  editOptions?: {
+    contentFit?: 'contain' | 'cover';
+    mutedOriginal?: boolean;
+  };
+  textOverlays?: Array<{
+    id?: string;
+    text?: string;
+    color?: string;
+    fontSize?: number;
+    placement?: 'top' | 'center' | 'bottom';
+  }>;
 };
 
 type FeedResponse = {
@@ -73,6 +86,16 @@ function fmtCount(value = 0) {
   return String(value);
 }
 
+function FullscreenRotateIcon() {
+  return <MaterialCommunityIcons name="phone-rotate-landscape" size={21} color="#fff" />;
+}
+
+function overlayPosition(placement?: 'top' | 'center' | 'bottom') {
+  if (placement === 'top') return { top: '22%' as const };
+  if (placement === 'bottom') return { bottom: '24%' as const };
+  return { top: '46%' as const };
+}
+
 function VideoItem({
   item,
   active,
@@ -80,6 +103,8 @@ function VideoItem({
   liked,
   onLike,
   onComment,
+  showTitle,
+  onLandscapeModeChange,
 }: {
   item: ShortVideo;
   active: boolean;
@@ -87,13 +112,15 @@ function VideoItem({
   liked: boolean;
   onLike: () => void;
   onComment: () => void;
+  showTitle: boolean;
+  onLandscapeModeChange?: (enabled: boolean) => void;
 }) {
   const player = useVideoPlayer(optimizeCloudinaryVideo(item.videoUrl), (p) => {
     p.loop = true;
-    p.muted = false;
+    p.muted = item.editOptions?.mutedOriginal === true;
   });
   const [buffering, setBuffering] = useState(true);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(item.editOptions?.mutedOriginal === true);
   const [landscape, setLandscape] = useState(false);
   const [isLandscapeVideo, setIsLandscapeVideo] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -106,10 +133,27 @@ function VideoItem({
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef(0);
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userPausedRef = useRef(false);
   const longPressRef = useRef(false);
   const pressDurationRef = useRef(0);
   const heartScale = useRef(new Animated.Value(0)).current;
   const thumbnail = item.thumbnailUrl || cloudinaryVideoThumbnail(item.videoUrl);
+  const contentFit = item.editOptions?.contentFit === 'cover' ? 'cover' : 'contain';
+  const landscapeVideoHeight = Math.min(height, screenDim.width * 9 / 16);
+  const fullScreenHintTop = Math.min(
+    Math.max(92, height - 140),
+    Math.max(92, (height + landscapeVideoHeight) / 2 + 14)
+  );
+  const showFullScreenHint = active && isLandscapeVideo && !landscape && !paused && !buffering;
+
+  const pausePlayer = useCallback(() => {
+    try {
+      player.pause();
+      player.playbackRate = 1;
+    } catch {
+      // ignore player transition
+    }
+  }, [player]);
 
   useEffect(() => {
     player.timeUpdateEventInterval = 0.25;
@@ -137,6 +181,7 @@ function VideoItem({
     });
 
     return () => {
+      pausePlayer();
       sub.remove();
       playSub.remove();
       timeSub.remove();
@@ -145,16 +190,30 @@ function VideoItem({
       if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
       dimSub?.remove?.();
     };
-  }, [player]);
+  }, [pausePlayer, player]);
 
   useEffect(() => {
+    if (!active) {
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      setSpeeding(false);
+      longPressRef.current = false;
+      if (landscape) {
+        setLandscape(false);
+        onLandscapeModeChange?.(false);
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      }
+    }
+
     try {
-      if (active && !paused) player.play();
-      else player.pause();
+      if (active && !userPausedRef.current) player.play();
+      else pausePlayer();
     } catch {
       // Native player can be mid-transition while FlatList recycles rows.
     }
-  }, [active, paused, player]);
+  }, [active, landscape, onLandscapeModeChange, pausePlayer, player]);
 
   useEffect(() => {
     if (!thumbnail) return;
@@ -198,11 +257,13 @@ function VideoItem({
   };
 
   const handlePressIn = () => {
+    if (!active) return;
     pressDurationRef.current = Date.now();
     longPressRef.current = false;
   };
 
   const handlePressOut = () => {
+    if (!active) return;
     const duration = Date.now() - pressDurationRef.current;
     
     // Nếu long press (>= 260ms), không làm gì
@@ -237,6 +298,7 @@ function VideoItem({
         // Đây là single tap
         setPaused((nextPaused) => {
           const next = !nextPaused;
+          userPausedRef.current = next;
           try {
             next ? player.pause() : player.play();
           } catch {
@@ -250,6 +312,7 @@ function VideoItem({
   };
 
   const startFastForward = () => {
+    if (!active) return;
     longPressRef.current = true;
     setSpeeding(true);
     try {
@@ -277,20 +340,23 @@ function VideoItem({
   };
 
   const toggleOrientation = async () => {
+    const next = !landscape;
+    setLandscape(next);
+    onLandscapeModeChange?.(next);
     try {
-      const next = !landscape;
-      setLandscape(next);
       await ScreenOrientation.lockAsync(
         next
           ? ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
           : ScreenOrientation.OrientationLock.PORTRAIT_UP
       );
     } catch {
-      setLandscape((current) => !current);
+      setLandscape(!next);
+      onLandscapeModeChange?.(!next);
     }
   };
 
   const seek = (locationX: number, width: number) => {
+    if (!active) return;
     if (!duration || width <= 0) return;
     const ratio = Math.max(0, Math.min(1, locationX / width));
     const nextTime = ratio * duration;
@@ -322,11 +388,35 @@ function VideoItem({
         <VideoView
           player={player}
           style={StyleSheet.absoluteFill}
-          contentFit="contain"
+          contentFit={contentFit}
           nativeControls={false}
           allowsFullscreen={false}
           allowsPictureInPicture={false}
         />
+        {(item.textOverlays ?? []).map((overlay, idx) => {
+          if (!overlay.text) return null;
+          return (
+            <View
+              key={overlay.id ?? `${item.id}-text-${idx}`}
+              pointerEvents="none"
+              style={[s.overlayLayer, overlayPosition(overlay.placement)]}
+            >
+              <Text
+                style={[
+                  s.overlayText,
+                  {
+                    color: overlay.color ?? '#fff',
+                    fontSize: overlay.fontSize ?? 28,
+                    textShadowColor: overlay.color === '#111827' ? 'rgba(255,255,255,0.72)' : 'rgba(0,0,0,0.72)',
+                  },
+                ]}
+                numberOfLines={3}
+              >
+                {overlay.text}
+              </Text>
+            </View>
+          );
+        })}
         {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="contain" />}
         {buffering && (
           <View style={s.center}>
@@ -359,13 +449,32 @@ function VideoItem({
         </Animated.View>
       </Pressable>
 
-      <View style={s.topBar}>
-        <Text style={s.topTitle}>Short Video</Text>
-      </View>
+      {showTitle && (
+        <View style={s.topBar}>
+          <Text style={s.topTitle}>Short Video</Text>
+        </View>
+      )}
 
-      {isLandscapeVideo && (
-        <TouchableOpacity style={s.rotateBtn} onPress={toggleOrientation}>
-          <Ionicons name={landscape ? 'phone-portrait-outline' : 'phone-landscape-outline'} size={22} color="#fff" />
+      {showFullScreenHint && (
+        <TouchableOpacity
+          style={[s.fullScreenHint, { top: fullScreenHintTop }]}
+          onPress={toggleOrientation}
+          activeOpacity={0.82}
+        >
+          <FullscreenRotateIcon />
+          <Text style={s.fullScreenHintText}>Toàn màn hình</Text>
+        </TouchableOpacity>
+      )}
+
+      {landscape && (
+        <TouchableOpacity
+          style={s.landscapeBackBtn}
+          onPress={toggleOrientation}
+          activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityLabel="Quay lại màn hình dọc"
+        >
+          <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
       )}
 
@@ -405,8 +514,9 @@ function VideoItem({
         <TouchableOpacity
           style={landscape ? s.actionBtnCompact : s.actionBtn}
           onPress={onComment}
+          disabled={item.allowComments === false}
         >
-          <Ionicons name="chatbubble-outline" size={landscape ? 24 : 31} color="#fff" />
+          <Ionicons name="chatbubble-outline" size={landscape ? 24 : 31} color={item.allowComments === false ? 'rgba(255,255,255,0.42)' : '#fff'} />
           {!landscape && <Text style={s.actionText}>{fmtCount(item.commentCount)}</Text>}
         </TouchableOpacity>
         <View style={landscape ? s.actionBtnCompact : s.actionBtn}>
@@ -436,8 +546,24 @@ function VideoItem({
   );
 }
 
-export default function ShortVideoScreen() {
+type ShortVideoScreenProps = {
+  isActive?: boolean;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showTitle?: boolean;
+  onFullscreenChange?: (enabled: boolean) => void;
+};
+
+export default function ShortVideoScreen({
+  isActive = true,
+  resetSignal = 0,
+  safeTop = true,
+  showTitle = true,
+  onFullscreenChange,
+}: ShortVideoScreenProps) {
   const user = useAuthStore((state) => state.user);
+  const clipRefreshSignal = useClipStore((state) => state.refreshSignal);
+  const listRef = useRef<FlatList<ShortVideo>>(null);
   const [items, setItems] = useState<ShortVideo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [height, setHeight] = useState(1);
@@ -451,6 +577,7 @@ export default function ShortVideoScreen() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [commentSending, setCommentSending] = useState(false);
+  const [landscapeLocked, setLandscapeLocked] = useState(false);
   const viewedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -459,6 +586,24 @@ export default function ShortVideoScreen() {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     };
   }, []);
+
+  useEffect(() => {
+    if (isActive) return;
+    setCommentTarget(null);
+    setLandscapeLocked(false);
+    onFullscreenChange?.(false);
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, [isActive, onFullscreenChange]);
+
+  useEffect(() => {
+    onFullscreenChange?.(landscapeLocked);
+  }, [landscapeLocked, onFullscreenChange]);
+
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setActiveIndex(0);
+  }, [resetSignal]);
 
   const load = useCallback(async (mode: 'initial' | 'refresh' | 'more' = 'initial') => {
     if (mode === 'more') setLoadingMore(true);
@@ -489,6 +634,14 @@ export default function ShortVideoScreen() {
   }, []);
 
   useEffect(() => {
+    if (!clipRefreshSignal) return;
+    setActiveIndex(0);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    load('refresh').catch(() => setRefreshing(false));
+  }, [clipRefreshSignal]);
+
+  useEffect(() => {
+    if (!isActive) return;
     const active = items[activeIndex];
     const next = items[activeIndex + 1];
     const nextThumb = next?.thumbnailUrl || (next?.videoUrl ? cloudinaryVideoThumbnail(next.videoUrl) : null);
@@ -499,7 +652,7 @@ export default function ShortVideoScreen() {
     if (viewedRef.current.has(key)) return;
     viewedRef.current.add(key);
     api.post(`/api/videos/${active.id}/view`, {}).catch(() => {});
-  }, [activeIndex, items]);
+  }, [activeIndex, isActive, items]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((token) => token.isViewable && typeof token.index === 'number');
@@ -545,6 +698,10 @@ export default function ShortVideoScreen() {
   };
 
   const openComments = async (item: ShortVideo) => {
+    if (item.allowComments === false) {
+      Alert.alert('Bình luận', 'Tác giả đã tắt bình luận cho clip này.');
+      return;
+    }
     setCommentTarget(item);
     setComments([]);
     setCommentInput('');
@@ -590,14 +747,16 @@ export default function ShortVideoScreen() {
     return (
       <VideoItem
         item={item}
-        active={index === activeIndex}
+        active={isActive && index === activeIndex}
         height={height}
         liked={liked}
         onLike={() => like(item)}
         onComment={() => openComments(item)}
+        showTitle={showTitle}
+        onLandscapeModeChange={setLandscapeLocked}
       />
     );
-  }, [activeIndex, height, user?.uid, items]);
+  }, [activeIndex, height, isActive, showTitle, user?.uid, items]);
 
   const getItemLayout = useCallback((_: unknown, index: number) => ({
     length: height,
@@ -617,12 +776,15 @@ export default function ShortVideoScreen() {
   ), [height, loading]);
 
   return (
-    <SafeAreaView style={s.root} edges={['top']} onLayout={onLayout}>
+    <SafeAreaView style={s.root} edges={safeTop ? ['top'] : []} onLayout={onLayout}>
       <FlatList
+        ref={listRef}
         data={items}
         keyExtractor={(item) => `${item._source}:${item.id}`}
         renderItem={renderItem}
-        pagingEnabled
+        extraData={`${isActive}:${activeIndex}:${height}:${showTitle}:${landscapeLocked}:${user?.uid ?? ''}`}
+        scrollEnabled={!landscapeLocked}
+        pagingEnabled={!landscapeLocked}
         snapToInterval={height}
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
@@ -719,16 +881,39 @@ const s = StyleSheet.create({
   center: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   topBar: { position: 'absolute', top: 12, left: 0, right: 0, alignItems: 'center' },
   topTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  rotateBtn: {
+  fullScreenHint: {
     position: 'absolute',
-    top: 10,
-    right: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    alignSelf: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 13,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(31, 31, 35, 0.86)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  fullScreenHintText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  landscapeBackBtn: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(15, 23, 42, 0.46)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.28,
+    shadowRadius: 7,
+    elevation: 3,
   },
   meta: { position: 'absolute', left: 14, right: 86, bottom: 96 },
   author: { color: '#fff', fontSize: 15, fontWeight: '800', marginBottom: 8 },
@@ -768,6 +953,14 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.72)',
   },
   speedText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  overlayLayer: { position: 'absolute', left: 24, right: 24, alignItems: 'center' },
+  overlayText: {
+    color: '#fff',
+    fontWeight: '900',
+    textAlign: 'center',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
   progressWrap: {
     position: 'absolute',
     left: 12,

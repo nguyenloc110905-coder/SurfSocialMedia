@@ -26,6 +26,9 @@ import PostCard from '@/components/PostCard';
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
   isActive?: boolean;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showHeader?: boolean;
 };
 
 type NotificationResponse = {
@@ -169,9 +172,10 @@ function NotificationAvatar({ item, C }: { item: NotificationItem; C: typeof DAR
   );
 }
 
-export default function NotificationCenterScreen({ navigation, isActive = true }: Props) {
+export default function NotificationCenterScreen({ navigation, isActive = true, resetSignal = 0, safeTop = true, showHeader = true }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
+  const listRef = useRef<FlatList<NotificationItem>>(null);
   const user = useAuthStore((state) => state.user);
   const items = useNotificationStore((state) => state.items);
   const setItems = useNotificationStore((state) => state.setItems);
@@ -209,6 +213,11 @@ export default function NotificationCenterScreen({ navigation, isActive = true }
   useEffect(() => {
     if (isActive) load(true);
   }, [isActive, load]);
+
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [resetSignal]);
 
   useEffect(() => {
     if (!isActive || !user) return;
@@ -314,8 +323,8 @@ export default function NotificationCenterScreen({ navigation, isActive = true }
   };
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
-      <View style={[s.header, { borderBottomColor: C.border }]}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
+      {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
         <View>
           <Text style={[s.headerTitle, { color: C.text }]}>Thông báo</Text>
           <Text style={[s.headerSub, { color: C.subtext }]}>
@@ -331,7 +340,7 @@ export default function NotificationCenterScreen({ navigation, isActive = true }
           <Ionicons name="checkmark-done-outline" size={18} color={unreadCount > 0 ? C.accent : C.muted} />
           <Text style={[s.markAllText, { color: unreadCount > 0 ? C.accent : C.muted }]}>Đã đọc</Text>
         </TouchableOpacity>
-      </View>
+      </View>}
 
       <View style={s.filters}>
         {NOTIFICATION_TYPES.map((item) => {
@@ -370,6 +379,7 @@ export default function NotificationCenterScreen({ navigation, isActive = true }
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={visibleItems}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}

@@ -316,7 +316,10 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
     const sub = player.addListener('statusChange', (payload: { status: string }) => {
       setBuffering(payload.status === 'idle' || payload.status === 'loading');
     });
-    return () => sub.remove();
+    return () => {
+      try { player.pause(); } catch { /* ignore */ }
+      sub.remove();
+    };
   }, [player]);
 
   useEffect(() => {

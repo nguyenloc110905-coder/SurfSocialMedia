@@ -27,6 +27,10 @@ import type { FeedPost } from '@/stores/feedStore';
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
   route: RouteProp<RootStackParamList, 'Profile'>;
+  isActive?: boolean;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showBackButton?: boolean;
 };
 
 type UserProfile = {
@@ -83,11 +87,19 @@ function formatJoined(raw: unknown): string {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
-export default function ProfileScreen({ navigation, route }: Props) {
+export default function ProfileScreen({
+  navigation,
+  route,
+  isActive = true,
+  resetSignal = 0,
+  safeTop = true,
+  showBackButton = true,
+}: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const insets = useSafeAreaInsets();
   const { user: authUser } = useAuthStore();
+  const scrollRef = useRef<ScrollView>(null);
 
   const targetUid = route.params?.userId ?? authUser?.uid ?? '';
   const isOwn = !route.params?.userId || route.params.userId === authUser?.uid;
@@ -171,6 +183,11 @@ export default function ProfileScreen({ navigation, route }: Props) {
     if (!isOwn) loadFriendStatus();
     else setFriendStatus('stranger');
   }, [loadProfile, loadPosts, loadFriends, loadFriendStatus, isOwn]);
+
+  useEffect(() => {
+    if (!resetSignal) return;
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [resetSignal]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -485,7 +502,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
     return (
       <>
         {posts.map((post) => (
-          <PostCard key={post.id} post={post} isVisible navigation={navigation} />
+          <PostCard key={post.id} post={post} isVisible={isActive} navigation={navigation} />
         ))}
       </>
     );
@@ -495,12 +512,14 @@ export default function ProfileScreen({ navigation, route }: Props) {
 
   if (profileLoading) {
     return (
-      <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
-        <View style={[s.topBar, { borderBottomColor: C.border }]}>
-          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="arrow-back" size={24} color={C.text} />
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
+        {showBackButton && (
+          <View style={[s.topBar, { borderBottomColor: C.border }]}>
+            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="arrow-back" size={24} color={C.text} />
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator color={C.accent} size="large" />
         </View>
@@ -509,26 +528,31 @@ export default function ProfileScreen({ navigation, route }: Props) {
   }
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {/* Sticky header (shows on scroll) */}
-      <Animated.View
-        style={[s.topBar, { borderBottomColor: C.border, backgroundColor: C.card, opacity: headerOpacity }]}
-        pointerEvents="none"
-      >
-        <Text style={[s.topBarTitle, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
-      </Animated.View>
+      {showBackButton && (
+        <Animated.View
+          style={[s.topBar, { borderBottomColor: C.border, backgroundColor: C.card, opacity: headerOpacity }]}
+          pointerEvents="none"
+        >
+          <Text style={[s.topBarTitle, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
+        </Animated.View>
+      )}
 
       {/* Back button (always on top) */}
-      <View style={[s.topBar, s.topBarAbsolute]} pointerEvents="box-none">
-        <TouchableOpacity
-          style={[s.backBtn, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      {showBackButton && (
+        <View style={[s.topBar, s.topBarAbsolute]} pointerEvents="box-none">
+          <TouchableOpacity
+            style={[s.backBtn, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}

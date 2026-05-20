@@ -29,6 +29,9 @@ import { useAuthStore } from '@/stores/authStore';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Marketplace'>;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showHeader?: boolean;
 };
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -201,10 +204,11 @@ function ListingCard({
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
-export default function MarketplaceScreen({ navigation }: Props) {
+export default function MarketplaceScreen({ navigation, resetSignal = 0, safeTop = true, showHeader = true }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const user = useAuthStore((s) => s.user);
+  const listRef = useRef<FlatList<Listing>>(null);
 
   const {
     listings,
@@ -238,6 +242,11 @@ export default function MarketplaceScreen({ navigation }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [resetSignal]);
+
   // Debounced search
   const handleSearchChange = useCallback((q: string) => {
     setSearchQuery(q);
@@ -267,10 +276,10 @@ export default function MarketplaceScreen({ navigation }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
 
       {/* ── Header ── */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
+      {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
         {isSearchMode ? (
           <View style={[s.searchBar, { backgroundColor: C.input, borderColor: C.border }]}>
             <Ionicons name="search" size={16} color={C.subtext} />
@@ -317,7 +326,7 @@ export default function MarketplaceScreen({ navigation }: Props) {
             <Ionicons name="storefront-outline" size={20} color={C.text} />
           </TouchableOpacity>
         </View>
-      </View>
+      </View>}
 
       {/* ── Category pills ── */}
       <ScrollView
@@ -393,6 +402,7 @@ export default function MarketplaceScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={displayedListings}
           keyExtractor={(item) => item.id}
           numColumns={2}

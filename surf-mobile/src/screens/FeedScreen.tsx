@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  Image,
   StyleSheet,
   TouchableOpacity,
   Animated,
@@ -15,11 +16,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import PostCard from '@/components/PostCard';
 
-type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Feed'> };
+type Props = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'Feed'>;
+  isActive?: boolean;
+  resetSignal?: number;
+  safeTop?: boolean;
+  onCreatePost?: () => void;
+};
 type Post = FeedPost;
 
 const { width: SW } = Dimensions.get('window');
@@ -71,9 +79,12 @@ function SkeletonCard({ C }: { C: typeof DARK }) {
 
 const SKELETON_KEYS = ['sk1', 'sk2', 'sk3', 'sk4', 'sk5'];
 
-export default function FeedScreen({ navigation }: Props) {
+export default function FeedScreen({ navigation, isActive = true, resetSignal = 0, safeTop = true, onCreatePost }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
+  const listRef = useRef<FlatList<string | Post>>(null);
+  const isActiveRef = useRef(isActive);
+  const user = useAuthStore((state) => state.user);
 
   const posts         = useFeedStore((s) => s.posts);
   const loading       = useFeedStore((s) => s.loading);
@@ -88,6 +99,7 @@ export default function FeedScreen({ navigation }: Props) {
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if (!isActiveRef.current) return;
     setVisibleIds(
       new Set(
         viewableItems
@@ -99,23 +111,79 @@ export default function FeedScreen({ navigation }: Props) {
 
   useEffect(() => { fetchFeed(); }, [fetchFeed]);
 
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive) setVisibleIds(new Set());
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [resetSignal]);
+
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
     fetchFeed(true);
   }, [fetchFeed, setRefreshing]);
 
   const isFirstLoad = loading && posts.length === 0;
+  const displayName = user?.displayName || user?.email || 'Bạn';
+  const initial = displayName.charAt(0).toUpperCase();
+  const openCreatePost = () => {
+    if (onCreatePost) onCreatePost();
+    else navigation.navigate('CreatePost' as never);
+  };
+
+  const composer = (
+    <View style={[s.composer, { backgroundColor: C.card, borderBottomColor: C.border }]}>
+      <TouchableOpacity
+        style={s.composerAvatar}
+        onPress={() => navigation.navigate('Profile', { userId: user?.uid } as never)}
+        activeOpacity={0.78}
+      >
+        {user?.photoURL ? (
+          <Image source={{ uri: user.photoURL }} style={s.composerAvatarImg} />
+        ) : (
+          <View style={[s.composerAvatarImg, { backgroundColor: C.accent }]}>
+            <Text style={s.composerAvatarText}>{initial}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[s.composerInput, { borderColor: C.border, backgroundColor: scheme === 'dark' ? C.card2 : '#ffffff' }]}
+        onPress={openCreatePost}
+        activeOpacity={0.82}
+      >
+        <Text style={[s.composerText, { color: C.text }]} numberOfLines={1}>Bạn đang nghĩ gì?</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={s.composerMediaBtn}
+        onPress={openCreatePost}
+        activeOpacity={0.78}
+        accessibilityRole="button"
+        accessibilityLabel="Thêm ảnh hoặc video"
+      >
+        <Ionicons name="image-outline" size={26} color="#22c55e" />
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       <FlatList
+        ref={listRef}
         data={(isFirstLoad ? SKELETON_KEYS : posts) as (string | Post)[]}
         keyExtractor={(item) => (typeof item === 'string' ? item : (item as Post).id)}
         renderItem={({ item }) =>
           typeof item === 'string'
             ? <SkeletonCard C={C} />
-            : <PostCard post={item as Post} isVisible={visibleIds.has((item as Post).id)} navigation={navigation} />
+            : <PostCard post={item as Post} isVisible={isActive && visibleIds.has((item as Post).id)} navigation={navigation} />
         }
+        ListHeaderComponent={composer}
+        extraData={`${isActive}:${[...visibleIds].join(',')}:${isFirstLoad}`}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         contentContainerStyle={s.list}
@@ -170,7 +238,47 @@ export default function FeedScreen({ navigation }: Props) {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
-  list: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 16 },
+  list: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 16 },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    marginBottom: 8,
+  },
+  composerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  composerAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composerAvatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  composerInput: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    minWidth: 0,
+  },
+  composerText: { fontSize: 16, fontWeight: '500' },
+  composerMediaBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   card: { borderRadius: 14, borderWidth: 1, marginBottom: 12, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
   avatarCircle: { width: 40, height: 40, borderRadius: 20 },

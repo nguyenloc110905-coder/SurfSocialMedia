@@ -114,6 +114,10 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         res.status(404).json({ error: 'Post not found' });
         return;
       }
+      if (videoDoc.data()?.allowComments === false) {
+        res.status(403).json({ error: 'Comments are disabled for this video' });
+        return;
+      }
       isVideo = true;
     }
 

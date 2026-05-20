@@ -11,12 +11,13 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation';
-import { signIn, signUp, setAuthPersistence, getCurrentUser } from '@/lib/firebase/auth';
-import { useGoogleSignIn, useFacebookSignIn } from '@/lib/social-auth';
+import { signIn, signUp, setAuthPersistence, getCurrentUser, getAuthPersistMode } from '@/lib/firebase/auth';
+import { useAppleSignIn, useGoogleSignIn, useFacebookSignIn } from '@/lib/social-auth';
 import { isDevModeEnabled, shouldClearAuthOnStartup } from '@/lib/debug-config';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -66,7 +67,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   // Login specific states
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   
   // Register specific states
   const [name, setName] = useState('');
@@ -74,8 +75,15 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [registerPassword, setRegisterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const { promptAsync: googlePrompt, disabled: googleDisabled } = useGoogleSignIn(setError);
-  const { promptAsync: fbPrompt, disabled: fbDisabled } = useFacebookSignIn(setError);
+  const { promptAsync: googlePrompt, disabled: googleDisabled, loading: googleLoading } = useGoogleSignIn(setError);
+  const { promptAsync: fbPrompt, disabled: fbDisabled, loading: fbLoading } = useFacebookSignIn(setError);
+  const {
+    promptAsync: applePrompt,
+    available: appleAvailable,
+    disabled: appleDisabled,
+    loading: appleLoading,
+  } = useAppleSignIn(setError);
+  const socialLoading = googleLoading || fbLoading || appleLoading;
   
   const user = useAuthStore((s) => s.user);
 
@@ -91,10 +99,14 @@ export default function AuthScreen({ navigation, route }: Props) {
   useEffect(() => {
     const loadLastEmail = async () => {
       try {
-        const lastEmail = await AsyncStorage.getItem('surf_last_email');
+        const [lastEmail, persistMode] = await Promise.all([
+          AsyncStorage.getItem('surf_last_email'),
+          getAuthPersistMode(),
+        ]);
         if (lastEmail) {
           setLoginEmail(lastEmail);
         }
+        setRememberMe(persistMode !== 'session');
       } catch (e) {
         console.log('Error loading last email:', e);
       }
@@ -163,6 +175,7 @@ export default function AuthScreen({ navigation, route }: Props) {
     
     setLoading(true);
     try {
+      await setAuthPersistence(true);
       await signUp(registerEmail.trim(), registerPassword, name.trim());
     } catch (err) {
       const code = (err as { code?: string }).code ?? '';
@@ -245,7 +258,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={[s.submitBtn, loading && s.disabled]} onPress={handleLogin} disabled={loading}>
+                <TouchableOpacity style={[s.submitBtn, (loading || socialLoading) && s.disabled]} onPress={handleLogin} disabled={loading || socialLoading}>
                   {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>Đăng nhập</Text>}
                 </TouchableOpacity>
               </View>
@@ -309,7 +322,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                   ))}
                 </View>
 
-                <TouchableOpacity style={[s.submitBtn, loading && s.disabled]} onPress={handleRegister} disabled={loading}>
+                <TouchableOpacity style={[s.submitBtn, (loading || socialLoading) && s.disabled]} onPress={handleRegister} disabled={loading || socialLoading}>
                   {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>Tạo tài khoản</Text>}
                 </TouchableOpacity>
               </View>
@@ -328,16 +341,35 @@ export default function AuthScreen({ navigation, route }: Props) {
             </View>
 
             {/* Google */}
-            <TouchableOpacity style={s.googleBtn} onPress={() => { setError(''); googlePrompt(); }} disabled={loading || googleDisabled}>
+            <TouchableOpacity style={[s.googleBtn, (loading || socialLoading || googleDisabled) && s.disabled]} onPress={() => { setError(''); googlePrompt(); }} disabled={loading || socialLoading || googleDisabled}>
               <View style={s.gCircle}><Text style={s.gLetter}>G</Text></View>
               <Text style={s.socialText}>{activeTab === 'login' ? 'Đăng nhập' : 'Đăng ký'} với Google</Text>
             </TouchableOpacity>
 
             {/* Facebook */}
-            <TouchableOpacity style={s.fbBtn} onPress={() => { setError(''); fbPrompt(); }} disabled={loading || fbDisabled}>
+            <TouchableOpacity style={[s.fbBtn, (loading || socialLoading || fbDisabled) && s.disabled]} onPress={() => { setError(''); fbPrompt(); }} disabled={loading || socialLoading || fbDisabled}>
               <Text style={s.fbLetter}>f</Text>
               <Text style={s.fbText}>{activeTab === 'login' ? 'Đăng nhập' : 'Đăng ký'} với Facebook</Text>
             </TouchableOpacity>
+
+            {appleAvailable && (
+              <View style={[s.appleBtnWrap, (loading || socialLoading || appleDisabled) && s.disabled]} pointerEvents={loading || socialLoading || appleDisabled ? 'none' : 'auto'}>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={
+                    activeTab === 'login'
+                      ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+                      : AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                  }
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                  cornerRadius={12}
+                  style={s.appleBtn}
+                  onPress={() => {
+                    setError('');
+                    applePrompt();
+                  }}
+                />
+              </View>
+            )}
           </View>
 
           {/* Switch */}
@@ -464,6 +496,14 @@ const s = StyleSheet.create({
   },
   fbLetter: { color: '#fff', fontSize: 17, fontWeight: 'bold', marginRight: 10 },
   fbText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  appleBtnWrap: {
+    height: 48,
+    marginTop: 10,
+  },
+  appleBtn: {
+    width: '100%',
+    height: 48,
+  },
 
   /* Switch */
   switchRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 4 },
