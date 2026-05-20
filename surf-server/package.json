@@ -11,7 +11,8 @@
     "lint:fix": "eslint src --fix",
     "seed:test-users": "tsx scripts/seed-test-users.ts",
     "backfill:notif-icons": "tsx src/scripts/backfill-notification-icon-key.ts",
-    "backfill:has-video": "tsx scripts/backfill-has-video.ts"
+    "backfill:has-video": "tsx scripts/backfill-has-video.ts",
+    "backfill:marketplace-search": "tsx scripts/backfill-marketplace-search-tokens.ts"
   },
   "dependencies": {
     "@google/genai": "^1.48.0",

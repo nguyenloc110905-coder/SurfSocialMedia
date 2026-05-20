@@ -22,6 +22,7 @@ const router = Router();
  *               properties:
  *                 online: { type: array, items: { type: string }, description: 'Danh sách uid đang online' }
  *                 lastSeen: { type: object, description: 'Map uid -> ISO timestamp' }
+ *                 friendIds: { type: array, items: { type: string }, description: 'Danh sách uid của tất cả bạn bè' }
  */
 router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -31,7 +32,26 @@ router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
       ? (friendDoc.data()?.friendIds ?? [])
       : [];
     const { online, lastSeen } = await getPresenceFromList(friendIds);
-    res.json({ online, lastSeen });
+    res.json({ online, lastSeen, friendIds });
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/users/:uid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if (!uid) {
+      res.status(400).json({ error: 'Missing uid' });
+      return;
+    }
+
+    const { online, lastSeen } = await getPresenceFromList([uid]);
+    res.json({
+      uid,
+      online: online.includes(uid),
+      lastSeen: lastSeen[uid] ?? null,
+    });
   } catch {
     res.status(500).json({ error: 'Server error' });
   }

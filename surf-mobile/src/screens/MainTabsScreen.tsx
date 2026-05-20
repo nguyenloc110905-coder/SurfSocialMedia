@@ -60,10 +60,7 @@ type TabDef = {
 const TABS: TabDef[] = [
   { key: 'home', icon: 'home-outline', iconActive: 'home', label: 'Trang chủ' },
   { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', label: 'Video' },
-<<<<<<< HEAD
-=======
   { key: 'friends', icon: 'people-outline', iconActive: 'people', label: 'Bạn bè' },
->>>>>>> 25c43014152352e381eaa9dbb7e62427ad3ab04c
   { key: 'create', icon: 'add-circle-outline', iconActive: 'add-circle', label: 'Tạo', isCreate: true },
   { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', label: 'Chợ' },
   { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', label: 'Thông báo' },
@@ -230,8 +227,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-<<<<<<< HEAD
-=======
   badge: {
     position: 'absolute',
     top: 10,
@@ -244,5 +239,4 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
->>>>>>> 25c43014152352e381eaa9dbb7e62427ad3ab04c
 });

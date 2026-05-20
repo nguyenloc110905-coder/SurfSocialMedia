@@ -15,15 +15,26 @@ import {
   emitNotificationNew,
   emitNotificationUnreadCount,
 } from '../realtime/emitters/notification.emitter.js';
+import { recordPostHashtags } from '../services/hashtags.js';
 
 const router = Router();
 
+type PostListItem = {
+  id: string;
+  deleted?: boolean;
+  privacy?: string;
+  content?: string;
+  [key: string]: unknown;
+};
+
 /** Returns true if any URL in the array is a video (Cloudinary or by extension) */
 function detectHasVideo(urls: string[]): boolean {
-  return Array.isArray(urls) && urls.some(
-    (u) => typeof u === 'string' && (
-      u.includes('/video/upload/') ||
-      /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u)
+  return (
+    Array.isArray(urls) &&
+    urls.some(
+      (u) =>
+        typeof u === 'string' &&
+        (u.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u))
     )
   );
 }
@@ -95,7 +106,10 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     }
 
     // Kiểm duyệt nội dung bằng AI trước khi lưu
-    const moderation = await moderatePost(content?.trim() ?? '', Array.isArray(mediaUrls) ? mediaUrls : []);
+    const moderation = await moderatePost(
+      content?.trim() ?? '',
+      Array.isArray(mediaUrls) ? mediaUrls : []
+    );
     if (!moderation.allowed) {
       // Lưu log vi phạm vào Firestore
       try {
@@ -110,13 +124,15 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       } catch {
         // Không để lỗi log chặn response
       }
-      res.status(422).json({ error: `Bài đăng vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      res.status(422).json({
+        error: `Bài đăng vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}`,
+      });
       return;
     }
 
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
-    
+
     // Xử lý poll
     let formattedPoll = null;
     if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
@@ -124,11 +140,12 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
         options: poll.options.map((opt: any, index: number) => ({
           id: `opt_${Date.now()}_${index}`,
           text: opt.text || opt,
-          votes: []
-        }))
+          votes: [],
+        })),
       };
     }
 
+    const now = new Date();
     const docRef = postsRef.doc();
     await docRef.set({
       authorId: req.uid,
@@ -142,8 +159,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       privacy: privacy || 'public',
       parentId: parentId || null,
       groupId: groupId || null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
       likeCount: 0,
       replyCount: 0,
       likedBy: [],
@@ -152,6 +169,14 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       poll: formattedPoll,
     });
     const created = await docRef.get();
+
+    if (privacy !== 'only-me') {
+      try {
+        await recordPostHashtags(docRef.id, content?.trim() || '', now);
+      } catch (error) {
+        console.warn('⚠️ Không cập nhật được aggregate hashtag:', error);
+      }
+    }
 
     // Notify each tagged friend via Firestore + socket
     if (Array.isArray(taggedFriends) && taggedFriends.length > 0) {
@@ -221,19 +246,21 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const hashtag = typeof req.query.hashtag === 'string' ? req.query.hashtag.trim() : '';
     const postsRef = getDb().collection('posts');
-    let posts: { id: string; [key: string]: unknown }[] = [];
-    
+    let posts: PostListItem[] = [];
     if (hashtag) {
       // Search posts containing the hashtag
       const tagQuery = `#${hashtag}`;
       const snap = await postsRef.get();
       posts = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
+        .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as PostListItem)
         .filter((p) => !p.deleted && p.privacy !== 'only-me')
         .filter((p) => {
-          const content = (p.content as string) ?? '';
+          const content = p.content ?? '';
           // Match both #hashtag and #hashtag-with-dashes or any non-space chars
-          const regex = new RegExp(`#${hashtag.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}(?=\\s|$|[^a-zA-Z0-9_])`, 'i');
+          const regex = new RegExp(
+            `#${hashtag.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}(?=\\s|$|[^a-zA-Z0-9_])`,
+            'i'
+          );
           return regex.test(content);
         });
     } else {
@@ -243,9 +270,11 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
         .orderBy('createdAt', 'desc')
         .limit(50)
         .get();
-      posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      posts = snap.docs.map(
+        (d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as PostListItem
+      );
     }
-    
+
     res.json({ posts });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -275,20 +304,104 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
     const raw = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const type = typeof req.query.type === 'string' ? req.query.type : 'posts';
+    const dateFilter = typeof req.query.date === 'string' ? req.query.date : 'any';
+    const locationFilter = typeof req.query.location === 'string' ? req.query.location.trim() : '';
     if (!raw) {
       res.json({ posts: [] });
       return;
     }
     const normQ = normalizePost(raw);
-    const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(100).get();
-    type PostDoc = { id: string; content?: string; deleted?: boolean; hasVideo?: boolean; privacy?: string; [key: string]: unknown };
+    const normLocation = normalizePost(locationFilter);
+    const cutoffMs = (() => {
+      const now = new Date();
+      if (dateFilter === 'today') {
+        now.setHours(0, 0, 0, 0);
+        return now.getTime();
+      }
+      if (dateFilter === 'week') return Date.now() - 7 * 24 * 60 * 60 * 1000;
+      if (dateFilter === 'month') return Date.now() - 30 * 24 * 60 * 60 * 1000;
+      return null;
+    })();
+    const getCreatedAtMs = (createdAt: unknown): number => {
+      if (!createdAt) return 0;
+      if (createdAt instanceof Date) return createdAt.getTime();
+      if (typeof createdAt === 'number') return createdAt;
+      if (typeof createdAt === 'string') return new Date(createdAt).getTime() || 0;
+      if (typeof createdAt !== 'object') return 0;
+      const timestamp = createdAt as {
+        toMillis?: () => number;
+        seconds?: number;
+        _seconds?: number;
+      };
+      if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+      const seconds = timestamp.seconds ?? timestamp._seconds;
+      return typeof seconds === 'number' ? seconds * 1000 : 0;
+    };
+
+    const searchTerms = normQ.split(/\\s+/).filter(Boolean);
+    const isMatch = (text: string) => {
+      if (!text) return false;
+      const normalized = normalizePost(text);
+      return searchTerms.every(term => normalized.includes(term));
+    };
+
+    const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(500).get();
+    type PostDoc = {
+      id: string;
+      content?: string;
+      deleted?: boolean;
+      hasVideo?: boolean;
+      privacy?: string;
+      location?: string;
+      createdAt?: unknown;
+      authorDisplayName?: string;
+      [key: string]: unknown;
+    };
     let posts = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
       .filter((p) => !p.deleted && p.privacy !== 'only-me')
-      .filter((p) => normalizePost(p.content ?? '').includes(normQ));
+      .filter((p) => isMatch(p.content ?? '') || isMatch(p.authorDisplayName ?? ''))
+      .filter((p) => (cutoffMs === null ? true : getCreatedAtMs(p.createdAt) >= cutoffMs))
+      .filter((p) =>
+        normLocation ? normalizePost(p.location ?? '').includes(normLocation) : true
+      );
 
     if (type === 'videos') {
       posts = posts.filter((p) => p.hasVideo === true);
+      
+      const videosSnap = await getDb().collection('videos').orderBy('createdAt', 'desc').limit(500).get();
+      const mappedVideos = videosSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me')
+        .filter((v: any) => 
+          isMatch(v.description || v.title || '') ||
+          isMatch(v.authorDisplayName || '')
+        )
+        .map((v: any) => ({
+          id: v.id,
+          content: v.description || v.title || '',
+          authorId: v.authorId,
+          authorDisplayName: v.authorDisplayName,
+          authorPhotoURL: v.authorPhotoURL,
+          mediaUrls: v.videoUrl ? [v.videoUrl] : [],
+          createdAt: v.createdAt,
+          likeCount: v.likeCount || 0,
+          replyCount: v.commentCount || 0,
+          likedBy: v.likedBy || [],
+          privacy: v.privacy,
+          hasVideo: true,
+          _source: 'clip'
+        }));
+        
+      posts = [...posts, ...mappedVideos].sort((a, b) => {
+        const timeA = typeof a.createdAt === 'object' && a.createdAt !== null 
+          ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000 
+          : new Date(a.createdAt as string).getTime() || 0;
+        const timeB = typeof b.createdAt === 'object' && b.createdAt !== null 
+          ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000 
+          : new Date(b.createdAt as string).getTime() || 0;
+        return timeB - timeA;
+      });
     } else {
       posts = posts.filter((p) => !p.hasVideo);
     }
@@ -355,8 +468,10 @@ router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
       .sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
         const getTs = (v: unknown): number => {
           if (!v) return 0;
-          if (typeof v === 'object' && '_seconds' in (v as object)) return (v as { _seconds: number })._seconds;
-          if (typeof v === 'object' && 'seconds' in (v as object)) return (v as { seconds: number }).seconds;
+          if (typeof v === 'object' && '_seconds' in (v as object))
+            return (v as { _seconds: number })._seconds;
+          if (typeof v === 'object' && 'seconds' in (v as object))
+            return (v as { seconds: number }).seconds;
           if (typeof v === 'number') return v;
           return 0;
         };
@@ -539,7 +654,16 @@ router.post('/:id/poll/:optionId', requireAuth, async (req: AuthRequest, res) =>
 
 // POST /:id/report — báo cáo bài viết vi phạm
 router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
-  const VALID_REASONS = ['spam', 'inappropriate', 'misinformation', 'hate_speech', 'harassment', 'violence', 'copyright', 'other'];
+  const VALID_REASONS = [
+    'spam',
+    'inappropriate',
+    'misinformation',
+    'hate_speech',
+    'harassment',
+    'violence',
+    'copyright',
+    'other',
+  ];
   try {
     const db = getDb();
     const postDoc = await db.collection('posts').doc(req.params.id).get();
@@ -557,7 +681,8 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     // Deduplicate: one report per user per post
-    const existing = await db.collection('reports')
+    const existing = await db
+      .collection('reports')
       .where('postId', '==', req.params.id)
       .where('reporterId', '==', req.uid!)
       .limit(1)
@@ -591,17 +716,15 @@ router.get('/:id', requireAuth, async (req, res) => {
       return;
     }
     const post = { id: postDoc.id, ...postDoc.data() };
-    const repliesSnap = await postsRef
-      .where('parentId', '==', req.params.id)
-      .limit(50)
-      .get();
+    const repliesSnap = await postsRef.where('parentId', '==', req.params.id).limit(50).get();
     type RDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
-    const replies = (repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as RDoc[])
-      .sort((a, b) => {
+    const replies = (repliesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as RDoc[]).sort(
+      (a, b) => {
         const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
         const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
         return aT - bT;
-      });
+      }
+    );
     res.json({ ...post, replies });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -631,9 +754,7 @@ router.patch('/:id/pin', requireAuth, async (req: AuthRequest, res) => {
       res.json({ pinned: false, pinnedAt: null });
     } else {
       // Unpin any other pinned post by this user first
-      const authorPostsSnap = await db.collection('posts')
-        .where('authorId', '==', req.uid!)
-        .get();
+      const authorPostsSnap = await db.collection('posts').where('authorId', '==', req.uid!).get();
       const batch = db.batch();
       authorPostsSnap.docs.forEach((d) => {
         if (d.id !== req.params.id && d.data()?.pinnedAt) {
@@ -894,18 +1015,56 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
-    const original = originalDoc.data()!;
+    let original = originalDoc.data()!;
+    let targetPostId = req.params.id;
+
+    // Nếu bài viết này đã là một bài chia sẻ, lấy thông tin bài gốc thay thế
+    if (original.sharedFrom) {
+      targetPostId = original.sharedFrom.id;
+      // Lưu ý: Dữ liệu của bài gốc đã được lưu sẵn trong sharedFrom,
+      // ta gán lại vào `original` để dùng cho việc tạo sharedFrom mới.
+      original = {
+        ...original,
+        authorId: original.sharedFrom.authorId,
+        authorDisplayName: original.sharedFrom.authorDisplayName,
+        authorPhotoURL: original.sharedFrom.authorPhotoURL,
+        content: original.sharedFrom.content,
+        mediaUrls: original.sharedFrom.mediaUrls,
+        createdAt: original.sharedFrom.createdAt,
+      };
+    }
+
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
 
     const { content = '', reaction } = req.body;
+    const shareContent = (content as string).trim();
+
+    // AI Moderation cho caption của bài share
+    const moderation = await moderatePost(shareContent, []);
+    if (!moderation.allowed) {
+      try {
+        await db.collection('moderation_logs').add({
+          userId: req.uid,
+          contentSnippet: shareContent.substring(0, 200),
+          mediaUrls: [],
+          reason: moderation.reason ?? 'Nội dung không phù hợp',
+          type: 'share_post',
+          createdAt: new Date(),
+        });
+      } catch {
+        // ignore log error
+      }
+      res.status(422).json({ error: `Caption vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      return;
+    }
 
     const sharedPostRef = postsRef.doc();
     await sharedPostRef.set({
       authorId: req.uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
       authorPhotoURL: user?.photoURL ?? null,
-      content: (content as string).trim(),
+      content: shareContent,
       mediaUrls: [],
       privacy: 'public',
       parentId: null,
@@ -918,7 +1077,7 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
       reactions: reaction ? { [req.uid!]: reaction } : {},
       hasVideo: false,
       sharedFrom: {
-        id: req.params.id,
+        id: targetPostId,
         authorId: original.authorId ?? null,
         authorDisplayName: original.authorDisplayName ?? 'Unknown',
         authorPhotoURL: original.authorPhotoURL ?? null,
@@ -929,13 +1088,13 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
     });
 
     // Increment shareCount on original post
-    await postsRef.doc(req.params.id).update({
+    await postsRef.doc(targetPostId).update({
       shareCount: FieldValue.increment(1),
     });
 
     const created = await sharedPostRef.get();
     // Emit real-time update for share count
-    getIo().emit('post:shared', { postId: req.params.id });
+    getIo().emit('post:shared', { postId: targetPostId });
     res.status(201).json({ id: created.id, ...created.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -962,11 +1121,17 @@ router.get('/:id/reactions', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const doc = await db.collection('posts').doc(req.params.id).get();
-    if (!doc.exists) { res.status(404).json({ error: 'Post not found' }); return; }
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
 
     const reactions: Record<string, string> = doc.data()?.reactions ?? {};
     const uids = Object.keys(reactions);
-    if (!uids.length) { res.json([]); return; }
+    if (!uids.length) {
+      res.json([]);
+      return;
+    }
 
     // Batch fetch user profiles (Firebase Auth getUsers supports up to 100)
     const { getAuth } = await import('firebase-admin/auth');

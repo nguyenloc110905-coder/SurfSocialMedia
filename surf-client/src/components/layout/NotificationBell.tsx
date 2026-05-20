@@ -1,50 +1,67 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { useT } from '@/lib/i18n';
 
 interface Notification {
   id: string;
   type: string;
-  actorId: string;
-  actorName: string;
-  actorPhoto: string | null;
+  actorId?: string;
+  actorName?: string;
+  actorPhoto?: string | null;
   postId?: string;
   postSnippet?: string;
   commentSnippet?: string;
   reaction?: string;
   requestId?: string;
+  read?: boolean;
+  isRead?: boolean;
   message?: string;
   entityType?: string;
   entityId?: string;
-  read: boolean;
+  link?: string;
   createdAt: { _seconds?: number; seconds?: number } | string;
 }
 
 export default function NotificationBell() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [nowMs, setNowMs] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const fetchNotifications = useCallback(async () => {
-    if (!user) return;
-    try {
-      const res = await api.get<{ notifications: Notification[] }>('/api/notifications');
-      setNotifications(res.notifications ?? []);
-    } catch {
-      // silently ignore
-    }
-  }, [user]);
+  const unreadCount = notifications.filter((n) => !(n.read ?? n.isRead)).length;
 
   // Initial load
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    if (!user) return;
+
+    let cancelled = false;
+    const loadNotifications = async () => {
+      try {
+        const res = await api.get<{ notifications: Notification[] }>('/api/notifications');
+        if (!cancelled) setNotifications(res.notifications ?? []);
+      } catch {
+        // silently ignore
+      }
+    };
+
+    void loadNotifications();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    const updateNow = () => setNowMs(Date.now());
+    updateNow();
+    const timer = window.setInterval(updateNow, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Real-time socket listener
   useEffect(() => {
@@ -74,7 +91,7 @@ export default function NotificationBell() {
   const markAllRead = async () => {
     try {
       await api.patch('/api/notifications/read-all');
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true, isRead: true })));
     } catch {
       // silently ignore
     }
@@ -88,21 +105,33 @@ export default function NotificationBell() {
     }
     try {
       await api.patch(`/api/notifications/${id}/read`);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true, isRead: true } : n))
+      );
     } catch {
       // silently ignore
     }
   };
 
   const handleNotifClick = async (notif: Notification) => {
-    if (!notif.read) await markRead(notif.id);
+    if (!(notif.read ?? notif.isRead)) await markRead(notif.id);
     setOpen(false);
+    if (notif.entityType === 'event') {
+      navigate('/feed/events');
+      return;
+    }
+    if (notif.entityType === 'live_stream' && notif.entityId) {
+      navigate(`/feed/live/${notif.entityId}`);
+      return;
+    }
     switch (notif.type) {
       case 'friend_request':
         navigate('/feed/friends/requests');
         break;
       case 'system':
-        if (notif.entityType === 'group' && notif.entityId) {
+        if (notif.link) {
+          navigate(notif.link);
+        } else if (notif.entityType === 'group' && notif.entityId) {
           navigate(`/feed/groups/${notif.entityId}`);
         } else {
           navigate('/feed');
@@ -133,19 +162,22 @@ export default function NotificationBell() {
       const s = createdAt._seconds ?? createdAt.seconds;
       if (s !== undefined) ts = s * 1000;
     }
-    if (!ts) return '';
-    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (!ts || !nowMs) return '';
+    const diff = Math.floor((nowMs - ts) / 1000);
     if (diff < 60) return `${diff}s`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
     return `${Math.floor(diff / 86400)}d`;
   };
 
-  const stripMentionMarkup = (text: string) =>
-    text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
+  const stripMentionMarkup = (text: string) => text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
 
   const notifLabel = (n: Notification) => {
-    const name = <span className="font-semibold text-gray-900 dark:text-gray-100">{n.actorName}</span>;
+    if (n.message && !n.actorName) return <>{n.message}</>;
+    const actorName = n.actorName ?? 'Surf';
+    const name = (
+      <span className="font-semibold text-gray-900 dark:text-gray-100">{actorName}</span>
+    );
     const rawSnippet = n.commentSnippet ?? n.postSnippet;
     const snippet = rawSnippet
       ? (
@@ -154,15 +186,15 @@ export default function NotificationBell() {
           </span>
         )
       : null;
-    if (n.type === 'tag') return <>{name}{' đã gắn thẻ bạn trong một bài viết'}{snippet}</>;
-    if (n.type === 'friend_request') return <>{name}{' đã gửi lời mời kết bạn với bạn'}</>;
-    if (n.type === 'reaction') return <>{name}{` đã bày tỏ cảm xúc ${n.reaction ?? '❤️'} với bài viết của bạn`}{snippet}</>;
-    if (n.type === 'comment') return <>{name}{' đã bình luận về bài viết của bạn'}{snippet}</>;
-    if (n.type === 'reply') return <>{name}{' đã trả lời bình luận của bạn'}{snippet}</>;
-    if (n.type === 'comment_reaction') return <>{name}{` đã thả ${n.reaction ?? '❤️'} vào bình luận của bạn`}{snippet}</>;
-    if (n.type === 'mention') return <>{name}{' đã nhắc đến bạn trong một bình luận'}{snippet}</>;
+    if (n.type === 'tag') return <>{name}{' '}{t('notif_tagged')}{snippet}</>;
+    if (n.type === 'friend_request') return <>{name}{' '}{t('notif_friend_request')}</>;
+    if (n.type === 'reaction') return <>{name}{` ${t('notif_reaction')} ${n.reaction ?? '❤️'} ${t('notif_reaction_post')}`}{snippet}</>;
+    if (n.type === 'comment') return <>{name}{' '}{t('notif_comment')}{snippet}</>;
+    if (n.type === 'reply') return <>{name}{' '}{t('notif_reply')}{snippet}</>;
+    if (n.type === 'comment_reaction') return <>{name}{` ${t('notif_comment_reaction')} ${n.reaction ?? '❤️'} ${t('notif_comment_reaction_on')}`}{snippet}</>;
+    if (n.type === 'mention') return <>{name}{' '}{t('notif_mention')}{snippet}</>;
     if (n.message) return <>{n.message}</>;
-    return <>{name}{' đã thông báo cho bạn'}</>;
+    return <>{name}{' '}{t('notif_default')}</>;
   };
 
   return (
@@ -171,7 +203,7 @@ export default function NotificationBell() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors relative"
-        title="Thông báo"
+        title={t('notif_title')}
       >
         <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
           <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
@@ -187,13 +219,13 @@ export default function NotificationBell() {
         <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100">Thông báo</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">{t('notif_title')}</h3>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
                 className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
               >
-                Đánh dấu đã đọc
+                {t('notif_mark_all_read')}
               </button>
             )}
           </div>
@@ -202,7 +234,7 @@ export default function NotificationBell() {
           <div className="max-h-[400px] overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                Chưa có thông báo
+                {t('notif_empty')}
               </div>
             ) : (
               notifications.map((n) => (
@@ -210,14 +242,14 @@ export default function NotificationBell() {
                   key={n.id}
                   onClick={() => handleNotifClick(n)}
                   className={`w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                    !n.read ? 'bg-cyan-50/60 dark:bg-cyan-900/20' : ''
+                    !(n.read ?? n.isRead) ? 'bg-cyan-50/60 dark:bg-cyan-900/20' : ''
                   }`}
                 >
                   {/* Avatar */}
                   {n.actorPhoto ? (
                     <img
                       src={n.actorPhoto}
-                      alt={n.actorName}
+                      alt={n.actorName ?? ''}
                       className="w-10 h-10 rounded-full flex-shrink-0 object-cover"
                     />
                   ) : (
@@ -235,7 +267,7 @@ export default function NotificationBell() {
                       {formatTime(n.createdAt)}
                     </span>
                   </div>
-                  {!n.read && (
+                  {!(n.read ?? n.isRead) && (
                     <span className="mt-1 w-2 h-2 rounded-full bg-cyan-500 flex-shrink-0" />
                   )}
                 </button>

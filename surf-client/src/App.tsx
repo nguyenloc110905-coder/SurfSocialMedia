@@ -19,11 +19,15 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import Onboarding from './pages/Onboarding';
 import SearchPage from './pages/SearchPage';
 import Waves from './pages/Waves';
+import LivePage from './pages/LivePage';
+import EventsPage from './pages/EventsPage';
 import GroupLiveKitCallPage from './pages/GroupLiveKitCallPage';
 import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
 import HashtagPage from './pages/HashtagPage';
+import HelpSupportPage from './pages/HelpSupportPage';
 import { useMessageSound } from './hooks/useMessageSound';
+import PolicyPage from './pages/PolicyPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -142,14 +146,10 @@ export default function App() {
           <Route path="groups" element={<Groups />} />
           <Route path="groups/:groupId" element={<GroupDetails />} />
           <Route path="market" element={<MarketPage />} />
+          <Route path="market/:listingId" element={<MarketPage />} />
           <Route path="saved" element={<SavedPage />} />
           <Route path="hashtag/:tag" element={<HashtagPage />} />
-          <Route
-            path="events"
-            element={
-              <PlaceholderPage title="Sự kiện" description="Sự kiện sắp diễn ra và đã tham gia." />
-            }
-          />
+          <Route path="events" element={<EventsPage />} />
           <Route
             path="pages"
             element={<PlaceholderPage title="Trang" description="Trang bạn quản lý và theo dõi." />}
@@ -173,13 +173,10 @@ export default function App() {
               />
             }
           />
-          <Route
-            path="live"
-            element={
-              <PlaceholderPage title="Surf Live" description="Phát trực tiếp và xem live." />
-            }
-          />
+          <Route path="live" element={<LivePage />} />
+          <Route path="live/:streamId" element={<LivePage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="help-support" element={<HelpSupportPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route
@@ -198,7 +195,8 @@ export default function App() {
             </Protected>
           }
         />
-        
+        <Route path="/policy" element={<PolicyPage />} />
+
       </Routes>
     </GlobalCallProvider>
   );

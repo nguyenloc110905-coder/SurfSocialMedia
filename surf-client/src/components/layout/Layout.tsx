@@ -6,6 +6,7 @@ import MainLeftNav from './MainLeftNav';
 import MainRightSidebar from './MainRightSidebar';
 import FriendsLeftNav from './FriendsLeftNav';
 import QuickContactBar from './QuickContactBar';
+import LiveToastListener from '@/components/live/LiveToastListener';
 
 const MAIN_PATHS = [
   '/feed',
@@ -22,7 +23,12 @@ const MAIN_PATHS = [
   '/feed/live',
 ] as const;
 function isMainPage(pathname: string): boolean {
-  return MAIN_PATHS.some((p) => pathname === p) || pathname.startsWith('/feed/friends/') || pathname.startsWith('/feed/groups/');
+  return (
+    MAIN_PATHS.some((p) => pathname === p) ||
+    pathname.startsWith('/feed/friends/') ||
+    pathname.startsWith('/feed/groups/') ||
+    pathname.startsWith('/feed/live/')
+  );
 }
 function isFriendsSection(pathname: string): boolean {
   return pathname === '/feed/friends' || pathname.startsWith('/feed/friends/');
@@ -34,9 +40,12 @@ export default function Layout() {
   const isSettings = location.pathname === '/feed/settings';
   const isWaves = location.pathname === '/feed/waves';
   const isMarket = location.pathname.startsWith('/feed/market');
+  const isLive = location.pathname === '/feed/live' || location.pathname.startsWith('/feed/live/');
   const useThreeColumn = isMainPage(location.pathname);
   const showFriendsLeftNav = isFriendsSection(location.pathname);
   const isShortVideo = location.pathname === '/feed/short-video';
+  const useWideMain = isWaves || isMarket || isLive;
+  const useEmbeddedFullHeight = isWaves || isMarket;
   const showQuickContactBar = useThreeColumn;
   const [mainNavCollapsed, setMainNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -52,9 +61,9 @@ export default function Layout() {
   let gridCols = 'grid-cols-1';
   if (showFriendsLeftNav) {
     gridCols = 'md:grid-cols-[22%_1fr] lg:grid-cols-[17%_1fr_22%]';
-  } else if (isWaves || isMarket) {
-    gridCols = mainNavCollapsed 
-      ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr]' 
+  } else if (useWideMain) {
+    gridCols = mainNavCollapsed
+      ? 'md:grid-cols-[96px_1fr] lg:grid-cols-[96px_1fr]'
       : 'md:grid-cols-[280px_1fr] lg:grid-cols-[280px_1fr]';
   } else {
     gridCols = mainNavCollapsed
@@ -70,12 +79,12 @@ export default function Layout() {
       <main
         className={
           isSettings
-            ? 'flex-1 w-full pt-0 pb-20 md:pb-6 flex flex-col min-h-0 overflow-hidden'
+            ? 'flex-1 w-full pt-0 pb-20 md:pb-0 flex flex-col min-h-0 overflow-hidden'
             : isProfile
-              ? 'flex-1 w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-20 md:pb-6 max-w-4xl'
+              ? 'flex-1 w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-20 md:pb-0 max-w-4xl'
               : useThreeColumn
-                ? 'flex-1 flex min-h-0 w-full pb-20 md:pb-6 overflow-hidden'
-                : 'flex-1 max-w-2xl w-full mx-auto px-4 py-4 sm:py-6 pb-20 md:pb-6'
+                ? 'flex-1 flex min-h-0 w-full pb-20 md:pb-0 overflow-hidden'
+                : 'flex-1 max-w-2xl w-full mx-auto px-4 py-4 sm:py-6 pb-20 md:pb-0'
         }
       >
         {useThreeColumn ? (
@@ -101,16 +110,22 @@ export default function Layout() {
                 <div
                   id="main-feed-scroll"
                   className={
-                    isWaves || isMarket
+                    useEmbeddedFullHeight
                       ? 'min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden'
                       : 'min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide'
                   }
                 >
-                  <div className={isWaves || isMarket ? 'flex h-full min-h-0 min-w-0 w-full flex-1' : 'flex-1 w-full'}>
+                  <div
+                    className={
+                      useEmbeddedFullHeight
+                        ? 'flex h-full min-h-0 min-w-0 w-full flex-1'
+                        : 'flex-1 w-full'
+                    }
+                  >
                     <Outlet />
                   </div>
                 </div>
-                {!isWaves && !isMarket && (
+                {!useWideMain && (
                   <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
                     <MainRightSidebar />
                   </div>
@@ -123,6 +138,7 @@ export default function Layout() {
         )}
       </main>
       <BottomNav />
+      <LiveToastListener />
       {showQuickContactBar && <QuickContactBar isShortVideo={isShortVideo} />}
     </div>
   );

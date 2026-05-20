@@ -20,6 +20,11 @@ export interface FeedPost {
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
   isEdited?: boolean;
   _discover?: boolean;
+  group?: {
+    id: string;
+    name: string;
+    coverImageUrl?: string | null;
+  };
   sharedFrom?: {
     id: string;
     authorId?: string;

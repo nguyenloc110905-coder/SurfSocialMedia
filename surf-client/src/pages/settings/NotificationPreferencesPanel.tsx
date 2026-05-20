@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
+import { requestNotificationPermission } from '@/lib/firebase/messaging';
 
 type NotificationPrefKey =
   | 'friend_request'
@@ -125,6 +126,21 @@ export default function NotificationPreferencesPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [pushEnabled, setPushEnabled] = useState(Notification.permission === 'granted');
+
+  const handleEnablePush = async () => {
+    try {
+      const token = await requestNotificationPermission();
+      if (token) {
+        setPushEnabled(true);
+        setSuccess('Đã bật thông báo đẩy thành công!');
+      } else {
+        setError('Không thể bật thông báo đẩy. Vui lòng kiểm tra quyền trên trình duyệt.');
+      }
+    } catch (err) {
+      setError('Đã xảy ra lỗi khi yêu cầu quyền thông báo.');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -208,6 +224,23 @@ export default function NotificationPreferencesPanel() {
       {error && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
           {error}
+        </div>
+      )}
+
+      {/* Nút bật thông báo đẩy (Web Push) */}
+      {!pushEnabled && (
+        <div className="mb-6 flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 dark:border-blue-900/40 dark:bg-blue-900/20">
+          <div>
+            <h3 className="font-semibold text-blue-900 dark:text-blue-100">Thông báo đẩy (Trình duyệt)</h3>
+            <p className="text-sm text-blue-700 dark:text-blue-300">Nhận thông báo ngay cả khi bạn không mở ứng dụng.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleEnablePush}
+            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Bật thông báo
+          </button>
         </div>
       )}
 
