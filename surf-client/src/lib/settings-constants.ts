@@ -23,71 +23,38 @@ export const SETTINGS_DETAIL_SECTIONS: {
     subtitle: 'Quản lý cài đặt tài khoản và bảo mật.',
     items: [
       { label: 'Bảo mật tài khoản', icon: 'shield', key: 'account-security' },
-      { label: 'Xóa tài khoản', icon: 'trash', key: 'delete-account' },
       { label: 'Ngôn ngữ & Múi giờ', icon: 'globe', key: 'language-timezone' },
+      { label: 'Xóa tài khoản', icon: 'trash', key: 'delete-account' },
     ],
   },
   {
-    title: 'Quyền riêng tư',
+    title: 'Quyền riêng tư & Bảo vệ',
     key: 'privacy',
-    subtitle: 'Kiểm soát ai có thể xem nội dung và hoạt động của bạn.',
+    subtitle: 'Kiểm soát ai có thể xem nội dung và tương tác với bạn.',
     items: [
       { label: 'Kiểm tra quyền riêng tư', icon: 'lock', key: 'privacy-checkup' },
       { label: 'Đối tượng xem mặc định', icon: 'gear', key: 'default-audience' },
-      {
-        label: 'Ai có thể gửi lời mời kết bạn',
-        icon: 'people',
-        key: 'friend-request-privacy',
-      },
-    ],
-  },
-  {
-    title: 'Cá nhân hóa',
-    key: 'personalization',
-    subtitle: 'Làm Surf hoạt động đúng cách bạn muốn.',
-    items: [
-      { label: 'Cảm xúc & phản hồi', icon: 'like', key: 'emotions-feedback' },
-      { label: 'Thông báo & nhắc', icon: 'bell', key: 'notifications' },
-      { label: 'Trợ năng & hiển thị', icon: 'accessibility', key: 'accessibility-display' },
-      { label: 'Ngôn ngữ & múi giờ', icon: 'globe', key: 'language-timezone' },
-      { label: 'Ảnh, video & file', icon: 'play', key: 'media-files' },
-    ],
-  },
-  {
-    title: 'Ai thấy nội dung của bạn',
-    key: 'content-visibility',
-    subtitle: 'Chọn ai có thể xem từng loại nội dung.',
-    items: [
-      { label: 'Cài đặt quyền riêng tư nội dung', icon: 'shield', key: 'privacy-settings' },
-      { label: 'Bảo vệ trang cá nhân', icon: 'shield', key: 'profile-protection' },
-      { label: 'Thông tin công khai', icon: 'person', key: 'public-info' },
-      { label: 'Tìm kiếm & Kết nối', icon: 'people', key: 'search-connect' },
-      { label: 'Hiển thị bài đăng', icon: 'doc', key: 'posts-visibility' },
-      { label: 'Hiển thị tin 24h', icon: 'story', key: 'stories-visibility' },
-      { label: 'Hiển thị Surf Clips', icon: 'reel', key: 'clips-visibility' },
-      { label: 'Người theo dõi & Nội dung công khai', icon: 'follow', key: 'followers-public' },
-      { label: 'Gắn thẻ & Gợi ý', icon: 'tag', key: 'tagging-visibility' },
+      { label: 'Lời mời kết bạn', icon: 'people', key: 'friend-request-privacy' },
       { label: 'Danh sách chặn', icon: 'block', key: 'block-list' },
     ],
   },
   {
-    title: 'Thông báo',
-    key: 'notifications',
-    subtitle: 'Quản lý tùy chọn thông báo của bạn.',
+    title: 'Tùy chỉnh & Giao diện',
+    key: 'personalization',
+    subtitle: 'Cá nhân hóa trải nghiệm lướt Surf.',
     items: [
       { label: 'Thông báo & Nhắc nhở', icon: 'bell', key: 'notifications' },
     ],
   },
   {
-    title: 'Giao diện',
-    key: 'appearance',
-    subtitle: 'Tùy chỉnh giao diện và cảm nhận của ứng dụng.',
+    title: 'Hỗ trợ & Chính sách',
+    key: 'support',
+    subtitle: 'Tiêu chuẩn cộng đồng, điều khoản và quyền lợi của bạn.',
     items: [
-      { label: 'Trợ năng & Hiển thị', icon: 'accessibility', key: 'accessibility-display' },
-      { label: 'Cảm xúc & Phản hồi', icon: 'like', key: 'emotions-feedback' },
-      { label: 'Tệp phương tiện', icon: 'play', key: 'media-files' },
+      { label: 'Báo cáo vi phạm', icon: 'shield', key: 'reports' },
+      { label: 'Chính sách cộng đồng & Điều khoản', icon: 'doc', key: 'policy' },
     ],
-  },
+  }
 ];
 
 /** Map item key → section key để route nhanh */

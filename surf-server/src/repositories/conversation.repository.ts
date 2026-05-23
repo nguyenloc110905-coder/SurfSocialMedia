@@ -1,5 +1,5 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { buildDmConversationId, ConservationDoc } from '../types/conversation.js';
+import { buildDmConversationId, ConservationDoc, type MarketplaceConversationContext } from '../types/conversation.js';
 import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 
@@ -15,6 +15,30 @@ const toDate = (value: unknown): Date | undefined => {
 const mapMemberIds = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
+const mapMarketplaceContext = (value: unknown): MarketplaceConversationContext | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const data = value as Record<string, unknown>;
+  const listingId = typeof data.listingId === 'string' ? data.listingId : '';
+  const buyerId = typeof data.buyerId === 'string' ? data.buyerId : '';
+  const sellerId = typeof data.sellerId === 'string' ? data.sellerId : '';
+  if (!listingId || !buyerId || !sellerId) return undefined;
+  return {
+    kind: 'marketplace',
+    listingId,
+    buyerId,
+    sellerId,
+    title: typeof data.title === 'string' ? data.title : 'Bài niêm yết',
+    price: typeof data.price === 'number' && Number.isFinite(data.price) ? data.price : 0,
+    currency: 'VND',
+    imageUrl: typeof data.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null,
+    location: typeof data.location === 'string' ? data.location : '',
+    status: typeof data.status === 'string' ? data.status : 'active',
+    saleStatus: typeof data.saleStatus === 'string' ? data.saleStatus : null,
+    sellerDisplayName: typeof data.sellerDisplayName === 'string' ? data.sellerDisplayName : 'Người bán',
+    sellerPhotoURL: typeof data.sellerPhotoURL === 'string' && data.sellerPhotoURL ? data.sellerPhotoURL : null,
+  };
+};
+
 const getUnreadCountForUser = (data: Record<string, unknown>, userId: string): number => {
   const unreadMap = data.unreadCountByUser;
   if (!unreadMap || typeof unreadMap !== 'object') return 0;
@@ -26,6 +50,7 @@ const mapConservationDoc = (id: string, data: Record<string, unknown>): Conserva
   id,
   type: (data.type as ConservationDoc['type']) ?? 'dm',
   title: (data.title as string) ?? undefined,
+  marketplace: mapMarketplaceContext(data.marketplace),
   createdBy: (data.createdBy as string) ?? '',
   memberCount:
     typeof data.memberCount === 'number' ? data.memberCount : mapMemberIds(data.memberIds).length,
@@ -95,6 +120,61 @@ export const conversationRepository = {
     return { item, created };
   },
 
+  async findOrCreateMarketplaceDm(input: {
+    buyerId: string;
+    sellerId: string;
+    context: MarketplaceConversationContext;
+  }): Promise<{ item: ConservationDoc; created: boolean }> {
+    const memberIds = [input.buyerId, input.sellerId].sort();
+    const conversationId = `market_${input.context.listingId}_${input.buyerId}`;
+    const ref = col().doc(conversationId);
+
+    let created = false;
+
+    await getDb().runTransaction(async (tx) => {
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        tx.update(ref, {
+          marketplace: input.context,
+          title: `${input.context.sellerDisplayName} · ${input.context.title}`,
+          marketplaceListingId: input.context.listingId,
+          marketplaceBuyerId: input.buyerId,
+          marketplaceSellerId: input.sellerId,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      created = true;
+      tx.set(ref, {
+        type: 'dm',
+        title: `${input.context.sellerDisplayName} · ${input.context.title}`,
+        memberIds,
+        memberPairKey: `${input.context.listingId}__${input.buyerId}__${input.sellerId}`,
+        marketplace: input.context,
+        marketplaceListingId: input.context.listingId,
+        marketplaceBuyerId: input.buyerId,
+        marketplaceSellerId: input.sellerId,
+        unreadCountByUser: Object.fromEntries(memberIds.map((uid) => [uid, 0])),
+        memberCount: memberIds.length,
+        createdBy: input.buyerId,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        lastMessageAt: null,
+        lastMessagePreview: null,
+        lastMessageSeq: 0,
+      });
+    });
+
+    const finalSnap = await ref.get();
+    const item = mapConservationDoc(
+      finalSnap.id,
+      finalSnap.data() ?? ({} as Record<string, unknown>)
+    );
+
+    return { item, created };
+  },
+
   async listByMember(userId: string, limit = 20): Promise<ConservationDoc[]> {
     const snap = await col()
       .where('memberIds', 'array-contains', userId)
@@ -122,6 +202,40 @@ export const conversationRepository = {
         unreadCount: getUnreadCountForUser(data, userId),
       };
     });
+  },
+
+  async listMarketplaceByListingForSeller(
+    listingId: string,
+    sellerId: string,
+    limit = 50
+  ): Promise<ConversationListDetail[]> {
+    const snap = await col()
+      .where('marketplaceListingId', '==', listingId)
+      .limit(limit)
+      .get();
+
+    return snap.docs
+      .map((doc) => {
+        const data = (doc.data() ?? {}) as Record<string, unknown>;
+        return {
+          item: mapConservationDoc(doc.id, data),
+          memberIds: mapMemberIds(data.memberIds),
+          unreadCount: getUnreadCountForUser(data, sellerId),
+          rawSellerId: typeof data.marketplaceSellerId === 'string' ? data.marketplaceSellerId : '',
+        };
+      })
+      .filter((detail) => detail.rawSellerId === sellerId && detail.memberIds.includes(sellerId))
+      .sort((a, b) => {
+        const aTime = a.item.lastMessageAt?.getTime() ?? a.item.updatedAt.getTime();
+        const bTime = b.item.lastMessageAt?.getTime() ?? b.item.updatedAt.getTime();
+        return bTime - aTime;
+      })
+      .slice(0, limit)
+      .map((detail) => ({
+        item: detail.item,
+        memberIds: detail.memberIds,
+        unreadCount: detail.unreadCount,
+      }));
   },
 
   async sumUnreadByUser(userId: string): Promise<number> {

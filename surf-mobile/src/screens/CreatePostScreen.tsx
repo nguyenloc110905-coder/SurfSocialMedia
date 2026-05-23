@@ -371,11 +371,16 @@ export default function CreatePostScreen({ navigation }: Props) {
               <TouchableOpacity
                 key={key}
                 style={[s.modalRow, { borderTopColor: C.border }]}
-                onPress={() => { setPrivacy(key); setShowPrivacyModal(false); }}
+                onPress={() => {
+                  setPrivacy(key as any);
+                  setShowPrivacyModal(false);
+                }}
               >
                 <Ionicons name={PRIVACY_ICONS[key]} size={22} color={C.text} />
-                <Text style={[s.modalRowText, { color: C.text, flex: 1 }]}>{PRIVACY_LABELS[key]}</Text>
-                {privacy === key && <Ionicons name="checkmark" size={24} color={C.accent} />}
+                <Text style={[s.modalRowText, { color: C.text, flex: 1 }]}>{PRIVACY_LABELS[key as keyof typeof PRIVACY_LABELS]}</Text>
+                {privacy === key && (
+                  <Ionicons name="checkmark" size={24} color={C.accent} />
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -498,5 +503,8 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     gap: 12,
   },
-  modalRowText: { fontSize: 16 },
+
+  modalRowText: {
+    fontSize: 16,
+  },
 });

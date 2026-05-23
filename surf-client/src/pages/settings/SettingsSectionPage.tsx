@@ -1,5 +1,6 @@
 import { SETTINGS_DETAIL_SECTIONS } from '@/lib/settings-constants';
 import { SettingsIcon } from '@/lib/settings-data';
+import { useT, useSettingsT } from '@/lib/i18n';
 import PrivacySettingsPanel from './PrivacySettingsPanel';
 
 interface SettingsSectionPageProps {
@@ -8,6 +9,8 @@ interface SettingsSectionPageProps {
 }
 
 export default function SettingsSectionPage({ sectionKey, activeItem }: SettingsSectionPageProps) {
+  const t = useT();
+  const { tSection, tSectionSub, tItem } = useSettingsT();
   const section = SETTINGS_DETAIL_SECTIONS.find((s) => s.key === sectionKey);
   if (!section) return null;
 
@@ -18,10 +21,10 @@ export default function SettingsSectionPage({ sectionKey, activeItem }: Settings
   return (
     <div className="max-w-3xl">
       <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-        {section.title}
+        {tSection(section.key)}
       </h1>
       {section.subtitle && (
-        <p className="text-slate-600 dark:text-slate-300 mb-8">{section.subtitle}</p>
+        <p className="text-slate-600 dark:text-slate-300 mb-8">{tSectionSub(section.key) ?? section.subtitle}</p>
       )}
 
       <div className="space-y-3">
@@ -47,10 +50,10 @@ export default function SettingsSectionPage({ sectionKey, activeItem }: Settings
               </span>
               <div className="flex-1 min-w-0">
                 <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {item.label}
+                  {tItem(item.key)}
                 </span>
                 <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Chưa có thay đổi nào
+                  {t('settings_no_change')}
                 </span>
               </div>
               <svg

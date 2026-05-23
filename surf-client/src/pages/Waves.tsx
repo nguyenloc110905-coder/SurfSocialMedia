@@ -24,12 +24,29 @@ type ConversationItem = {
   id: string;
   type: 'dm' | 'group';
   title?: string;
+  marketplace?: MarketplaceConversationContext;
   peer: { uid: string; name: string; avatarUrl: string | null } | null;
   members?: { uid: string; name: string; avatarUrl: string | null }[];
   memberCount?: number;
   unreadCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
+};
+
+type MarketplaceConversationContext = {
+  kind: 'marketplace';
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  title: string;
+  price: number;
+  currency: 'VND';
+  imageUrl: string | null;
+  location: string;
+  status: string;
+  saleStatus?: string | null;
+  sellerDisplayName: string;
+  sellerPhotoURL: string | null;
 };
 
 type MessageReactionActor = {
@@ -92,6 +109,11 @@ type ReadReceiptItem = {
 type ReadReceiptPayload = {
   conversationId: string;
   item: ReadReceiptItem;
+};
+
+type TypingPayload = {
+  conversationId: string;
+  userId: string;
 };
 
 type MessageSelfHiddenPayload = {
@@ -260,12 +282,12 @@ function WavesBoostPlacement({ listing }: { listing: Listing }) {
   const imageUrl = listing.mediaUrls?.[0];
   return (
     <Link
-      to="/feed/market"
+      to={`/feed/market/${listing.id}`}
       className="mb-3 block overflow-hidden rounded-[24px] border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-3 text-left shadow-sm transition hover:border-cyan-300 hover:shadow-md dark:border-cyan-900/50 dark:from-cyan-950/30 dark:via-slate-900 dark:to-slate-900"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-300">
-          Sponsored · Surf Boost
+          Được tài trợ · Surf Boost
         </span>
         <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-700 dark:text-cyan-200">
           Market
@@ -292,6 +314,46 @@ function WavesBoostPlacement({ listing }: { listing: Listing }) {
     </Link>
   );
 }
+
+function MarketplaceThreadCard({ marketplace }: { marketplace: MarketplaceConversationContext }) {
+  return (
+    <Link
+      to={`/feed/market/${marketplace.listingId}`}
+      className="mb-4 block overflow-hidden rounded-[28px] border border-cyan-100 bg-white/95 p-3 shadow-[0_18px_44px_-34px_rgba(8,145,178,0.55)] transition hover:border-cyan-300 hover:bg-cyan-50/50 dark:border-slate-700 dark:bg-slate-900/90 dark:hover:border-cyan-900/70 dark:hover:bg-slate-900"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-600 dark:text-cyan-300">
+          Surf Market
+        </span>
+        <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-700 dark:text-cyan-200">
+          Chi tiết
+        </span>
+      </div>
+      <div className="flex gap-3">
+        <div className="h-[72px] w-[72px] shrink-0 overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
+          {marketplace.imageUrl ? (
+            <img src={optimizeImageUrl(marketplace.imageUrl)} alt={marketplace.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-400 dark:text-slate-500">
+              Market
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-white">{marketplace.title}</div>
+          <div className="mt-1 text-sm font-black text-cyan-700 dark:text-cyan-300">{formatBoostListingPrice(marketplace.price)}</div>
+          <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{marketplace.location || 'Surf Market'}</div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+const MARKETPLACE_QUICK_REPLIES = [
+  'Có nhé. Bạn có thích không?',
+  'Tôi sẽ báo cho bạn biết.',
+  'Tiếc quá, hết hàng rồi bạn ạ.',
+];
 
 const unwrapReplyPrefix = (value: string) => {
   let normalized = value.trim();
@@ -827,6 +889,14 @@ export default function Waves() {
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+  const [messageSearchResults, setMessageSearchResults] = useState<ApiMessage[]>([]);
+  const [messageSearchLoading, setMessageSearchLoading] = useState(false);
+  const [messageSearchError, setMessageSearchError] = useState<string | null>(null);
+  const [typingUsersByConversation, setTypingUsersByConversation] = useState<
+    Record<string, Record<string, number>>
+  >({});
   const [replyTargetMessage, setReplyTargetMessage] = useState<UiMessage | null>(null);
   const [openedReactionMessageId, setOpenedReactionMessageId] = useState<string | null>(null);
   const [openedAvatarMenuMessageId, setOpenedAvatarMenuMessageId] = useState<string | null>(null);
@@ -885,6 +955,9 @@ export default function Waves() {
   const deferredQuery = useDeferredValue(query);
   const activeConversationIdRef = useRef<string | null>(null);
   const highlightedReplyTimeoutRef = useRef<number | null>(null);
+  const activeTypingConversationRef = useRef<string | null>(null);
+  const typingStopTimeoutRef = useRef<number | null>(null);
+  const typingClearTimeoutsRef = useRef<Record<string, number>>({});
   const draftImageAttachmentsRef = useRef<DraftImageAttachment[]>([]);
   const messagesBottomRef = useRef<HTMLDivElement | null>(null);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
@@ -941,10 +1014,33 @@ export default function Waves() {
     () => conversations.find((item) => item.id === activeConversationId) ?? null,
     [conversations, activeConversationId]
   );
+  const activeMarketplace = activeConversation?.marketplace;
+  const isSellerMarketplaceThread = Boolean(
+    activeMarketplace && user?.uid === activeMarketplace.sellerId
+  );
   const activeMessages = useMemo(
     () => (activeConversationId ? (threads[activeConversationId] ?? []) : []),
     [activeConversationId, threads]
   );
+  const typingConversationIds = useMemo(() => {
+    const now = Date.now();
+    return new Set(
+      Object.entries(typingUsersByConversation)
+        .filter(([, usersById]) =>
+          Object.entries(usersById).some(
+            ([uid, expiresAt]) => uid !== user?.uid && expiresAt > now
+          )
+        )
+        .map(([conversationId]) => conversationId)
+    );
+  }, [typingUsersByConversation, user?.uid]);
+  const activeTypingUserIds = useMemo(() => {
+    if (!activeConversationId) return [] as string[];
+    const now = Date.now();
+    return Object.entries(typingUsersByConversation[activeConversationId] ?? {})
+      .filter(([uid, expiresAt]) => uid !== user?.uid && expiresAt > now)
+      .map(([uid]) => uid);
+  }, [activeConversationId, typingUsersByConversation, user?.uid]);
   const activePinnedMessages = useMemo(() => {
     if (!user?.uid) return [] as UiMessage[];
 
@@ -2387,9 +2483,183 @@ export default function Waves() {
     [sharedLinks]
   );
 
+  const clearTypingUser = useCallback((conversationId: string, userId: string) => {
+    const timeoutKey = `${conversationId}:${userId}`;
+    const timeoutId = typingClearTimeoutsRef.current[timeoutKey];
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      delete typingClearTimeoutsRef.current[timeoutKey];
+    }
+
+    setTypingUsersByConversation((current) => {
+      const usersById = current[conversationId];
+      if (!usersById?.[userId]) return current;
+
+      const nextUsersById = { ...usersById };
+      delete nextUsersById[userId];
+
+      if (Object.keys(nextUsersById).length === 0) {
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [conversationId]: nextUsersById,
+      };
+    });
+  }, []);
+
+  const scheduleTypingAutoClear = useCallback(
+    (conversationId: string, userId: string) => {
+      const timeoutKey = `${conversationId}:${userId}`;
+      const previousTimeoutId = typingClearTimeoutsRef.current[timeoutKey];
+      if (previousTimeoutId) {
+        window.clearTimeout(previousTimeoutId);
+      }
+
+      typingClearTimeoutsRef.current[timeoutKey] = window.setTimeout(() => {
+        clearTypingUser(conversationId, userId);
+      }, 3000);
+    },
+    [clearTypingUser]
+  );
+
+  const emitTypingStop = useCallback(
+    (conversationId?: string | null) => {
+      const targetConversationId = conversationId ?? activeTypingConversationRef.current;
+      if (typingStopTimeoutRef.current) {
+        window.clearTimeout(typingStopTimeoutRef.current);
+        typingStopTimeoutRef.current = null;
+      }
+      if (!targetConversationId || !user?.uid) return;
+
+      getSocket().emit('typing:stop', { conversationId: targetConversationId });
+
+      if (activeTypingConversationRef.current === targetConversationId) {
+        activeTypingConversationRef.current = null;
+      }
+    },
+    [user?.uid]
+  );
+
+  const emitTypingStart = useCallback(() => {
+    if (!activeConversationId || !user?.uid) return;
+
+    const socket = getSocket();
+    const previousConversationId = activeTypingConversationRef.current;
+    if (previousConversationId && previousConversationId !== activeConversationId) {
+      socket.emit('typing:stop', { conversationId: previousConversationId });
+    }
+
+    if (previousConversationId !== activeConversationId) {
+      socket.emit('typing:start', { conversationId: activeConversationId });
+      activeTypingConversationRef.current = activeConversationId;
+    }
+
+    if (typingStopTimeoutRef.current) {
+      window.clearTimeout(typingStopTimeoutRef.current);
+    }
+
+    typingStopTimeoutRef.current = window.setTimeout(() => {
+      emitTypingStop(activeConversationId);
+    }, 1600);
+  }, [activeConversationId, emitTypingStop, user?.uid]);
+
+  const handleDraftChange = useCallback(
+    (value: string) => {
+      setDraft(value);
+      if (value.trim()) {
+        emitTypingStart();
+      } else {
+        emitTypingStop(activeConversationId);
+      }
+    },
+    [activeConversationId, emitTypingStart, emitTypingStop]
+  );
+
+  const openSearchResult = useCallback(
+    (message: ApiMessage) => {
+      setThreads((current) => ({
+        ...current,
+        [message.conversationId]: mergeMessages([
+          ...(current[message.conversationId] ?? []),
+          message,
+        ]),
+      }));
+      setMessageSearchOpen(false);
+
+      requestAnimationFrame(() => {
+        void scrollToMessageById(message.id);
+      });
+    },
+    [scrollToMessageById]
+  );
+
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
+
+  useEffect(() => {
+    setMessageSearchOpen(false);
+    setMessageSearchQuery('');
+    setMessageSearchResults([]);
+    setMessageSearchError(null);
+
+    return () => {
+      emitTypingStop(activeConversationId);
+    };
+  }, [activeConversationId, emitTypingStop]);
+
+  useEffect(() => {
+    return () => {
+      emitTypingStop();
+      Object.values(typingClearTimeoutsRef.current).forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      typingClearTimeoutsRef.current = {};
+    };
+  }, [emitTypingStop]);
+
+  useEffect(() => {
+    const searchText = messageSearchQuery.trim();
+    if (!messageSearchOpen || !activeConversationId || !searchText) {
+      setMessageSearchResults([]);
+      setMessageSearchError(null);
+      setMessageSearchLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setMessageSearchLoading(true);
+      setMessageSearchError(null);
+
+      api
+        .get<MessagePage>(
+          `/api/conversations/${activeConversationId}/messages?q=${encodeURIComponent(searchText)}&limit=20`,
+          { signal: controller.signal }
+        )
+        .then((data) => {
+          if (controller.signal.aborted) return;
+          setMessageSearchResults(data.items ?? []);
+        })
+        .catch((errorValue) => {
+          if (controller.signal.aborted) return;
+          setMessageSearchError((errorValue as Error).message);
+          setMessageSearchResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setMessageSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [activeConversationId, messageSearchOpen, messageSearchQuery]);
 
   useEffect(() => {
     const loadChatBoostListings = async () => {
@@ -2540,11 +2810,15 @@ export default function Waves() {
         behavior: 'auto',
       });
     });
-  }, [activeConversationId, activeMessages.length]);
+  }, [activeConversationId, activeMessages.length, activeTypingUserIds.length]);
 
   useEffect(() => {
     const socket = getSocket();
     const onMessageNew = (payload: RealtimePayload) => {
+      if (payload.message.senderId !== user?.uid) {
+        clearTypingUser(payload.message.conversationId, payload.message.senderId);
+      }
+
       setThreads((current) => ({
         ...current,
         [payload.message.conversationId]: replaceOptimisticMessage(
@@ -2590,6 +2864,22 @@ export default function Waves() {
       replaceMessageInThread(payload.conversationId, payload.message);
       syncConversationPreviewWithMessage(payload.conversationId, payload.message);
     };
+    const onTypingStart = (payload: TypingPayload) => {
+      if (!payload?.conversationId || !payload.userId || payload.userId === user?.uid) return;
+
+      setTypingUsersByConversation((current) => ({
+        ...current,
+        [payload.conversationId]: {
+          ...(current[payload.conversationId] ?? {}),
+          [payload.userId]: Date.now() + 3000,
+        },
+      }));
+      scheduleTypingAutoClear(payload.conversationId, payload.userId);
+    };
+    const onTypingStop = (payload: TypingPayload) => {
+      if (!payload?.conversationId || !payload.userId || payload.userId === user?.uid) return;
+      clearTypingUser(payload.conversationId, payload.userId);
+    };
 
     socket.on('message:new', onMessageNew);
     socket.on('message:read', onMessageRead);
@@ -2597,6 +2887,8 @@ export default function Waves() {
     socket.on('message:recalled', onMessageRecalled);
     socket.on('message:reaction-updated', onMessageReactionUpdated);
     socket.on('message:updated', onMessageUpdated);
+    socket.on('typing:start', onTypingStart);
+    socket.on('typing:stop', onTypingStop);
     return () => {
       socket.off('message:new', onMessageNew);
       socket.off('message:read', onMessageRead);
@@ -2604,11 +2896,15 @@ export default function Waves() {
       socket.off('message:recalled', onMessageRecalled);
       socket.off('message:reaction-updated', onMessageReactionUpdated);
       socket.off('message:updated', onMessageUpdated);
+      socket.off('typing:start', onTypingStart);
+      socket.off('typing:stop', onTypingStop);
     };
   }, [
+    clearTypingUser,
     mergeReadReceipts,
     removeMessageFromThread,
     replaceMessageInThread,
+    scheduleTypingAutoClear,
     syncConversationPreviewWithMessage,
     user?.uid,
   ]);
@@ -2735,6 +3031,7 @@ export default function Waves() {
       setSending(true);
       setError(null);
       setDraft('');
+      emitTypingStop(activeConversationId);
 
       if (textPayload) {
         const optimisticMessage: UiMessage = {
@@ -3226,12 +3523,17 @@ export default function Waves() {
                   )}
                   <div className="space-y-2">
                     {filteredConversations.map((conversation) => {
+                      const marketplace = conversation.marketplace;
+                      const isTyping = typingConversationIds.has(conversation.id);
                       const displayName =
-                        conversation.type === 'group'
+                        marketplace
+                          ? (conversation.peer?.name ?? 'Người mua')
+                          : conversation.type === 'group'
                           ? (conversation.title ?? 'Nhóm')
                           : (conversation.peer?.name ?? 'Unknown Wave');
                       const avatarSrc =
-                        conversation.type === 'group' ? undefined : conversation.peer?.avatarUrl;
+                        marketplace?.imageUrl ??
+                        (conversation.type === 'group' ? undefined : conversation.peer?.avatarUrl);
                       return (
                         <button
                           key={conversation.id}
@@ -3249,8 +3551,8 @@ export default function Waves() {
                             <WaveAvatar
                               src={avatarSrc}
                               uid={conversation.peer?.uid}
-                              name={displayName}
-                              showPresence
+                              name={marketplace?.title ?? displayName}
+                              showPresence={!marketplace}
                               presenceSize="md"
                               className="h-14 w-14 rounded-full object-cover"
                               fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white"
@@ -3261,6 +3563,11 @@ export default function Waves() {
                               <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                                 {displayName}
                               </p>
+                              {marketplace && (
+                                <span className="shrink-0 rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-black text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-200">
+                                  Market
+                                </span>
+                              )}
                               {conversation.type === 'group' && conversation.memberCount && (
                                 <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">
                                   {conversation.memberCount}
@@ -3271,8 +3578,15 @@ export default function Waves() {
                               </span>
                             </div>
                             <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
-                              {normalizeConversationPreview(conversation.lastMessagePreview) ||
-                                'Bắt đầu cuộc trò chuyện mới'}
+                              {isTyping
+                                ? '...'
+                                : marketplace
+                                ? `${marketplace.title} · ${
+                                    normalizeConversationPreview(conversation.lastMessagePreview) ||
+                                    'Bắt đầu trao đổi về bài niêm yết'
+                                  }`
+                                : normalizeConversationPreview(conversation.lastMessagePreview) ||
+                                  'Bắt đầu cuộc trò chuyện mới'}
                             </p>
                           </div>
                           {conversation.unreadCount > 0 && (
@@ -3315,10 +3629,10 @@ export default function Waves() {
                     </div>
                   ) : (
                     <WaveAvatar
-                      src={activeConversation.peer?.avatarUrl}
+                      src={activeMarketplace?.imageUrl ?? activeConversation.peer?.avatarUrl}
                       uid={activeConversation.peer?.uid}
-                      name={activeConversation.peer?.name}
-                      showPresence
+                      name={activeMarketplace?.title ?? activeConversation.peer?.name}
+                      showPresence={!activeMarketplace}
                       presenceSize="md"
                       className="h-12 w-12 rounded-full object-cover"
                       fallbackClassName="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white"
@@ -3326,11 +3640,17 @@ export default function Waves() {
                   )}
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">
-                      {activeConversation.type === 'group'
+                      {activeMarketplace
+                        ? `${activeConversation.peer?.name ?? 'Người mua'} · ${activeMarketplace.title}`
+                        : activeConversation.type === 'group'
                         ? (activeConversation.title ?? 'Nhóm')
                         : (activeConversation.peer?.name ?? 'Unknown Wave')}
                     </h2>
-                    {activeConversation.type === 'dm' && activeConversation.peer?.uid && (
+                    {activeMarketplace ? (
+                      <p className="mt-1 truncate text-xs font-semibold text-cyan-600 dark:text-cyan-300">
+                        Surf Market · {formatBoostListingPrice(activeMarketplace.price)}
+                      </p>
+                    ) : activeConversation.type === 'dm' && activeConversation.peer?.uid && (
                       <PresenceBadge
                         uid={activeConversation.peer.uid}
                         variant="label"
@@ -3343,6 +3663,23 @@ export default function Waves() {
                       </p>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageSearchOpen((current) => !current);
+                    }}
+                    className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border transition ${
+                      messageSearchOpen
+                        ? 'border-cyan-300 bg-cyan-50 text-surf-primary dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300'
+                        : 'border-cyan-200/80 bg-white text-slate-600 hover:border-cyan-300 hover:text-surf-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                    }`}
+                    title="Tìm trong cuộc trò chuyện"
+                    aria-label="Tìm trong cuộc trò chuyện"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                      <path d="M10 2a8 8 0 1 0 4.9 14.32l4.39 4.39 1.41-1.41-4.39-4.39A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z" />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -3379,6 +3716,85 @@ export default function Waves() {
                     </svg>
                   </button>
                 </div>
+                {messageSearchOpen && (
+                  <div
+                    className={`shrink-0 border-b border-cyan-100/80 bg-white/82 px-4 py-3 backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/70 sm:px-6 ${
+                      showInfo ? 'xl:mr-[320px] 2xl:mr-[340px]' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 rounded-2xl border border-cyan-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/80">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-slate-400" fill="currentColor">
+                        <path d="M10 2a8 8 0 1 0 4.9 14.32l4.39 4.39 1.41-1.41-4.39-4.39A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z" />
+                      </svg>
+                      <input
+                        value={messageSearchQuery}
+                        onChange={(event) => setMessageSearchQuery(event.target.value)}
+                        placeholder="Tìm trong cuộc trò chuyện"
+                        className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100"
+                        autoFocus
+                      />
+                      {messageSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageSearchQuery('');
+                            setMessageSearchResults([]);
+                          }}
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          aria-label="Xóa tìm kiếm"
+                          title="Xóa"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                            <path d="m13.41 12 4.3-4.29-1.42-1.42L12 10.59l-4.29-4.3-1.42 1.42 4.3 4.29-4.3 4.29 1.42 1.42L12 13.41l4.29 4.3 1.42-1.42Z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+
+                    {messageSearchQuery.trim() && (
+                      <div className="mt-2 max-h-44 overflow-y-auto rounded-2xl border border-cyan-100 bg-white/95 py-1 shadow-[0_18px_36px_-30px_rgba(8,145,178,0.5)] dark:border-slate-700 dark:bg-slate-900/95">
+                        {messageSearchLoading ? (
+                          <div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-400">
+                            Đang tìm...
+                          </div>
+                        ) : messageSearchError ? (
+                          <div className="px-3 py-3 text-sm text-red-500 dark:text-red-300">
+                            {messageSearchError}
+                          </div>
+                        ) : messageSearchResults.length === 0 ? (
+                          <div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-400">
+                            Không tìm thấy tin nhắn phù hợp.
+                          </div>
+                        ) : (
+                          messageSearchResults.map((message) => (
+                            <button
+                              key={`message-search-${message.id}`}
+                              type="button"
+                              onClick={() => openSearchResult(message)}
+                              className="flex w-full items-start gap-3 px-3 py-2 text-left transition hover:bg-cyan-50/70 dark:hover:bg-slate-800/70"
+                            >
+                              <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-50 text-xs font-black text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-200">
+                                {initials(getSenderNameForMessage(message))}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+                                  <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
+                                    {getSenderNameForMessage(message)}
+                                  </span>
+                                  <span className="shrink-0">{formatFullTime(message.createdAt)}</span>
+                                </span>
+                                <span className="mt-0.5 block truncate text-sm text-slate-600 dark:text-slate-300">
+                                  {normalizeConversationPreview(message.text) ||
+                                    getConversationPreviewText(message)}
+                                </span>
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {latestPinnedMessage && (
                   <div
                     className={`shrink-0 border-b border-cyan-100/80 bg-white/75 px-4 py-3 backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/50 sm:px-6 ${
@@ -3455,6 +3871,7 @@ export default function Waves() {
                           {error}
                         </div>
                       )}
+                      {activeMarketplace && <MarketplaceThreadCard marketplace={activeMarketplace} />}
                       {loadingThreads[activeConversation.id] && activeMessages.length === 0 ? (
                         <div className="mx-auto mt-10 max-w-lg rounded-[32px] border border-cyan-100 bg-white/90 px-8 py-10 text-center dark:border-slate-700 dark:bg-slate-900/80">
                           <h3 className="text-2xl font-semibold text-slate-900 dark:text-white">
@@ -3901,6 +4318,13 @@ export default function Waves() {
                           {renderSeenReceipts(
                             activeReceiptMembersByMessageId[RECEIPT_FALLBACK_BUCKET_ID] ?? []
                           )}
+                          {activeTypingUserIds.length > 0 && (
+                            <div className="flex items-end gap-2 justify-start">
+                              <div className="rounded-2xl rounded-bl-sm bg-white px-4 py-2 text-lg font-black leading-none text-slate-500 shadow-sm ring-1 ring-cyan-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                                ...
+                              </div>
+                            </div>
+                          )}
                           <div ref={messagesBottomRef} />
                         </div>
                       )}
@@ -4332,6 +4756,21 @@ export default function Waves() {
                     </div>
                   )}
 
+                  {isSellerMarketplaceThread && (
+                    <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
+                      {MARKETPLACE_QUICK_REPLIES.map((reply) => (
+                        <button
+                          key={reply}
+                          type="button"
+                          onClick={() => setDraft(reply)}
+                          className="shrink-0 rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-200 dark:hover:bg-cyan-900/35"
+                        >
+                          {reply}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-3 rounded-[28px] border border-cyan-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/80">
                     <input
                       ref={wavesImageInputRef}
@@ -4406,9 +4845,12 @@ export default function Waves() {
                     <textarea
                       ref={wavesTextInputRef}
                       value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
+                      onChange={(event) => handleDraftChange(event.target.value)}
                       onInput={() => {
                         syncComposerHeight();
+                      }}
+                      onBlur={() => {
+                        emitTypingStop(activeConversationId);
                       }}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {

@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from '@/lib/firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { useT } from '@/lib/i18n';
 import { optimizeImageUrl } from '@/lib/image-cdn';
 import SettingsPrivacy from './SettingsPrivacy';
 import HelpSupport from './HelpSupport';
@@ -11,33 +12,35 @@ import NotificationBell from './NotificationBell';
 
 type Panel = 'main' | 'settings' | 'help' | 'display';
 
-const CENTER_NAV = [
+import type { I18nKey } from '@/lib/i18n';
+
+const CENTER_NAV: { to: string; titleKey: I18nKey; path: string }[] = [
   {
     to: '/feed',
-    title: 'Feed',
+    titleKey: 'nav_feed',
     path: 'M10.3 2.7 3 9.19V20a2 2 0 0 0 2 2h5v-6h4v6h5a2 2 0 0 0 2-2V9.19L13.7 2.7a2 2 0 0 0-2.4 0Z',
   },
   {
     to: '/feed/short-video',
-    title: 'Surf Clips',
+    titleKey: 'nav_surf_clips',
     path: 'M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4Z',
   },
   {
     to: '/feed/friends',
-    title: 'Bạn bè',
+    titleKey: 'nav_friends',
     path: 'M12 12a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm5-3a2.5 2.5 0 1 0-2.5 2.5A2.5 2.5 0 0 0 17 9Zm-10 0A2.5 2.5 0 1 0 9.5 6.5 2.5 2.5 0 0 0 7 9Zm0 2a3.5 3.5 0 0 0-3.5 3.5V16a1 1 0 0 0 1 1h5v-2a4.986 4.986 0 0 1 1.29-3.33A3.482 3.482 0 0 0 7 11Zm5 1a3.5 3.5 0 0 0-3.5 3.5V17a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-1.5A3.5 3.5 0 0 0 12 12Zm5 0a3.482 3.482 0 0 0-3.79 2.67A4.986 4.986 0 0 1 14 16v1h5a1 1 0 0 0 1-1v-.5A3.5 3.5 0 0 0 17 12Z',
   },
   {
     to: '/feed/groups',
-    title: 'Nhóm',
+    titleKey: 'nav_groups',
     path: 'M12 2a4 4 0 0 1 4 4v1h.5a3.5 3.5 0 0 1 3.5 3.5v7a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 3.5 17.5v-7A3.5 3.5 0 0 1 7 7h.5V6a4 4 0 0 1 4-4Zm0 2a2 2 0 0 0-2 2v1h4V6a2 2 0 0 0-2-2Zm-2 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm-6 2.5a1.5 1.5 0 0 0-1.5 1.5v2.5h3v-2.5a1.5 1.5 0 0 0-1.5-1.5Zm6 0a1.5 1.5 0 0 0-1.5 1.5v2.5h3v-2.5a1.5 1.5 0 0 0-1.5-1.5Z',
   },
   {
     to: '/feed/market',
-    title: 'Surf Market',
+    titleKey: 'nav_market',
     path: 'M4 6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h4V6zm8 0V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2h8z',
   },
-] as const;
+];
 
 type HeaderProps = { hideCenterNav?: boolean };
 
@@ -65,6 +68,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
     return () => document.removeEventListener('mousedown', onOutside);
   }, [open]);
 
+  const t = useT();
   const avatarSeed = (storeDisplayName ?? user?.displayName)?.trim() || user?.email?.trim() || 'Người dùng';
   const initial = avatarSeed.charAt(0).toUpperCase();
   const currentPhotoURL = storePhotoURL ?? user?.photoURL ?? null;
@@ -97,11 +101,11 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
       {!hideCenterNav && (
         <nav className="hidden md:flex absolute left-1/2 top-0 bottom-0 -translate-x-1/2 items-center justify-center gap-2 pointer-events-none">
           <div className="flex items-center gap-8 sm:gap-12 lg:gap-16 pointer-events-auto">
-            {CENTER_NAV.map(({ to, title, path }) => (
+            {CENTER_NAV.map(({ to, titleKey, path }) => (
               <NavLink
                 key={to}
                 to={to}
-                title={title}
+                title={t(titleKey)}
                 className={({ isActive }) =>
                   [
                     'relative flex items-center justify-center min-w-[48px] h-12 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors',
@@ -156,7 +160,12 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
           aria-haspopup="true"
         >
           {currentPhotoURL && !avatarImgError ? (
-            <img src={optimizeImageUrl(currentPhotoURL)} alt="" className="w-full h-full rounded-full object-cover" onError={() => setAvatarImgError(true)} />
+            <img
+              src={optimizeImageUrl(currentPhotoURL)}
+              alt=""
+              className="w-full h-full rounded-full object-cover"
+              onError={() => setAvatarImgError(true)}
+            />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
               <span className="text-white font-bold text-xs sm:text-sm">{initial}</span>
@@ -165,7 +174,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full mt-2 w-80 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden z-30">
+          <div className="absolute right-0 top-full mt-2 w-80 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden z-50">
             <div
               className="flex transition-transform duration-300 ease-out"
               style={{ transform: `translateX(-${viewIndex * 100}%)` }}
@@ -190,7 +199,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     </div>
                   )}
                   <span className="font-medium text-gray-900 dark:text-gray-100">
-                    Trang cá nhân
+                    {t('header_profile')}
                   </span>
                 </Link>
                 <Link
@@ -206,7 +215,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                   </svg>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    Xem tất cả trang cá nhân
+                    {t('header_view_all_profiles')}
                   </span>
                 </Link>
                 <div className="border-t border-gray-100 dark:border-gray-700 my-2" />
@@ -223,7 +232,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.04.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
                   </svg>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex-1">
-                    Cài đặt và quyền riêng tư
+                    {t('header_settings_privacy')}
                   </span>
                   <svg
                     className="w-4 h-4 text-gray-400 dark:text-gray-500"
@@ -246,7 +255,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z" />
                   </svg>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex-1">
-                    Trợ giúp và hỗ trợ
+                    {t('header_help_support')}
                   </span>
                   <svg
                     className="w-4 h-4 text-gray-400 dark:text-gray-500"
@@ -269,7 +278,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
                   </svg>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex-1">
-                    Màn hình và trợ năng
+                    {t('header_display_accessibility')}
                   </span>
                   <svg
                     className="w-4 h-4 text-gray-400 dark:text-gray-500"
@@ -292,7 +301,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                   </svg>
                   <div className="flex-1 text-left">
                     <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 block">
-                      Đóng góp ý kiến
+                      {t('header_give_feedback')}
                     </span>
                     <span className="text-xs text-gray-400 dark:text-gray-500">CTRL B</span>
                   </div>
@@ -310,7 +319,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
                   </svg>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    Đăng xuất
+                    {t('header_logout')}
                   </span>
                 </button>
                 <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-1 gap-y-1">
@@ -318,14 +327,14 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     to="#"
                     className="hover:underline hover:text-surf-primary dark:hover:text-surf-primary transition-colors"
                   >
-                    Quyền riêng tư
+                    {t('header_privacy')}
                   </Link>
                   <span>·</span>
                   <Link
                     to="#"
                     className="hover:underline hover:text-surf-primary dark:hover:text-surf-primary transition-colors"
                   >
-                    Điều khoản
+                    {t('header_terms')}
                   </Link>
                 </div>
               </div>
@@ -334,16 +343,22 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
               <div className="flex-shrink-0">
                 <SettingsPrivacy
                   onBack={() => setPanel('main')}
-                  onOpenSettingsPage={() => {
+                  onOpenSettingsPage={(itemKey) => {
                     setMenuPath(null);
-                    navigate('/feed/settings');
+                    navigate(itemKey ? `/feed/settings?detail=${itemKey}` : '/feed/settings');
                   }}
                 />
               </div>
 
               {/* Panel 2: Trợ giúp và hỗ trợ */}
               <div className="w-80 flex-shrink-0">
-                <HelpSupport onBack={() => setPanel('main')} />
+                <HelpSupport
+                  onBack={() => setPanel('main')}
+                  onOpenHelpPage={() => {
+                    setMenuPath(null);
+                    navigate('/feed/help-support');
+                  }}
+                />
               </div>
 
               {/* Panel 3: Màn hình và trợ năng */}
@@ -353,14 +368,14 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                     type="button"
                     onClick={() => setPanel('main')}
                     className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
-                    aria-label="Quay lại"
+                    aria-label={t('back')}
                   >
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                     </svg>
                   </button>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    Màn hình và trợ năng
+                    {t('header_display_accessibility')}
                   </span>
                 </div>
                 <div className="px-3 py-3">
@@ -371,11 +386,11 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                       </svg>
                     </span>
                     <span className="font-semibold text-gray-900 dark:text-gray-100">
-                      Chế độ tối
+                      {t('display_dark_mode')}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-12">
-                    Điều chỉnh giao diện để giảm độ chói và cho đôi mắt được nghỉ ngơi.
+                    {t('display_dark_mode_desc')}
                   </p>
                   <div className="ml-12 space-y-2">
                     {(['light', 'dark', 'system'] as const).map((value) => (
@@ -394,12 +409,12 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                           className="w-4 h-4 text-surf-primary border-gray-300 accent-surf-primary"
                         />
                         <span className="text-sm text-gray-800 dark:text-gray-200">
-                          {value === 'light' ? 'Tắt' : value === 'dark' ? 'Bật' : 'Tự động'}
+                          {value === 'light' ? t('theme_off') : value === 'dark' ? t('theme_on') : t('theme_auto')}
                         </span>
                       </label>
                     ))}
                     <p className="text-xs text-gray-500 dark:text-gray-400 pl-6">
-                      Tự động điều chỉnh theo cài đặt hệ thống trên thiết bị của bạn.
+                      {t('display_auto_desc')}
                     </p>
                   </div>
                   <div className="flex items-center gap-3 mt-4 mb-2">
@@ -409,11 +424,11 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                       </svg>
                     </span>
                     <span className="font-semibold text-gray-900 dark:text-gray-100">
-                      Chế độ Thu gọn
+                      {t('display_compact_mode')}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-12">
-                    Thu gọn menu để có thêm không gian.
+                    {t('display_compact_desc')}
                   </p>
                   <div className="ml-12 space-y-2">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -423,7 +438,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                         defaultChecked
                         className="w-4 h-4 text-surf-primary accent-surf-primary"
                       />
-                      <span className="text-sm text-gray-800 dark:text-gray-200">Tắt</span>
+                      <span className="text-sm text-gray-800 dark:text-gray-200">{t('theme_off')}</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -431,7 +446,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                         name="compact"
                         className="w-4 h-4 text-surf-primary accent-surf-primary"
                       />
-                      <span className="text-sm text-gray-800 dark:text-gray-200">Bật</span>
+                      <span className="text-sm text-gray-800 dark:text-gray-200">{t('theme_on')}</span>
                     </label>
                   </div>
                   <button
@@ -444,7 +459,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                       </svg>
                     </span>
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      Bàn phím
+                      {t('display_keyboard')}
                     </span>
                     <svg
                       className="w-4 h-4 text-gray-400 dark:text-gray-500 ml-auto"
@@ -464,7 +479,7 @@ export default function Header({ hideCenterNav = false }: HeaderProps) {
                       </svg>
                     </span>
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      Cài đặt trợ năng
+                      {t('display_accessibility_settings')}
                     </span>
                     <svg
                       className="w-4 h-4 text-gray-400 dark:text-gray-500 ml-auto"

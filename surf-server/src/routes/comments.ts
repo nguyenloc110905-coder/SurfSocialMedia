@@ -4,7 +4,7 @@ import { getDb } from '../config/firebase-admin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { emitCommentNew } from '../realtime/emitters/post.emitter.js';
 import { logger } from '../config/logger.js';
-import { moderateText } from '../services/aiModeration.js';
+import { moderateText, moderateReportedComment } from '../services/aiModeration.js';
 import { getIo } from '../realtime/io.js';
 
 const router = Router();
@@ -82,22 +82,25 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
     
-    const { content, parentId, mentions = [] } = req.body as {
-      content: string;
+    const { content = '', parentId, mentions = [], mediaUrl } = req.body as {
+      content?: string;
       parentId?: string;
       mentions?: { uid: string; displayName: string }[];
+      mediaUrl?: string;
     };
     
-    if (!content?.trim()) {
-      res.status(400).json({ error: 'Comment content is required' });
+    if (!content.trim() && !mediaUrl) {
+      res.status(400).json({ error: 'Comment content or media is required' });
       return;
     }
 
     // Kiểm duyệt nội dung bình luận
-    const moderation = await moderateText(content.trim());
-    if (!moderation.allowed) {
-      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
-      return;
+    if (content.trim()) {
+      const moderation = await moderateText(content.trim());
+      if (!moderation.allowed) {
+        res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+        return;
+      }
     }
 
     // Check if post or video exists
@@ -139,6 +142,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       authorDisplayName: user?.displayName ?? 'Anonymous',
       authorPhotoURL: user?.photoURL ?? null,
       content: content.trim(),
+      mediaUrl: mediaUrl || null,
       createdAt: new Date(),
       updatedAt: new Date(),
       likeCount: 0,
@@ -598,6 +602,111 @@ router.get('/:postId/:commentId/reactions', requireAuth, async (req, res) => {
     }));
     res.json(result);
   } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/comments/{postId}/{commentId}/report:
+ *   post:
+ *     tags: [Comments]
+ *     summary: Báo cáo bình luận vi phạm
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy bình luận }
+ */
+router.post('/:postId/:commentId/report', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const commentsRef = db.collection('comments');
+    const commentDoc = await commentsRef.doc(req.params.commentId).get();
+
+    if (!commentDoc.exists) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    const { reason } = req.body;
+    const reportRef = await db.collection('reports').add({
+      type: 'comment',
+      commentId: req.params.commentId,
+      postId: req.params.postId,
+      reportedBy: req.uid,
+      reason: reason || 'Nội dung không phù hợp',
+      status: 'pending',
+      createdAt: new Date(),
+    });
+
+    res.json({ message: 'Reported successfully, processing AI moderation' });
+
+    // Run AI moderation in background
+    (async () => {
+      try {
+        const postDoc = await db.collection('posts').doc(req.params.postId).get();
+        const postText = postDoc.exists ? (postDoc.data()?.content || '') : '';
+        const commentText = commentDoc.data()?.content || '';
+
+        const aiResult = await moderateReportedComment(commentText, postText, reason || 'Nội dung không phù hợp');
+        
+        await reportRef.update({
+          status: aiResult.violation ? 'resolved_removed' : 'resolved_kept',
+          aiReason: aiResult.reason,
+          resolvedAt: new Date()
+        });
+
+        if (aiResult.violation) {
+          // Xóa bình luận
+          await commentsRef.doc(req.params.commentId).delete();
+          if (postDoc.exists) {
+            await db.collection('posts').doc(req.params.postId).update({
+              replyCount: FieldValue.increment(-1),
+            });
+          }
+
+          // Gửi thông báo cho người báo cáo
+          const notifRef = db.collection('notifications').doc();
+          const notifData = {
+            id: notifRef.id,
+            type: 'system',
+            recipientId: req.uid,
+            actorId: 'system',
+            actorName: 'Hệ thống AI',
+            actorPhoto: null,
+            message: `Báo cáo của bạn về một bình luận ("${reason}") đã được xử lý. AI xác nhận bình luận vi phạm và đã tự động gỡ bỏ. Cảm ơn bạn đã góp phần bảo vệ cộng đồng Surf!`,
+            link: '/settings?detail=reports',
+            read: false,
+            createdAt: new Date(),
+          };
+          await notifRef.set(notifData);
+          getIo().to(`user:${req.uid}`).emit('notification:new', {
+            ...notifData,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        logger.error('Error during AI comment moderation:', err);
+      }
+    })();
+  } catch (e) {
+    logger.error('Error reporting comment:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });

@@ -143,6 +143,224 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
 /**
  * @swagger
+ * /api/videos:
+ *   get:
+ *     tags: [Videos]
+ *     summary: Lấy danh sách video (lọc theo hashtag)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tag
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách video }
+ */
+router.get('/', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const tag = typeof req.query.tag === 'string' ? req.query.tag.trim() : '';
+    const db = getDb();
+    let videos: any[] = [];
+    
+    if (tag) {
+      const snap = await db.collection('videos')
+        .where('tags', 'array-contains', tag)
+        .get();
+        
+      videos = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me')
+        .sort((a: any, b: any) => {
+          const timeA = typeof a.createdAt === 'object' && a.createdAt !== null 
+            ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000 
+            : new Date(a.createdAt as string).getTime() || 0;
+          const timeB = typeof b.createdAt === 'object' && b.createdAt !== null 
+            ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000 
+            : new Date(b.createdAt as string).getTime() || 0;
+          return timeB - timeA;
+        })
+        .slice(0, 50);
+    } else {
+      const snap = await db.collection('videos')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+        
+      videos = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me');
+    }
+    
+    res.json({ videos });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/videos/foryou:
+ *   get:
+ *     tags: [Videos]
+ *     summary: Thuật toán đề xuất video dựa trên lịch sử xem (For You Page)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10, maximum: 20 }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *     responses:
+ *       200: { description: Danh sách video đã được chấm điểm }
+ */
+// ── GET /foryou — algorithm-driven feed based on watch history and tags ────
+router.get('/foryou', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const limit = Math.min(Number(req.query.limit) || 10, 20);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    
+    // Fetch user's watch history (interested tags)
+    const userDoc = await db.collection('users').doc(req.uid!).get();
+    const interestedTags: Record<string, number> = userDoc.exists ? (userDoc.data()?.interestedTags || {}) : {};
+
+    type FsTs = { toMillis(): number };
+    const toMs = (val: unknown): number => {
+      if (!val) return 0;
+      if (typeof (val as FsTs).toMillis === 'function') return (val as FsTs).toMillis();
+      if (val instanceof Date) return val.getTime();
+      return 0;
+    };
+
+    // Fetch pool of recent videos (say 200) to score
+    // In a real app this would use a recommendation engine or vector DB
+    let videosQ = db.collection('videos').orderBy('createdAt', 'desc').limit(200);
+    let postsQ = db.collection('posts').orderBy('createdAt', 'desc').limit(200);
+
+    const [videoSnap, postsSnap] = await Promise.all([videosQ.get(), postsQ.get()]);
+
+    const clipItems = videoSnap.docs
+      .filter((d) => {
+        const data = d.data();
+        return data.deletedAt == null && data.privacy === 'public';
+      })
+      .map((d) => ({
+        _source: 'clip' as const,
+        id: d.id,
+        ...(d.data() as object),
+      }));
+
+    type PostData = {
+      deleted?: boolean;
+      mediaUrls?: string[];
+      authorId?: string;
+      authorDisplayName?: string;
+      authorPhotoURL?: string | null;
+      content?: string;
+      privacy?: string;
+      likeCount?: number;
+      likedBy?: string[];
+      replyCount?: number;
+      createdAt?: unknown;
+      updatedAt?: unknown;
+    };
+
+    const isVideoUrl = (u: string) =>
+      u.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u);
+
+    const postItems = postsSnap.docs
+      .map((d) => {
+        const data = d.data() as PostData;
+        if (data.deleted === true) return null;
+        const videoUrl = (data.mediaUrls ?? []).find((u) => isVideoUrl(u));
+        if (!videoUrl) return null;
+        return {
+          _source: 'post' as const,
+          id: d.id,
+          authorId: data.authorId ?? '',
+          authorDisplayName: data.authorDisplayName ?? 'Anonymous',
+          authorPhotoURL: data.authorPhotoURL ?? null,
+          title: '',
+          description: data.content ?? '',
+          videoUrl,
+          thumbnailUrl: null,
+          duration: null,
+          tags: [], // Posts don't natively have tags array currently, but we could extract hashtags
+          privacy: data.privacy ?? 'public',
+          likeCount: data.likeCount ?? 0,
+          likedBy: data.likedBy ?? [],
+          commentCount: data.replyCount ?? 0,
+          viewCount: 0,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt ?? data.createdAt,
+          deletedAt: null,
+        };
+      })
+      .filter(Boolean) as object[];
+
+    const all = [...clipItems, ...postItems] as Array<any>;
+
+    // Add extracted hashtags from post content
+    for (const item of all) {
+      if (item._source === 'post' && typeof item.description === 'string') {
+        const hashtags = item.description.match(/#[\w\u00C0-\u1FFF\u2C00-\uD7FF]+/g) || [];
+        item.tags = hashtags.map((t: string) => t.substring(1).toLowerCase());
+      }
+    }
+
+    // Scoring algorithm
+    const scoredVideos = all.map(video => {
+      // 1. Base engagement score
+      const likes = video.likeCount || 0;
+      const comments = video.commentCount || 0;
+      const views = video.viewCount || 0;
+      let score = (likes * 5) + (comments * 3) + (views * 0.5);
+
+      // 2. Personalization score based on tags
+      let tagBonus = 0;
+      const tags = video.tags || [];
+      for (const tag of tags) {
+        if (interestedTags[tag]) {
+          tagBonus += interestedTags[tag] * 2; // +2 for each time user watched this tag
+        }
+      }
+      
+      // 3. Recency penalty (newer is better)
+      const ageMs = Date.now() - toMs(video.createdAt);
+      const ageHours = ageMs / (1000 * 60 * 60);
+      const recencyMultiplier = Math.max(0.1, 1 - (ageHours / 168)); // linear decay over 7 days
+
+      score = (score + tagBonus + 10) * recencyMultiplier; // +10 base score to ensure new videos still surface
+
+      // Small random factor to ensure variety
+      score += Math.random() * 5;
+
+      return { ...video, _score: score };
+    });
+
+    // Sort by score
+    scoredVideos.sort((a, b) => b._score - a._score);
+
+    // Paginate
+    const startIndex = (page - 1) * limit;
+    const items = scoredVideos.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < scoredVideos.length;
+
+    res.json({
+      videos: items.map(v => {
+        const { _score, ...rest } = v;
+        return rest;
+      }),
+      hasMore,
+      nextPage: hasMore ? page + 1 : null
+    });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
  * /api/videos/feed:
  *   get:
  *     tags: [Videos]
@@ -377,7 +595,33 @@ router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
+    const data = doc.data()!;
+    const tags = Array.isArray(data.tags) ? data.tags : [];
+
+    // Increment global view count
     await ref.update({ viewCount: FieldValue.increment(1) });
+
+    // Track user's interested tags based on watch history
+    if (tags.length > 0 && req.uid) {
+      const userRef = db.collection('users').doc(req.uid);
+      const userDoc = await userRef.get();
+      if (userDoc.exists) {
+        const userData = userDoc.data()!;
+        let interestedTags: Record<string, number> = userData.interestedTags || {};
+        
+        // Decay older scores occasionally to prefer recent interests (simplified)
+        for (const tag of tags) {
+          interestedTags[tag] = (interestedTags[tag] || 0) + 1;
+        }
+
+        // Keep only top 50 tags to avoid huge document size
+        const sortedTags = Object.entries(interestedTags).sort((a, b) => b[1] - a[1]).slice(0, 50);
+        interestedTags = Object.fromEntries(sortedTags);
+
+        await userRef.update({ interestedTags });
+      }
+    }
+
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

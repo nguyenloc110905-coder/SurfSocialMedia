@@ -2,9 +2,9 @@ import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 import { hasBlockRelation } from '../middleware/auth.js';
 import { conversationMemberRepository } from '../repositories/conversation-member.repository.js';
-import { conversationRepository } from '../repositories/conversation.repository.js';
+import { conversationRepository, type ConversationListDetail } from '../repositories/conversation.repository.js';
 import { buildMessagePreview, messageRepository } from '../repositories/message.repository.js';
-import { buildDmPairKey, ConservationDoc } from '../types/conversation.js';
+import { buildDmPairKey, ConservationDoc, type MarketplaceConversationContext } from '../types/conversation.js';
 import type {
   CreateCallLogInput,
   MessageDoc,
@@ -24,6 +24,8 @@ const REPLY_SENDER_MARKER_LINE_PATTERN = /^__reply_sender:[^\n]+__\n?/;
 export type CreateDmResult =
   | { ok: true; created: boolean; item: ConservationDoc }
   | { ok: false; reason: 'invalid_peer' | 'peer_not_found' | 'blocked' };
+
+export type CreateMarketplaceConversationResult = CreateDmResult;
 
 export type ApiConversation = Omit<ConservationDoc, 'createdAt' | 'updatedAt' | 'lastMessageAt'> & {
   createdAt: string;
@@ -63,6 +65,7 @@ export type ApiConversationListItem = {
   id: string;
   type: ConservationDoc['type'];
   title?: string;
+  marketplace?: ConservationDoc['marketplace'];
   peer: { uid: string; name: string; avatarUrl: string | null } | null;
   members?: { uid: string; name: string; avatarUrl: string | null }[];
   memberCount?: number;
@@ -300,6 +303,26 @@ export const createOrGetDmConversation = async (
   return { ok: true, created: result.created, item: result.item };
 };
 
+export const createOrGetMarketplaceConversation = async (
+  buyerIdRaw: string,
+  sellerIdRaw: string,
+  context: MarketplaceConversationContext
+): Promise<CreateMarketplaceConversationResult> => {
+  const buyerId = buyerIdRaw.trim();
+  const sellerId = sellerIdRaw.trim();
+  if (!buyerId || !sellerId || buyerId === sellerId) return { ok: false, reason: 'invalid_peer' };
+  if (!(await userExists(sellerId))) return { ok: false, reason: 'peer_not_found' };
+  if (await hasBlockRelation(buyerId, sellerId)) return { ok: false, reason: 'blocked' };
+
+  const result = await conversationRepository.findOrCreateMarketplaceDm({
+    buyerId,
+    sellerId,
+    context,
+  });
+  await conversationMemberRepository.ensureMembers(result.item.id, [buyerId, sellerId]);
+  return { ok: true, created: result.created, item: result.item };
+};
+
 export const sendTextMessage = async (
   input: SendTextMessageInput
 ): Promise<SendTextMessageResult> => {
@@ -385,7 +408,8 @@ export const listMessagesForConversation = async (
   userId: string,
   conversationId: string,
   limit = 10,
-  beforeCursor?: string
+  beforeCursor?: string,
+  searchText?: string
 ): Promise<ListMessagesResult> => {
   const conversation = await conversationRepository.getById(conversationId);
   if (!conversation) return { ok: false, reason: 'not_found' };
@@ -400,6 +424,7 @@ export const listMessagesForConversation = async (
     limit,
     beforeCursor,
     viewerId: userId,
+    searchText,
   });
   return { ok: true, items: page.items, nextCursor: page.nextCursor };
 };
@@ -929,11 +954,10 @@ export const getGroupMembers = async (
 export const getUnreadConversationCount = async (userId: string): Promise<number> =>
   conversationRepository.sumUnreadByUser(userId);
 
-export const listConversationsForUser = async (
+const buildConversationListItemsFromDetails = async (
   userId: string,
-  limit = 20
+  details: ConversationListDetail[]
 ): Promise<ApiConversationListItem[]> => {
-  const details = await conversationRepository.listByMemberDetails(userId, limit);
   const docs = details.map((detail) => detail.item);
   const memberIdsByConversation = new Map(
     details.map((detail) => [detail.item.id, detail.memberIds])
@@ -1002,6 +1026,7 @@ export const listConversationsForUser = async (
         id: doc.id,
         type: doc.type,
         title: doc.title,
+        marketplace: doc.marketplace,
         peer: null,
         members: otherIds.map(toMember),
         memberCount: doc.memberCount,
@@ -1015,10 +1040,33 @@ export const listConversationsForUser = async (
     return {
       id: doc.id,
       type: doc.type,
+      title: doc.title,
+      marketplace: doc.marketplace,
       peer: peerUid ? toMember(peerUid) : null,
       unreadCount: unreadCountByConversation.get(doc.id) ?? 0,
       lastMessagePreview,
       lastMessageAt,
     };
   });
+};
+
+export const listConversationsForUser = async (
+  userId: string,
+  limit = 20
+): Promise<ApiConversationListItem[]> => {
+  const details = await conversationRepository.listByMemberDetails(userId, limit);
+  return buildConversationListItemsFromDetails(userId, details);
+};
+
+export const listMarketplaceConversationsForListing = async (
+  sellerId: string,
+  listingId: string,
+  limit = 50
+): Promise<ApiConversationListItem[]> => {
+  const details = await conversationRepository.listMarketplaceByListingForSeller(
+    listingId,
+    sellerId,
+    limit
+  );
+  return buildConversationListItemsFromDetails(sellerId, details);
 };

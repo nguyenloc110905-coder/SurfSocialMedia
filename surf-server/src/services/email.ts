@@ -2,6 +2,16 @@ import nodemailer from 'nodemailer';
 
 let _transporter: nodemailer.Transporter | null = null;
 
+type SupportContactEmail = {
+  uid: string;
+  displayName: string;
+  email: string;
+  category: string;
+  subject: string;
+  message: string;
+  supportMessageId: string;
+};
+
 function getTransporter() {
   if (!_transporter) {
     _transporter = nodemailer.createTransport({
@@ -13,6 +23,25 @@ function getTransporter() {
     });
   }
   return _transporter;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return char;
+    }
+  });
 }
 
 /** Gửi email thông báo đăng nhập */
@@ -44,6 +73,59 @@ export async function sendLoginNotification(to: string, displayName: string) {
         </div>
         <p style="text-align:center;color:#94a3b8;font-size:12px;margin:20px 0 0">
           © ${now.getFullYear()} Surf Social Media. Bạn nhận email này vì có hoạt động đăng nhập trên tài khoản.
+        </p>
+      </div>
+    `,
+  });
+}
+
+/** Gửi nội dung form Trợ giúp & Hỗ trợ đến hộp thư support */
+export async function sendSupportContactEmail(input: SupportContactEmail) {
+  const to = process.env.SUPPORT_EMAIL || process.env.SMTP_EMAIL;
+  if (!to) {
+    throw new Error('Support email recipient is not configured');
+  }
+
+  const from = `"Surf Social" <${process.env.SMTP_EMAIL}>`;
+  const emailSubject = input.subject.replace(/[\r\n]+/g, ' ').trim();
+  const submittedAt = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const safeSubject = escapeHtml(input.subject);
+  const safeMessage = escapeHtml(input.message).replace(/\n/g, '<br>');
+  const safeDisplayName = escapeHtml(input.displayName);
+  const safeEmail = escapeHtml(input.email || 'Không có email');
+  const safeCategory = escapeHtml(input.category);
+  const safeUid = escapeHtml(input.uid);
+  const safeTicketId = escapeHtml(input.supportMessageId);
+
+  await getTransporter().sendMail({
+    from,
+    to,
+    replyTo: input.email || undefined,
+    subject: `[Surf Support] ${emailSubject}`,
+    text: [
+      `Subject: ${input.subject}`,
+      `Category: ${input.category}`,
+      `From: ${input.displayName} <${input.email || 'no-email'}>`,
+      `UID: ${input.uid}`,
+      `Ticket: ${input.supportMessageId}`,
+      `Submitted at: ${submittedAt}`,
+      '',
+      input.message,
+    ].join('\n'),
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:620px;margin:0 auto;padding:28px;background:#f8fafc;border-radius:16px">
+        <div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+          <h2 style="margin:0 0 16px;color:#0f172a">Surf support contact</h2>
+          <p style="margin:0 0 10px;color:#334155"><strong>Subject:</strong> ${safeSubject}</p>
+          <p style="margin:0 0 10px;color:#334155"><strong>Category:</strong> ${safeCategory}</p>
+          <p style="margin:0 0 10px;color:#334155"><strong>From:</strong> ${safeDisplayName} &lt;${safeEmail}&gt;</p>
+          <p style="margin:0 0 10px;color:#334155"><strong>UID:</strong> ${safeUid}</p>
+          <p style="margin:0 0 16px;color:#334155"><strong>Ticket:</strong> ${safeTicketId}</p>
+          <div style="border-top:1px solid #e2e8f0;margin:16px 0"></div>
+          <p style="margin:0;color:#0f172a;line-height:1.7">${safeMessage}</p>
+        </div>
+        <p style="text-align:center;color:#94a3b8;font-size:12px;margin:18px 0 0">
+          Submitted at ${submittedAt}
         </p>
       </div>
     `,

@@ -1,9 +1,26 @@
 export type ConversationType = 'dm' | 'group';
 
+export type MarketplaceConversationContext = {
+  kind: 'marketplace';
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  title: string;
+  price: number;
+  currency: 'VND';
+  imageUrl: string | null;
+  location: string;
+  status: string;
+  saleStatus?: string | null;
+  sellerDisplayName: string;
+  sellerPhotoURL: string | null;
+};
+
 export type ConservationDoc = {
   id: string;
   type: ConversationType;
   title?: string;
+  marketplace?: MarketplaceConversationContext;
   createdBy: string;
   memberCount: number;
   createdAt: Date;

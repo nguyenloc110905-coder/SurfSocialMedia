@@ -1,10 +1,30 @@
 import { SIDEBAR_ITEMS } from '@/lib/settings-constants';
 import { SettingsIcon } from '@/lib/settings-data';
+import { useT, type I18nKey } from '@/lib/i18n';
 
-type Props = { onBack: () => void; onOpenSettingsPage?: () => void };
+const ITEM_KEYS: Record<string, string | null> = {
+  'Cài đặt': null,
+  'Ngôn ngữ & khu vực': 'language-timezone',
+  'Rà soát quyền riêng tư': 'privacy-checkup',
+  'Trung tâm bảo mật': 'account-security',
+  'Lịch sử hoạt động': null,
+  'Lọc nội dung': null,
+};
+
+const ITEM_LABEL_KEYS: Record<string, I18nKey> = {
+  'Cài đặt': 'sp_settings',
+  'Ngôn ngữ & khu vực': 'sp_language',
+  'Rà soát quyền riêng tư': 'sp_privacy_review',
+  'Trung tâm bảo mật': 'sp_security',
+  'Lịch sử hoạt động': 'sp_activity',
+  'Lọc nội dung': 'sp_content_filter',
+};
+
+type Props = { onBack: () => void; onOpenSettingsPage?: (itemKey?: string) => void };
 
 /** Panel nhỏ: chỉ 6 mục. Nhấp "Cài đặt" → mở trang cài đặt full. */
 export default function SettingsPrivacy({ onBack, onOpenSettingsPage }: Props) {
+  const t = useT();
   return (
     <div className="w-[320px] max-h-[70vh] overflow-hidden bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col">
       <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
@@ -17,7 +37,7 @@ export default function SettingsPrivacy({ onBack, onOpenSettingsPage }: Props) {
             <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
           </svg>
           <span className="font-semibold text-gray-900 dark:text-gray-100">
-            Cài đặt và quyền riêng tư
+            {t('sp_panel_title')}
           </span>
         </button>
       </div>
@@ -27,11 +47,16 @@ export default function SettingsPrivacy({ onBack, onOpenSettingsPage }: Props) {
             <li key={item.label}>
               <button
                 type="button"
-                onClick={() => item.label === 'Cài đặt' && onOpenSettingsPage?.()}
+                onClick={() => {
+                const key = ITEM_KEYS[item.label];
+                if (item.label === 'Cài đặt' || key !== undefined) {
+                  onOpenSettingsPage?.(key ?? undefined);
+                }
+              }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 <SettingsIcon name={item.icon} />
-                <span className="text-sm font-semibold flex-1">{item.label}</span>
+                <span className="text-sm font-semibold flex-1">{t(ITEM_LABEL_KEYS[item.label] ?? 'sp_settings')}</span>
                 <svg
                   className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0"
                   viewBox="0 0 24 24"

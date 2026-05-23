@@ -4,6 +4,7 @@
     "strict": true,
     "jsx": "react-jsx",
     "esModuleInterop": true,
+    // "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
       "@/*": [

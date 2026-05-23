@@ -351,7 +351,7 @@ export default function GroupDetails() {
             ) : (
                <div className="space-y-4 pt-2">
                  {posts.map(post => (
-                   <PostCard key={post.id} post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} />
+                   <PostCard key={post.id} post={post} currentUserId={user?.uid} onPostUpdated={handlePostUpdated} onPostCreated={handlePostCreated} />
                  ))}
                  {posts.length === 0 && (
                    <div className="text-center py-10 text-slate-500">Chưa có bài viết nào trong nhóm.</div>

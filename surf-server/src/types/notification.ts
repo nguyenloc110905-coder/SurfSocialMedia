@@ -71,6 +71,7 @@ export type NotificationEntityType =
   | 'friend_request'
   | 'conversation'
   | 'group'
+  | 'event'
   | 'post'
   | 'comment'
   | 'system';

@@ -23,6 +23,10 @@ import groupsRoutes from './routes/groups.js';
 import presenceRoutes from './routes/presence.js';
 import callsRoutes from './routes/calls.js';
 import marketplaceRoutes from './routes/marketplace.js';
+import liveStreamsRoutes from './routes/live-streams.js';
+import eventsRoutes from './routes/events.js';
+import hashtagsRoutes from './routes/hashtags.js';
+import supportRoutes from './routes/support.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 import { initIo } from './realtime/io.js';
 import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
@@ -147,6 +151,10 @@ app.use('/api/presence', presenceRoutes);
 app.use('/api/calls', callsRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/market', marketplaceRoutes);
+app.use('/api/live-streams', liveStreamsRoutes);
+app.use('/api/events', eventsRoutes);
+app.use('/api/hashtags', hashtagsRoutes);
+app.use('/api/support', supportRoutes);
 
 initRedis()
   .then((redisReady) => (redisReady ? initSocketRedisAdapter(io) : undefined))
@@ -189,7 +197,6 @@ async function cleanupTrash() {
 }
 
 // Global error handler — phải đặt sau tất cả routes
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   logger.error(err.message, { stack: err.stack });
   res.status(500).json({ error: 'Internal server error' });

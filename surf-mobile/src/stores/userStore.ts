@@ -23,6 +23,8 @@ export type UserProfile = {
   hometown?: string | null;
   birthday?: string | null;
   relationship?: string | null;
+  work?: Array<{ company: string; title?: string; current?: boolean }>;
+  education?: Array<{ school: string; degree?: string; year?: string }>;
   email?: string;
   defaultPostPrivacy: 'public' | 'friends' | 'only-me' | 'custom';
   friendRequestPrivacy: 'everyone' | 'friends_of_friends';

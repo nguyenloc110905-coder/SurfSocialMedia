@@ -57,8 +57,39 @@ export default function HashtagPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ posts: Post[] }>(`/api/posts?hashtag=${encodeURIComponent(tag)}`);
-      setPosts(res.posts ?? []);
+      const [postsRes, videosRes] = await Promise.all([
+        api.get<{ posts: Post[] }>(`/api/posts?hashtag=${encodeURIComponent(tag)}`),
+        api.get<{ videos: any[] }>(`/api/videos?tag=${encodeURIComponent(tag)}`).catch(() => ({ videos: [] }))
+      ]);
+      
+      const mappedVideos = (videosRes.videos ?? []).map((v: any) => ({
+        id: v.id,
+        content: v.description || v.title || '',
+        authorId: v.authorId,
+        authorDisplayName: v.authorDisplayName,
+        authorPhotoURL: v.authorPhotoURL,
+        mediaUrls: v.videoUrl ? [v.videoUrl] : [],
+        createdAt: v.createdAt,
+        likeCount: v.likeCount || 0,
+        replyCount: v.commentCount || 0,
+        likedBy: v.likedBy || [],
+        privacy: v.privacy,
+        hasVideo: true,
+        _source: 'clip'
+      } as unknown as Post));
+      
+      const all = [...(postsRes.posts ?? []), ...mappedVideos];
+      all.sort((a, b) => {
+        const timeA = typeof a.createdAt === 'object' && a.createdAt !== null 
+          ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000 
+          : new Date(a.createdAt as string).getTime() || 0;
+        const timeB = typeof b.createdAt === 'object' && b.createdAt !== null 
+          ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000 
+          : new Date(b.createdAt as string).getTime() || 0;
+        return timeB - timeA;
+      });
+      
+      setPosts(all);
     } catch (e) {
       setError('Không thể tải bài viết. Vui lòng thử lại.');
     } finally {

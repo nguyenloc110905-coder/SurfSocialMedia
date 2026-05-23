@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Circle, MapContainer, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -15,8 +15,11 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 import Avatar from '../components/ui/Avatar';
+import PresenceBadge from '../components/ui/PresenceBadge';
+import MiniChatPanel from '../components/layout/MiniChatPanel';
 import { api } from '../lib/api';
 import { uploadImage } from '../lib/cloudinary';
+import { usePresenceStore } from '../stores/presenceStore';
 
 const CATEGORIES: { key: Category; label: string; icon: string }[] = [
   { key: 'all', label: 'Tất cả', icon: 'M4 6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h4V6zm8 0V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2h8z' },
@@ -27,6 +30,16 @@ const CATEGORIES: { key: Category; label: string; icon: string }[] = [
   { key: 'home', label: 'Gia dụng', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 0 0 1 1h3m10-11l2 2m-2-2v10a1 1 0 0 1-1 1h-3m-6 0a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1m-6 0h6' },
   { key: 'sports', label: 'Thể thao', icon: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z' },
   { key: 'other', label: 'Khác', icon: 'M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0M19 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0M5 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0' },
+];
+
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
 ];
 
 const CONDITION_LABELS: Record<Condition, string> = {
@@ -90,10 +103,38 @@ const SANDBOX_PAYMENT_TEST_CARDS = [
 type CreateStep = 'listing' | 'boost';
 type PaymentStep = 'method' | 'card';
 type PaymentMethod = 'card' | 'visa' | 'momo' | 'vnpay';
+type MarketplaceConversationContext = {
+  kind: 'marketplace';
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  title: string;
+  price: number;
+  currency: 'VND';
+  imageUrl: string | null;
+  location: string;
+  status: string;
+  saleStatus?: string | null;
+  sellerDisplayName: string;
+  sellerPhotoURL: string | null;
+};
+type MarketplaceConversationItem = {
+  id: string;
+  type: 'dm' | 'group';
+  title?: string;
+  marketplace?: MarketplaceConversationContext;
+  peer: { uid: string; name: string; avatarUrl: string | null } | null;
+  members?: { uid: string; name: string; avatarUrl: string | null }[];
+  memberCount?: number;
+  unreadCount: number;
+  lastMessagePreview: string | null;
+  lastMessageAt: string | null;
+};
 const MY_LISTING_FILTERS: { key: MyListingsFilter; label: string }[] = [
   { key: 'all', label: 'Tất cả' },
-  { key: 'error', label: 'Cần duyệt' },
+  { key: 'pending', label: 'Chờ duyệt' },
   { key: 'active', label: 'Hoạt động' },
+  { key: 'error', label: 'Spam/Lỗi' },
 ];
 const AI_INFRASTRUCTURE_MODERATION_FLAGS = new Set([
   'missing_gemini_key',
@@ -101,6 +142,11 @@ const AI_INFRASTRUCTURE_MODERATION_FLAGS = new Set([
   'gemini_quota_exceeded',
   'gemini_model_unavailable',
   'gemini_unavailable',
+  'missing_openai_key',
+  'invalid_openai_key',
+  'openai_quota_exceeded',
+  'openai_model_unavailable',
+  'openai_unavailable',
   'ai_error',
   'ai_background_error',
 ]);
@@ -203,6 +249,13 @@ function formatSellerListingDate(value: unknown) {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function formatConversationTime(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
 function getSellerListingStatusText(listing: Listing) {
   if (listing.status === 'pending') return 'Đang chờ duyệt';
   if (listing.status === 'rejected') return 'Bị từ chối';
@@ -231,7 +284,7 @@ function needsSellerAttention(listing: Listing) {
 
 function getSellerAttentionText(listing: Listing) {
   if (listing.status === 'rejected') return listing.moderationReason || 'Bài niêm yết này cần chỉnh sửa trước khi hiển thị lại.';
-  if (isAiInfrastructureModerationIssue(listing)) return 'Gemini đang hết quota/rate limit, tin cần admin duyệt hoặc thử lại sau.';
+  if (isAiInfrastructureModerationIssue(listing)) return 'AI đang lỗi/quota, tin cần admin duyệt hoặc thử lại sau.';
   if (listing.moderationResult?.decision === 'needs_review') return listing.moderationReason || 'AI cần admin xem lại bài niêm yết này.';
   return 'Bài niêm yết đang chờ kiểm duyệt trước khi hiển thị công khai.';
 }
@@ -485,10 +538,10 @@ function LocationMap({
 }
 
 function getModerationSourceLabel(listing: Listing) {
-  if (listing.moderatedBy === 'ai') return 'AI Gemini đã kiểm tra';
+  if (listing.moderatedBy === 'ai') return 'AI đã kiểm tra';
   if (listing.moderatedBy === 'admin') return 'Admin đã kiểm duyệt';
   if (listing.moderationMode === 'manual') return 'Chờ admin duyệt thủ công';
-  if (listing.moderationMode === 'auto') return 'Đang chờ AI Gemini';
+  if (listing.moderationMode === 'auto') return 'Đang chờ AI';
   return 'Chưa có dữ liệu kiểm duyệt';
 }
 
@@ -565,6 +618,7 @@ export default function MarketPage() {
   const {
     listings,
     loading,
+    nextCursor,
     activeCategory,
     searchQuery,
     searchResults,
@@ -578,12 +632,16 @@ export default function MarketPage() {
     myListingsSummary,
     savedListings,
     savedLoading,
+    detailListing,
+    detailLoading,
     fetchListings,
     fetchMyListings,
     fetchSavedListings,
     setCategory,
     search,
     setSearchQuery,
+    fetchDetail,
+    clearDetail,
     toggleSave,
     createListing,
     boostListing,
@@ -600,12 +658,17 @@ export default function MarketPage() {
     rejectListing,
   } = useMarketplaceStore();
   const navigate = useNavigate();
+  const { listingId: routeListingId } = useParams<{ listingId?: string }>();
+  const isRouteDetailView = Boolean(routeListingId);
   const currentUser = useAuthStore((s) => s.user);
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const currentUserId = currentUser?.uid;
+  const setPresenceOnline = usePresenceStore((state) => state.setOnline);
+  const setPresenceKnownOffline = usePresenceStore((state) => state.setKnownOffline);
 
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const isRouteSelectedListing = Boolean(routeListingId && selectedListing?.id === routeListingId);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'my' | 'saved'>('all');
@@ -634,6 +697,10 @@ export default function MarketPage() {
   const [editDraft, setEditDraft] = useState<NewListingDraft>(DEFAULT_NEW_LISTING);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [messagesListing, setMessagesListing] = useState<Listing | null>(null);
+  const [sellerListingConversations, setSellerListingConversations] = useState<MarketplaceConversationItem[]>([]);
+  const [sellerListingConversationsLoading, setSellerListingConversationsLoading] = useState(false);
+  const [sellerListingConversationsError, setSellerListingConversationsError] = useState('');
+  const [activeSellerConversation, setActiveSellerConversation] = useState<MarketplaceConversationItem | null>(null);
   const [sellerMessagesTab, setSellerMessagesTab] = useState<SellerMessagesTab>('messages');
   const [sellerInsightRange, setSellerInsightRange] = useState<'7' | '14' | '30'>('7');
   const [isMarketplaceAdmin, setIsMarketplaceAdmin] = useState(false);
@@ -660,6 +727,9 @@ export default function MarketPage() {
   const [sellerMessageDraft, setSellerMessageDraft] = useState('Mặt hàng này còn chứ?');
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
   const [marketToast, setMarketToast] = useState('');
   const [billingCard, setBillingCard] = useState({
     name: '',
@@ -707,6 +777,7 @@ export default function MarketPage() {
     </div>
   );
   const geoCache = useRef(new Map<string, MapCenter>());
+  const listingsLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const myListingsLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const myListingsFetchKeyRef = useRef('');
 
@@ -716,6 +787,68 @@ export default function MarketPage() {
   useEffect(() => {
     fetchListings(true);
   }, [fetchListings]);
+
+  useEffect(() => {
+    if (!routeListingId) {
+      clearDetail();
+      return;
+    }
+    void fetchDetail(routeListingId);
+    return () => {
+      clearDetail();
+    };
+  }, [clearDetail, fetchDetail, routeListingId]);
+
+  useEffect(() => {
+    if (!isRouteDetailView) return;
+    if (!detailListing) return;
+    setSelectedListing(detailListing);
+    setActiveMediaIndex(0);
+    setIsMapOpen(false);
+    setIsSellerProfileOpen(false);
+    setSellerListingSearch('');
+    setIsDetailModalOpen(false);
+  }, [detailListing, isRouteDetailView]);
+
+  useEffect(() => {
+    const sellerId = selectedListing?.sellerId;
+    if (!sellerId || sellerId === currentUserId) return;
+
+    let cancelled = false;
+    api
+      .get<{ uid: string; online: boolean; lastSeen: number | null }>(`/api/presence/users/${sellerId}`)
+      .then((res) => {
+        if (cancelled || res.uid !== sellerId) return;
+        if (res.online) {
+          setPresenceOnline(sellerId);
+          return;
+        }
+        setPresenceKnownOffline(sellerId, res.lastSeen);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, selectedListing?.sellerId, setPresenceKnownOffline, setPresenceOnline]);
+
+  useEffect(() => {
+    if (activeTab !== 'all' || isSearchMode || !nextCursor) return;
+    const target = listingsLoadMoreRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          void fetchListings(false);
+        }
+      },
+      { root: null, rootMargin: '420px 0px', threshold: 0 }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [activeTab, fetchListings, isSearchMode, nextCursor]);
 
   useEffect(() => {
     if (activeTab === 'my') {
@@ -730,6 +863,40 @@ export default function MarketPage() {
       fetchSavedListings();
     }
   }, [activeTab, fetchMyListings, fetchSavedListings, myListingsFilter]);
+
+  useEffect(() => {
+    if (!messagesListing) {
+      setSellerListingConversations([]);
+      setSellerListingConversationsError('');
+      setActiveSellerConversation(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadSellerListingConversations = async () => {
+      setSellerListingConversationsLoading(true);
+      setSellerListingConversationsError('');
+      try {
+        const data = await api.get<{ items: MarketplaceConversationItem[] }>(
+          `/api/marketplace/${messagesListing.id}/conversations`
+        );
+        if (cancelled) return;
+        setSellerListingConversations(data.items ?? []);
+      } catch (err) {
+        if (!cancelled) {
+          setSellerListingConversations([]);
+          setSellerListingConversationsError((err as Error).message || 'Không thể tải tin nhắn');
+        }
+      } finally {
+        if (!cancelled) setSellerListingConversationsLoading(false);
+      }
+    };
+
+    void loadSellerListingConversations();
+    return () => {
+      cancelled = true;
+    };
+  }, [messagesListing]);
 
   useEffect(() => {
     if (activeTab !== 'my' || sellerSection !== 'listings' || !myListingsNextCursor) return;
@@ -836,7 +1003,7 @@ export default function MarketPage() {
   }, [selectedListing?.location]);
 
   useEffect(() => {
-    if (!isDetailModalOpen) return;
+    if (!isDetailModalOpen && !isRouteDetailView) return;
     const onEscape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (isSellerProfileOpen) {
@@ -847,8 +1014,7 @@ export default function MarketPage() {
         setIsMapOpen(false);
         return;
       }
-      setIsDetailModalOpen(false);
-      setSelectedListing(null);
+      handleCloseDetail();
     };
     document.addEventListener('keydown', onEscape);
     const originalOverflow = document.body.style.overflow;
@@ -857,7 +1023,7 @@ export default function MarketPage() {
       document.removeEventListener('keydown', onEscape);
       document.body.style.overflow = originalOverflow;
     };
-  }, [isDetailModalOpen, isMapOpen, isSellerProfileOpen]);
+  }, [isDetailModalOpen, isMapOpen, isRouteDetailView, isSellerProfileOpen]);
 
   useEffect(() => {
     if (!isCreateModalOpen) return;
@@ -981,7 +1147,7 @@ export default function MarketPage() {
 
   const handleBulkApproveAiFailedDemoListings = async () => {
     if (moderationBulkApproving) return;
-    const confirmed = window.confirm('Duyệt nhanh các bài demo bị kẹt do Gemini hết quota/rate limit?');
+    const confirmed = window.confirm('Duyệt nhanh các bài demo bị kẹt do AI lỗi/quota?');
     if (!confirmed) return;
     setModerationBulkApproving(true);
     setModerationError('');
@@ -991,9 +1157,9 @@ export default function MarketPage() {
         fetchMyListings(true, myListingsFilter),
         reloadModerationQueue(),
       ]);
-      showMarketToast(result.updated > 0 ? `Đã duyệt ${result.updated} bài demo bị kẹt Gemini.` : 'Không có bài demo nào đủ điều kiện duyệt nhanh.');
+      showMarketToast(result.updated > 0 ? `Đã duyệt ${result.updated} bài demo bị kẹt AI.` : 'Không có bài demo nào đủ điều kiện duyệt nhanh.');
     } catch (err) {
-      const message = (err as Error).message || 'Không thể duyệt nhanh bài bị kẹt Gemini';
+      const message = (err as Error).message || 'Không thể duyệt nhanh bài bị kẹt AI';
       setModerationError(message);
       showMarketToast(message);
     } finally {
@@ -1146,6 +1312,7 @@ export default function MarketPage() {
     setMessagesListing(listing);
     setSellerMessagesTab('messages');
     setSellerInsightRange('7');
+    setActiveSellerConversation(null);
   };
 
   const handleDeleteSellerListing = async (listingId: string) => {
@@ -1162,7 +1329,7 @@ export default function MarketPage() {
   };
 
   const handleShareSellerListing = async (listing: Listing) => {
-    const url = window.location.origin + '/market';
+    const url = `${window.location.origin}/feed/market/${listing.id}`;
     setOpenListingMenuId(null);
     try {
       if (navigator.share) {
@@ -1208,15 +1375,23 @@ export default function MarketPage() {
     }
   };
 
-  const handleReportSelectedListing = async (listing: Listing) => {
-    if (reportSubmitting) return;
-    const reason = window.prompt('Lý do bạn muốn báo cáo bài niêm yết này là gì?');
-    if (!reason?.trim()) return;
+  const handleReportSelectedListing = (listing: Listing) => {
+    setIsReportModalOpen(true);
+    setReportCategory('');
+    setReportDetails('');
+  };
+
+  const submitReportListing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedListing || reportSubmitting || !reportCategory) return;
 
     setReportSubmitting(true);
     try {
-      await reportListing(listing.id, reason.trim());
+      const catLabel = REPORT_CATEGORIES.find((c) => c.key === reportCategory)?.label || reportCategory;
+      const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
+      await reportListing(selectedListing.id, reasonText);
       showMarketToast('Đã gửi báo cáo bài niêm yết.');
+      setIsReportModalOpen(false);
     } catch (err) {
       window.alert((err as Error).message || 'Không thể gửi báo cáo');
     } finally {
@@ -1454,6 +1629,10 @@ export default function MarketPage() {
     setIsMapOpen(false);
     setIsSellerProfileOpen(false);
     setSellerListingSearch('');
+    if (isRouteDetailView) {
+      clearDetail();
+      navigate('/feed/market');
+    }
   };
 
   const openDetail = (listing: Listing) => {
@@ -1523,7 +1702,7 @@ export default function MarketPage() {
   const activeMyListingsCount = myListingsCounts.active;
   const soldMyListingsCount = myListingsCounts.sold;
   const pendingMyListingsCount = myListingsCounts.pending;
-  const rejectedMyListingsCount = myListingsCounts.rejected;
+  const spamOrErrorMyListingsCount = myListingsCounts.error;
   const myListingSearchTerm = myListingSearch.trim().toLowerCase();
   const filteredMyListings = myListings.filter((listing) => {
     if (!myListingSearchTerm) return true;
@@ -1531,19 +1710,17 @@ export default function MarketPage() {
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(myListingSearchTerm));
   });
-  const attentionMyListings = filteredMyListings.filter(needsSellerAttention);
   const aiInfrastructureMyListings = filteredMyListings.filter(isAiInfrastructureModerationIssue);
   const demoAiInfrastructureMyListings = aiInfrastructureMyListings.filter(isDemoSeedListing);
   const aiInfrastructureModerationQueue = moderationQueue.filter(isAiInfrastructureModerationIssue);
   const demoAiInfrastructureModerationQueue = aiInfrastructureModerationQueue.filter(isDemoSeedListing);
-  const visibleMyListingRows =
-    myListingsFilter === 'all' && attentionMyListings.length > 0
-      ? filteredMyListings.filter((listing) => !needsSellerAttention(listing))
-      : filteredMyListings;
+  const visibleMyListingRows = filteredMyListings;
   const myListingFilterLabel = MY_LISTING_FILTERS.find((filter) => filter.key === myListingsFilter)?.label ?? 'Tất cả';
   const myListingListTitle =
     myListingsFilter === 'error'
-      ? 'Bài cần duyệt'
+      ? 'Spam/Lỗi'
+      : myListingsFilter === 'pending'
+        ? 'Bài đang chờ kiểm duyệt'
       : myListingsFilter === 'active'
         ? 'Bài niêm yết hoạt động'
         : 'Tất cả bài niêm yết';
@@ -1582,7 +1759,19 @@ export default function MarketPage() {
           : selectedListing?.status === 'rejected'
             ? 'Bị từ chối'
             : 'Còn hàng';
+  const detailCategoryLabel = selectedListing ? (CATEGORIES.find((c) => c.key === selectedListing.category)?.label ?? 'Khác') : 'Khác';
   const detailBrand = selectedListing ? getBrandFromTitle(selectedListing.title) : 'Khác';
+  const detailIsOwner = Boolean(selectedListing && selectedListing.sellerId === currentUserId);
+  const detailRecommendationListings = selectedListing
+    ? Array.from(
+        new Map(
+          [...listings, ...searchResults, ...savedListings, ...myListings]
+            .filter((listing) => listing.id !== selectedListing.id && listing.status === 'active')
+            .filter((listing) => listing.category === selectedListing.category || listing.sellerId === selectedListing.sellerId)
+            .map((listing) => [listing.id, listing] as const)
+        ).values()
+      ).slice(0, 8)
+    : [];
   const sellerName = selectedListing?.sellerDisplayName || 'Người bán';
   const sellerShortName = sellerName.trim().split(/\s+/).pop() || sellerName;
   const sellerKnownListings = selectedListing
@@ -2075,8 +2264,8 @@ export default function MarketPage() {
                           <div className="mt-1 text-xs font-bold text-slate-400">Đang chờ duyệt</div>
                         </div>
                         <div className="rounded-xl border border-white/[0.1] bg-[#10161e] p-3">
-                          <div className="text-xl font-black text-white">{rejectedMyListingsCount}</div>
-                          <div className="mt-1 text-xs font-bold text-slate-400">Bị từ chối</div>
+                          <div className="text-xl font-black text-white">{spamOrErrorMyListingsCount}</div>
+                          <div className="mt-1 text-xs font-bold text-slate-400">Spam/Lỗi</div>
                         </div>
                       </div>
                       {latestMyListing && (
@@ -2194,7 +2383,7 @@ export default function MarketPage() {
                           <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div>
-                                <p className="text-sm font-black text-amber-100">Gemini đang hết quota/rate limit</p>
+                                <p className="text-sm font-black text-amber-100">AI đang lỗi/quota</p>
                                 <p className="mt-1 text-xs font-bold text-amber-100/70">
                                   Đây là lỗi hạ tầng AI, không phải sản phẩm bị vi phạm. {demoAiInfrastructureMyListings.length} bài demo đang tải trong trang này có thể duyệt nhanh.
                                 </p>
@@ -2217,18 +2406,6 @@ export default function MarketPage() {
                             </div>
                           </div>
                         )}
-                        {myListingsFilter === 'all' && attentionMyListings.length > 0 && (
-                          <section className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-black text-white">Cần chú ý</h4>
-                              <span className="text-xs font-bold text-slate-500">{attentionMyListings.length} cần duyệt</span>
-                            </div>
-                            <div className={sellerListingView === 'grid' ? 'grid gap-2 lg:grid-cols-2' : 'space-y-2'}>
-                              {attentionMyListings.map((item) => renderSellerListingRow(item, true))}
-                            </div>
-                          </section>
-                        )}
-
                         <section className="space-y-2">
                           <div className="flex items-center justify-between">
                             <h4 className="text-sm font-black text-white">{myListingListTitle}</h4>
@@ -2284,7 +2461,7 @@ export default function MarketPage() {
                           <div className="text-[11px] font-black uppercase tracking-[0.16em] text-surf-secondary">Admin moderation</div>
                           <h3 className="mt-1 text-xl font-black text-white">Kiểm duyệt Surf Market</h3>
                           <p className="mt-1 text-sm font-medium text-slate-500">
-                            Auto dùng Gemini duyệt trước. Manual sẽ đưa toàn bộ tin mới vào hàng chờ admin.
+                            Auto dùng AI duyệt trước. Manual sẽ đưa toàn bộ tin mới vào hàng chờ admin.
                           </p>
                         </div>
                         <div className="flex rounded-xl border border-white/[0.08] bg-[#0f141b] p-1">
@@ -2314,10 +2491,10 @@ export default function MarketPage() {
                           <div className="mt-1 text-xs font-bold text-slate-400">Chế độ hiện tại</div>
                         </div>
                         <div className="rounded-xl border border-white/[0.08] bg-[#10161e] p-3">
-                          <div className={`text-xl font-black ${moderationSettings?.hasGeminiKey ? 'text-emerald-400' : 'text-amber-400'}`}>
-                            {moderationSettings?.hasGeminiKey ? 'Đã có key' : 'Thiếu key'}
+                          <div className={`text-xl font-black ${moderationSettings?.hasAiKey ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {moderationSettings?.hasAiKey ? 'Đã có key' : 'Thiếu key'}
                           </div>
-                          <div className="mt-1 text-xs font-bold text-slate-400">AI provider</div>
+                          <div className="mt-1 text-xs font-bold text-slate-400">AI provider: {moderationSettings?.provider === 'openai' ? 'OpenAI' : 'Gemini'}</div>
                         </div>
                       </div>
                     </div>
@@ -2336,7 +2513,7 @@ export default function MarketPage() {
                               disabled={moderationBulkApproving || moderationLoading}
                               className="rounded-xl bg-amber-400 px-4 py-2 text-xs font-black text-[#211600] transition hover:bg-amber-300 disabled:opacity-60"
                             >
-                              {moderationBulkApproving ? 'Đang duyệt...' : `Duyệt ${demoAiInfrastructureModerationQueue.length} demo bị kẹt Gemini`}
+                              {moderationBulkApproving ? 'Đang duyệt...' : `Duyệt ${demoAiInfrastructureModerationQueue.length} demo bị kẹt AI`}
                             </button>
                           )}
                           <button
@@ -2351,7 +2528,7 @@ export default function MarketPage() {
                       </div>
                       {aiInfrastructureModerationQueue.length > 0 && (
                         <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm font-bold text-amber-100">
-                          {aiInfrastructureModerationQueue.length} tin đang kẹt do Gemini/quota. Có thể chờ quota hồi rồi chạy lại AI, hoặc admin duyệt nhanh demo đáng tin.
+                          {aiInfrastructureModerationQueue.length} tin đang kẹt do AI/quota. Có thể chờ quota hồi rồi chạy lại AI, hoặc admin duyệt nhanh demo đáng tin.
                         </div>
                       )}
                       {moderationError && (
@@ -2510,6 +2687,7 @@ export default function MarketPage() {
                 )}
               </div>
             ) : (
+              <>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
               {currentLoading && displayedListings.length === 0 ? (
                 Array.from({ length: 10 }).map((_, i) => (
@@ -2530,7 +2708,7 @@ export default function MarketPage() {
                   <article
                     key={item.id}
                     onClick={() => openDetail(item)}
-                    className={`group cursor-pointer overflow-hidden rounded-2xl border bg-[#151a22] transition hover:-translate-y-0.5 hover:bg-[#171e28] ${isBoosted ? 'border-amber-300/30 shadow-lg shadow-amber-500/10 hover:border-amber-300/60' : 'border-white/[0.08] hover:border-surf-primary/40'}`}
+                    className={`group flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border bg-[#151a22] transition hover:-translate-y-0.5 hover:bg-[#171e28] ${isBoosted ? 'border-amber-300/30 shadow-lg shadow-amber-500/10 hover:border-amber-300/60' : 'border-white/[0.08] hover:border-surf-primary/40'}`}
                   >
                     <div className="p-4">
                       <div className="mb-3 flex items-center justify-between gap-3">
@@ -2545,7 +2723,7 @@ export default function MarketPage() {
                           <div className="min-w-0">
                             <div className="truncate text-xs font-bold text-slate-300">{item.sellerDisplayName || 'Người bán'}</div>
                             <div className="truncate text-[11px] font-medium text-slate-600">
-                              {isBoosted ? 'Sponsored · ' : ''}{CATEGORIES.find((cat) => cat.key === item.category)?.label ?? 'Khác'}
+                              {isBoosted ? 'Được tài trợ · ' : ''}{CATEGORIES.find((cat) => cat.key === item.category)?.label ?? 'Khác'}
                             </div>
                           </div>
                         </div>
@@ -2567,12 +2745,6 @@ export default function MarketPage() {
                       </div>
 
                       <h3 className="line-clamp-2 min-h-[2.8rem] text-base font-black leading-snug text-white transition group-hover:text-surf-secondary">{item.title}</h3>
-                      {isBoosted && (
-                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-                          Sponsored
-                        </div>
-                      )}
 
                       {/* Price Tag Overlay */}
                       <div className="mt-3 flex items-center justify-between gap-3">
@@ -2591,7 +2763,13 @@ export default function MarketPage() {
                     </div>
 
                     <div className="px-3 pb-3">
-                      <div className="aspect-[16/10] overflow-hidden rounded-xl bg-[#0f141b]">
+                      <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-[#0f141b]">
+                        {isBoosted && (
+                          <div className="absolute left-2 top-2 z-10 inline-flex items-center gap-1 rounded-full bg-amber-400/90 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-[#241600] shadow-lg shadow-black/20">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#241600]" />
+                            Được tài trợ
+                          </div>
+                        )}
                         {item.mediaUrls?.[0] ? (
                           <img src={item.mediaUrls[0]} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                         ) : (
@@ -2604,7 +2782,7 @@ export default function MarketPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-white/[0.08] px-4 py-3 text-xs font-semibold text-slate-500">
+                    <div className="mt-auto flex items-center justify-between border-t border-white/[0.08] px-4 py-3 text-xs font-semibold text-slate-500">
                       <div className="flex items-center gap-3">
                         <span className="flex items-center gap-1">
                           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2648,6 +2826,30 @@ export default function MarketPage() {
                 </div>
               )}
             </div>
+            {activeTab === 'all' && !isSearchMode && displayedListings.length > 0 && (
+              <div ref={listingsLoadMoreRef} className="mt-5">
+                {loading && (
+                  <div className="rounded-xl border border-white/[0.08] bg-[#151a22] px-4 py-3 text-center text-sm font-bold text-slate-400">
+                    Đang tải thêm mặt hàng...
+                  </div>
+                )}
+                {!loading && nextCursor && (
+                  <button
+                    type="button"
+                    onClick={() => fetchListings(false)}
+                    className="w-full rounded-xl border border-white/[0.08] bg-[#151a22] px-4 py-3 text-sm font-black text-white transition hover:border-surf-primary/40 hover:bg-[#1b222d]"
+                  >
+                    Tải thêm 20 mặt hàng
+                  </button>
+                )}
+                {!loading && !nextCursor && displayedListings.length >= 20 && (
+                  <div className="py-2 text-center text-xs font-bold text-slate-500">
+                    Đã tải hết mặt hàng trong mục này.
+                  </div>
+                )}
+              </div>
+            )}
+              </>
             )}
           </div>
         </main>
@@ -3389,9 +3591,9 @@ export default function MarketPage() {
 
       {messagesListing && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 text-white">
-          <button type="button" className="absolute inset-0 cursor-default" aria-label="Đóng" onClick={() => setMessagesListing(null)} />
+          <button type="button" className="absolute inset-0 cursor-default" aria-label="Đóng" onClick={() => { setMessagesListing(null); setActiveSellerConversation(null); }} />
           <div className="relative z-10 grid max-h-[88vh] w-full max-w-[820px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#242526] shadow-2xl md:grid-cols-[230px_1fr]">
-            <button type="button" onClick={() => setMessagesListing(null)} className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] text-lg font-black text-slate-300 hover:bg-white/[0.14]">×</button>
+            <button type="button" onClick={() => { setMessagesListing(null); setActiveSellerConversation(null); }} className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] text-lg font-black text-slate-300 hover:bg-white/[0.14]">×</button>
             <aside className="overflow-y-auto border-r border-white/[0.08] p-3">
               <div className="rounded-lg bg-[#303134] p-3">
                 <div className="flex items-start justify-between gap-2">
@@ -3411,7 +3613,7 @@ export default function MarketPage() {
                   <div className="truncate font-black text-white">{messagesListing.title}</div>
                   <div className="mt-0.5 font-bold text-slate-200">{formatPrice(messagesListing.price)}</div>
                   <div className="mt-0.5 text-[11px] text-slate-400">{getSellerListingStatusText(messagesListing)} · {messagesListing.location}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-500">Thời gian đăng: 1 ngày trước</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">Thời gian đăng: {formatSellerListingDate(messagesListing.createdAt)}</div>
                 </div>
               </div>
               <div className="mt-3 space-y-2">
@@ -3441,7 +3643,46 @@ export default function MarketPage() {
                 <button type="button" onClick={() => setSellerMessagesTab('comments')} className={sellerMessagesTab === 'comments' ? 'border-b-2 border-[#2d88ff] px-1 pb-2 text-[#2d88ff]' : 'px-1 pb-2 text-slate-400'}>Bình luận</button>
                 <button type="button" onClick={() => setSellerMessagesTab('insights')} className={sellerMessagesTab === 'insights' ? 'border-b-2 border-[#2d88ff] px-1 pb-2 text-[#2d88ff]' : 'px-1 pb-2 text-slate-400'}>Thông tin chi tiết</button>
               </div>
-              {sellerMessagesTab === 'messages' && <div className="flex h-56 items-center justify-center text-xs font-semibold text-slate-400">Chưa có tin nhắn cho bài niêm yết này</div>}
+              {sellerMessagesTab === 'messages' && (
+                <div className="mt-4">
+                  {sellerListingConversationsLoading ? (
+                    <div className="flex h-56 items-center justify-center text-xs font-semibold text-slate-400">Đang tải tin nhắn...</div>
+                  ) : sellerListingConversationsError ? (
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300">{sellerListingConversationsError}</div>
+                  ) : sellerListingConversations.length === 0 ? (
+                    <div className="flex h-56 flex-col items-center justify-center text-center text-xs font-semibold text-slate-400">
+                      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/[0.08] text-2xl">☏</div>
+                      <div>Chưa có tin nhắn cho bài niêm yết này</div>
+                      <div className="mt-1 max-w-xs font-medium text-slate-500">Khi người mua nhấn Gửi trong trang chi tiết sản phẩm, hội thoại sẽ xuất hiện tại đây.</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {sellerListingConversations.map((conversation) => (
+                        <button
+                          key={conversation.id}
+                          type="button"
+                          onClick={() => setActiveSellerConversation(conversation)}
+                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.06]"
+                        >
+                          <Avatar src={conversation.peer?.avatarUrl} name={conversation.peer?.name ?? 'Người mua'} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="truncate text-sm font-black text-white">{conversation.peer?.name ?? 'Người mua'}</div>
+                              {conversation.unreadCount > 0 && (
+                                <span className="rounded-full bg-[#2d88ff] px-1.5 py-0.5 text-[10px] font-black text-white">{conversation.unreadCount}</span>
+                              )}
+                              <div className="ml-auto shrink-0 text-[11px] font-bold text-slate-500">{formatConversationTime(conversation.lastMessageAt)}</div>
+                            </div>
+                            <div className="mt-0.5 line-clamp-2 text-xs font-medium text-slate-400">
+                              {conversation.lastMessagePreview || `Đã hỏi về ${messagesListing.title}`}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {sellerMessagesTab === 'comments' && <div className="flex h-56 items-center justify-center text-xs font-semibold text-slate-400">Chưa có bình luận cho bài niêm yết này</div>}
               {sellerMessagesTab === 'insights' && (
                 <div className="mt-5 max-w-sm text-sm text-slate-200">
@@ -3464,10 +3705,29 @@ export default function MarketPage() {
               )}
             </section>
           </div>
+          {activeSellerConversation && (
+            <div className="fixed bottom-5 right-5 z-[70]">
+              <MiniChatPanel
+                compact
+                initialConversationId={activeSellerConversation.id}
+                initialConversation={activeSellerConversation}
+                onClose={() => setActiveSellerConversation(null)}
+              />
+            </div>
+          )}
         </div>
       )}
 
-      {isDetailModalOpen && selectedListing && (
+      {isRouteDetailView && (detailLoading || !selectedListing || !isRouteSelectedListing) && (
+        <div className="market-detail-view fixed inset-0 z-50 flex items-center justify-center text-white">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-surf-primary border-t-transparent" />
+            <div className="text-sm font-bold text-slate-300">Đang tải chi tiết sản phẩm...</div>
+          </div>
+        </div>
+      )}
+
+      {!isRouteDetailView && isDetailModalOpen && selectedListing && (
         <div className="fixed inset-0 z-50">
           <div
             className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -3475,7 +3735,7 @@ export default function MarketPage() {
             onClick={handleCloseDetail}
           />
           <div className="relative z-10 flex h-full w-full items-center justify-center p-3 sm:p-6">
-            <div className="relative h-full max-h-[92vh] w-full max-w-[1400px] overflow-hidden rounded-3xl border border-white/10 bg-slate-950/95 text-white shadow-2xl">
+            <div className="relative flex h-full max-h-[92vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/95 text-white shadow-2xl lg:flex-row">
               <button
                 type="button"
                 onClick={handleCloseDetail}
@@ -3487,40 +3747,557 @@ export default function MarketPage() {
                 </svg>
               </button>
 
-              <div className="flex h-full w-full flex-col lg:flex-row">
-                <div className="relative flex h-[55vh] flex-1 items-center justify-center bg-black lg:h-full">
+              <div className="relative flex h-[55vh] flex-1 items-center justify-center bg-black lg:h-full">
+                {activeMediaUrl ? (
+                  <>
+                    <div
+                      className="absolute inset-0 opacity-30 blur-2xl"
+                      style={{
+                        backgroundImage: `url(${activeMediaUrl})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }}
+                    />
+                    <img
+                      src={activeMediaUrl}
+                      alt={selectedListing.title}
+                      className="relative z-10 max-h-full max-w-full object-contain"
+                    />
+                  </>
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-gray-400">
+                    <svg className="h-20 w-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                )}
+
+                {detailMediaUrls.length > 1 && (
+                  <div className="absolute bottom-4 left-1/2 z-10 flex max-w-[92%] -translate-x-1/2 gap-2 overflow-x-auto rounded-2xl bg-black/40 px-3 py-2 backdrop-blur">
+                    {detailMediaUrls.map((url, i) => (
+                      <button
+                        key={`${url}-${i}`}
+                        type="button"
+                        onClick={() => setActiveMediaIndex(i)}
+                        className={`h-12 w-12 shrink-0 overflow-hidden rounded-xl border ${
+                          i === activeMediaIndex ? 'border-white' : 'border-white/20 opacity-75 hover:opacity-100'
+                        }`}
+                      >
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <aside className="w-full overflow-y-auto border-t border-white/10 bg-slate-950/95 p-5 lg:w-[380px] lg:border-l lg:border-t-0">
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Chi tiết sản phẩm</div>
+                    <h2 className="mt-3 text-2xl font-black leading-tight text-white">{selectedListing.title}</h2>
+                    <p className="mt-1 text-xl font-black text-surf-secondary">{formatPrice(selectedListing.price)}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-400">
+                      <span>{detailStatusLabel}</span>
+                      <span>·</span>
+                      <span>{detailLocation}</span>
+                      <span>·</span>
+                      <span>{selectedListing.viewCount ?? 0} lượt xem</span>
+                    </div>
+                  </div>
+
+                  {detailIsOwner ? (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditSellerListing(selectedListing)}
+                          className="rounded-xl bg-white/10 px-4 py-2.5 text-xs font-black text-white transition hover:bg-white/15"
+                        >
+                          ✎ Chỉnh sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleShareSellerListing(selectedListing)}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-slate-200 transition hover:bg-white/15"
+                          aria-label="Chia sẻ"
+                        >
+                          ↗
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => selectedListing.status === 'sold' || selectedListing.saleStatus === 'pending'
+                          ? handleMarkSellerListingAvailable(selectedListing)
+                          : handleMarkSellerListingSold(selectedListing)}
+                        disabled={selectedListing.status !== 'active' && selectedListing.status !== 'sold'}
+                        className="w-full rounded-xl bg-surf-primary px-4 py-3 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {selectedListing.status === 'sold' || selectedListing.saleStatus === 'pending' ? 'Đánh dấu là có sẵn' : 'Đánh dấu là hết hàng'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openBoostSellerListing(selectedListing)}
+                        className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white transition hover:bg-white/15"
+                      >
+                        Quảng bá bài niêm yết
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => handleContactSeller(selectedListing)}
+                        disabled={contactSubmitting}
+                        className="w-full rounded-xl bg-surf-primary px-4 py-3 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {contactSubmitting ? 'Đang gửi...' : 'Nhắn tin cho người bán'}
+                      </button>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSave(selectedListing)}
+                          className={`rounded-xl px-3 py-2 text-xs font-black transition ${
+                            isSaved(selectedListing) ? 'bg-surf-primary/20 text-surf-secondary' : 'bg-white/10 text-white hover:bg-white/15'
+                          }`}
+                        >
+                          {isSaved(selectedListing) ? 'Đã lưu' : 'Lưu'}
+                        </button>
+                        <button type="button" onClick={() => handleShareSellerListing(selectedListing)} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-white transition hover:bg-white/15">
+                          Chia sẻ
+                        </button>
+                        <button type="button" onClick={() => handleReportSelectedListing(selectedListing)} disabled={reportSubmitting} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-white transition hover:bg-white/15 disabled:opacity-50">
+                          Báo cáo
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={openSellerProfile}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-surf-primary/40 hover:bg-white/10"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Thông tin người bán</div>
+                      <span className="text-[11px] font-bold text-surf-secondary">Chi tiết về người bán</span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-3">
+                      <div className="relative shrink-0">
+                        <Avatar src={selectedListing.sellerPhotoURL} name={selectedListing.sellerDisplayName} size="lg" className="ring-2 ring-white/20" />
+                        <PresenceBadge uid={selectedListing.sellerId} size="lg" className="border-slate-950" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-black text-white">{selectedListing.sellerDisplayName}</div>
+                        <PresenceBadge uid={selectedListing.sellerId} variant="label" className="mt-1 border-white/10 !bg-white/5 !text-slate-300" />
+                      </div>
+                      <span className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-bold text-slate-200">Xem trang</span>
+                    </div>
+                  </button>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Chi tiết</div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Tình trạng</span>
+                        <span className="font-semibold text-slate-100">{CONDITION_LABELS[selectedListing.condition]}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Thương hiệu</span>
+                        <span className="font-semibold text-slate-100">{detailBrand}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Danh mục</span>
+                        <span className="font-semibold text-slate-100">{detailCategoryLabel}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Vị trí</span>
+                        <span className="font-semibold text-slate-100">{detailLocation}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Mô tả</div>
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
+                      {selectedListing.description || 'Không có mô tả chi tiết cho sản phẩm này.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMapOpen(true)}
+                    className="w-full overflow-hidden rounded-2xl border border-white/10 bg-white/5 text-left transition hover:bg-white/10"
+                  >
+                    <div className="relative aspect-[16/9] bg-slate-900">
+                      <LocationMap center={mapCenter} zoom={MAP_ZOOM} interactive={false} />
+                      <div className="pointer-events-none absolute inset-0 bg-black/20" />
+                      <div className="absolute right-3 top-3 rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">Map</div>
+                    </div>
+                    <div className="px-4 py-3 text-xs text-slate-300">
+                      <div className="font-semibold text-slate-100">{detailLocation}</div>
+                      <div className="text-[11px] text-slate-400">Đây chỉ là vị trí gần đúng</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/feed/market/${selectedListing.id}`)}
+                    className="w-full rounded-2xl border border-surf-primary/30 bg-surf-primary/10 px-4 py-3 text-sm font-black text-surf-secondary transition hover:bg-surf-primary/15"
+                  >
+                    Mở trang chi tiết toàn màn hình
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+          {isMapOpen && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/70" aria-hidden onClick={() => setIsMapOpen(false)} />
+              <div className="relative z-10 w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                  <div className="text-sm font-bold text-white">Vị trí niêm yết</div>
+                  <button type="button" onClick={() => setIsMapOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" aria-label="Đóng">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="aspect-[4/3] bg-slate-900">
+                  <LocationMap center={mapCenter} zoom={MAP_ZOOM} interactive={true} />
+                </div>
+              </div>
+            </div>
+          )}
+          {isSellerProfileOpen && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm" aria-hidden onClick={() => setIsSellerProfileOpen(false)} />
+              <div className="market-seller-profile-modal relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#242526] text-white shadow-2xl">
+                <div className="market-seller-profile-hero relative shrink-0 overflow-hidden border-b border-white/10 px-5 pb-5 pt-5">
+                  {sellerCoverUrl ? <img src={sellerCoverUrl} alt="" className="market-seller-profile-cover-art pointer-events-none absolute inset-0 h-full w-full object-cover" /> : <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-surf-primary/10 via-transparent to-purple-500/10" />}
+                  <button type="button" onClick={() => setIsSellerProfileOpen(false)} className="market-detail-icon-button absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border bg-white/80 text-slate-700 transition hover:bg-white" aria-label="Đóng">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                  </button>
+                  <div className="relative z-10 flex flex-col gap-4 pr-12 sm:flex-row sm:items-end">
+                    <Avatar src={selectedListing.sellerPhotoURL} name={sellerName} size="2xl" className="market-seller-profile-avatar h-24 w-24 shrink-0 rounded-full" />
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 inline-flex rounded-full bg-surf-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-surf-secondary">Trang bán hàng</div>
+                      <h3 className="truncate text-3xl font-black leading-tight text-white">{sellerName}</h3>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <PresenceBadge uid={selectedListing.sellerId} variant="label" className="border-white/[0.08] !bg-white/[0.12] !font-bold !text-slate-300" />
+                        <span className="rounded-full bg-surf-primary/10 px-3 py-1 text-[11px] font-black text-surf-secondary">{sellerProfileListings.length} bài đang bán</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-y-auto px-5 py-5">
+                  <div className="market-seller-profile-card rounded-2xl border p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-black text-white">Bài niêm yết của {sellerShortName}</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">Các mặt hàng đang hoạt động trên Surf Market.</div>
+                      </div>
+                      <span className="rounded-full bg-surf-primary/10 px-3 py-1 text-[11px] font-black text-surf-secondary">{sellerFilteredListings.length} kết quả</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {sellerFilteredListings.map((listing) => (
+                        <button
+                          key={listing.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedListing(listing);
+                            setActiveMediaIndex(0);
+                            setIsSellerProfileOpen(false);
+                          }}
+                          className="market-seller-listing-card overflow-hidden rounded-2xl border bg-white/5 text-left transition hover:bg-white/10"
+                        >
+                          <div className="aspect-[4/3] bg-slate-800">
+                            {listing.mediaUrls?.[0] ? <img src={listing.mediaUrls[0]} alt={listing.title} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-slate-600">Surf</div>}
+                          </div>
+                          <div className="p-3">
+                            <div className="text-sm font-black text-white">{formatPrice(listing.price)}</div>
+                            <div className="mt-1 line-clamp-2 text-xs font-semibold text-slate-200">{listing.title}</div>
+                            <div className="mt-1 truncate text-[11px] text-slate-400">{listing.location || 'Toàn quốc'}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isRouteDetailView && isRouteSelectedListing && selectedListing && (
+        <div className="market-detail-view fixed inset-0 z-50 text-white">
+          <div className="h-full overflow-y-auto lg:overflow-hidden">
+            <div className="market-detail-grid min-h-full lg:grid lg:h-full lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[250px_minmax(0,1fr)_390px]">
+              <aside className="market-detail-left-rail market-detail-sidebar hidden min-h-0 border-r border-white/[0.08] bg-[#111820] lg:flex lg:flex-col">
+                <div className="flex items-center gap-3 border-b border-white/[0.08] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={handleCloseDetail}
+                    className="market-detail-icon-button flex h-9 w-9 items-center justify-center rounded-full border bg-white/[0.08] text-slate-200 transition hover:bg-white/[0.14]"
+                    aria-label="Đóng"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                  </button>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-surf-primary text-white shadow-lg shadow-surf-primary/20">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-lg font-black text-white">Surf Market</div>
+                    <div className="truncate text-[11px] font-semibold text-slate-500">Chi tiết bài niêm yết</div>
+                  </div>
+                </div>
+                <div className="px-4 py-3">
+                  <label className="relative block">
+                    <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.4} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Tìm kiếm trên Surf Market"
+                      className="market-detail-input w-full rounded-full border border-white/[0.08] bg-white/[0.08] py-2 pl-9 pr-3 text-xs font-semibold text-white placeholder:text-slate-500 outline-none focus:border-surf-primary/60"
+                    />
+                  </label>
+                </div>
+                <div className="px-4 pb-3">
+                  <button
+                    type="button"
+                    onClick={openSellerProfile}
+                    className="market-detail-card w-full overflow-hidden rounded-2xl border border-surf-primary/20 bg-gradient-to-br from-surf-primary/15 to-white/[0.04] p-3 text-left transition hover:border-surf-primary/45"
+                  >
+                    <div className="text-[10px] font-black uppercase tracking-[0.16em] text-surf-secondary">Đang xem</div>
+                    <div className="mt-2 line-clamp-2 text-sm font-black leading-snug text-white">{selectedListing.title}</div>
+                    <div className="mt-1 text-sm font-black text-surf-secondary">{formatPrice(selectedListing.price)}</div>
+                    <div className="mt-3 flex items-center gap-2 text-[11px] font-bold text-slate-400">
+                      <Avatar src={selectedListing.sellerPhotoURL} name={sellerName} size="xs" />
+                      <span className="min-w-0 truncate">{sellerName}</span>
+                    </div>
+                  </button>
+                </div>
+                <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+                  {[
+                    {
+                      label: 'Khám phá Market',
+                      helper: 'Tất cả mặt hàng',
+                      path: 'M4 6h16M4 12h16M4 18h7',
+                      active: activeTab === 'all',
+                      action: () => { handleCloseDetail(); setActiveTab('all'); },
+                    },
+                    {
+                      label: 'Thông báo',
+                      helper: 'Cập nhật người bán',
+                      path: 'M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0',
+                      active: sellerSection === 'notifications',
+                      action: () => { handleCloseDetail(); setActiveTab('my'); setSellerSection('notifications'); },
+                    },
+                    {
+                      label: 'Hộp thư',
+                      helper: detailIsOwner ? 'Tin nhắn bài này' : 'Nhắn với người bán',
+                      path: 'M8 10h8M8 14h5m8-2a9 9 0 11-3.4-7.03L21 4l-.97 3.4A8.96 8.96 0 0121 12z',
+                      active: false,
+                      action: () => { if (detailIsOwner) openSellerMessages(selectedListing); else navigate('/feed/waves'); },
+                    },
+                    {
+                      label: 'Đã lưu',
+                      helper: 'Món bạn quan tâm',
+                      path: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z',
+                      active: activeTab === 'saved',
+                      action: () => { handleCloseDetail(); setActiveTab('saved'); },
+                    },
+                    {
+                      label: 'Đang bán',
+                      helper: 'Quản lý bài niêm yết',
+                      path: 'M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z',
+                      active: activeTab === 'my' && sellerSection === 'listings',
+                      action: () => { handleCloseDetail(); setActiveTab('my'); setSellerSection('listings'); },
+                    },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={item.action}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                        item.active ? 'bg-surf-primary/15 text-surf-secondary' : 'text-slate-200 hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                        item.active ? 'bg-surf-primary/20' : 'bg-white/[0.08]'
+                      }`}>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.3} d={item.path} />
+                        </svg>
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-black">{item.label}</span>
+                        <span className="mt-0.5 block truncate text-[10px] font-semibold text-slate-500">{item.helper}</span>
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { handleCloseDetail(); setIsCreateModalOpen(true); }}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-surf-primary px-3 py-2.5 text-xs font-black text-white transition hover:bg-surf-secondary"
+                  >
+                    + Tạo bài niêm yết mới
+                  </button>
+                  <div className="mt-4 border-t border-white/[0.08] pt-3">
+                    <div className="px-3 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Hạng mục</div>
+                    <div className="mt-2 space-y-1">
+                      {CATEGORIES.filter((category) => category.key !== 'all').slice(0, 7).map((category) => (
+                        <button
+                          key={category.key}
+                          type="button"
+                          onClick={() => { handleCloseDetail(); setActiveTab('all'); setCategory(category.key); }}
+                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                            category.key === selectedListing.category ? 'bg-surf-primary/15 text-surf-secondary' : 'text-slate-300 hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.08]">
+                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor">
+                              <path d={category.icon} />
+                            </svg>
+                          </span>
+                          <span>{category.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </nav>
+              </aside>
+
+              <main className="flex min-h-[58vh] flex-col bg-transparent lg:h-full lg:min-h-0">
+                <div className="market-detail-mobile-bar flex h-16 shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#111820] px-4 lg:hidden">
+                  <button
+                    type="button"
+                    onClick={handleCloseDetail}
+                    className="market-detail-icon-button flex h-9 w-9 items-center justify-center rounded-full border bg-white/[0.08] text-slate-200"
+                    aria-label="Đóng"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                  </button>
+                  <div className="min-w-0 flex-1 text-center">
+                    <div className="truncate text-sm font-black text-white">{selectedListing.title}</div>
+                    <div className="mt-0.5 truncate text-[11px] font-bold text-surf-secondary">{formatPrice(selectedListing.price)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTheme(isMarketDark ? 'light' : 'dark')}
+                    className="market-detail-icon-button flex h-9 w-9 items-center justify-center rounded-full border bg-white/[0.08] text-slate-200"
+                    aria-label={isMarketDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+                  >
+                    {isMarketDark ? (
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.36-6.36l-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0l-1.42-1.42M7.06 7.06L5.64 5.64M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleShareSellerListing(selectedListing)}
+                    className="market-detail-icon-button flex h-9 w-9 items-center justify-center rounded-full border bg-white/[0.08] text-slate-200"
+                    aria-label="Chia sẻ"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.4} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316" />
+                    </svg>
+                  </button>
+                </div>
+                <section className="market-detail-stage relative flex min-h-[52vh] flex-1 items-center justify-center overflow-hidden bg-[#151b23]">
                   {activeMediaUrl ? (
                     <>
                       <div
-                        className="absolute inset-0 opacity-30 blur-2xl"
+                        className="absolute inset-0 opacity-20 blur-3xl"
                         style={{
                           backgroundImage: `url(${activeMediaUrl})`,
                           backgroundSize: 'cover',
                           backgroundPosition: 'center',
                         }}
                       />
-                      <img
-                        src={activeMediaUrl}
-                        alt={selectedListing.title}
-                        className="relative z-10 max-h-full max-w-full object-contain"
-                      />
+                      <div className="market-detail-stage-shell relative z-10 flex h-full w-full items-center justify-center bg-gradient-to-b from-[#a9adb4]/15 via-[#d7dbe0]/10 to-[#a9adb4]/15 px-4 pb-24 pt-16 sm:px-8 lg:px-10 lg:py-10">
+                        <img
+                          src={activeMediaUrl}
+                          alt={selectedListing.title}
+                          className="market-detail-image h-full w-full max-w-[min(88vw,860px)] object-contain p-3 drop-shadow-2xl"
+                        />
+                      </div>
                     </>
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center text-gray-400">
-                      <svg className="h-20 w-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="flex h-full w-full items-center justify-center text-slate-500">
+                      <svg className="h-24 w-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </div>
                   )}
 
+                  <div className="market-detail-glass pointer-events-none absolute left-4 top-4 z-20 hidden max-w-[min(420px,calc(100%-2rem))] rounded-2xl border border-white/[0.08] bg-black/35 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl sm:block">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-surf-secondary">
+                      <span className="h-2 w-2 rounded-full bg-surf-secondary" />
+                      Chi tiết Surf Market
+                    </div>
+                    <div className="mt-2 line-clamp-2 text-lg font-black leading-tight text-white">{selectedListing.title}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-300">
+                      <span className="text-surf-secondary">{formatPrice(selectedListing.price)}</span>
+                      <span className="text-slate-600">·</span>
+                      <span>{detailCategoryLabel}</span>
+                      <span className="text-slate-600">·</span>
+                      <span>{detailStatusLabel}</span>
+                    </div>
+                  </div>
+
                   {detailMediaUrls.length > 1 && (
-                    <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2 rounded-2xl bg-black/40 px-3 py-2 backdrop-blur">
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaIndex((activeMediaIndex - 1 + detailMediaUrls.length) % detailMediaUrls.length)}
+                        className="market-detail-floating-button absolute left-4 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white shadow-xl backdrop-blur transition hover:bg-black/65 lg:flex"
+                        aria-label="Ảnh trước"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaIndex((activeMediaIndex + 1) % detailMediaUrls.length)}
+                        className="market-detail-floating-button absolute right-4 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white shadow-xl backdrop-blur transition hover:bg-black/65 lg:flex"
+                        aria-label="Ảnh tiếp theo"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                      <div className="market-detail-glass absolute right-4 top-4 z-20 rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-xs font-black text-white shadow-xl backdrop-blur">
+                        {activeMediaIndex + 1}/{detailMediaUrls.length}
+                      </div>
+                    </>
+                  )}
+
+                  {detailMediaUrls.length > 1 && (
+                    <div className="market-detail-glass absolute bottom-4 left-1/2 z-20 flex max-w-[92%] -translate-x-1/2 gap-2 overflow-x-auto rounded-2xl border bg-black/45 px-3 py-2 backdrop-blur">
                       {detailMediaUrls.map((url, i) => (
                         <button
                           key={`${url}-${i}`}
+                          type="button"
                           onClick={() => setActiveMediaIndex(i)}
-                          className={`h-12 w-12 overflow-hidden rounded-xl border ${
-                            i === activeMediaIndex ? 'border-white' : 'border-white/20'
+                          className={`h-14 w-14 shrink-0 overflow-hidden rounded-xl border transition ${
+                            i === activeMediaIndex ? 'border-surf-secondary ring-2 ring-surf-secondary/30' : 'border-white/20 opacity-75 hover:opacity-100'
                           }`}
                         >
                           <img src={url} alt="" className="h-full w-full object-cover" />
@@ -3528,201 +4305,313 @@ export default function MarketPage() {
                       ))}
                     </div>
                   )}
-                </div>
+                </section>
 
-                <aside className="w-full border-t border-white/10 bg-slate-950/95 p-5 lg:w-[380px] lg:border-l lg:border-t-0 overflow-y-auto">
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                        <span className="rounded-full border border-surf-primary/30 bg-surf-primary/10 px-3 py-1 text-surf-primary">
-                          {CATEGORIES.find((c) => c.key === selectedListing.category)?.label}
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200">
-                          {CONDITION_LABELS[selectedListing.condition]}
-                        </span>
-                      </div>
-                      <h2 className="mt-3 text-xl font-black leading-tight text-white">
-                        {selectedListing.title}
-                      </h2>
-                      <div className="mt-2 flex items-center gap-2 text-xs text-emerald-400">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                        <span className="font-semibold">{detailStatusLabel}</span>
-                      </div>
-                      <p className="mt-2 text-2xl font-black text-surf-secondary">
-                        {formatPrice(selectedListing.price)}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                        <div className="flex items-center gap-2">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          </svg>
-                          <span>{detailLocation}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                          <span>{selectedListing.viewCount ?? 0} lượt xem</span>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-[11px] text-slate-500">
-                        Đã niêm yết tại {detailLocation}
-                      </div>
+                {detailRecommendationListings.length > 0 && (
+                  <section className="market-detail-recommendations hidden shrink-0 border-t border-white/[0.08] bg-[#0f151d] px-5 py-4 lg:block">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-black text-white">Lựa chọn hôm nay</h3>
+                      <span className="text-[11px] font-semibold text-slate-500">Gợi ý từ Surf Market</span>
                     </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleContactSeller(selectedListing)}
-                        disabled={contactSubmitting || selectedListing.sellerId === currentUserId}
-                        className="flex-1 rounded-2xl bg-gradient-to-br from-surf-primary to-surf-secondary px-4 py-3 text-sm font-black text-white shadow-xl shadow-surf-primary/30 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {contactSubmitting ? 'Đang gửi...' : 'Nhắn tin'}
-                      </button>
-                      <button
-                        onClick={() => handleToggleSave(selectedListing)}
-                        className={`flex h-12 w-12 items-center justify-center rounded-2xl border text-white transition ${
-                          isSaved(selectedListing)
-                            ? 'border-surf-primary/60 bg-surf-primary/15 text-surf-primary'
-                            : 'border-white/10 bg-white/5 text-slate-200'
-                        }`}
-                        aria-label="Lưu"
-                      >
-                        <svg className="h-5 w-5" fill={isSaved(selectedListing) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                        </svg>
-                      </button>
-                      <button
-                        className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
-                        aria-label="Chia sẻ"
-                      >
-                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleReportSelectedListing(selectedListing)}
-                        disabled={reportSubmitting || selectedListing.sellerId === currentUserId}
-                        className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="Báo cáo"
-                      >
-                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Chi tiết</div>
-                      <div className="mt-3 space-y-2 text-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Tình trạng</span>
-                          <span className="font-semibold text-slate-100">{CONDITION_LABELS[selectedListing.condition]}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Thương hiệu</span>
-                          <span className="font-semibold text-slate-100">{detailBrand}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Danh mục</span>
-                          <span className="font-semibold text-slate-100">
-                            {CATEGORIES.find((c) => c.key === selectedListing.category)?.label}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Vị trí</span>
-                          <span className="font-semibold text-slate-100">{detailLocation}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">Lượt xem</span>
-                          <span className="font-semibold text-slate-100">{selectedListing.viewCount ?? 0}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Mô tả</div>
-                      <p className="mt-3 text-sm leading-relaxed text-slate-200">
-                        {selectedListing.description || 'Không có mô tả chi tiết cho sản phẩm này.'}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setIsMapOpen(true)}
-                        className="w-full text-left"
-                      >
-                        <div className="relative aspect-[16/9] bg-slate-900">
-                          <LocationMap
-                            center={mapCenter}
-                            zoom={MAP_ZOOM}
-                            interactive={false}
-                          />
-                          <div className="absolute inset-0 bg-black/20 pointer-events-none" />
-                          <div className="absolute right-3 top-3 rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">
-                            Map
+                    <div className="grid grid-cols-4 gap-3 2xl:grid-cols-6">
+                      {detailRecommendationListings.slice(0, 6).map((listing) => (
+                        <button
+                          key={listing.id}
+                          type="button"
+                          onClick={() => {
+                            navigate(`/feed/market/${listing.id}`);
+                          }}
+                          className="market-detail-card min-w-0 overflow-hidden rounded-xl bg-white/[0.06] text-left transition hover:bg-white/[0.1]"
+                        >
+                          <div className="aspect-[4/3] bg-slate-800">
+                            {listing.mediaUrls?.[0] ? (
+                              <img src={listing.mediaUrls[0]} alt={listing.title} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-slate-600">Surf</div>
+                            )}
                           </div>
-                        </div>
-                        <div className="px-4 py-3 text-xs text-slate-300">
-                          <div className="font-semibold text-slate-100">{detailLocation}</div>
-                          <div className="text-[11px] text-slate-400">Đây chỉ là vị trí gần đúng</div>
-                        </div>
-                      </button>
+                          <div className="p-2">
+                            <div className="truncate text-xs font-black text-white">{formatPrice(listing.price)}</div>
+                            <div className="mt-0.5 truncate text-[11px] font-semibold text-slate-400">{listing.title}</div>
+                          </div>
+                        </button>
+                      ))}
                     </div>
+                  </section>
+                )}
+              </main>
 
+              <aside className="market-detail-panel min-h-0 overflow-y-auto border-t border-white/[0.08] bg-[#181d24] p-5 lg:h-full lg:border-l lg:border-t-0">
+                <div className="mb-4 hidden items-center justify-between lg:flex">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Chi tiết sản phẩm</div>
+                    <div className="mt-1 text-[11px] font-semibold text-slate-500">Xem nhanh, nhắn tin và lưu sản phẩm</div>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={openSellerProfile}
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-surf-primary/40 hover:bg-white/10"
+                      onClick={() => setTheme(isMarketDark ? 'light' : 'dark')}
+                      className="market-detail-icon-button flex h-8 w-8 items-center justify-center rounded-full border bg-white/[0.08] text-slate-300 transition hover:bg-white/[0.14]"
+                      aria-label={isMarketDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+                      title={isMarketDark ? 'Chuyển sang sáng' : 'Chuyển sang tối'}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Thông tin người bán</div>
-                        <span className="text-[11px] font-bold text-surf-secondary">Chi tiết về người bán</span>
-                      </div>
-                      <div className="mt-3 flex items-center gap-3">
+                      {isMarketDark ? (
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.36-6.36l-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0l-1.42-1.42M7.06 7.06L5.64 5.64M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCloseDetail}
+                      className="market-detail-icon-button flex h-8 w-8 items-center justify-center rounded-full border bg-white/[0.08] text-slate-300 transition hover:bg-white/[0.14]"
+                      aria-label="Đóng"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-surf-primary/20 bg-surf-primary/10 p-4">
+                    <h2 className="text-2xl font-black leading-tight text-white">{selectedListing.title}</h2>
+                    <p className="mt-1 text-xl font-black text-surf-secondary">{formatPrice(selectedListing.price)}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-400">
+                      <span>{detailStatusLabel}</span>
+                      <span>·</span>
+                      <span>{detailLocation}</span>
+                      <span>·</span>
+                      <span>{selectedListing.viewCount ?? 0} lượt xem</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={openSellerProfile}
+                    className="market-detail-seller-card w-full rounded-2xl border border-surf-primary/20 bg-gradient-to-br from-[#111c2a] via-[#101822] to-[#0f151d] p-4 text-left shadow-xl shadow-black/20 transition hover:border-surf-primary/45 hover:from-[#132237]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative shrink-0">
                         <Avatar
                           src={selectedListing.sellerPhotoURL}
                           name={selectedListing.sellerDisplayName}
                           size="lg"
-                          className="ring-2 ring-white/20"
+                          className="ring-2 ring-white/10"
                         />
-                        <div className="flex-1">
-                          <div className="text-sm font-black text-white">{selectedListing.sellerDisplayName}</div>
-                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                            <span>Rất tích cực trên Surf Market</span>
-                          </div>
-                        </div>
-                        <span className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-bold text-slate-200">
-                          Xem trang
-                        </span>
+                        <PresenceBadge
+                          uid={selectedListing.sellerId}
+                          size="lg"
+                          className="border-[#111c2a]"
+                        />
                       </div>
-                    </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="truncate text-base font-black text-white">{sellerName}</div>
+                          <span className="shrink-0 rounded-full bg-surf-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-surf-secondary">
+                            {detailIsOwner ? 'Bạn' : 'Seller'}
+                          </span>
+                        </div>
+                        <PresenceBadge
+                          uid={selectedListing.sellerId}
+                          variant="label"
+                          className="mt-1 max-w-full border-white/[0.08] !bg-white/[0.06] !font-bold !text-slate-300"
+                        />
+                      </div>
+                      <span className="market-detail-control shrink-0 rounded-lg border bg-white/[0.08] px-3 py-2 text-[11px] font-black text-slate-200">
+                        Xem
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="market-detail-control rounded-xl border bg-white/[0.06] px-3 py-2">
+                        <div className="text-sm font-black text-white">{sellerProfileListings.length}</div>
+                        <div className="mt-0.5 text-[10px] font-bold text-slate-500">Bài bán</div>
+                      </div>
+                      <div className="market-detail-control rounded-xl border bg-white/[0.06] px-3 py-2">
+                        <div className="text-sm font-black text-white">{selectedListing.viewCount ?? 0}</div>
+                        <div className="mt-0.5 text-[10px] font-bold text-slate-500">Lượt xem</div>
+                      </div>
+                      <div className="market-detail-control rounded-xl border bg-white/[0.06] px-3 py-2">
+                        <div className="truncate text-sm font-black text-white">{detailCategoryLabel}</div>
+                        <div className="mt-0.5 text-[10px] font-bold text-slate-500">Danh mục</div>
+                      </div>
+                    </div>
+                  </button>
 
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Gửi tin nhắn cho người bán</div>
+                  {detailIsOwner ? (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditSellerListing(selectedListing)}
+                          className="market-detail-control rounded-lg border bg-white/[0.12] px-4 py-2.5 text-xs font-black text-white transition hover:bg-white/[0.18]"
+                        >
+                          ✎ Chỉnh sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleShareSellerListing(selectedListing)}
+                          className="market-detail-control flex h-10 w-10 items-center justify-center rounded-lg border bg-white/[0.12] text-slate-200 transition hover:bg-white/[0.18]"
+                          aria-label="Chia sẻ"
+                        >
+                          ↗
+                        </button>
+                      </div>
+                      {selectedListing.status === 'sold' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkSellerListingAvailable(selectedListing)}
+                          className="market-detail-primary-action w-full rounded-lg bg-surf-primary px-4 py-3 text-sm font-black text-white transition hover:bg-surf-secondary"
+                        >
+                          Đánh dấu là còn hàng
+                        </button>
+                      ) : selectedListing.saleStatus === 'pending' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkSellerListingAvailable(selectedListing)}
+                          className="market-detail-primary-action w-full rounded-lg bg-surf-primary px-4 py-3 text-sm font-black text-white transition hover:bg-surf-secondary"
+                        >
+                          Đánh dấu là có sẵn
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkSellerListingSold(selectedListing)}
+                          disabled={selectedListing.status !== 'active' || listingActionId === selectedListing.id}
+                          className="market-detail-primary-action w-full rounded-lg bg-surf-primary px-4 py-3 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:bg-white/[0.12] disabled:text-slate-500"
+                        >
+                          {listingActionId === selectedListing.id ? 'Đang cập nhật...' : 'Đánh dấu là hết hàng'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openBoostSellerListing(selectedListing)}
+                        className="market-detail-control w-full rounded-lg border bg-white/[0.12] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.18]"
+                      >
+                        Quảng bá bài niêm yết
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => handleContactSeller(selectedListing)}
+                        disabled={contactSubmitting}
+                        className="market-detail-primary-action w-full rounded-lg bg-surf-primary px-4 py-3 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {contactSubmitting ? 'Đang gửi...' : 'Nhắn tin cho người bán'}
+                      </button>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSave(selectedListing)}
+                          className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
+                            isSaved(selectedListing) ? 'border-surf-primary/30 bg-surf-primary/20 text-surf-secondary' : 'market-detail-control bg-white/[0.12] text-white hover:bg-white/[0.18]'
+                          }`}
+                        >
+                          {isSaved(selectedListing) ? 'Đã lưu' : 'Lưu'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleShareSellerListing(selectedListing)}
+                          className="market-detail-control rounded-lg border bg-white/[0.12] px-3 py-2 text-xs font-black text-white transition hover:bg-white/[0.18]"
+                        >
+                          Chia sẻ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReportSelectedListing(selectedListing)}
+                          disabled={reportSubmitting}
+                          className="market-detail-control rounded-lg border bg-white/[0.12] px-3 py-2 text-xs font-black text-white transition hover:bg-white/[0.18] disabled:opacity-50"
+                        >
+                          Báo cáo
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="market-detail-card rounded-xl border border-white/[0.08] bg-white/[0.05] p-4">
+                    <div className="text-sm font-black text-white">Chi tiết</div>
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                      <div>
+                        <div className="text-slate-500">Tình trạng</div>
+                        <div className="mt-1 font-bold text-slate-200">{CONDITION_LABELS[selectedListing.condition]}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Danh mục</div>
+                        <div className="mt-1 font-bold text-slate-200">{detailCategoryLabel}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Thương hiệu</div>
+                        <div className="mt-1 font-bold text-slate-200">{detailBrand}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Trạng thái</div>
+                        <div className="mt-1 font-bold text-slate-200">{detailStatusLabel}</div>
+                      </div>
+                    </div>
+                    <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+                      {selectedListing.description || 'Không có mô tả chi tiết cho sản phẩm này.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMapOpen(true)}
+                    className="market-detail-card w-full overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.05] text-left transition hover:bg-white/[0.08]"
+                  >
+                    <div className="relative h-24 bg-slate-900">
+                      <LocationMap center={mapCenter} zoom={MAP_ZOOM} interactive={false} />
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#181d24] via-transparent to-transparent" />
+                      <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-surf-primary text-xs font-black text-white">i</div>
+                    </div>
+                    <div className="px-4 py-3">
+                      <div className="text-xs font-black text-white">{detailLocation}</div>
+                      <div className="mt-1 text-[11px] text-slate-500">Đây chỉ là vị trí gần đúng</div>
+                    </div>
+                  </button>
+
+                  <div className="rounded-xl border border-amber-300/30 bg-amber-400/10 p-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-300/20 text-sm font-black text-amber-200">
+                        !
+                      </div>
+                      <div>
+                        <div className="text-sm font-black text-amber-100">Giao dịch an toàn</div>
+                        <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-100/75">
+                          Ưu tiên nhắn tin qua Surf Market, gặp ở nơi công cộng và kiểm tra sản phẩm trước khi thanh toán.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {!detailIsOwner && (
+                    <div className="market-detail-card rounded-xl border border-white/[0.08] bg-white/[0.05] p-4">
+                      <div className="text-sm font-black text-white">Gửi tin nhắn cho người bán</div>
                       <textarea
                         rows={2}
                         value={sellerMessageDraft}
                         onChange={(e) => setSellerMessageDraft(e.target.value)}
                         placeholder="Mặt hàng này còn chứ?"
-                        className="mt-3 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-surf-primary/60"
+                        className="market-detail-input mt-3 w-full resize-none rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-surf-primary/60"
                       />
                       <button
                         type="button"
                         onClick={() => handleContactSeller(selectedListing)}
-                        disabled={contactSubmitting || selectedListing.sellerId === currentUserId}
-                        className="mt-3 w-full rounded-xl bg-surf-primary py-2.5 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={contactSubmitting}
+                        className="market-detail-primary-action mt-3 w-full rounded-lg bg-surf-primary py-2.5 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {contactSubmitting ? 'Đang gửi...' : 'Gửi'}
                       </button>
                     </div>
-                  </div>
-                </aside>
-              </div>
+                  )}
+                </div>
+              </aside>
             </div>
           </div>
           {isMapOpen && (
@@ -3759,49 +4648,87 @@ export default function MarketPage() {
           {isSellerProfileOpen && (
             <div className="absolute inset-0 z-40 flex items-center justify-center p-4">
               <div
-                className="absolute inset-0 bg-black/75"
+                className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
                 aria-hidden
                 onClick={() => setIsSellerProfileOpen(false)}
               />
-              <div className="relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#242526] text-white shadow-2xl">
-                <div className="relative h-44 shrink-0 bg-slate-800">
+              <div className="market-seller-profile-modal relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#242526] text-white shadow-2xl">
+                <div className="market-seller-profile-hero relative shrink-0 overflow-hidden border-b border-white/10 px-5 pb-5 pt-5 sm:px-6">
                   {sellerCoverUrl ? (
-                    <img src={sellerCoverUrl} alt="" className="h-full w-full object-cover" />
+                    <img src={sellerCoverUrl} alt="" className="market-seller-profile-cover-art pointer-events-none absolute inset-0 h-full w-full object-cover" />
                   ) : (
-                    <div className="h-full w-full bg-gradient-to-br from-slate-700 via-slate-800 to-slate-950" />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-surf-primary/10 via-transparent to-purple-500/10" />
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#242526] via-transparent to-transparent" />
                   <button
                     type="button"
                     onClick={() => setIsSellerProfileOpen(false)}
-                    className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-white transition hover:bg-black/70"
+                    className="market-detail-icon-button absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border bg-white/80 text-slate-700 transition hover:bg-white"
                     aria-label="Đóng"
                   >
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                     </svg>
                   </button>
-                </div>
-                <div className="overflow-y-auto px-5 pb-5">
-                  <div className="-mt-12 flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end">
-                    <Avatar
-                      src={selectedListing.sellerPhotoURL}
-                      name={sellerName}
-                      size="2xl"
-                      className="shrink-0 rounded-full ring-4 ring-[#242526]"
-                    />
+                  <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:pr-12">
+                    <div className="relative shrink-0">
+                      <Avatar
+                        src={selectedListing.sellerPhotoURL}
+                        name={sellerName}
+                        size="2xl"
+                        className="market-seller-profile-avatar h-24 w-24 rounded-full"
+                      />
+                      <PresenceBadge
+                        uid={selectedListing.sellerId}
+                        size="lg"
+                        className="border-white"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-2xl font-black text-white">{sellerName}</h3>
-                      <p className="mt-1 text-xs font-semibold text-slate-300">
-                        {sellerProfileListings.length} bài niêm yết đang hoạt động
-                      </p>
+                      <div className="mb-2 inline-flex rounded-full bg-surf-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-surf-secondary">
+                        Trang bán hàng Surf Market
+                      </div>
+                      <h3 className="truncate text-3xl font-black leading-tight text-white">{sellerName}</h3>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <PresenceBadge
+                          uid={selectedListing.sellerId}
+                          variant="label"
+                          className="border-white/[0.08] !bg-white/[0.12] !font-bold !text-slate-300"
+                        />
+                        <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-black text-emerald-500">
+                          {sellerProfileListings.length} bài đang bán
+                        </span>
+                        <span className="rounded-full bg-surf-primary/10 px-3 py-1 text-[11px] font-black text-surf-secondary">
+                          {detailLocation}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-y-auto px-5 py-5 sm:px-6">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="market-seller-profile-card rounded-2xl border p-4">
+                      <div className="text-xl font-black text-white">{sellerProfileListings.length}</div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">Bài niêm yết</div>
+                    </div>
+                    <div className="market-seller-profile-card rounded-2xl border p-4">
+                      <div className="text-xl font-black text-white">{selectedListing.viewCount ?? 0}</div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">Lượt xem bài này</div>
+                    </div>
+                    <div className="market-seller-profile-card rounded-2xl border p-4">
+                      <div className="truncate text-xl font-black text-white">{detailCategoryLabel}</div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">Danh mục chính</div>
+                    </div>
+                    <div className="market-seller-profile-card rounded-2xl border p-4">
+                      <div className="text-xl font-black text-white">1h</div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">Phản hồi dự kiến</div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2 py-3 sm:grid-cols-[1fr_auto]">
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
                     <button
                       type="button"
-                      className="rounded-lg bg-surf-primary px-4 py-2.5 text-sm font-black text-white transition hover:bg-surf-secondary"
+                      onClick={() => showMarketToast('Tính năng theo dõi người bán sẽ sớm ra mắt.')}
+                      className="rounded-2xl bg-surf-primary px-4 py-3 text-sm font-black text-white shadow-lg shadow-surf-primary/20 transition hover:bg-surf-secondary"
                     >
                       Theo dõi
                     </button>
@@ -3809,81 +4736,91 @@ export default function MarketPage() {
                       type="button"
                       onClick={() => handleContactSeller(selectedListing)}
                       disabled={contactSubmitting || selectedListing.sellerId === currentUserId}
-                      className="rounded-lg bg-white/10 px-4 py-2.5 text-sm font-black text-white transition hover:bg-white/15"
+                      className="market-seller-profile-action rounded-2xl border px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {contactSubmitting ? 'Đang gửi...' : 'Nhắn tin'}
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg bg-white/10 px-4 py-2.5 text-sm font-black text-white transition hover:bg-white/15 sm:col-span-2"
+                      onClick={() => showMarketToast('Bạn đang xem trang bán hàng của người bán này.')}
+                      className="market-seller-profile-action rounded-2xl border px-4 py-3 text-sm font-black transition sm:col-span-2"
                     >
-                      Xem trang cá nhân
+                      Trang bán hàng hiện tại
                     </button>
                   </div>
 
-                  <div className="border-t border-white/10 py-4">
-                    <div className="text-sm font-black text-white">Huy hiệu</div>
-                    <p className="mt-1 text-xs text-slate-400">Dựa theo hoạt động của {sellerShortName} trên Surf Market</p>
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-500">
-                        <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" />
-                        </svg>
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <section className="market-seller-profile-card rounded-2xl border p-4">
+                      <div className="text-sm font-black text-white">Huy hiệu người bán</div>
+                      <p className="mt-1 text-xs font-semibold text-slate-400">Dựa theo hoạt động của {sellerShortName} trên Surf Market</p>
+                      <div className="mt-4 flex items-center gap-3 rounded-2xl bg-purple-500/10 p-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-purple-500 text-white">
+                          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-white">Rất tích cực</div>
+                          <div className="text-xs font-semibold text-slate-400">Thường trả lời trong vòng 1 giờ</div>
+                        </div>
                       </div>
+                    </section>
+
+                    <section className="market-seller-profile-card rounded-2xl border p-4">
+                      <div className="text-sm font-black text-white">Giới thiệu</div>
+                      <div className="mt-4 space-y-3 text-xs font-semibold text-slate-200">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surf-primary/10 text-surf-secondary">
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+                            </svg>
+                          </span>
+                          <span>Khu vực bán: {detailLocation}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surf-primary/10 text-surf-secondary">
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm1 11h-2V7h2zm0 4h-2v-2h2z" />
+                            </svg>
+                          </span>
+                          <span>Ưu tiên trả lời qua Surf Market</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-surf-primary/10 text-surf-secondary">
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm6.93 6h-2.95a15.3 15.3 0 00-1.38-3.25A8.03 8.03 0 0118.93 8zM12 4.04A13.2 13.2 0 0113.91 8h-3.82A13.2 13.2 0 0112 4.04zM4.26 14A8.35 8.35 0 014 12c0-.69.09-1.36.26-2h3.33A16.36 16.36 0 007.5 12c0 .68.03 1.35.09 2H4.26zm.81 2h2.95c.33 1.17.79 2.27 1.38 3.25A8.03 8.03 0 015.07 16zm2.95-8H5.07A8.03 8.03 0 019.4 4.75 15.3 15.3 0 008.02 8zM12 19.96A13.2 13.2 0 0110.09 16h3.82A13.2 13.2 0 0112 19.96zM14.34 14H9.66A14.71 14.71 0 019.5 12c0-.7.06-1.37.16-2h4.68c.1.63.16 1.3.16 2s-.06 1.37-.16 2zm.26 5.25A15.3 15.3 0 0015.98 16h2.95a8.03 8.03 0 01-4.33 3.25zM16.41 14c.06-.65.09-1.32.09-2s-.03-1.35-.09-2h3.33c.17.64.26 1.31.26 2s-.09 1.36-.26 2h-3.33z" />
+                            </svg>
+                          </span>
+                          <span>Đã tham gia Surf Market</span>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  <section className="market-seller-profile-card mt-5 rounded-2xl border p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                       <div>
-                        <div className="text-sm font-black text-white">Rất tích cực</div>
-                        <div className="text-xs text-slate-400">Thường trả lời trong vòng 1 giờ</div>
+                        <div className="text-sm font-black text-white">Bài niêm yết của {sellerShortName}</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">Các mặt hàng đang hoạt động trên Surf Market.</div>
                       </div>
+                      <span className="rounded-full bg-surf-primary/10 px-3 py-1 text-[11px] font-black text-surf-secondary">
+                        {sellerFilteredListings.length} kết quả
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      className="mt-4 w-full rounded-lg bg-white/10 py-2 text-xs font-black text-white transition hover:bg-white/15"
-                    >
-                      Xem chi tiết về huy hiệu
-                    </button>
-                  </div>
-
-                  <div className="border-t border-white/10 py-4">
-                    <div className="text-sm font-black text-white">Giới thiệu</div>
-                    <div className="mt-3 space-y-2 text-xs font-semibold text-slate-200">
-                      <div className="flex items-center gap-2">
-                        <svg className="h-4 w-4 shrink-0 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-                        </svg>
-                        <span>Khu vực bán: {detailLocation}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <svg className="h-4 w-4 shrink-0 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm1 11h-2V7h2zm0 4h-2v-2h2z" />
-                        </svg>
-                        <span>Rất nhiệt tình trả lời tin nhắn</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <svg className="h-4 w-4 shrink-0 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm6.93 6h-2.95a15.3 15.3 0 00-1.38-3.25A8.03 8.03 0 0118.93 8zM12 4.04A13.2 13.2 0 0113.91 8h-3.82A13.2 13.2 0 0112 4.04zM4.26 14A8.35 8.35 0 014 12c0-.69.09-1.36.26-2h3.33A16.36 16.36 0 007.5 12c0 .68.03 1.35.09 2H4.26zm.81 2h2.95c.33 1.17.79 2.27 1.38 3.25A8.03 8.03 0 015.07 16zm2.95-8H5.07A8.03 8.03 0 019.4 4.75 15.3 15.3 0 008.02 8zM12 19.96A13.2 13.2 0 0110.09 16h3.82A13.2 13.2 0 0112 19.96zM14.34 14H9.66A14.71 14.71 0 019.5 12c0-.7.06-1.37.16-2h4.68c.1.63.16 1.3.16 2s-.06 1.37-.16 2zm.26 5.25A15.3 15.3 0 0015.98 16h2.95a8.03 8.03 0 01-4.33 3.25zM16.41 14c.06-.65.09-1.32.09-2s-.03-1.35-.09-2h3.33c.17.64.26 1.31.26 2s-.09 1.36-.26 2h-3.33z" />
-                        </svg>
-                        <span>Đã tham gia Surf Market</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/10 pt-4">
-                    <div className="text-sm font-black text-white">Bài niêm yết của {sellerShortName}</div>
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                       <div className="relative flex-1">
                         <input
                           type="text"
                           value={sellerListingSearch}
                           onChange={(e) => setSellerListingSearch(e.target.value)}
                           placeholder="Tìm kiếm bài niêm yết"
-                          className="w-full rounded-lg border border-white/10 bg-white/10 py-2 pl-9 pr-3 text-xs text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/60"
+                          className="market-seller-profile-input w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-10 pr-3 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-surf-primary/60"
                         />
-                        <svg className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                       </div>
-                      <span className="rounded-lg bg-white/10 px-3 py-2 text-center text-xs font-black text-white">Còn bài với cửa hàng</span>
-                      <span className="rounded-lg bg-white/10 px-3 py-2 text-center text-xs font-black text-white">Sắp xếp theo</span>
+                      <span className="market-seller-profile-action rounded-2xl border px-4 py-3 text-center text-xs font-black text-white">Đang hoạt động</span>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                       {sellerFilteredListings.map((listing) => (
@@ -3891,13 +4828,12 @@ export default function MarketPage() {
                           key={listing.id}
                           type="button"
                           onClick={() => {
-                            setSelectedListing(listing);
-                            setActiveMediaIndex(0);
                             setIsSellerProfileOpen(false);
+                            navigate(`/feed/market/${listing.id}`);
                           }}
-                          className="overflow-hidden rounded-xl bg-white/5 text-left transition hover:bg-white/10"
+                          className="market-seller-listing-card overflow-hidden rounded-2xl border bg-white/5 text-left transition hover:bg-white/10"
                         >
-                          <div className="aspect-square bg-slate-800">
+                          <div className="aspect-[4/3] bg-slate-800">
                             {listing.mediaUrls?.[0] ? (
                               <img src={listing.mediaUrls[0]} alt={listing.title} className="h-full w-full object-cover" />
                             ) : (
@@ -3908,7 +4844,7 @@ export default function MarketPage() {
                               </div>
                             )}
                           </div>
-                          <div className="p-2">
+                          <div className="p-3">
                             <div className="text-sm font-black text-white">{formatPrice(listing.price)}</div>
                             <div className="mt-1 line-clamp-2 text-xs font-semibold text-slate-200">{listing.title}</div>
                             <div className="mt-1 truncate text-[11px] text-slate-400">{listing.location || 'Toàn quốc'}</div>
@@ -3921,11 +4857,78 @@ export default function MarketPage() {
                         Không tìm thấy bài niêm yết phù hợp.
                       </div>
                     )}
-                  </div>
+                  </section>
                 </div>
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {isReportModalOpen && selectedListing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#1e2329] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
+              <h2 className="text-xl font-black text-white">Báo cáo bài niêm yết</h2>
+              <button
+                type="button"
+                onClick={() => setIsReportModalOpen(false)}
+                className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={submitReportListing} className="p-4">
+              <div className="mb-4 text-sm text-slate-300">
+                Bạn đang báo cáo bài niêm yết <strong>{selectedListing.title}</strong>. Vui lòng chọn lý do báo cáo để chúng tôi có thể xem xét và xử lý theo Tiêu chuẩn Cộng đồng của Surf.
+              </div>
+              <div className="mb-4 max-h-[300px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
+                {REPORT_CATEGORIES.map((category) => (
+                  <label key={category.key} className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/5 bg-white/5 p-3 hover:bg-white/10">
+                    <input
+                      type="radio"
+                      name="reportCategory"
+                      value={category.key}
+                      checked={reportCategory === category.key}
+                      onChange={(e) => setReportCategory(e.target.value)}
+                      className="h-4 w-4 rounded-full border-white/20 bg-transparent text-surf-primary focus:ring-2 focus:ring-surf-primary focus:ring-offset-1 focus:ring-offset-[#1e2329]"
+                    />
+                    <span className="text-sm font-semibold text-slate-200">{category.label}</span>
+                  </label>
+                ))}
+              </div>
+              {reportCategory && (
+                <div className="mb-6">
+                  <label className="mb-1.5 block text-xs font-bold text-slate-300">Chi tiết bổ sung (không bắt buộc)</label>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Vui lòng cung cấp thêm thông tin giúp chúng tôi hiểu rõ hơn..."
+                    className="h-24 w-full rounded-xl border border-white/10 bg-[#0f141b] p-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-surf-primary/50 focus:outline-none focus:ring-1 focus:ring-surf-primary/50"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-bold text-slate-300 transition hover:bg-white/5"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={reportSubmitting || !reportCategory}
+                  className="rounded-lg bg-surf-primary px-5 py-2 text-sm font-bold text-white transition hover:bg-surf-secondary disabled:opacity-50"
+                >
+                  {reportSubmitting ? 'Đang gửi...' : 'Gửi báo cáo'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -2,17 +2,36 @@ import { create } from 'zustand';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/firebase/auth';
 
-export type Category = 'all' | 'electronics' | 'clothing' | 'vehicles' | 'property' | 'home' | 'sports' | 'other';
+export type Category =
+  | 'all'
+  | 'electronics'
+  | 'clothing'
+  | 'vehicles'
+  | 'property'
+  | 'home'
+  | 'sports'
+  | 'other';
 export type Condition = 'new' | 'like_new' | 'good' | 'fair';
 export type ListingStatus = 'pending' | 'active' | 'rejected' | 'sold' | 'deleted';
-export type MyListingsFilter = 'all' | 'error' | 'active';
+export type MyListingsFilter = 'all' | 'pending' | 'active' | 'error';
 export type MarketplaceModerationMode = 'auto' | 'manual';
 export type MarketplaceModerationDecision = 'approved' | 'rejected' | 'needs_review';
 export type ListingAvailability = 'in_stock' | 'single_item';
 export type SellerSaleStatus = 'available' | 'pending';
-export type BoostStatus = 'none' | 'awaiting_moderation' | 'active' | 'completed' | 'cancelled' | 'rejected';
+export type BoostStatus =
+  | 'none'
+  | 'awaiting_moderation'
+  | 'active'
+  | 'completed'
+  | 'cancelled'
+  | 'rejected';
 export type BoostPaymentMode = 'sandbox' | 'live';
-export type BoostPaymentStatus = 'none' | 'sandbox_authorized' | 'sandbox_voided' | 'paid' | 'refunded';
+export type BoostPaymentStatus =
+  | 'none'
+  | 'sandbox_authorized'
+  | 'sandbox_voided'
+  | 'paid'
+  | 'refunded';
 
 export interface BoostMetrics {
   impressions: number;
@@ -26,7 +45,7 @@ export interface MarketplaceModerationResult {
   reason?: string;
   confidence?: number;
   flags: string[];
-  provider: 'gemini';
+  provider: 'gemini' | 'openai';
 }
 
 export interface Listing {
@@ -132,8 +151,10 @@ export interface BoostListingInput {
 export interface MarketplaceModerationSettings {
   mode: MarketplaceModerationMode;
   priority: 'auto';
-  provider: 'gemini';
+  provider: 'gemini' | 'openai';
   hasGeminiKey: boolean;
+  hasOpenAiKey: boolean;
+  hasAiKey: boolean;
   updatedAt?: unknown;
   updatedBy?: string | null;
 }
@@ -160,7 +181,42 @@ export interface MyListingsSummary {
   boostSpent: number;
 }
 
-function setSavedBy(listing: Listing, id: string, userId: string | undefined, saved: boolean): Listing {
+const AI_INFRASTRUCTURE_MODERATION_FLAGS = new Set([
+  'missing_gemini_key',
+  'invalid_gemini_key',
+  'gemini_quota_exceeded',
+  'gemini_model_unavailable',
+  'gemini_unavailable',
+  'missing_openai_key',
+  'invalid_openai_key',
+  'openai_quota_exceeded',
+  'openai_model_unavailable',
+  'openai_unavailable',
+  'ai_error',
+  'ai_background_error',
+]);
+
+function getModerationFlags(listing: Listing) {
+  return [
+    ...(Array.isArray(listing.moderationFlags) ? listing.moderationFlags : []),
+    ...(Array.isArray(listing.moderationResult?.flags) ? listing.moderationResult.flags : []),
+  ].filter(Boolean);
+}
+
+function isMyListingSpamOrError(listing: Listing) {
+  return (
+    listing.status === 'rejected' ||
+    (listing.status === 'pending' &&
+      getModerationFlags(listing).some((flag) => AI_INFRASTRUCTURE_MODERATION_FLAGS.has(flag)))
+  );
+}
+
+function setSavedBy(
+  listing: Listing,
+  id: string,
+  userId: string | undefined,
+  saved: boolean
+): Listing {
   if (listing.id !== id || !userId) return listing;
   const savedBy = listing.savedBy ?? [];
   return {
@@ -171,10 +227,29 @@ function setSavedBy(listing: Listing, id: string, userId: string | undefined, sa
   };
 }
 
+function replaceListingById(listings: Listing[], updated: Listing): Listing[] {
+  return listings.map((listing) => (listing.id === updated.id ? updated : listing));
+}
+
 function matchesMyListingsFilter(listing: Listing, filter: MyListingsFilter): boolean {
   if (filter === 'active') return listing.status === 'active';
-  if (filter === 'error') return listing.status === 'pending' || listing.status === 'rejected';
-  return listing.status !== 'deleted';
+  if (filter === 'pending') return listing.status === 'pending' && !isMyListingSpamOrError(listing);
+  if (filter === 'error') return isMyListingSpamOrError(listing);
+  return listing.status !== 'deleted' && !isMyListingSpamOrError(listing);
+}
+
+type MarketplaceListPayload = { items: Listing[]; nextCursor: string | null };
+const marketplaceListRequests = new Map<string, Promise<MarketplaceListPayload>>();
+
+function getMarketplaceListRequest(key: string, path: string) {
+  const existing = marketplaceListRequests.get(key);
+  if (existing) return existing;
+
+  const request = api.get<MarketplaceListPayload>(path).finally(() => {
+    marketplaceListRequests.delete(key);
+  });
+  marketplaceListRequests.set(key, request);
+  return request;
 }
 
 interface MarketplaceState {
@@ -218,8 +293,12 @@ interface MarketplaceState {
   fetchModerationAccess: () => Promise<MarketplaceModerationAccess>;
   fetchModerationSettings: () => Promise<MarketplaceModerationSettings>;
   setModerationMode: (mode: MarketplaceModerationMode) => Promise<MarketplaceModerationSettings>;
-  fetchPendingModerationListings: (status?: Extract<ListingStatus, 'pending' | 'rejected' | 'active'>) => Promise<Listing[]>;
-  bulkApproveAiFailedListings: (demoOnly?: boolean) => Promise<{ updated: number; items: Listing[] }>;
+  fetchPendingModerationListings: (
+    status?: Extract<ListingStatus, 'pending' | 'rejected' | 'active'>
+  ) => Promise<Listing[]>;
+  bulkApproveAiFailedListings: (
+    demoOnly?: boolean
+  ) => Promise<{ updated: number; items: Listing[] }>;
   rerunAiModeration: (id: string) => Promise<Listing>;
   approveListing: (id: string, reason?: string) => Promise<Listing>;
   rejectListing: (id: string, reason: string) => Promise<Listing>;
@@ -250,18 +329,21 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   fetchListings: async (reset = false) => {
     const { loading, nextCursor, activeCategory } = get();
     if (loading && !reset) return;
+    if (!reset && !nextCursor) return;
     set({ loading: true, ...(reset ? { refreshing: true, listings: [], nextCursor: null } : {}) });
     try {
       const params = new URLSearchParams();
       if (activeCategory !== 'all') params.set('category', activeCategory);
       if (!reset && nextCursor) params.set('cursor', nextCursor);
-      const data = await api.get<{ items: Listing[]; nextCursor: string | null }>(
-        `/api/marketplace?${params.toString()}`
-      );
+      const requestPath = `/api/marketplace?${params.toString()}`;
+      const data = await getMarketplaceListRequest(requestPath, requestPath);
       set((s) => ({
         listings: reset
           ? data.items
-          : [...s.listings, ...data.items.filter((item) => !s.listings.some((l) => l.id === item.id))],
+          : [
+              ...s.listings,
+              ...data.items.filter((item) => !s.listings.some((l) => l.id === item.id)),
+            ],
         nextCursor: data.nextCursor,
         loading: false,
         refreshing: false,
@@ -272,7 +354,13 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
 
   setCategory: async (category) => {
-    set({ activeCategory: category, listings: [], nextCursor: null, isSearchMode: false, searchQuery: '' });
+    set({
+      activeCategory: category,
+      listings: [],
+      nextCursor: null,
+      isSearchMode: false,
+      searchQuery: '',
+    });
     await get().fetchListings(true);
   },
 
@@ -280,7 +368,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   setSearchMode: (v) => set({ isSearchMode: v }),
 
   search: async (query) => {
-    if (!query.trim()) { set({ searchResults: [], searching: false }); return; }
+    if (!query.trim()) {
+      set({ searchResults: [], searching: false });
+      return;
+    }
     set({ searching: true, isSearchMode: true });
     try {
       const { activeCategory } = get();
@@ -301,7 +392,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     try {
       const listing = await api.get<Listing>(`/api/marketplace/${id}`);
       set({ detailListing: listing, detailLoading: false });
-    } catch { set({ detailLoading: false }); }
+    } catch {
+      set({ detailLoading: false });
+    }
   },
 
   clearDetail: () => set({ detailListing: null }),
@@ -328,14 +421,21 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       set((s) => ({
         myListings: reset
           ? data.items
-          : [...s.myListings, ...data.items.filter((item) => !s.myListings.some((listing) => listing.id === item.id))],
+          : [
+              ...s.myListings,
+              ...data.items.filter(
+                (item) => !s.myListings.some((listing) => listing.id === item.id)
+              ),
+            ],
         myListingsNextCursor: data.nextCursor,
         myListingsCounts: data.counts ?? s.myListingsCounts,
         myListingsSummary: data.summary ?? s.myListingsSummary,
         myListingsLoading: false,
         myListingsLoadingMore: false,
       }));
-    } catch { set({ myListingsLoading: false, myListingsLoadingMore: false }); }
+    } catch {
+      set({ myListingsLoading: false, myListingsLoadingMore: false });
+    }
   },
 
   fetchSavedListings: async () => {
@@ -343,34 +443,54 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     try {
       const data = await api.get<{ items: Listing[] }>('/api/marketplace/saved');
       set({ savedListings: data.items, savedLoading: false });
-    } catch { set({ savedLoading: false }); }
+    } catch {
+      set({ savedLoading: false });
+    }
   },
 
   toggleSave: async (id) => {
-    const res = await api.post<{ saved: boolean }>(`/api/marketplace/${id}/save`);
+    const res = await api.post<{ saved: boolean; item?: Listing }>(`/api/marketplace/${id}/save`);
     const userId = auth.currentUser?.uid;
     set((s) => ({
-      listings: s.listings.map((l) => setSavedBy(l, id, userId, res.saved)),
-      searchResults: s.searchResults.map((l) => setSavedBy(l, id, userId, res.saved)),
+      listings: res.item
+        ? replaceListingById(s.listings, res.item)
+        : s.listings.map((l) => setSavedBy(l, id, userId, res.saved)),
+      searchResults: res.item
+        ? replaceListingById(s.searchResults, res.item)
+        : s.searchResults.map((l) => setSavedBy(l, id, userId, res.saved)),
+      myListings: res.item
+        ? replaceListingById(s.myListings, res.item)
+        : s.myListings.map((l) => setSavedBy(l, id, userId, res.saved)),
       savedListings: res.saved
-        ? s.savedListings.map((l) => setSavedBy(l, id, userId, res.saved))
+        ? res.item
+          ? [res.item, ...s.savedListings.filter((l) => l.id !== id)]
+          : s.savedListings.map((l) => setSavedBy(l, id, userId, res.saved))
         : s.savedListings.filter((l) => l.id !== id),
-      detailListing: s.detailListing ? setSavedBy(s.detailListing, id, userId, res.saved) : null,
+      detailListing:
+        res.item && s.detailListing?.id === id
+          ? res.item
+          : s.detailListing
+            ? setSavedBy(s.detailListing, id, userId, res.saved)
+            : null,
     }));
     return res.saved;
   },
 
   createListing: async (data) => {
     const listing = await api.post<Listing>('/api/marketplace', data);
+    const isSpamOrError = isMyListingSpamOrError(listing);
     set((s) => ({
       listings: listing.status === 'active' ? [listing, ...s.listings] : s.listings,
-      myListings: matchesMyListingsFilter(listing, s.myListingsFilter) ? [listing, ...s.myListings] : s.myListings,
+      myListings: matchesMyListingsFilter(listing, s.myListingsFilter)
+        ? [listing, ...s.myListings]
+        : s.myListings,
       myListingsCounts: {
         ...s.myListingsCounts,
-        all: s.myListingsCounts.all + 1,
+        all: s.myListingsCounts.all + (listing.status !== 'deleted' && !isSpamOrError ? 1 : 0),
         active: s.myListingsCounts.active + (listing.status === 'active' ? 1 : 0),
-        error: s.myListingsCounts.error + (listing.status === 'pending' || listing.status === 'rejected' ? 1 : 0),
-        pending: s.myListingsCounts.pending + (listing.status === 'pending' ? 1 : 0),
+        error: s.myListingsCounts.error + (isSpamOrError ? 1 : 0),
+        pending:
+          s.myListingsCounts.pending + (listing.status === 'pending' && !isSpamOrError ? 1 : 0),
         rejected: s.myListingsCounts.rejected + (listing.status === 'rejected' ? 1 : 0),
         sold: s.myListingsCounts.sold + (listing.status === 'sold' ? 1 : 0),
       },
@@ -381,10 +501,21 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   boostListing: async (id, data) => {
     const updated = await api.post<Listing>(`/api/marketplace/${id}/boost`, data);
     set((s) => ({
-      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
-      searchResults: updated.status === 'active' ? s.searchResults.map((l) => (l.id === id ? updated : l)) : s.searchResults.filter((l) => l.id !== id),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
-      savedListings: updated.status === 'active' ? s.savedListings.map((l) => (l.id === id ? updated : l)) : s.savedListings.filter((l) => l.id !== id),
+      listings:
+        updated.status === 'active'
+          ? [updated, ...s.listings.filter((l) => l.id !== id)]
+          : s.listings.filter((l) => l.id !== id),
+      searchResults:
+        updated.status === 'active'
+          ? s.searchResults.map((l) => (l.id === id ? updated : l))
+          : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings:
+        updated.status === 'active'
+          ? s.savedListings.map((l) => (l.id === id ? updated : l))
+          : s.savedListings.filter((l) => l.id !== id),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
     return updated;
@@ -393,10 +524,21 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   updateListing: async (id, data) => {
     const updated = await api.patch<Listing>(`/api/marketplace/${id}`, data);
     set((s) => ({
-      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
-      searchResults: updated.status === 'active' ? s.searchResults.map((l) => (l.id === id ? updated : l)) : s.searchResults.filter((l) => l.id !== id),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
-      savedListings: updated.status === 'active' ? s.savedListings.map((l) => (l.id === id ? updated : l)) : s.savedListings.filter((l) => l.id !== id),
+      listings:
+        updated.status === 'active'
+          ? [updated, ...s.listings.filter((l) => l.id !== id)]
+          : s.listings.filter((l) => l.id !== id),
+      searchResults:
+        updated.status === 'active'
+          ? s.searchResults.map((l) => (l.id === id ? updated : l))
+          : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings:
+        updated.status === 'active'
+          ? s.savedListings.map((l) => (l.id === id ? updated : l))
+          : s.savedListings.filter((l) => l.id !== id),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
     return updated;
@@ -418,7 +560,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     set((s) => ({
       listings: s.listings.filter((l) => l.id !== id),
       searchResults: s.searchResults.filter((l) => l.id !== id),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
       savedListings: s.savedListings.filter((l) => l.id !== id),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
@@ -438,15 +582,20 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     api.patch<MarketplaceModerationSettings>('/api/marketplace/moderation/settings', { mode }),
 
   fetchPendingModerationListings: async (status = 'pending') => {
-    const data = await api.get<{ items: Listing[] }>(`/api/marketplace/moderation/pending?status=${status}`);
+    const data = await api.get<{ items: Listing[] }>(
+      `/api/marketplace/moderation/pending?status=${status}`
+    );
     return data.items;
   },
 
   bulkApproveAiFailedListings: async (demoOnly = true) => {
-    const result = await api.patch<{ updated: number; items: Listing[] }>('/api/marketplace/moderation/bulk-approve-ai-failed', {
-      demoOnly,
-      limit: 100,
-    });
+    const result = await api.patch<{ updated: number; items: Listing[] }>(
+      '/api/marketplace/moderation/bulk-approve-ai-failed',
+      {
+        demoOnly,
+        limit: 100,
+      }
+    );
     set((s) => {
       const updatedIds = new Set(result.items.map((item) => item.id));
       return {
@@ -454,12 +603,14 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           ...result.items.filter((item) => item.status === 'active'),
           ...s.listings.filter((item) => !updatedIds.has(item.id)),
         ],
-        searchResults: s.searchResults.map((item) => result.items.find((updated) => updated.id === item.id) ?? item),
+        searchResults: s.searchResults.map(
+          (item) => result.items.find((updated) => updated.id === item.id) ?? item
+        ),
         myListings: s.myListings
           .map((item) => result.items.find((updated) => updated.id === item.id) ?? item)
           .filter((item) => matchesMyListingsFilter(item, s.myListingsFilter)),
         detailListing: s.detailListing
-          ? result.items.find((updated) => updated.id === s.detailListing?.id) ?? s.detailListing
+          ? (result.items.find((updated) => updated.id === s.detailListing?.id) ?? s.detailListing)
           : null,
       };
     });
@@ -469,21 +620,39 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   rerunAiModeration: async (id) => {
     const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/rerun-ai`);
     set((s) => ({
-      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
-      searchResults: updated.status === 'active' ? s.searchResults.map((l) => (l.id === id ? updated : l)) : s.searchResults.filter((l) => l.id !== id),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
-      savedListings: updated.status === 'active' ? s.savedListings.map((l) => (l.id === id ? updated : l)) : s.savedListings.filter((l) => l.id !== id),
+      listings:
+        updated.status === 'active'
+          ? [updated, ...s.listings.filter((l) => l.id !== id)]
+          : s.listings.filter((l) => l.id !== id),
+      searchResults:
+        updated.status === 'active'
+          ? s.searchResults.map((l) => (l.id === id ? updated : l))
+          : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings:
+        updated.status === 'active'
+          ? s.savedListings.map((l) => (l.id === id ? updated : l))
+          : s.savedListings.filter((l) => l.id !== id),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
     return updated;
   },
 
   approveListing: async (id, reason) => {
-    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/approve`, { reason });
+    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/approve`, {
+      reason,
+    });
     set((s) => ({
-      listings: updated.status === 'active' ? [updated, ...s.listings.filter((l) => l.id !== id)] : s.listings.filter((l) => l.id !== id),
+      listings:
+        updated.status === 'active'
+          ? [updated, ...s.listings.filter((l) => l.id !== id)]
+          : s.listings.filter((l) => l.id !== id),
       searchResults: s.searchResults.map((l) => (l.id === id ? updated : l)),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
       savedListings: s.savedListings.map((l) => (l.id === id ? updated : l)),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
@@ -491,11 +660,15 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
 
   rejectListing: async (id, reason) => {
-    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/reject`, { reason });
+    const updated = await api.patch<Listing>(`/api/marketplace/moderation/${id}/reject`, {
+      reason,
+    });
     set((s) => ({
       listings: s.listings.filter((l) => l.id !== id),
       searchResults: s.searchResults.filter((l) => l.id !== id),
-      myListings: s.myListings.map((l) => (l.id === id ? updated : l)).filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
       savedListings: s.savedListings.filter((l) => l.id !== id),
       detailListing: s.detailListing?.id === id ? updated : s.detailListing,
     }));
