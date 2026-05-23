@@ -695,7 +695,6 @@ export default function MainTabsScreen({ navigation }: Props) {
 
         {shouldRenderTab('profile') && (
           <Animated.View style={sceneStyleFor('profile')} pointerEvents={active === 'profile' ? 'auto' : 'none'}>
-            {renderCompactHeader('profile')}
             <ProfileScreen
               navigation={navigation as any}
               route={{ key: 'MainTabsProfile', name: 'Profile', params: undefined } as any}

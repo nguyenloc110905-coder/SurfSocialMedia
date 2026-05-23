@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
   useColorScheme,
   Dimensions,
   ActivityIndicator,
-  type ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,7 +82,6 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const listRef = useRef<FlatList<string | Post>>(null);
-  const isActiveRef = useRef(isActive);
   const user = useAuthStore((state) => state.user);
 
   const posts         = useFeedStore((s) => s.posts);
@@ -96,28 +94,7 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
   const fetchMore     = useFeedStore((s) => s.fetchMore);
   const setRefreshing = useFeedStore((s) => s.setRefreshing);
 
-  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    if (!isActiveRef.current) return;
-    setVisibleIds(
-      new Set(
-        viewableItems
-          .filter((v) => typeof v.item !== 'string')
-          .map((v) => (v.item as Post).id)
-      )
-    );
-  }).current;
-
   useEffect(() => { fetchFeed(); }, [fetchFeed]);
-
-  useEffect(() => {
-    isActiveRef.current = isActive;
-  }, [isActive]);
-
-  useEffect(() => {
-    if (!isActive) setVisibleIds(new Set());
-  }, [isActive]);
 
   useEffect(() => {
     if (!resetSignal) return;
@@ -180,12 +157,10 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
         renderItem={({ item }) =>
           typeof item === 'string'
             ? <SkeletonCard C={C} />
-            : <PostCard post={item as Post} isVisible={isActive && visibleIds.has((item as Post).id)} navigation={navigation} />
+            : <PostCard post={item as Post} isVisible={false} navigation={navigation} />
         }
         ListHeaderComponent={composer}
-        extraData={`${isActive}:${[...visibleIds].join(',')}:${isFirstLoad}`}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
+        extraData={`${isActive}:${isFirstLoad}`}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
         scrollEnabled={!isFirstLoad}

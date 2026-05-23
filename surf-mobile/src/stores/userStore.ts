@@ -17,7 +17,12 @@ export type UserProfile = {
   id: string;
   displayName?: string;
   photoURL?: string;
-  bio?: string;
+  coverImageUrl?: string | null;
+  bio?: string | null;
+  currentCity?: string | null;
+  hometown?: string | null;
+  birthday?: string | null;
+  relationship?: string | null;
   email?: string;
   defaultPostPrivacy: 'public' | 'friends' | 'only-me' | 'custom';
   friendRequestPrivacy: 'everyone' | 'friends_of_friends';

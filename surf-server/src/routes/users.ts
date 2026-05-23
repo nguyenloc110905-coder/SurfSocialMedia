@@ -228,6 +228,11 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       displayName,
       bio,
       photoURL,
+      coverImageUrl,
+      currentCity,
+      hometown,
+      birthday,
+      relationship,
       email,
       defaultPostPrivacy,
       notificationPrefs,
@@ -237,6 +242,11 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       displayName?: unknown;
       bio?: unknown;
       photoURL?: unknown;
+      coverImageUrl?: unknown;
+      currentCity?: unknown;
+      hometown?: unknown;
+      birthday?: unknown;
+      relationship?: unknown;
       email?: unknown;
       defaultPostPrivacy?: unknown;
       notificationPrefs?: unknown;
@@ -275,6 +285,11 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (displayName !== undefined) data.displayName = displayName;
     if (bio !== undefined) data.bio = bio;
     if (photoURL !== undefined) data.photoURL = photoURL;
+    if (coverImageUrl !== undefined) data.coverImageUrl = coverImageUrl;
+    if (currentCity !== undefined) data.currentCity = currentCity;
+    if (hometown !== undefined) data.hometown = hometown;
+    if (birthday !== undefined) data.birthday = birthday;
+    if (relationship !== undefined) data.relationship = relationship;
     if (defaultPostPrivacy !== undefined) data.defaultPostPrivacy = defaultPostPrivacy;
     if (friendRequestPrivacy !== undefined) data.friendRequestPrivacy = friendRequestPrivacy;
     if (notificationPrefsPatch !== undefined) {

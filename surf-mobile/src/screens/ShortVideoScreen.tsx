@@ -26,6 +26,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useClipStore } from '@/stores/clipStore';
+import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 
 type ShortVideo = {
   _source?: 'clip' | 'post';
@@ -115,12 +116,14 @@ function VideoItem({
   showTitle: boolean;
   onLandscapeModeChange?: (enabled: boolean) => void;
 }) {
+  const videosMuted = useMediaPlaybackStore((state) => state.videosMuted);
+  const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
+  const muted = videosMuted || item.editOptions?.mutedOriginal === true;
   const player = useVideoPlayer(optimizeCloudinaryVideo(item.videoUrl), (p) => {
     p.loop = true;
-    p.muted = item.editOptions?.mutedOriginal === true;
+    p.muted = muted;
   });
   const [buffering, setBuffering] = useState(true);
-  const [muted, setMuted] = useState(item.editOptions?.mutedOriginal === true);
   const [landscape, setLandscape] = useState(false);
   const [isLandscapeVideo, setIsLandscapeVideo] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -214,6 +217,10 @@ function VideoItem({
       // Native player can be mid-transition while FlatList recycles rows.
     }
   }, [active, landscape, onLandscapeModeChange, pausePlayer, player]);
+
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
 
   useEffect(() => {
     if (!thumbnail) return;
@@ -334,9 +341,7 @@ function VideoItem({
   };
 
   const toggleMute = () => {
-    const next = !muted;
-    setMuted(next);
-    player.muted = next;
+    setVideosMuted(!videosMuted);
   };
 
   const toggleOrientation = async () => {

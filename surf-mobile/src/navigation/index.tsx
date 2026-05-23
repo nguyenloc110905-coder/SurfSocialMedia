@@ -12,6 +12,8 @@ import MainTabsScreen from '@/screens/MainTabsScreen';
 import { isDevModeEnabled, getDebugScreen } from '@/lib/debug-config';
 import ForgotPasswordScreen from '@/screens/ForgotPasswordScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
+import EditProfileScreen from '@/screens/EditProfileScreen';
+import ProfilePhotoPickerScreen from '@/screens/ProfilePhotoPickerScreen';
 import CreatePostScreen from '@/screens/CreatePostScreen';
 import CreateClipScreen from '@/screens/CreateClipScreen';
 import MarketplaceScreen from '@/screens/MarketplaceScreen';
@@ -31,6 +33,8 @@ export type RootStackParamList = {
   Messages: undefined;
   Chat: { conversationId: string; title: string; peerUid?: string | null; peerAvatar?: string | null; };
   Settings: undefined;
+  EditProfile: undefined;
+  ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
   CreatePost: undefined;
   CreateClip: undefined;
   Marketplace: undefined;
@@ -89,6 +93,8 @@ export default function Navigation() {
             <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+            <Stack.Screen name="ProfilePhotoPicker" component={ProfilePhotoPickerScreen} />
             <Stack.Screen
               name="CreatePost"
               component={CreatePostScreen}

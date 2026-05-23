@@ -24,6 +24,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { api } from '@/lib/api';
 
 export type { FeedPost };
@@ -194,7 +195,11 @@ function PinchZoomImage({ uri }: { uri: string }) {
 
 // ── VideoViewerItem ───────────────────────────────────────────────────────────
 function VideoViewerItem({ url, isActive }: { url: string; isActive: boolean }) {
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = false; });
+  const muted = useMediaPlaybackStore((state) => state.videosMuted);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = muted; });
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
   useEffect(() => {
     try { isActive ? player.play() : player.pause(); } catch { /* ignore */ }
   }, [isActive, player]);
@@ -307,10 +312,11 @@ function VideoPlaceholder() {
 
 // ── VideoMediaItem ────────────────────────────────────────────────────────────
 function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean }) {
-  const [muted, setMuted] = useState(false);
   const [buffering, setBuffering] = useState(true);
+  const muted = useMediaPlaybackStore((state) => state.videosMuted);
+  const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const thumbnail = cloudinaryVideoThumbnail(url);
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = false; });
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = muted; });
 
   useEffect(() => {
     const sub = player.addListener('statusChange', (payload: { status: string }) => {
@@ -326,10 +332,12 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
     try { isVisible ? player.play() : player.pause(); } catch { /* ignore */ }
   }, [isVisible, player]);
 
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
+
   const toggleMute = () => {
-    const next = !muted;
-    setMuted(next);
-    player.muted = next;
+    setVideosMuted(!muted);
   };
 
   return (
