@@ -104,7 +104,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
         `/api/conversations/${conversationId}/messages?limit=30`
       );
-      const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string');
+      const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string').reverse();
       setMessages(items);
       setNextCursor(data.nextCursor ?? null);
 
@@ -129,7 +129,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
         `/api/conversations/${conversationId}/messages?limit=20&cursor=${encodeURIComponent(nextCursor)}`
       );
-      const older = data.items ?? [];
+      const older = (data.items ?? []).reverse();
       setMessages(prev => [...prev, ...older]);
       setNextCursor(data.nextCursor ?? null);
     } catch { /* ignore */ } finally {
@@ -155,7 +155,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
         `/api/conversations/${conversationId}/messages?limit=20`
       );
-      const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string');
+      const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string').reverse();
       if (items.length === 0) return;
       const newest = items[0];
       if (newest.id === lastMessageIdRef.current) return;

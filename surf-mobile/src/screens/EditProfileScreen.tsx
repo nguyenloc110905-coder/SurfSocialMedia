@@ -11,13 +11,17 @@ import {
   Alert,
   useColorScheme,
   Switch,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { uploadImage } from '@/lib/cloudinary';
+import { updateUserProfile } from '@/lib/firebase/auth';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +35,8 @@ type Birthday = { day: number; month: number; year: number; showYear: boolean };
 
 type FullProfile = {
   displayName?: string | null;
+  photoURL?: string | null;
+  coverImageUrl?: string | null;
   bio?: string | null;
   currentCity?: string | null;
   hometown?: string | null;
@@ -451,6 +457,10 @@ export default function EditProfileScreen({ navigation }: Props) {
   const [eduIdx, setEduIdx] = useState<number | null>(null);
   const [eduDraft, setEduDraft] = useState<EducationEntry>({ school: '' });
 
+  const [displayNameModal, setDisplayNameModal] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+
   // ── Load profile ──
   const load = useCallback(async () => {
     if (!user?.uid) return;
@@ -549,6 +559,57 @@ export default function EditProfileScreen({ navigation }: Props) {
   const relationshipLabel = (v?: string | null) =>
     RELATIONSHIP_OPTIONS.find(r => r.value === v)?.label ?? null;
 
+  // ── Image pick & upload ─────────────────────────────────────────────────────
+
+  const pickAndUploadImage = async (kind: 'avatar' | 'cover', source: 'camera' | 'library') => {
+    const isCamera = source === 'camera';
+    if (isCamera) {
+      const perm = await ImagePicker.getCameraPermissionsAsync();
+      if (!perm.granted) {
+        const req = await ImagePicker.requestCameraPermissionsAsync();
+        if (!req.granted) { Alert.alert('Quyền truy cập', 'Cần quyền truy cập camera để chụp ảnh.'); return; }
+      }
+    } else {
+      const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!req.granted) { Alert.alert('Quyền truy cập', 'Cần quyền truy cập thư viện ảnh.'); return; }
+      }
+    }
+    const aspect: [number, number] = kind === 'avatar' ? [1, 1] : [16, 9];
+    const result = isCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85, allowsEditing: true, aspect })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85, allowsEditing: true, aspect });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (kind === 'avatar') setUploadingAvatar(true); else setUploadingCover(true);
+    try {
+      const url = await uploadImage(asset, { folder: kind === 'avatar' ? 'surf/profiles/avatars' : 'surf/profiles/covers' });
+      if (kind === 'avatar') {
+        await save({ photoURL: url });
+        try { await updateUserProfile({ photoURL: url }); } catch { /* ignore */ }
+      } else {
+        await save({ coverImageUrl: url });
+      }
+    } catch {
+      Alert.alert('Lỗi', 'Không thể tải ảnh lên. Vui lòng thử lại.');
+    } finally {
+      if (kind === 'avatar') setUploadingAvatar(false); else setUploadingCover(false);
+    }
+  };
+
+  const handleAvatarPress = () => Alert.alert('Ảnh đại diện', 'Chọn nguồn ảnh', [
+    { text: 'Chụp ảnh', onPress: () => pickAndUploadImage('avatar', 'camera') },
+    { text: 'Chọn từ thư viện', onPress: () => pickAndUploadImage('avatar', 'library') },
+    { text: 'Hủy', style: 'cancel' },
+  ]);
+
+  const handleCoverPress = () => Alert.alert('Ảnh bìa', 'Chọn nguồn ảnh', [
+    { text: 'Chụp ảnh', onPress: () => pickAndUploadImage('cover', 'camera') },
+    { text: 'Chọn từ thư viện', onPress: () => pickAndUploadImage('cover', 'library') },
+    { text: 'Hủy', style: 'cancel' },
+  ]);
+
   if (loading) {
     return (
       <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
@@ -575,6 +636,61 @@ export default function EditProfileScreen({ navigation }: Props) {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+
+        {/* ── Ảnh đại diện & ảnh bìa ── */}
+        <View style={[s.photoCard, { borderColor: C.border }]}>
+          <TouchableOpacity style={s.coverArea} onPress={handleCoverPress} activeOpacity={0.85}>
+            {profile.coverImageUrl ? (
+              <Image source={{ uri: profile.coverImageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            ) : (
+              <>
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0c2d48' }]} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0ea5e9', opacity: 0.1 }]} />
+              </>
+            )}
+            {uploadingCover ? (
+              <View style={s.coverEditChip}><ActivityIndicator size="small" color="#fff" /></View>
+            ) : (
+              <View style={s.coverEditChip}>
+                <Ionicons name="camera-outline" size={14} color="#fff" />
+                <Text style={s.coverEditChipText}>Đổi ảnh bìa</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <View style={[s.avatarNameRow, { backgroundColor: C.card, borderTopColor: C.border }]}>
+            <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85} style={s.avatarWrapEdit}>
+              {profile.photoURL || user?.photoURL ? (
+                <Image source={{ uri: (profile.photoURL || user?.photoURL) ?? '' }} style={s.avatarImgEdit} />
+              ) : (
+                <View style={[s.avatarImgEdit, { backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }]}>
+                  <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>
+                    {(profile.displayName || user?.displayName || 'U').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={[s.avatarCameraChip, { borderColor: C.card }]}>
+                {uploadingAvatar
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="camera" size={13} color="#fff" />
+                }
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={{ flex: 1, paddingLeft: 14 }} onPress={() => setDisplayNameModal(true)} activeOpacity={0.7}>
+              <Text style={[sh.fieldLabel, { color: C.subtext }]}>Tên hiển thị</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text
+                  style={[{ fontSize: 15, fontWeight: '600', flex: 1 }, { color: profile.displayName || user?.displayName ? C.text : C.placeholder }]}
+                  numberOfLines={1}
+                >
+                  {profile.displayName || user?.displayName || 'Nhập tên hiển thị...'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={C.subtext} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* ── Tiểu sử ── */}
         <View style={[s.section, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -675,6 +791,16 @@ export default function EditProfileScreen({ navigation }: Props) {
       <EditTextModal visible={bioModal} title="Tiểu sử" value={profile.bio ?? ''} placeholder='VD: "Student | Love coding 💻"' multiline maxLength={101}
         onSave={(v) => { save({ bio: v || null }); setBioModal(false); }} onClose={() => setBioModal(false)} C={C} />
 
+      <EditTextModal visible={displayNameModal} title="Tên hiển thị" value={profile.displayName ?? user?.displayName ?? ''} placeholder="Tên của bạn" maxLength={50}
+        onSave={(v) => {
+          if (v.trim()) {
+            save({ displayName: v });
+            void updateUserProfile({ displayName: v }).catch(() => {});
+          }
+          setDisplayNameModal(false);
+        }}
+        onClose={() => setDisplayNameModal(false)} C={C} />
+
       <EditTextModal visible={cityModal} title="Thành phố hiện tại" value={profile.currentCity ?? ''} placeholder="VD: Hồ Chí Minh"
         onSave={(v) => { save({ currentCity: v || null }); setCityModal(false); }} onClose={() => setCityModal(false)} C={C} />
 
@@ -716,6 +842,30 @@ const s = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: '700' },
   section: {
     marginHorizontal: 12, marginTop: 12, borderRadius: 14, borderWidth: 1, overflow: 'hidden',
+  },
+  photoCard: {
+    marginHorizontal: 12, marginTop: 12, borderRadius: 14, borderWidth: 1, overflow: 'hidden',
+  },
+  coverArea: { height: 100, width: '100%' },
+  coverEditChip: {
+    position: 'absolute', bottom: 10, right: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  coverEditChipText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  avatarNameRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  avatarWrapEdit: { position: 'relative', width: 64, height: 64 },
+  avatarImgEdit: { width: 64, height: 64, borderRadius: 32 },
+  avatarCameraChip: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#0ea5e9',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2,
   },
 });
 

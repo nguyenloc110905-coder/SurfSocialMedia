@@ -33,6 +33,8 @@ type Props = {
   showBackButton?: boolean;
 };
 
+type Birthday = { day: number; month: number; year: number; showYear: boolean };
+
 type UserProfile = {
   id?: string;
   displayName?: string | null;
@@ -45,8 +47,27 @@ type UserProfile = {
   work?: Array<{ company: string; title?: string; current?: boolean }>;
   education?: Array<{ school: string; degree?: string; year?: string }>;
   relationship?: string | null;
+  birthday?: Birthday | null;
+  gender?: string | null;
+  customGender?: string | null;
+  website?: string | null;
+  phone?: string | null;
   joinedAt?: unknown;
 };
+
+const RELATIONSHIP_LABELS: Record<string, string> = {
+  single: 'Độc thân', in_relationship: 'Đang hẹn hò', engaged: 'Đã đính hôn',
+  married: 'Đã kết hôn', complicated: 'Phức tạp', open: 'Mối quan hệ mở',
+  widowed: 'Góa bụa',
+};
+const GENDER_LABELS: Record<string, string> = { male: 'Nam', female: 'Nữ', custom: 'Tùy chỉnh' };
+const MONTHS_VN = ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
+
+function birthdayLabel(b?: Birthday | null) {
+  if (!b) return null;
+  const m = MONTHS_VN[(b.month ?? 1) - 1] ?? '';
+  return b.showYear ? `${b.day} ${m}, ${b.year}` : `${b.day} ${m}`;
+}
 
 type Friend = { id: string; displayName?: string; photoURL?: string | null };
 
@@ -386,65 +407,122 @@ export default function ProfileScreen({
 
   // ── About section ──────────────────────────────────────────────────────────
 
-  const renderAbout = () => (
-    <View style={[s.aboutCard, { backgroundColor: C.card, borderColor: C.border }]}>
-      {bio ? (
-        <View style={s.aboutRow}>
-          <Ionicons name="information-circle-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.text }]}>{bio}</Text>
-        </View>
-      ) : (
-        <Text style={[s.aboutEmpty, { color: C.subtext }]}>Chưa có tiểu sử.</Text>
-      )}
+  const renderAbout = () => {
+    const bday = birthdayLabel(profile?.birthday);
+    const genderStr = profile?.gender === 'custom'
+      ? (profile?.customGender || 'Tùy chỉnh')
+      : (profile?.gender ? (GENDER_LABELS[profile.gender] ?? null) : null);
+    const relStr = profile?.relationship ? (RELATIONSHIP_LABELS[profile.relationship] ?? profile.relationship) : null;
+    const hasAny = bio || (profile?.work?.length ?? 0) > 0 || (profile?.education?.length ?? 0) > 0
+      || profile?.currentCity || profile?.hometown || relStr || bday || genderStr
+      || profile?.website || profile?.phone || joined;
+    return (
+      <View style={[s.aboutCard, { backgroundColor: C.card, borderColor: C.border }]}>
+        {!hasAny && (
+          <View style={{ alignItems: 'center', paddingVertical: 24, gap: 8 }}>
+            <Ionicons name="person-circle-outline" size={44} color={C.subtext} />
+            <Text style={[s.aboutEmpty, { color: C.subtext }]}>Chưa có thông tin giới thiệu.</Text>
+            {isOwn && (
+              <TouchableOpacity onPress={() => navigation.navigate('EditProfile')} style={[s.editAboutBtn, { borderColor: C.accent }]}>
+                <Ionicons name="create-outline" size={14} color={C.accent} />
+                <Text style={[s.editAboutText, { color: C.accent }]}>Chỉnh sửa giới thiệu</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
-      {(profile?.work ?? []).map((w, i) => (
-        <View key={i} style={s.aboutRow}>
-          <Ionicons name="briefcase-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.text }]}>
-            {w.title ? `${w.title} tại ${w.company}` : w.company}
-            {w.current ? <Text style={{ color: C.subtext }}> · Đang làm</Text> : null}
-          </Text>
-        </View>
-      ))}
+        {bio ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="information-circle-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>{bio}</Text>
+          </View>
+        ) : null}
 
-      {(profile?.education ?? []).map((e, i) => (
-        <View key={i} style={s.aboutRow}>
-          <Ionicons name="school-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.text }]}>
-            {e.school}{e.degree ? ` · ${e.degree}` : ''}
-          </Text>
-        </View>
-      ))}
+        {(profile?.work ?? []).map((w, i) => (
+          <View key={`w${i}`} style={s.aboutRow}>
+            <Ionicons name="briefcase-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>
+              {w.title ? `${w.title} tại ${w.company}` : w.company}
+              {w.current ? <Text style={{ color: C.subtext }}> · Đang làm</Text> : null}
+            </Text>
+          </View>
+        ))}
 
-      {profile?.currentCity ? (
-        <View style={s.aboutRow}>
-          <Ionicons name="location-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.text }]}>Sống tại {profile.currentCity}</Text>
-        </View>
-      ) : null}
+        {(profile?.education ?? []).map((e, i) => (
+          <View key={`e${i}`} style={s.aboutRow}>
+            <Ionicons name="school-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>{e.school}{e.degree ? ` · ${e.degree}` : ''}</Text>
+          </View>
+        ))}
 
-      {profile?.hometown ? (
-        <View style={s.aboutRow}>
-          <Ionicons name="home-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.text }]}>Quê ở {profile.hometown}</Text>
-        </View>
-      ) : null}
+        {profile?.currentCity ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="location-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>Sống tại {profile.currentCity}</Text>
+          </View>
+        ) : null}
 
-      {profile?.relationship ? (
-        <View style={s.aboutRow}>
-          <Ionicons name="heart-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.text }]}>{profile.relationship}</Text>
-        </View>
-      ) : null}
+        {profile?.hometown ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="home-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>Quê ở {profile.hometown}</Text>
+          </View>
+        ) : null}
 
-      {joined ? (
-        <View style={s.aboutRow}>
-          <Ionicons name="water-outline" size={20} color={C.accent} />
-          <Text style={[s.aboutText, { color: C.subtext }]}>{joined}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
+        {relStr ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="heart-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>{relStr}</Text>
+          </View>
+        ) : null}
+
+        {bday ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="calendar-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>Sinh ngày {bday}</Text>
+          </View>
+        ) : null}
+
+        {genderStr ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="transgender-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>{genderStr}</Text>
+          </View>
+        ) : null}
+
+        {profile?.website ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="globe-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.accent }]}>{profile.website}</Text>
+          </View>
+        ) : null}
+
+        {profile?.phone ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="call-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.text }]}>{profile.phone}</Text>
+          </View>
+        ) : null}
+
+        {joined ? (
+          <View style={s.aboutRow}>
+            <Ionicons name="water-outline" size={20} color={C.accent} />
+            <Text style={[s.aboutText, { color: C.subtext }]}>{joined}</Text>
+          </View>
+        ) : null}
+
+        {isOwn && hasAny && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('EditProfile')}
+            style={[s.editAboutBtn, { borderColor: C.border, marginTop: 8 }]}
+          >
+            <Ionicons name="create-outline" size={14} color={C.subtext} />
+            <Text style={[s.editAboutText, { color: C.subtext }]}>Chỉnh sửa giới thiệu</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
 
   // ── Friends grid ───────────────────────────────────────────────────────────
 
@@ -659,6 +737,8 @@ const s = StyleSheet.create({
   aboutRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   aboutText: { flex: 1, fontSize: 14, lineHeight: 20 },
   aboutEmpty: { fontSize: 14, textAlign: 'center', paddingVertical: 8 },
+  editAboutBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  editAboutText: { fontSize: 13, fontWeight: '600' },
 
   // Friends grid
   friendsGrid: {
