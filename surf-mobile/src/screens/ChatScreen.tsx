@@ -11,14 +11,19 @@ import {
   Platform,
   ActivityIndicator,
   useColorScheme,
+  Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { uploadImage } from '@/lib/cloudinary';
+import { connectSocket, getSocket } from '@/lib/socket';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,6 +81,37 @@ function formatDateHeader(iso: string): string {
 
 const POLL_INTERVAL = 5000;
 
+// ── Typing dots ───────────────────────────────────────────────────────────────
+
+function TypingDots({ C }: { C: typeof DARK }) {
+  const d1 = useRef(new Animated.Value(0)).current;
+  const d2 = useRef(new Animated.Value(0)).current;
+  const d3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const makeDot = (d: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(d, { toValue: -5, duration: 280, useNativeDriver: true }),
+          Animated.timing(d, { toValue: 0, duration: 280, useNativeDriver: true }),
+          Animated.delay(Math.max(0, 560 - delay)),
+        ])
+      );
+    const anim = Animated.parallel([makeDot(d1, 0), makeDot(d2, 180), makeDot(d3, 360)]);
+    anim.start();
+    return () => anim.stop();
+  }, [d1, d2, d3]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 2 }}>
+      {[d1, d2, d3].map((d, i) => (
+        <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: C.subtext, transform: [{ translateY: d }] }} />
+      ))}
+    </View>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ChatScreen({ navigation, route }: Props) {
@@ -91,10 +127,13 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
 
   const flatRef = useRef<FlatList>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMessageIdRef = useRef<string | null>(null);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peerTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Load messages ──────────────────────────────────────────────────────────
 
@@ -178,6 +217,120 @@ export default function ChatScreen({ navigation, route }: Props) {
     };
   }, [loadMessages, poll]);
 
+  // ── Socket: typing indicators ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    connectSocket(user.uid);
+    const socket = getSocket();
+    socket.emit('conversation:join', conversationId);
+
+    const onTypingStart = ({ userId: uid }: { conversationId: string; userId: string }) => {
+      if (uid === user.uid) return;
+      setPeerTyping(true);
+      if (peerTypingTimerRef.current) clearTimeout(peerTypingTimerRef.current);
+      peerTypingTimerRef.current = setTimeout(() => setPeerTyping(false), 4000);
+    };
+
+    const onTypingStop = ({ userId: uid }: { conversationId: string; userId: string }) => {
+      if (uid === user.uid) return;
+      if (peerTypingTimerRef.current) clearTimeout(peerTypingTimerRef.current);
+      setPeerTyping(false);
+    };
+
+    socket.on('typing:start', onTypingStart);
+    socket.on('typing:stop', onTypingStop);
+
+    return () => {
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      if (peerTypingTimerRef.current) clearTimeout(peerTypingTimerRef.current);
+      socket.off('typing:start', onTypingStart);
+      socket.off('typing:stop', onTypingStop);
+      socket.emit('conversation:leave', conversationId);
+    };
+  }, [conversationId, user?.uid]);
+
+  // ── Draft change with typing emit ──────────────────────────────────────────
+
+  const handleDraftChange = useCallback((text: string) => {
+    setDraft(text);
+    if (!user?.uid) return;
+    const socket = getSocket();
+    if (text.trim()) {
+      socket.emit('typing:start', { conversationId });
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = setTimeout(() => {
+        socket.emit('typing:stop', { conversationId });
+      }, 2500);
+    } else {
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      socket.emit('typing:stop', { conversationId });
+    }
+  }, [conversationId, user?.uid]);
+
+  // ── Pick & send image ───────────────────────────────────────────────────────
+
+  const pickAndSendMedia = async (source: 'camera' | 'library') => {
+    const isCamera = source === 'camera';
+    if (isCamera) {
+      const p = await ImagePicker.getCameraPermissionsAsync();
+      if (!p.granted) {
+        const r = await ImagePicker.requestCameraPermissionsAsync();
+        if (!r.granted) { Alert.alert('Quyền truy cập', 'Cần quyền truy cập camera.'); return; }
+      }
+    } else {
+      const p = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (!p.granted) {
+        const r = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!r.granted) { Alert.alert('Quyền truy cập', 'Cần quyền truy cập thư viện ảnh.'); return; }
+      }
+    }
+    const result = isCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85 });
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    const optimisticId = `opt_${Date.now()}`;
+    const optimistic: ApiMessage = {
+      id: optimisticId,
+      conversationId,
+      senderId: user?.uid ?? '',
+      type: 'image',
+      text: '',
+      mediaUrl: asset.uri,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages(prev => [optimistic, ...prev]);
+    setSending(true);
+    try {
+      const url = await uploadImage(asset, { folder: 'surf/chat' });
+      const data = await api.post<{ item: ApiMessage }>(
+        `/api/conversations/${conversationId}/messages`,
+        { mediaUrl: url, mediaType: 'image' }
+      );
+      const real = data.item;
+      if (real?.id) {
+        setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
+        lastMessageIdRef.current = real.id;
+        markRead(real.id, real.createdAt);
+      } else {
+        setMessages(prev => prev.filter(m => m.id !== optimisticId));
+      }
+    } catch {
+      setMessages(prev => prev.filter(m => m.id !== optimisticId));
+      Alert.alert('Lỗi', 'Không thể gửi ảnh. Vui lòng thử lại.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handlePickMedia = () => Alert.alert('Gửi ảnh', 'Chọn nguồn', [
+    { text: 'Chụp ảnh', onPress: () => pickAndSendMedia('camera') },
+    { text: 'Thư viện', onPress: () => pickAndSendMedia('library') },
+    { text: 'Hủy', style: 'cancel' },
+  ]);
+
   // ── Send message ───────────────────────────────────────────────────────────
 
   const handleSend = async () => {
@@ -199,6 +352,10 @@ export default function ChatScreen({ navigation, route }: Props) {
     setMessages(prev => [optimistic, ...prev]);
 
     try {
+      const socket = getSocket();
+      socket.emit('typing:stop', { conversationId });
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+
       const data = await api.post<{ item: ApiMessage }>(
         `/api/conversations/${conversationId}/messages`,
         { text }
@@ -331,6 +488,22 @@ export default function ChatScreen({ navigation, route }: Props) {
           showsVerticalScrollIndicator={false}
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
+          ListHeaderComponent={peerTyping ? (
+            <View style={[s.msgRow]}>
+              <View style={s.msgAvatarWrap}>
+                {peerAvatar ? (
+                  <Image source={{ uri: peerAvatar }} style={s.msgAvatar} />
+                ) : (
+                  <View style={[s.msgAvatar, { backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{(title || '?').charAt(0)}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={[s.bubble, s.bubbleOther, { backgroundColor: C.otherBubble }]}>
+                <TypingDots C={C} />
+              </View>
+            </View>
+          ) : null}
           ListFooterComponent={loadingMore ? <ActivityIndicator color={C.accent} style={{ paddingVertical: 12 }} /> : null}
           ListEmptyComponent={
             <View style={s.emptyChat}>
@@ -342,13 +515,16 @@ export default function ChatScreen({ navigation, route }: Props) {
 
         {/* Composer */}
         <View style={[s.composer, { backgroundColor: C.card, borderTopColor: C.border, paddingBottom: insets.bottom || 10 }]}>
+          <TouchableOpacity style={s.mediaBtn} onPress={handlePickMedia} activeOpacity={0.7} disabled={sending}>
+            <Ionicons name="image-outline" size={24} color={sending ? C.border : C.subtext} />
+          </TouchableOpacity>
           <View style={[s.inputWrap, { backgroundColor: C.input, borderColor: C.inputBorder }]}>
             <TextInput
               style={[s.input, { color: C.text }]}
               placeholder="Nhập tin nhắn..."
               placeholderTextColor={C.subtext}
               value={draft}
-              onChangeText={setDraft}
+              onChangeText={handleDraftChange}
               multiline
               maxLength={2000}
               returnKeyType="default"
@@ -422,6 +598,10 @@ const s = StyleSheet.create({
   input: { fontSize: 15, maxHeight: 100 },
   sendBtn: {
     width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mediaBtn: {
+    width: 36, height: 42,
     alignItems: 'center', justifyContent: 'center',
   },
 });
