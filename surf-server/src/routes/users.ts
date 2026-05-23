@@ -280,12 +280,8 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       notificationPrefs,
       friendRequestPrivacy,
       privacySettings,
-      currentCity,
-      hometown,
       work,
       education,
-      relationship,
-      birthday,
       gender,
       customGender,
       website,
@@ -304,12 +300,8 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       notificationPrefs?: unknown;
       friendRequestPrivacy?: unknown;
       privacySettings?: unknown;
-      currentCity?: unknown;
-      hometown?: unknown;
       work?: unknown;
       education?: unknown;
-      relationship?: unknown;
-      birthday?: unknown;
       gender?: unknown;
       customGender?: unknown;
       website?: unknown;
@@ -354,12 +346,8 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (relationship !== undefined) data.relationship = relationship;
     if (defaultPostPrivacy !== undefined) data.defaultPostPrivacy = defaultPostPrivacy;
     if (friendRequestPrivacy !== undefined) data.friendRequestPrivacy = friendRequestPrivacy;
-    if (currentCity !== undefined) data.currentCity = currentCity;
-    if (hometown !== undefined) data.hometown = hometown;
     if (work !== undefined) data.work = work;
     if (education !== undefined) data.education = education;
-    if (relationship !== undefined) data.relationship = relationship;
-    if (birthday !== undefined) data.birthday = birthday;
     if (gender !== undefined) data.gender = gender;
     if (customGender !== undefined) data.customGender = customGender;
     if (website !== undefined) data.website = website;

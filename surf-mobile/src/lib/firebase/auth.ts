@@ -10,6 +10,8 @@ import {
   onAuthStateChanged,
   updateProfile,
   GoogleAuthProvider,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   signInWithCredential,
   User,
 } from 'firebase/auth';
@@ -72,6 +74,13 @@ export async function signInWithGoogleCredential(idToken: string) {
 
 export function sendPasswordResetEmail(email: string, actionCodeSettings?: any) {
   return fbSendPasswordResetEmail(auth, email, actionCodeSettings);
+}
+
+export async function reauthenticate(password: string) {
+  const u = auth.currentUser;
+  if (!u?.email) throw new Error('Chưa đăng nhập');
+  const credential = EmailAuthProvider.credential(u.email, password);
+  return reauthenticateWithCredential(u, credential);
 }
 
 export async function signOut() {

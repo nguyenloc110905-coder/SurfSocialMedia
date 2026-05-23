@@ -9,16 +9,24 @@ import { isDevModeEnabled, logDebugInfo, shouldClearAuthOnStartup } from './src/
 import { connectSocket, disconnectSocket, getSocket } from './src/lib/socket';
 import { useNotificationStore } from './src/stores/notificationStore';
 import { useFriendStore } from './src/stores/friendStore';
+import { useSettingsStore } from './src/stores/settingsStore';
 
 export default function App() {
   const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
+  const settingsPrefs = useSettingsStore((s) => s.prefs);
+  const initializeSettings = useSettingsStore((s) => s.initialize);
+  const effectiveScheme = settingsPrefs.themeMode === 'system' ? scheme : settingsPrefs.themeMode;
+  const isDark = effectiveScheme === 'dark';
   const appBg = isDark ? '#0f172a' : '#f8fafc';
   const initialize = useAuthStore((s) => s.initialize);
   const setLoading = useAuthStore((s) => s.setLoading) as (loading: boolean) => void;
   const resetAuth = useAuthStore((s) => s.resetAuth);
   const user = useAuthStore((s) => s.user);
   const fetchFeed = useFeedStore((s) => s.fetch);
+
+  useEffect(() => {
+    void initializeSettings();
+  }, [initializeSettings]);
 
   useEffect(() => {
     logDebugInfo();

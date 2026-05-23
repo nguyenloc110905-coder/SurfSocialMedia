@@ -27,6 +27,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useClipStore } from '@/stores/clipStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 type ShortVideo = {
   _source?: 'clip' | 'post';
@@ -69,9 +70,10 @@ type CommentItem = {
   content: string;
 };
 
-function optimizeCloudinaryVideo(url: string) {
+function optimizeCloudinaryVideo(url: string, reduceDataUsage = false) {
   if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return url;
-  return url.replace('/video/upload/', '/video/upload/q_auto:eco,w_720,f_auto/');
+  const transform = reduceDataUsage ? 'q_auto:eco,w_480,f_auto' : 'q_auto:eco,w_720,f_auto';
+  return url.replace('/video/upload/', `/video/upload/${transform}/`);
 }
 
 function cloudinaryVideoThumbnail(url: string) {
@@ -106,6 +108,8 @@ function VideoItem({
   onComment,
   showTitle,
   onLandscapeModeChange,
+  autoPlay,
+  reduceDataUsage,
 }: {
   item: ShortVideo;
   active: boolean;
@@ -115,11 +119,13 @@ function VideoItem({
   onComment: () => void;
   showTitle: boolean;
   onLandscapeModeChange?: (enabled: boolean) => void;
+  autoPlay: boolean;
+  reduceDataUsage: boolean;
 }) {
   const videosMuted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const muted = videosMuted || item.editOptions?.mutedOriginal === true;
-  const player = useVideoPlayer(optimizeCloudinaryVideo(item.videoUrl), (p) => {
+  const player = useVideoPlayer(optimizeCloudinaryVideo(item.videoUrl, reduceDataUsage), (p) => {
     p.loop = true;
     p.muted = muted;
   });
@@ -211,12 +217,12 @@ function VideoItem({
     }
 
     try {
-      if (active && !userPausedRef.current) player.play();
+      if (active && autoPlay && !userPausedRef.current) player.play();
       else pausePlayer();
     } catch {
       // Native player can be mid-transition while FlatList recycles rows.
     }
-  }, [active, landscape, onLandscapeModeChange, pausePlayer, player]);
+  }, [active, autoPlay, landscape, onLandscapeModeChange, pausePlayer, player]);
 
   useEffect(() => {
     player.muted = muted;
