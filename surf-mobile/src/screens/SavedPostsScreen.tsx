@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 import type { FeedPost } from '@/stores/feedStore';
 import PostCard from '@/components/PostCard';
 
@@ -23,6 +24,7 @@ type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'SavedP
 
 export default function SavedPostsScreen({ navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -36,11 +38,11 @@ export default function SavedPostsScreen({ navigation }: Props) {
       const data = await api.get<{ posts: FeedPost[] }>('/api/posts/saved');
       setPosts(data.posts ?? []);
     } catch (e) {
-      setError((e as Error).message || 'Không thể tải bài viết đã lưu');
+      setError((e as Error).message || t('saved_load_error'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -50,7 +52,7 @@ export default function SavedPostsScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </TouchableOpacity>
-        <Text style={[st.title, { color: C.text }]}>Bài viết đã lưu</Text>
+        <Text style={[st.title, { color: C.text }]}>{t('saved_posts')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -63,13 +65,13 @@ export default function SavedPostsScreen({ navigation }: Props) {
           <Ionicons name="cloud-offline-outline" size={48} color={C.subtext} />
           <Text style={[st.msg, { color: C.subtext }]}>{error}</Text>
           <TouchableOpacity style={st.retryBtn} onPress={load}>
-            <Text style={st.retryText}>Thử lại</Text>
+            <Text style={st.retryText}>{t('retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : posts.length === 0 ? (
         <View style={st.center}>
           <Ionicons name="bookmark-outline" size={56} color={C.subtext} />
-          <Text style={[st.msg, { color: C.subtext }]}>Chưa có bài viết nào được lưu</Text>
+          <Text style={[st.msg, { color: C.subtext }]}>{t('saved_empty')}</Text>
         </View>
       ) : (
         <FlatList

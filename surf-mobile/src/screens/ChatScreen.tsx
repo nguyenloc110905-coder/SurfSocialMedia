@@ -19,6 +19,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { useLanguage, useT } from '@/lib/i18n';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,20 +59,20 @@ const LIGHT = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatTime(iso: string): string {
+function formatTime(iso: string, locale: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatDateHeader(iso: string): string {
+function formatDateHeader(iso: string, locale: string, t: ReturnType<typeof useT>): string {
   const d = new Date(iso);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  if (d.toDateString() === today.toDateString()) return 'Hôm nay';
-  if (d.toDateString() === yesterday.toDateString()) return 'Hôm qua';
-  return d.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' });
+  if (d.toDateString() === today.toDateString()) return t('chat_today');
+  if (d.toDateString() === yesterday.toDateString()) return t('chat_yesterday');
+  return d.toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: '2-digit' });
 }
 
 const POLL_INTERVAL = 5000;
@@ -81,6 +82,9 @@ const POLL_INTERVAL = 5000;
 export default function ChatScreen({ navigation, route }: Props) {
   const { conversationId, title, peerUid, peerAvatar } = route.params;
   const scheme = useColorScheme();
+  const t = useT();
+  const language = useLanguage();
+  const locale = language === 'en' ? 'en-US' : 'vi-VN';
   const C = scheme === 'dark' ? DARK : LIGHT;
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
@@ -233,7 +237,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       <>
         {showDateHeader && (
           <View style={s.dateHeader}>
-            <Text style={[s.dateHeaderText, { color: C.subtext }]}>{formatDateHeader(item.createdAt)}</Text>
+            <Text style={[s.dateHeaderText, { color: C.subtext }]}>{formatDateHeader(item.createdAt, locale, t)}</Text>
           </View>
         )}
         <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
@@ -254,7 +258,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           ]}>
             {isRecalled ? (
               <Text style={[s.recalledText, { color: isOwn ? 'rgba(255,255,255,0.6)' : C.subtext }]}>
-                Tin nhắn đã được thu hồi
+                {t('chat_recalled')}
               </Text>
             ) : item.type === 'image' && item.mediaUrl ? (
               <Image source={{ uri: item.mediaUrl }} style={s.imgMsg} resizeMode="cover" />
@@ -262,7 +266,7 @@ export default function ChatScreen({ navigation, route }: Props) {
               <Text style={[s.msgText, { color: isOwn ? C.ownText : C.otherText }]}>{item.text}</Text>
             )}
             <Text style={[s.msgTime, { color: isOwn ? 'rgba(255,255,255,0.65)' : C.subtext }]}>
-              {formatTime(item.createdAt)}
+              {formatTime(item.createdAt, locale)}
             </Text>
           </View>
         </View>
@@ -335,7 +339,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           ListEmptyComponent={
             <View style={s.emptyChat}>
               <Ionicons name="chatbubble-outline" size={48} color={C.subtext} />
-              <Text style={[s.emptyChatText, { color: C.subtext }]}>Chưa có tin nhắn. Hãy bắt đầu trò chuyện!</Text>
+              <Text style={[s.emptyChatText, { color: C.subtext }]}>{t('chat_empty')}</Text>
             </View>
           }
         />
@@ -345,7 +349,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           <View style={[s.inputWrap, { backgroundColor: C.input, borderColor: C.inputBorder }]}>
             <TextInput
               style={[s.input, { color: C.text }]}
-              placeholder="Nhập tin nhắn..."
+              placeholder={t('chat_placeholder')}
               placeholderTextColor={C.subtext}
               value={draft}
               onChangeText={setDraft}

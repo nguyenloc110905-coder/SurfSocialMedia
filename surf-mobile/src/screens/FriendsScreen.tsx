@@ -22,6 +22,7 @@ import {
   type FriendPerson,
   type FriendRequestItem,
 } from '@/stores/friendStore';
+import { useT } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -72,11 +73,6 @@ function initials(name: string): string {
   return (name.trim() || '?').charAt(0).toUpperCase();
 }
 
-function mutualText(count?: number): string {
-  if (!count) return 'Xem hồ sơ';
-  return `${count} bạn chung`;
-}
-
 function Avatar({ name, url, size = 52 }: { name: string; url?: string | null; size?: number }) {
   if (url) {
     return <Image source={{ uri: url }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
@@ -91,6 +87,7 @@ function Avatar({ name, url, size = 52 }: { name: string; url?: string | null; s
 
 export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = true, showTitleBlock = true }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const listRef = useRef<FlatList<any>>(null);
   const [activeTab, setActiveTab] = useState<MainTab>('requests');
@@ -139,16 +136,16 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
         : suggestionsLoading;
 
   const showActionError = (fallback: string) => (e: unknown) => {
-    Alert.alert('Không thể thực hiện', (e as Error).message || fallback);
+    Alert.alert(t('unable_action'), (e as Error).message || fallback);
   };
 
   const confirmRemoveFriend = (friend: FriendPerson) => {
-    Alert.alert('Hủy kết bạn', `Bạn muốn hủy kết bạn với ${friend.name}?`, [
-      { text: 'Đóng', style: 'cancel' },
+    Alert.alert(t('unfriend'), t('unfriend_confirm', { name: friend.name }), [
+      { text: t('close_modal'), style: 'cancel' },
       {
-        text: 'Hủy kết bạn',
+        text: t('unfriend'),
         style: 'destructive',
-        onPress: () => removeFriend(friend.id).catch(showActionError('Không thể hủy kết bạn')),
+        onPress: () => removeFriend(friend.id).catch(showActionError(t('unfriend'))),
       },
     ]);
   };
@@ -166,7 +163,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
         <Avatar name={item.name} url={item.avatarUrl} />
         <View style={s.rowBody}>
           <Text style={[s.name, { color: C.text }]} numberOfLines={1}>{item.name}</Text>
-          <Text style={[s.meta, { color: C.subtext }]}>{mutualText(item.mutualCount)}</Text>
+          <Text style={[s.meta, { color: C.subtext }]}>{item.mutualCount ? t('mutual_friends', { count: item.mutualCount }) : t('view_profile')}</Text>
         </View>
         <TouchableOpacity
           style={[s.iconBtn, { backgroundColor: C.card2 }]}
@@ -198,34 +195,34 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
         <View style={s.requestBody}>
           <Text style={[s.name, { color: C.text }]} numberOfLines={1}>{item.name}</Text>
           <Text style={[s.meta, { color: C.subtext }]}>
-            {requestTab === 'incoming' ? 'Đã gửi lời mời kết bạn' : 'Đang chờ phản hồi'}
+            {requestTab === 'incoming' ? t('friend_request_sent') : t('waiting_response')}
           </Text>
           {requestTab === 'incoming' ? (
             <View style={s.actions}>
               <TouchableOpacity
                 style={[s.primaryBtn, { backgroundColor: C.accent }]}
-                onPress={() => acceptRequest(item.id).catch(showActionError('Không thể chấp nhận lời mời'))}
+                onPress={() => acceptRequest(item.id).catch(showActionError(t('unable_action')))}
                 disabled={busy}
               >
                 {busy ? <ActivityIndicator size={14} color="#fff" /> : <Ionicons name="checkmark" size={16} color="#fff" />}
-                <Text style={s.primaryText}>Chấp nhận</Text>
+                <Text style={s.primaryText}>{t('accept')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.outlineBtn, { borderColor: C.border }]}
-                onPress={() => rejectRequest(item.id).catch(showActionError('Không thể từ chối lời mời'))}
+                onPress={() => rejectRequest(item.id).catch(showActionError(t('unable_action')))}
                 disabled={busy}
               >
-                <Text style={[s.outlineText, { color: C.text }]}>Từ chối</Text>
+                <Text style={[s.outlineText, { color: C.text }]}>{t('decline')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity
               style={[s.outlineBtn, s.singleAction, { borderColor: C.border }]}
-              onPress={() => cancelRequest(item.id).catch(showActionError('Không thể thu hồi lời mời'))}
+              onPress={() => cancelRequest(item.id).catch(showActionError(t('unable_action')))}
               disabled={busy}
             >
               {busy ? <ActivityIndicator size={14} color={C.text} /> : <Ionicons name="close-circle-outline" size={16} color={C.text} />}
-              <Text style={[s.outlineText, { color: C.text }]}>Thu hồi</Text>
+              <Text style={[s.outlineText, { color: C.text }]}>{t('revoke')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -244,15 +241,15 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
         <Avatar name={item.name} url={item.avatarUrl} />
         <View style={s.rowBody}>
           <Text style={[s.name, { color: C.text }]} numberOfLines={1}>{item.name}</Text>
-          <Text style={[s.meta, { color: C.subtext }]}>{mutualText(item.mutualCount)}</Text>
+          <Text style={[s.meta, { color: C.subtext }]}>{item.mutualCount ? t('mutual_friends', { count: item.mutualCount }) : t('view_profile')}</Text>
         </View>
         <TouchableOpacity
           style={[s.addBtn, { backgroundColor: C.accent }]}
-          onPress={() => sendRequest(item).catch(showActionError('Không thể gửi lời mời'))}
+          onPress={() => sendRequest(item).catch(showActionError(t('unable_action')))}
           disabled={busy}
         >
           {busy ? <ActivityIndicator size={14} color="#fff" /> : <Ionicons name="person-add-outline" size={16} color="#fff" />}
-          <Text style={s.primaryText}>Thêm</Text>
+          <Text style={s.primaryText}>{t('add')}</Text>
         </TouchableOpacity>
       </TouchableOpacity>
     );
@@ -261,9 +258,9 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
   const renderHeader = () => (
     <View>
       {showTitleBlock && <View style={s.titleBlock}>
-        <Text style={[s.headerTitle, { color: C.text }]}>Bạn bè</Text>
+        <Text style={[s.headerTitle, { color: C.text }]}>{t('friends_title')}</Text>
         <Text style={[s.headerSub, { color: C.subtext }]}>
-          Quản lý danh sách, lời mời và gợi ý kết bạn
+          {t('friends_subtitle')}
         </Text>
       </View>}
 
@@ -276,7 +273,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           C={C}
           active={activeTab === 'requests'}
           icon="person-add-outline"
-          label="Lời mời"
+          label={t('friend_requests')}
           count={incomingRequests.length}
           onPress={() => setActiveTab('requests')}
         />
@@ -284,7 +281,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           C={C}
           active={activeTab === 'suggestions'}
           icon="sparkles-outline"
-          label="Gợi ý"
+          label={t('suggestions')}
           count={suggestions.length}
           onPress={() => setActiveTab('suggestions')}
         />
@@ -292,7 +289,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           C={C}
           active={activeTab === 'friends'}
           icon="people-outline"
-          label="Bạn bè của bạn"
+          label={t('your_friends')}
           count={friends.length}
           onPress={() => setActiveTab('friends')}
         />
@@ -303,7 +300,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           <Ionicons name="search" size={17} color={C.subtext} />
           <TextInput
             style={[s.searchInput, { color: C.text }]}
-            placeholder="Tìm bạn bè..."
+            placeholder={t('search_friends')}
             placeholderTextColor={C.subtext}
             value={query}
             onChangeText={setQuery}
@@ -319,20 +316,20 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
       <View style={s.sectionHeader}>
         <Text style={[s.sectionTitle, { color: C.text }]}>
           {activeTab === 'friends'
-            ? `Bạn bè của bạn ${friends.length ? `(${friends.length})` : ''}`
+            ? `${t('your_friends')} ${friends.length ? `(${friends.length})` : ''}`
             : activeTab === 'requests'
-              ? `Lời mời kết bạn ${incomingRequests.length ? incomingRequests.length : ''}`
-              : `Gợi ý kết bạn ${suggestions.length ? `(${suggestions.length})` : ''}`}
+              ? `${t('friend_requests')} ${incomingRequests.length ? incomingRequests.length : ''}`
+              : `${t('suggestions')} ${suggestions.length ? `(${suggestions.length})` : ''}`}
         </Text>
         {activeTab === 'friends' && query.trim() ? (
-          <Text style={[s.sectionMeta, { color: C.subtext }]}>{filteredFriends.length} kết quả</Text>
+          <Text style={[s.sectionMeta, { color: C.subtext }]}>{t('results_count', { count: filteredFriends.length })}</Text>
         ) : null}
       </View>
 
       {activeTab === 'requests' ? (
         <View style={s.requestTabs}>
-          <RequestFilter C={C} active={requestTab === 'incoming'} label={`Đã nhận (${incomingRequests.length})`} onPress={() => setRequestTab('incoming')} />
-          <RequestFilter C={C} active={requestTab === 'outgoing'} label={`Đã gửi (${outgoingRequests.length})`} onPress={() => setRequestTab('outgoing')} />
+          <RequestFilter C={C} active={requestTab === 'incoming'} label={t('incoming_requests', { count: incomingRequests.length })} onPress={() => setRequestTab('incoming')} />
+          <RequestFilter C={C} active={requestTab === 'outgoing'} label={t('outgoing_requests', { count: outgoingRequests.length })} onPress={() => setRequestTab('outgoing')} />
         </View>
       ) : null}
 
@@ -447,6 +444,7 @@ function SkeletonRow({ C }: { C: typeof DARK }) {
 }
 
 function EmptyState({ C, activeTab, requestTab, query }: { C: typeof DARK; activeTab: MainTab; requestTab: RequestTab; query: string }) {
+  const t = useT();
   const icon =
     activeTab === 'friends'
       ? 'people-outline'
@@ -455,16 +453,16 @@ function EmptyState({ C, activeTab, requestTab, query }: { C: typeof DARK; activ
         : 'sparkles-outline';
   const title =
     activeTab === 'friends'
-      ? query.trim() ? 'Không tìm thấy bạn bè' : 'Chưa có bạn bè'
+      ? query.trim() ? t('friends_not_found') : t('friends_empty')
       : activeTab === 'requests'
-        ? requestTab === 'incoming' ? 'Không có lời mời mới' : 'Chưa gửi lời mời nào'
-        : 'Chưa có gợi ý phù hợp';
+        ? requestTab === 'incoming' ? t('requests_empty_incoming') : t('requests_empty_outgoing')
+        : t('suggestions_empty');
   const body =
     activeTab === 'friends'
-      ? 'Danh sách bạn bè sẽ xuất hiện tại đây và có thể kéo để làm mới.'
+      ? t('friends_empty_body')
       : activeTab === 'requests'
-        ? 'Lời mời đã nhận và đã gửi sẽ được cập nhật tại đây.'
-        : 'Khi hệ thống tìm thấy người phù hợp, bạn có thể gửi lời mời ngay.';
+        ? t('requests_empty_body')
+        : t('suggestions_empty_body');
 
   return (
     <View style={s.empty}>

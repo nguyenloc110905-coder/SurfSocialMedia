@@ -23,6 +23,7 @@ import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { api } from '@/lib/api';
+import { useT, type I18nKey } from '@/lib/i18n';
 import PostCard from '@/components/PostCard';
 import type { FeedPost } from '@/stores/feedStore';
 
@@ -81,9 +82,14 @@ const LIGHT = {
 const { width: SW } = Dimensions.get('window');
 const COVER_H = Math.max(165, Math.min(225, SW * 0.46));
 const AVATAR_SIZE = 84;
-const TABS = ['Tất cả', 'Ảnh', 'Reels'] as const;
+type ProfileTab = 'all' | 'photos' | 'reels';
+const TABS: Array<{ key: ProfileTab; labelKey: I18nKey }> = [
+  { key: 'all', labelKey: 'profile_tab_all' },
+  { key: 'photos', labelKey: 'profile_tab_photos' },
+  { key: 'reels', labelKey: 'profile_tab_reels' },
+];
 
-function formatJoined(raw: unknown): string {
+function formatJoined(raw: unknown, t: ReturnType<typeof useT>): string {
   if (!raw) return '';
   let ms = 0;
   if (typeof raw === 'number') ms = raw > 10_000_000_000 ? raw : raw * 1000;
@@ -95,14 +101,18 @@ function formatJoined(raw: unknown): string {
   }
   if (!ms) return '';
   const d = new Date(ms);
-  return `Tham gia tháng ${d.getMonth() + 1}, ${d.getFullYear()}`;
+  return t('joined_month_year', { month: d.getMonth() + 1, year: d.getFullYear() });
 }
 
-function formatDateText(raw?: string | null) {
+function formatDateText(raw: string | null | undefined, t: ReturnType<typeof useT>) {
   if (!raw) return '';
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  return `${date.getDate()} tháng ${date.getMonth() + 1}, ${date.getFullYear()}`;
+  return t('date_day_month_year', {
+    day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear(),
+  });
 }
 
 function isVideoUrl(url: string) {
@@ -128,6 +138,7 @@ export default function ProfileScreen({
   safeTop = true,
   showBackButton = true,
 }: Props) {
+  const t = useT();
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const insets = useSafeAreaInsets();
@@ -144,7 +155,7 @@ export default function ProfileScreen({
   const [postsLoading, setPostsLoading] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<typeof TABS[number]>('Tất cả');
+  const [activeTab, setActiveTab] = useState<ProfileTab>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [friendStatus, setFriendStatus] = useState<'loading' | 'friends' | 'request_sent' | 'stranger'>('loading');
   const [actionLoading, setActionLoading] = useState(false);
@@ -233,26 +244,26 @@ export default function ProfileScreen({
   };
 
   const displayName = isOwn
-    ? (profile?.displayName || authUser?.displayName || 'Người dùng')
-    : (profile?.displayName || 'Người dùng');
+    ? (profile?.displayName || authUser?.displayName || t('user_fallback'))
+    : (profile?.displayName || t('user_fallback'));
   const photoURL = isOwn
     ? (profile?.photoURL || authUser?.photoURL || null)
     : (profile?.photoURL || null);
   const coverUrl = profile?.coverImageUrl ?? null;
   const bio = profile?.bio?.trim() || '';
   const initial = displayName.charAt(0).toUpperCase();
-  const joined = formatJoined(profile?.joinedAt);
+  const joined = formatJoined(profile?.joinedAt, t);
   const city = profile?.currentCity || profile?.hometown || '';
-  const birthday = formatDateText(profile?.birthday || profile?.birthDate || null);
+  const birthday = formatDateText(profile?.birthday || profile?.birthDate || null, t);
 
   const imagePosts = useMemo(() => posts.filter((post) => firstMedia(post, 'image')), [posts]);
   const reelPosts = useMemo(() => posts.filter((post) => firstMedia(post, 'video')), [posts]);
   const mutualPreview = friends.slice(0, 3);
 
   function friendBtnLabel() {
-    if (friendStatus === 'friends') return 'Bạn bè';
-    if (friendStatus === 'request_sent') return 'Đã gửi lời mời';
-    return 'Thêm bạn';
+    if (friendStatus === 'friends') return t('friend_status_friends');
+    if (friendStatus === 'request_sent') return t('friend_status_sent');
+    return t('add_friend');
   }
 
   function friendBtnIcon(): keyof typeof Ionicons.glyphMap {
@@ -278,7 +289,7 @@ export default function ProfileScreen({
         setFriendStatus('stranger');
       }
     } catch {
-      Alert.alert('Chưa thể cập nhật', 'Vui lòng thử lại sau.');
+      Alert.alert(t('cannot_update'), t('try_again_later'));
     } finally {
       setActionLoading(false);
     }
@@ -298,7 +309,7 @@ export default function ProfileScreen({
         peerAvatar: photoURL ?? null,
       });
     } catch {
-      Alert.alert('Chưa thể mở tin nhắn', 'Vui lòng thử lại sau.');
+      Alert.alert(t('cannot_open_messages'), t('try_again_later'));
     } finally {
       setChatLoading(false);
     }
@@ -314,7 +325,7 @@ export default function ProfileScreen({
   const openPreview = (url: string | null) => {
     closeMediaSheet();
     if (!url) {
-      Alert.alert('Chưa có ảnh', 'Bạn chưa đặt ảnh cho mục này.');
+      Alert.alert(t('no_photo_title'), t('no_photo_message'));
       return;
     }
     const matchingPost = posts.find((post) => post.mediaUrls?.includes(url));
@@ -403,7 +414,7 @@ export default function ProfileScreen({
           <View style={s.nameBlock}>
             <Text style={[s.displayName, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
             <Text style={[s.statsInline, { color: C.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              <Text style={s.statStrong}>{friends.length}</Text> người bạn · <Text style={s.statStrong}>{posts.length}</Text> bài viết
+              {t('friends_count_posts_count', { friends: friends.length, posts: posts.length })}
             </Text>
           </View>
 
@@ -435,7 +446,7 @@ export default function ProfileScreen({
                   </View>
                 ))}
               </View>
-              <Text style={[s.mutualText, { color: C.text }]}>Bạn bè có điểm chung</Text>
+              <Text style={[s.mutualText, { color: C.text }]}>{t('mutual_friends_common')}</Text>
             </View>
           ) : null}
 
@@ -444,12 +455,12 @@ export default function ProfileScreen({
               <>
                 <TouchableOpacity style={[s.storyButton, { backgroundColor: C.accent }]} onPress={() => navigation.navigate('CreatePost')}>
                   <Ionicons name="add-circle-outline" size={20} color="#fff" />
-                  <Text style={s.storyButtonText} numberOfLines={1} adjustsFontSizeToFit>Thêm vào tin</Text>
+                  <Text style={s.storyButtonText} numberOfLines={1} adjustsFontSizeToFit>{t('add_to_story')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[s.editButton, { backgroundColor: C.muted }]} onPress={() => navigation.navigate('EditProfile')}>
                   <Ionicons name="create" size={18} color={C.text} />
                   <Text style={[s.editButtonText, { color: C.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                    Chỉnh sửa trang cá nhân
+                    {t('edit_profile_title')}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -473,7 +484,7 @@ export default function ProfileScreen({
                 </TouchableOpacity>
                 <TouchableOpacity style={[s.editButton, { backgroundColor: C.muted }]} onPress={handleStartChat} disabled={chatLoading}>
                   {chatLoading ? <ActivityIndicator size="small" color={C.text} /> : <Ionicons name="chatbubble" size={18} color={C.text} />}
-                  <Text style={[s.editButtonText, { color: C.text }]} numberOfLines={1}>Nhắn tin</Text>
+                  <Text style={[s.editButtonText, { color: C.text }]} numberOfLines={1}>{t('message')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -485,8 +496,8 @@ export default function ProfileScreen({
                 <Ionicons name="shield-checkmark" size={20} color={C.text} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[s.lockTitle, { color: C.text }]}>Bạn đã khóa bảo vệ trang cá nhân</Text>
-                <Text style={[s.lockLink, { color: C.accent }]}>Tìm hiểu thêm</Text>
+                <Text style={[s.lockTitle, { color: C.text }]}>{t('profile_locked')}</Text>
+                <Text style={[s.lockLink, { color: C.accent }]}>{t('learn_more')}</Text>
               </View>
             </View>
           ) : null}
@@ -495,11 +506,13 @@ export default function ProfileScreen({
         <View style={[s.tabBar, { backgroundColor: C.card, borderBottomColor: C.border }]}>
           {TABS.map((tab) => (
             <TouchableOpacity
-              key={tab}
-              style={[s.tabChip, activeTab === tab && { backgroundColor: C.accentSoft }]}
-              onPress={() => setActiveTab(tab)}
+              key={tab.key}
+              style={[s.tabChip, activeTab === tab.key && { backgroundColor: C.accentSoft }]}
+              onPress={() => setActiveTab(tab.key)}
             >
-              <Text style={[s.tabText, { color: activeTab === tab ? C.accent : C.subtext }]}>{tab}</Text>
+              <Text style={[s.tabText, { color: activeTab === tab.key ? C.accent : C.subtext }]}>
+                {t(tab.labelKey)}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -520,13 +533,13 @@ export default function ProfileScreen({
                   <View style={[s.sheetIcon, { backgroundColor: C.muted }]}>
                     <Ionicons name="person-circle-outline" size={27} color={C.text} />
                   </View>
-                  <Text style={[s.sheetText, { color: C.text }]}>Xem ảnh đại diện</Text>
+                  <Text style={[s.sheetText, { color: C.text }]}>{t('view_avatar')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.sheetRow} onPress={() => openPhotoPicker('avatarUpload')}>
                   <View style={[s.sheetIcon, { backgroundColor: C.muted }]}>
                     <Ionicons name="image-outline" size={25} color={C.text} />
                   </View>
-                  <Text style={[s.sheetText, { color: C.text }]}>Chọn ảnh đại diện</Text>
+                  <Text style={[s.sheetText, { color: C.text }]}>{t('choose_avatar')}</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -535,19 +548,19 @@ export default function ProfileScreen({
                   <View style={[s.sheetIcon, { backgroundColor: C.muted }]}>
                     <Ionicons name="image-outline" size={25} color={C.text} />
                   </View>
-                  <Text style={[s.sheetText, { color: C.text }]}>Xem ảnh bìa</Text>
+                  <Text style={[s.sheetText, { color: C.text }]}>{t('view_cover')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.sheetRow} onPress={() => openPhotoPicker('coverUpload')}>
                   <View style={[s.sheetIcon, { backgroundColor: C.muted }]}>
                     <Ionicons name="push-outline" size={25} color={C.text} />
                   </View>
-                  <Text style={[s.sheetText, { color: C.text }]}>Tải ảnh lên</Text>
+                  <Text style={[s.sheetText, { color: C.text }]}>{t('upload_photo')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.sheetRow} onPress={() => openPhotoPicker('coverPosted')}>
                   <View style={[s.sheetIcon, { backgroundColor: C.muted }]}>
                     <Ionicons name="images-outline" size={25} color={C.text} />
                   </View>
-                  <Text style={[s.sheetText, { color: C.text }]}>Chọn ảnh bìa</Text>
+                  <Text style={[s.sheetText, { color: C.text }]}>{t('choose_cover')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -581,7 +594,7 @@ export default function ProfileScreen({
       profile?.relationship ? { icon: 'heart-outline' as const, text: profile.relationship } : null,
       ...(profile?.work ?? []).map((item) => ({
         icon: 'briefcase-outline' as const,
-        text: item.title ? `${item.title} tại ${item.company}` : item.company,
+        text: item.title ? t('work_at_company', { title: item.title, company: item.company }) : item.company,
       })),
       ...(profile?.education ?? []).map((item) => ({
         icon: 'school-outline' as const,
@@ -593,7 +606,7 @@ export default function ProfileScreen({
     return (
       <View style={[s.section, { backgroundColor: C.card }]}>
         <View style={s.sectionHeader}>
-          <Text style={[s.sectionTitle, { color: C.text }]}>Thông tin cá nhân</Text>
+          <Text style={[s.sectionTitle, { color: C.text }]}>{t('about')}</Text>
           {isOwn && (
             <TouchableOpacity onPress={() => navigation.navigate('EditProfile')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="create-outline" size={22} color={C.subtext} />
@@ -601,7 +614,7 @@ export default function ProfileScreen({
           )}
         </View>
         {details.length === 0 ? (
-          <Text style={[s.emptyText, { color: C.subtext }]}>Chưa có thông tin cá nhân.</Text>
+          <Text style={[s.emptyText, { color: C.subtext }]}>{t('no_about')}</Text>
         ) : (
           details.map((item, index) => (
             <View key={`${item.icon}-${index}`} style={s.aboutRow}>
@@ -617,17 +630,17 @@ export default function ProfileScreen({
   const renderFriendsSection = () => (
     <View style={[s.section, { backgroundColor: C.card }]}>
       <View style={s.sectionHeader}>
-        <Text style={[s.sectionTitle, { color: C.text }]}>Bạn bè</Text>
+        <Text style={[s.sectionTitle, { color: C.text }]}>{t('friends_title')}</Text>
         {friends.length > 6 ? (
           <TouchableOpacity>
-            <Text style={[s.seeAllText, { color: C.accent }]}>Xem tất cả</Text>
+            <Text style={[s.seeAllText, { color: C.accent }]}>{t('see_all')}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
       {friendsLoading ? (
         <ActivityIndicator color={C.accent} style={{ paddingVertical: 24 }} />
       ) : friends.length === 0 ? (
-        <Text style={[s.emptyText, { color: C.subtext }]}>Chưa có bạn bè.</Text>
+        <Text style={[s.emptyText, { color: C.subtext }]}>{t('no_friends')}</Text>
       ) : (
         <View style={s.friendsWrap}>
           {friends.slice(0, 6).map((friend) => (
@@ -643,7 +656,7 @@ export default function ProfileScreen({
                   <Text style={s.friendInitial}>{(friend.displayName ?? '?').charAt(0).toUpperCase()}</Text>
                 </View>
               )}
-              <Text style={[s.friendName, { color: C.text }]} numberOfLines={2}>{friend.displayName ?? 'Người dùng'}</Text>
+              <Text style={[s.friendName, { color: C.text }]} numberOfLines={2}>{friend.displayName ?? t('user_fallback')}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -664,7 +677,7 @@ export default function ProfileScreen({
         <View style={s.emptyBlock}>
           <Ionicons name={kind === 'image' ? 'images-outline' : 'film-outline'} size={38} color={C.subtext} />
           <Text style={[s.emptyText, { color: C.subtext }]}>
-            {kind === 'image' ? 'Chưa có ảnh nào.' : 'Chưa có reels nào.'}
+            {kind === 'image' ? t('no_photos') : t('no_reels')}
           </Text>
         </View>
       );
@@ -711,7 +724,7 @@ export default function ProfileScreen({
       return (
         <View style={s.emptyBlock}>
           <Ionicons name="newspaper-outline" size={38} color={C.subtext} />
-          <Text style={[s.emptyText, { color: C.subtext }]}>Chưa có bài viết nào.</Text>
+          <Text style={[s.emptyText, { color: C.subtext }]}>{t('no_posts')}</Text>
         </View>
       );
     }
@@ -721,19 +734,19 @@ export default function ProfileScreen({
   };
 
   const renderTabContent = () => {
-    if (activeTab === 'Ảnh') return renderMediaGrid(imagePosts, 'image');
-    if (activeTab === 'Reels') return renderMediaGrid(reelPosts, 'video');
+    if (activeTab === 'photos') return renderMediaGrid(imagePosts, 'image');
+    if (activeTab === 'reels') return renderMediaGrid(reelPosts, 'video');
 
     return (
       <>
         {renderAboutSection()}
         {renderFriendsSection()}
         <View style={[s.postSectionHeader, { backgroundColor: C.card, borderTopColor: C.border }]}>
-          <Text style={[s.sectionTitle, { color: C.text }]}>Bài viết</Text>
+          <Text style={[s.sectionTitle, { color: C.text }]}>{t('posts')}</Text>
           {isOwn && (
             <TouchableOpacity style={[s.createPostPill, { backgroundColor: C.chip }]} onPress={() => navigation.navigate('CreatePost')}>
               <Ionicons name="add" size={16} color={C.text} />
-              <Text style={[s.createPostText, { color: C.text }]}>Tạo bài viết</Text>
+              <Text style={[s.createPostText, { color: C.text }]}>{t('create_post')}</Text>
             </TouchableOpacity>
           )}
         </View>

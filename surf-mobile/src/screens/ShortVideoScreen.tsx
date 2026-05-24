@@ -28,6 +28,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useClipStore } from '@/stores/clipStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useT } from '@/lib/i18n';
 
 type ShortVideo = {
   _source?: 'clip' | 'post';
@@ -76,10 +77,11 @@ function optimizeCloudinaryVideo(url: string, reduceDataUsage = false) {
   return url.replace('/video/upload/', `/video/upload/${transform}/`);
 }
 
-function cloudinaryVideoThumbnail(url: string) {
+function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false) {
   if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return null;
+  const transform = reduceDataUsage ? 'w_480,q_auto:eco,f_jpg,so_0' : 'w_720,q_auto,f_jpg,so_0';
   return url
-    .replace('/video/upload/', '/image/upload/w_720,q_auto,f_jpg,so_0/')
+    .replace('/video/upload/', `/image/upload/${transform}/`)
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
@@ -122,6 +124,7 @@ function VideoItem({
   autoPlay: boolean;
   reduceDataUsage: boolean;
 }) {
+  const t = useT();
   const videosMuted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const muted = videosMuted || item.editOptions?.mutedOriginal === true;
@@ -146,7 +149,7 @@ function VideoItem({
   const longPressRef = useRef(false);
   const pressDurationRef = useRef(0);
   const heartScale = useRef(new Animated.Value(0)).current;
-  const thumbnail = item.thumbnailUrl || cloudinaryVideoThumbnail(item.videoUrl);
+  const thumbnail = item.thumbnailUrl || cloudinaryVideoThumbnail(item.videoUrl, reduceDataUsage);
   const contentFit = item.editOptions?.contentFit === 'cover' ? 'cover' : 'contain';
   const landscapeVideoHeight = Math.min(height, screenDim.width * 9 / 16);
   const fullScreenHintTop = Math.min(
@@ -462,7 +465,7 @@ function VideoItem({
 
       {showTitle && (
         <View style={s.topBar}>
-          <Text style={s.topTitle}>Short Video</Text>
+          <Text style={s.topTitle}>{t('short_video_title')}</Text>
         </View>
       )}
 
@@ -473,7 +476,7 @@ function VideoItem({
           activeOpacity={0.82}
         >
           <FullscreenRotateIcon />
-          <Text style={s.fullScreenHintText}>Toàn màn hình</Text>
+          <Text style={s.fullScreenHintText}>{t('full_screen')}</Text>
         </TouchableOpacity>
       )}
 
@@ -483,7 +486,7 @@ function VideoItem({
           onPress={toggleOrientation}
           activeOpacity={0.82}
           accessibilityRole="button"
-          accessibilityLabel="Quay lại màn hình dọc"
+          accessibilityLabel={t('portrait_back')}
         >
           <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
@@ -491,7 +494,7 @@ function VideoItem({
 
       {!landscape && (
         <View style={s.meta}>
-          <Text style={s.author} numberOfLines={1}>@{item.authorDisplayName || 'Anonymous'}</Text>
+          <Text style={s.author} numberOfLines={1}>@{item.authorDisplayName || t('anonymous')}</Text>
           {!!caption && <Text style={s.caption} numberOfLines={3}>{caption}</Text>}
         </View>
       )}
@@ -573,7 +576,10 @@ export default function ShortVideoScreen({
   onFullscreenChange,
 }: ShortVideoScreenProps) {
   const user = useAuthStore((state) => state.user);
+  const t = useT();
   const clipRefreshSignal = useClipStore((state) => state.refreshSignal);
+  const autoplayClips = useSettingsStore((state) => state.prefs.autoplayClips);
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const listRef = useRef<FlatList<ShortVideo>>(null);
   const [items, setItems] = useState<ShortVideo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -655,7 +661,7 @@ export default function ShortVideoScreen({
     if (!isActive) return;
     const active = items[activeIndex];
     const next = items[activeIndex + 1];
-    const nextThumb = next?.thumbnailUrl || (next?.videoUrl ? cloudinaryVideoThumbnail(next.videoUrl) : null);
+    const nextThumb = next?.thumbnailUrl || (next?.videoUrl ? cloudinaryVideoThumbnail(next.videoUrl, reduceDataUsage) : null);
     if (nextThumb) Image.prefetch(nextThumb).catch(() => {});
 
     if (!active || active._source === 'post') return;
@@ -663,7 +669,7 @@ export default function ShortVideoScreen({
     if (viewedRef.current.has(key)) return;
     viewedRef.current.add(key);
     api.post(`/api/videos/${active.id}/view`, {}).catch(() => {});
-  }, [activeIndex, isActive, items]);
+  }, [activeIndex, isActive, items, reduceDataUsage]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((token) => token.isViewable && typeof token.index === 'number');
@@ -710,7 +716,7 @@ export default function ShortVideoScreen({
 
   const openComments = async (item: ShortVideo) => {
     if (item.allowComments === false) {
-      Alert.alert('Bình luận', 'Tác giả đã tắt bình luận cho clip này.');
+      Alert.alert(t('comments'), t('comments_disabled'));
       return;
     }
     setCommentTarget(item);
@@ -721,7 +727,7 @@ export default function ShortVideoScreen({
       const res = await api.get<{ comments: CommentItem[] }>(`/api/comments/${item.id}`);
       setComments(res.comments ?? []);
     } catch (err) {
-      Alert.alert('Bình luận', (err as Error).message || 'Không thể tải bình luận.');
+      Alert.alert(t('comments'), (err as Error).message || t('comments_load_error'));
     } finally {
       setCommentsLoading(false);
     }
@@ -747,7 +753,7 @@ export default function ShortVideoScreen({
         target ? { ...target, commentCount: (target.commentCount ?? 0) + 1 } : target
       );
     } catch (err) {
-      Alert.alert('Bình luận', (err as Error).message || 'Không thể gửi bình luận.');
+      Alert.alert(t('comments'), (err as Error).message || t('comments_send_error'));
     } finally {
       setCommentSending(false);
     }
@@ -757,6 +763,7 @@ export default function ShortVideoScreen({
     const liked = !!user?.uid && (item.likedBy ?? []).includes(user.uid);
     return (
       <VideoItem
+        key={`${item._source}:${item.id}:${reduceDataUsage}`}
         item={item}
         active={isActive && index === activeIndex}
         height={height}
@@ -764,10 +771,12 @@ export default function ShortVideoScreen({
         onLike={() => like(item)}
         onComment={() => openComments(item)}
         showTitle={showTitle}
+        autoPlay={autoplayClips}
+        reduceDataUsage={reduceDataUsage}
         onLandscapeModeChange={setLandscapeLocked}
       />
     );
-  }, [activeIndex, height, isActive, showTitle, user?.uid, items]);
+  }, [activeIndex, autoplayClips, height, isActive, reduceDataUsage, showTitle, user?.uid, items]);
 
   const getItemLayout = useCallback((_: unknown, index: number) => ({
     length: height,
@@ -780,7 +789,7 @@ export default function ShortVideoScreen({
       {loading ? <ActivityIndicator size="large" color="#0ea5e9" /> : (
         <>
           <Ionicons name="videocam-outline" size={52} color="#64748b" />
-          <Text style={s.emptyText}>Chưa có video đề xuất</Text>
+          <Text style={s.emptyText}>{t('feed_empty_title')}</Text>
         </>
       )}
     </View>
@@ -793,7 +802,7 @@ export default function ShortVideoScreen({
         data={items}
         keyExtractor={(item) => `${item._source}:${item.id}`}
         renderItem={renderItem}
-        extraData={`${isActive}:${activeIndex}:${height}:${showTitle}:${landscapeLocked}:${user?.uid ?? ''}`}
+        extraData={`${isActive}:${activeIndex}:${height}:${showTitle}:${landscapeLocked}:${autoplayClips}:${reduceDataUsage}:${user?.uid ?? ''}`}
         scrollEnabled={!landscapeLocked}
         pagingEnabled={!landscapeLocked}
         snapToInterval={height}
@@ -827,7 +836,7 @@ export default function ShortVideoScreen({
           <View style={s.commentSheet}>
             <View style={s.sheetHandle} />
             <View style={s.sheetHeader}>
-              <Text style={s.sheetTitle}>Bình luận</Text>
+              <Text style={s.sheetTitle}>{t('comments')}</Text>
               <TouchableOpacity onPress={() => setCommentTarget(null)} style={s.closeBtn}>
                 <Ionicons name="close" size={22} color="#e2e8f0" />
               </TouchableOpacity>
@@ -841,7 +850,7 @@ export default function ShortVideoScreen({
                 data={comments}
                 keyExtractor={(item) => item.id}
                 style={s.commentList}
-                ListEmptyComponent={<Text style={s.noComments}>Chưa có bình luận</Text>}
+                ListEmptyComponent={<Text style={s.noComments}>{t('no_comments')}</Text>}
                 renderItem={({ item }) => (
                   <View style={s.commentRow}>
                     <View style={s.commentAvatar}>
@@ -852,7 +861,7 @@ export default function ShortVideoScreen({
                       )}
                     </View>
                     <View style={s.commentBubble}>
-                      <Text style={s.commentAuthor}>{item.authorDisplayName || 'Anonymous'}</Text>
+                      <Text style={s.commentAuthor}>{item.authorDisplayName || t('anonymous')}</Text>
                       <Text style={s.commentText}>{item.content}</Text>
                     </View>
                   </View>
@@ -863,7 +872,7 @@ export default function ShortVideoScreen({
               <TextInput
                 value={commentInput}
                 onChangeText={setCommentInput}
-                placeholder="Viết bình luận..."
+                placeholder={t('write_comment')}
                 placeholderTextColor="#64748b"
                 style={s.commentInput}
               />

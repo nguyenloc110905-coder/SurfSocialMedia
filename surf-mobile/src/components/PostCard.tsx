@@ -26,8 +26,10 @@ import type { RootStackParamList } from '@/navigation';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/lib/api';
 import { gestureState, setReactionPickerActive } from '@/lib/gestureState';
+import { useT, type I18nKey } from '@/lib/i18n';
 
 export type { FeedPost };
 
@@ -80,7 +82,7 @@ const FEELING_STR: Record<string, string> = {
   happy: '😊', excited: '🎉', sad: '😢', angry: '😠', loved: '❤️', grateful: '🙏',
 };
 
-function timeAgo(raw: Post['createdAt']): string {
+function timeAgo(raw: Post['createdAt'], t: (key: I18nKey, params?: Record<string, string | number>) => string): string {
   let ms = 0;
   if (!raw) return '';
   if (typeof raw === 'number') ms = raw * 1000;
@@ -88,12 +90,12 @@ function timeAgo(raw: Post['createdAt']): string {
   else if ('_seconds' in raw && raw._seconds) ms = raw._seconds * 1000;
   else if ('seconds' in raw && raw.seconds) ms = raw.seconds * 1000;
   const diff = Math.floor((Date.now() - ms) / 1000);
-  if (diff < 60) return 'vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
+  if (diff < 60) return t('post_just_now');
+  if (diff < 3600) return t('post_minutes_ago', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t('post_hours_ago', { count: Math.floor(diff / 3600) });
+  if (diff < 604800) return t('post_days_ago', { count: Math.floor(diff / 86400) });
   const d = new Date(ms);
-  return `${d.getDate()} tháng ${d.getMonth() + 1}`;
+  return t('post_month_day', { day: d.getDate(), month: d.getMonth() + 1 });
 }
 
 function isVideoUrl(url: string): boolean {
@@ -104,15 +106,22 @@ function isVideoUrl(url: string): boolean {
   );
 }
 
-function optimizeCloudinaryVideo(url: string): string {
-  if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return url;
-  return url.replace('/video/upload/', '/video/upload/q_auto:eco,w_720,f_auto/');
+function optimizeCloudinaryImage(url: string, reduceDataUsage = false): string {
+  if (!reduceDataUsage || !url.includes('res.cloudinary.com') || !url.includes('/image/upload/')) return url;
+  return url.replace('/image/upload/', '/image/upload/q_auto:eco,w_720,f_auto/');
 }
 
-function cloudinaryVideoThumbnail(url: string): string | null {
+function optimizeCloudinaryVideo(url: string, reduceDataUsage = false): string {
+  if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return url;
+  const transform = reduceDataUsage ? 'q_auto:eco,w_480,f_auto' : 'q_auto:eco,w_720,f_auto';
+  return url.replace('/video/upload/', `/video/upload/${transform}/`);
+}
+
+function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false): string | null {
   if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return null;
+  const transform = reduceDataUsage ? 'w_480,q_auto:eco,f_jpg,so_0' : 'w_720,q_auto,f_jpg,so_0';
   return url
-    .replace('/video/upload/', '/image/upload/w_720,q_auto,f_jpg,so_0/')
+    .replace('/video/upload/', `/image/upload/${transform}/`)
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
@@ -131,14 +140,16 @@ function privacyIcon(p?: string): keyof typeof Ionicons.glyphMap {
 // ── FeedImage ────────────────────────────────────────────────────────────────
 function FeedImage({ uri, style, resizeMode = 'cover' }: { uri: string; style: object; resizeMode?: 'cover' | 'contain' }) {
   const scheme = useColorScheme();
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const bg = scheme === 'dark' ? '#334155' : '#e2e8f0';
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
   const opacity = useRef(new Animated.Value(0)).current;
   const onLoad = () =>
     Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
   return (
     <View style={[style as object, { backgroundColor: bg, overflow: 'hidden' }]}>
       <Animated.Image
-        source={{ uri }}
+        source={{ uri: sourceUri }}
         style={[StyleSheet.absoluteFill, { opacity }]}
         resizeMode={resizeMode}
         onLoad={onLoad}
@@ -151,6 +162,8 @@ function FeedImage({ uri, style, resizeMode = 'cover' }: { uri: string; style: o
 
 // ── PinchZoomImage — pinch-to-zoom for lightbox images ────────────────────────
 function PinchZoomImage({ uri }: { uri: string }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
   const scale = useRef(new Animated.Value(1)).current;
   const baseScale = useRef(1);
   const initialDist = useRef<number | null>(null);
@@ -202,7 +215,7 @@ function PinchZoomImage({ uri }: { uri: string }) {
       {...pr.panHandlers}
     >
       <Animated.Image
-        source={{ uri }}
+        source={{ uri: sourceUri }}
         style={{ width: SW, height: SH, transform: [{ scale }] }}
         resizeMode="contain"
       />
@@ -213,7 +226,8 @@ function PinchZoomImage({ uri }: { uri: string }) {
 // ── VideoViewerItem ───────────────────────────────────────────────────────────
 function VideoViewerItem({ url, isActive }: { url: string; isActive: boolean }) {
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = muted; });
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
   useEffect(() => {
     player.muted = muted;
   }, [muted, player]);
@@ -332,8 +346,9 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
   const [buffering, setBuffering] = useState(true);
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
-  const thumbnail = cloudinaryVideoThumbnail(url);
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = muted; });
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
 
   useEffect(() => {
     const sub = player.addListener('statusChange', (payload: { status: string }) => {
@@ -384,13 +399,14 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
 // ── MediaGrid ─────────────────────────────────────────────────────────────────
 function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const count = urls.length;
   if (count === 0) return null;
 
   if (count === 1) {
     if (isVideoUrl(urls[0])) {
       return isVisible
-        ? <VideoMediaItem url={urls[0]} isVisible />
+        ? <VideoMediaItem key={`${urls[0]}:${reduceDataUsage}`} url={urls[0]} isVisible />
         : <VideoPlaceholder />;
     }
     return (
@@ -557,6 +573,7 @@ function CommentReactionButton({ liked, reaction, C, onShortPress, onPickReactio
   onShortPress: () => void;
   onPickReaction: (emoji: string) => void;
 }) {
+  const t = useT();
   const [showPicker, setShowPicker] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
   const [hoveredEmoji, setHoveredEmoji] = useState<number | null>(null);
@@ -639,7 +656,7 @@ function CommentReactionButton({ liked, reaction, C, onShortPress, onPickReactio
       <View ref={btnRef} style={cs.cLikeBtn} {...gesture.panHandlers}>
         {liked && reaction
           ? <Text style={cs.cReactionEmoji}>{reaction}</Text>
-          : <Text style={[cs.cLikeText, { color: C.subtext }]}>Thích</Text>
+          : <Text style={[cs.cLikeText, { color: C.subtext }]}>{t('like')}</Text>
         }
       </View>
       <ReactionPickerOverlay visible={showPicker} C={C} anchor={pickerAnchor} hovered={hoveredEmoji} />
@@ -651,6 +668,7 @@ function CommentReactionButton({ liked, reaction, C, onShortPress, onPickReactio
 function CommentSheet({ postId, onClose, onCountChange }: {
   postId: string; onClose: () => void; onCountChange: (n: number) => void;
 }) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
@@ -782,7 +800,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               onPickReaction={(emoji) => handleReactComment(c.id, emoji)}
             />
             <TouchableOpacity style={cs.cLikeBtn} onPress={() => handleReply(isReply ? c.parentId! : c.id, c.authorDisplayName)}>
-              <Text style={[cs.cLikeText, { color: C.subtext }]}>Trả lời</Text>
+              <Text style={[cs.cLikeText, { color: C.subtext }]}>{t('reply')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -816,7 +834,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
         <View {...panResponder.panHandlers} style={cs.handleArea}>
           <View style={[cs.handle, { backgroundColor: C.placeholder }]} />
         </View>
-        <Text style={[cs.title, { color: C.text, borderBottomColor: C.border }]}>Bình luận</Text>
+        <Text style={[cs.title, { color: C.text, borderBottomColor: C.border }]}>{t('comments')}</Text>
         {loading ? (
           <View style={[cs.list, { paddingTop: 12 }]}>
             {[0, 1, 2].map((i) => (
@@ -846,7 +864,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
             {topLevel.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 36 }}>
                 <Ionicons name="chatbubble-outline" size={40} color={C.subtext} />
-                <Text style={{ color: C.subtext, marginTop: 8, fontSize: 14 }}>Chưa có bình luận nào</Text>
+                <Text style={{ color: C.subtext, marginTop: 8, fontSize: 14 }}>{t('no_comments')}</Text>
               </View>
             ) : (
               topLevel.map(c => {
@@ -860,7 +878,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
                         <TouchableOpacity style={cs.toggleRepliesBtn} onPress={() => toggleReplies(c.id)}>
                           <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={12} color={C.accent} />
                           <Text style={[cs.toggleRepliesText, { color: C.accent }]}>
-                            {isExpanded ? 'Ẩn trả lời' : `Xem ${replies.length} trả lời`}
+                            {isExpanded ? t('hide_replies') : t('view_replies', { count: replies.length })}
                           </Text>
                         </TouchableOpacity>
                         {isExpanded && replies.map(r => renderCommentRow(r, true))}
@@ -878,7 +896,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               <View style={[cs.replyChip, { backgroundColor: C.accent + '18', borderTopColor: C.border }]}>
                 <Ionicons name="return-down-forward-outline" size={13} color={C.accent} />
                 <Text style={[cs.replyChipText, { color: C.accent }]} numberOfLines={1}>
-                  Trả lời <Text style={{ fontWeight: '700' }}>@{replyTo.authorDisplayName}</Text>
+                  {t('reply')} <Text style={{ fontWeight: '700' }}>@{replyTo.authorDisplayName}</Text>
                 </Text>
                 <TouchableOpacity onPress={clearReply} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Ionicons name="close" size={14} color={C.accent} />
@@ -896,7 +914,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               <TextInput
                 ref={inputRef}
                 style={[cs.input, { backgroundColor: C.inputBg, color: C.text }]}
-                placeholder="Viết bình luận..."
+                placeholder={t('write_comment')}
                 placeholderTextColor={C.subtext}
                 value={text}
                 onChangeText={setText}
@@ -956,6 +974,7 @@ type Reactor = { uid: string; displayName: string; photoURL: string | null; reac
 function ReactionsSheet({ postId, onClose, C }: {
   postId: string; onClose: () => void; C: typeof DARK;
 }) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const [reactors, setReactors] = useState<Reactor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -996,7 +1015,7 @@ function ReactionsSheet({ postId, onClose, C }: {
         <View {...panResponder.panHandlers} style={rs.handleArea}>
           <View style={[rs.handle, { backgroundColor: C.placeholder }]} />
         </View>
-        <Text style={[rs.title, { color: C.text, borderBottomColor: C.border }]}>Cảm xúc</Text>
+        <Text style={[rs.title, { color: C.text, borderBottomColor: C.border }]}>{t('reactions')}</Text>
 
         {/* Tabs */}
         {tabs.length > 1 && (
@@ -1008,7 +1027,7 @@ function ReactionsSheet({ postId, onClose, C }: {
                 onPress={() => setActiveTab(tab)}
               >
                 <Text style={[rs.tabText, { color: activeTab === tab ? C.accent : C.subtext }]}>
-                  {tab === 'all' ? `Tất cả ${reactors.length}` : `${tab} ${reactors.filter(r => r.reaction === tab).length}`}
+                  {tab === 'all' ? `${t('all')} ${reactors.length}` : `${tab} ${reactors.filter(r => r.reaction === tab).length}`}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1039,7 +1058,7 @@ function ReactionsSheet({ postId, onClose, C }: {
             )}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-                <Text style={{ color: C.subtext, fontSize: 14 }}>Chưa có cảm xúc nào</Text>
+                <Text style={{ color: C.subtext, fontSize: 14 }}>{t('no_reactions')}</Text>
               </View>
             }
           />
@@ -1067,8 +1086,9 @@ const rs = StyleSheet.create({
 // ── EmbedVideoItem ─────────────────────────────────────────────────────────
 function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean }) {
   const [buffering, setBuffering] = useState(true);
-  const thumbnail = cloudinaryVideoThumbnail(url);
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url), (p) => { p.loop = true; p.muted = false; });
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = false; });
   useEffect(() => {
     const sub = player.addListener('statusChange', (e: { status: string }) => setBuffering(e.status === 'idle' || e.status === 'loading'));
     return () => { try { player.pause(); } catch {} sub.remove(); };
@@ -1089,9 +1109,11 @@ const ev = StyleSheet.create({
 
 // ── SharedPostEmbed ─────────────────────────────────────────────────────────
 function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sharedFrom']>; C: typeof LIGHT; isVisible?: boolean }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const text = parseMentions(sf.content ?? '');
   const firstMedia = sf.mediaUrls?.find(u => u && !isVideoUrl(u));
-  const hasVideo = sf.mediaUrls?.some(u => u && isVideoUrl(u));
+  const firstVideo = sf.mediaUrls?.find(u => u && isVideoUrl(u));
+  const hasVideo = !!firstVideo;
   return (
     <View style={[se.wrap, { borderColor: C.border, borderLeftColor: C.accent }]}>
       <View style={[se.inner, { backgroundColor: C.card2 }]}>
@@ -1105,8 +1127,8 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
           <Text style={[se.author, { color: C.text }]} numberOfLines={1}>{sf.authorDisplayName}</Text>
         </View>
         {text ? <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text> : null}
-        {hasVideo && !firstMedia && <EmbedVideoItem url={sf.mediaUrls.find(u => u && isVideoUrl(u))!} isVisible={isVisible} />}
-        {firstMedia && <Image source={{ uri: firstMedia }} style={se.media} resizeMode="cover" />}
+        {hasVideo && !firstMedia && <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible={isVisible} />}
+        {firstMedia && <FeedImage uri={firstMedia} style={se.media} resizeMode="cover" />}
       </View>
     </View>
   );
@@ -1126,6 +1148,7 @@ const se = StyleSheet.create({
 
 // ── SharePostModal ────────────────────────────────────────────────────────────
 function SharePostModal({ post, C, onClose }: { post: Post; C: typeof LIGHT; onClose: () => void }) {
+  const t = useT();
   const [caption, setCaption] = useState('');
   const [sharing, setSharing] = useState(false);
   const addPost = useFeedStore((s) => s.addPost);
@@ -1160,7 +1183,7 @@ function SharePostModal({ post, C, onClose }: { post: Post; C: typeof LIGHT; onC
       </TouchableOpacity>
       <View style={[sm.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 12 }]}>
         <View style={[sm.header, { borderBottomColor: C.border }]}>
-          <Text style={[sm.title, { color: C.text }]}>Chia sẻ lên feed</Text>
+          <Text style={[sm.title, { color: C.text }]}>{t('share')}</Text>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="close" size={22} color={C.subtext} />
           </TouchableOpacity>
@@ -1168,7 +1191,7 @@ function SharePostModal({ post, C, onClose }: { post: Post; C: typeof LIGHT; onC
         <SharedPostEmbed sf={originalSf} C={C} isVisible={false} />
         <TextInput
           style={[sm.input, { backgroundColor: C.inputBg, color: C.text }]}
-          placeholder="Thêm ghi chú (tùy chọn)…"
+          placeholder={t('feed_composer_placeholder')}
           placeholderTextColor={C.placeholder}
           value={caption}
           onChangeText={setCaption}
@@ -1182,7 +1205,7 @@ function SharePostModal({ post, C, onClose }: { post: Post; C: typeof LIGHT; onC
         >
           {sharing
             ? <ActivityIndicator size="small" color="#fff" />
-            : <Text style={sm.submitText}>Đăng lên feed</Text>}
+            : <Text style={sm.submitText}>{t('create_post')}</Text>}
         </TouchableOpacity>
       </View>
     </Modal>
@@ -1204,6 +1227,7 @@ const sm = StyleSheet.create({
 // ── PostCard ──────────────────────────────────────────────────────────────────
 export default function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
   const uid = user?.uid;
@@ -1364,7 +1388,7 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
       {post._discover && (
         <View style={[s.discoverBadge, { backgroundColor: C.accent + '22', borderColor: C.accent }]}>
           <Ionicons name="compass-outline" size={11} color={C.accent} />
-          <Text style={[s.discoverText, { color: C.accent }]}>Khám phá</Text>
+          <Text style={[s.discoverText, { color: C.accent }]}>{t('post_discover')}</Text>
         </View>
       )}
 
@@ -1383,25 +1407,25 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
             <Text style={[s.authorName, { color: C.text }]} numberOfLines={2}>
               {post.authorDisplayName}
               {feelingStr
-                ? <Text style={{ fontWeight: '400', fontSize: 13, color: C.subtext }}>{' '}đang cảm thấy {feelingStr}</Text>
+                ? <Text style={{ fontWeight: '400', fontSize: 13, color: C.subtext }}>{' '}{t('post_feeling')} {feelingStr}</Text>
                 : null}
               {post.taggedFriends?.length
                 ? <Text style={{ fontWeight: '400', fontSize: 13, color: C.subtext }}>
-                    {' '}cùng với{' '}
+                    {' '}{t('post_with')}{' '}
                     <Text style={{ color: C.accent }}>{post.taggedFriends[0].displayName}</Text>
-                    {post.taggedFriends.length > 1 ? ` và ${post.taggedFriends.length - 1} người khác` : ''}
+                    {post.taggedFriends.length > 1 ? ` ${t('and_others', { count: post.taggedFriends.length - 1 })}` : ''}
                   </Text>
                 : null}
             </Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-            <Text style={[s.metaText, { color: C.subtext }]}>{timeAgo(post.createdAt)}</Text>
+            <Text style={[s.metaText, { color: C.subtext }]}>{timeAgo(post.createdAt, t)}</Text>
             {post.location
               ? <><Text style={[s.metaText, { color: C.subtext }]}>·</Text>
                   <Ionicons name="location-outline" size={11} color={C.subtext} />
                   <Text style={[s.metaText, { color: C.subtext }]} numberOfLines={1}>{post.location}</Text></>
               : null}
-            {post.isEdited && <Text style={[s.metaText, { color: C.subtext }]}>· đã chỉnh sửa</Text>}
+            {post.isEdited && <Text style={[s.metaText, { color: C.subtext }]}>· {t('post_edited')}</Text>}
             <Ionicons name={privacyIcon(post.privacy)} size={11} color={C.subtext} />
           </View>
         </View>
@@ -1416,7 +1440,7 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
           <Text style={[s.contentText, { color: C.text }]}>{displayText}</Text>
           {long && (
             <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
-              <Text style={[s.seeMore, { color: C.accent }]}>{expanded ? ' Thu gọn' : ' Xem thêm'}</Text>
+              <Text style={[s.seeMore, { color: C.accent }]}>{expanded ? t('post_see_less') : t('post_see_more')}</Text>
             </TouchableOpacity>
           )}
         </View>

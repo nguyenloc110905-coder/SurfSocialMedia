@@ -21,6 +21,7 @@ import { gestureState } from '@/lib/gestureState';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useFriendStore } from '@/stores/friendStore';
 import Sidebar from '@/components/Sidebar';
+import { useT, type I18nKey } from '@/lib/i18n';
 
 import HomeScreen from './HomeScreen';
 import FeedScreen from './FeedScreen';
@@ -58,32 +59,33 @@ type TabDef = {
   key: Tab;
   icon: keyof typeof Ionicons.glyphMap;
   iconActive: keyof typeof Ionicons.glyphMap;
-  label: string;
+  labelKey: I18nKey;
 };
 
 const TABS: TabDef[] = [
-  { key: 'feed', icon: 'home-outline', iconActive: 'home', label: 'Feed' },
-  { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', label: 'Surf Clips' },
-  { key: 'friends', icon: 'people-outline', iconActive: 'people', label: 'Bạn bè' },
-  { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', label: 'Chợ' },
-  { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', label: 'Thông báo' },
-  { key: 'profile', icon: 'person-circle-outline', iconActive: 'person-circle', label: 'Trang cá nhân' },
+  { key: 'feed', icon: 'home-outline', iconActive: 'home', labelKey: 'nav_feed' },
+  { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', labelKey: 'nav_surf_clips' },
+  { key: 'friends', icon: 'people-outline', iconActive: 'people', labelKey: 'nav_friends' },
+  { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', labelKey: 'nav_market' },
+  { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', labelKey: 'nav_notifications' },
+  { key: 'profile', icon: 'person-circle-outline', iconActive: 'person-circle', labelKey: 'nav_profile' },
 ];
 
 const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'marketplace', 'notifications', 'profile'];
 const TOP_TAB_COUNT = TABS.length;
 const TAB_PRESS_TRANSITION_MS = 240;
 
-const TAB_TITLES: Record<Exclude<Tab, 'home' | 'feed'>, string> = {
-  video: 'Surf Clips',
-  friends: 'Bạn bè',
-  marketplace: 'Chợ',
-  notifications: 'Thông báo',
-  profile: 'Trang cá nhân',
+const TAB_TITLE_KEYS: Record<Exclude<Tab, 'home' | 'feed'>, I18nKey> = {
+  video: 'nav_surf_clips',
+  friends: 'nav_friends',
+  marketplace: 'nav_market',
+  notifications: 'nav_notifications',
+  profile: 'nav_profile',
 };
 
 export default function MainTabsScreen({ navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const isFocused = useIsFocused();
   const { width } = useWindowDimensions();
@@ -127,7 +129,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const isFeedSurface = visualActive === 'home' || visualActive === 'feed';
   const isClipsSurface = visualActive === 'video';
   const hideClipsChrome = isClipsSurface && clipsFullscreen;
-  const compactTitle = visualActive !== 'home' && visualActive !== 'feed' ? TAB_TITLES[visualActive] : '';
+  const compactTitle = visualActive !== 'home' && visualActive !== 'feed' ? t(TAB_TITLE_KEYS[visualActive]) : '';
   const activeTopTabIndex = TABS.findIndex((tab) => tab.key === visualActive);
   const indicatorWidth = tabBarWidth > 0 ? tabBarWidth / TOP_TAB_COUNT : 0;
 
@@ -459,7 +461,7 @@ export default function MainTabsScreen({ navigation }: Props) {
             onPress={() => handleTab(tab.key)}
             activeOpacity={0.7}
             accessibilityRole="tab"
-            accessibilityLabel={tab.label}
+            accessibilityLabel={t(tab.labelKey)}
             >
               <Ionicons
                 name={isActive ? tab.iconActive : tab.icon}
@@ -523,7 +525,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const clipsOverlay = (
     <View style={s.clipsOverlay} pointerEvents="box-none">
       <View style={s.floatingClipsHeader} pointerEvents="box-none">
-        <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel="Mở menu">
+        <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel={t('open_menu')}>
           <Ionicons name="menu-outline" size={26} color="#fff" style={s.floatingIconShadow} />
         </TouchableOpacity>
         <Text style={[s.floatingClipsTitle, s.floatingTextShadow]} numberOfLines={1}>Surf Clips</Text>
@@ -531,14 +533,14 @@ export default function MainTabsScreen({ navigation }: Props) {
           hitSlop={HIT}
           onPress={() => navigation.navigate('CreateClip')}
           accessibilityRole="button"
-          accessibilityLabel="Đăng Surf Clip mới"
+          accessibilityLabel={t('create_clip')}
         >
           <Ionicons name="camera-outline" size={26} color="#fff" style={s.floatingIconShadow} />
         </TouchableOpacity>
         <TouchableOpacity
           hitSlop={HIT}
           accessibilityRole="button"
-          accessibilityLabel="Tìm kiếm trong Surf Clips"
+          accessibilityLabel={t('search_clips')}
           onPress={() => navigation.navigate('Search')}
         >
           <Ionicons name="search-outline" size={26} color="#fff" style={s.floatingIconShadow} />
@@ -548,18 +550,18 @@ export default function MainTabsScreen({ navigation }: Props) {
   );
 
   const renderCompactHeader = (tab: Exclude<Tab, 'home' | 'feed' | 'video'>) => {
-    const title = TAB_TITLES[tab];
+    const title = t(TAB_TITLE_KEYS[tab]);
 
     return (
       <View style={[s.compactHeader, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
-        <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel="Má»Ÿ menu">
+        <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel={t('open_menu')}>
           <Ionicons name="menu-outline" size={24} color={C.text} />
         </TouchableOpacity>
         <Text style={[s.compactTitle, { color: C.text }]} numberOfLines={1}>{title}</Text>
         <TouchableOpacity
           hitSlop={HIT}
           accessibilityRole="button"
-          accessibilityLabel={`Tìm kiếm trong ${title}`}
+          accessibilityLabel={t('search_in', { value: title })}
           onPress={() => navigation.navigate('Search')}
         >
           <Ionicons name="search-outline" size={24} color={C.text} />
@@ -581,7 +583,7 @@ export default function MainTabsScreen({ navigation }: Props) {
               onPress={handleHome}
               activeOpacity={0.75}
               accessibilityRole="button"
-              accessibilityLabel="Về trang chủ"
+              accessibilityLabel={t('back_home')}
               style={[s.headerBrand, visualActive === 'home' && { borderBottomColor: C.accent }]}
             >
               <Text style={[s.headerTitle, { color: visualActive === 'home' ? C.accent : C.text }]}>Surf</Text>
@@ -591,11 +593,11 @@ export default function MainTabsScreen({ navigation }: Props) {
                 hitSlop={HIT}
                 onPress={() => navigation.navigate('CreatePost')}
                 accessibilityRole="button"
-                accessibilityLabel="Tạo bài viết"
+                accessibilityLabel={t('create_post')}
               >
                 <Ionicons name="add-circle-outline" size={28} color={C.text} />
               </TouchableOpacity>
-              <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel="Tìm kiếm" onPress={() => navigation.navigate('Search')}>
+              <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel={t('search')} onPress={() => navigation.navigate('Search')}>
                 <Ionicons name="search-outline" size={26} color={C.text} />
               </TouchableOpacity>
             </View>
@@ -607,14 +609,14 @@ export default function MainTabsScreen({ navigation }: Props) {
           {isClipsSurface ? renderTopTabs(true) : renderTopTabs()}
           {false && !isClipsSurface && (
             <View style={[s.compactHeader, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
-              <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel="Mở menu">
+              <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel={t('open_menu')}>
                 <Ionicons name="menu-outline" size={24} color={C.text} />
               </TouchableOpacity>
               <Text style={[s.compactTitle, { color: C.text }]} numberOfLines={1}>{compactTitle}</Text>
               <TouchableOpacity
                 hitSlop={HIT}
                 accessibilityRole="button"
-                accessibilityLabel={`Tìm kiếm trong ${compactTitle}`}
+                accessibilityLabel={t('search_in', { value: compactTitle })}
               >
                 <Ionicons name="search-outline" size={24} color={C.text} />
               </TouchableOpacity>

@@ -21,6 +21,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
 import { auth, reauthenticate } from '@/lib/firebase/auth';
+import { useT, type I18nKey } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import {
   type LanguageCode,
@@ -100,18 +101,18 @@ const LIGHT = {
 
 const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
 
-const POST_PRIVACY_LABELS: Record<UserProfile['defaultPostPrivacy'], string> = {
-  public: 'Công khai',
-  friends: 'Bạn bè',
-  'only-me': 'Chỉ mình tôi',
-  custom: 'Tùy chỉnh',
+const POST_PRIVACY_LABEL_KEYS: Record<UserProfile['defaultPostPrivacy'], I18nKey> = {
+  public: 'privacy_public',
+  friends: 'privacy_friends',
+  'only-me': 'privacy_only_me',
+  custom: 'privacy_custom',
 };
 
-const POST_PRIVACY_DESCRIPTIONS: Record<UserProfile['defaultPostPrivacy'], string> = {
-  public: 'Mọi người có thể xem bài viết mới của bạn.',
-  friends: 'Chỉ bạn bè nhìn thấy bài viết mới.',
-  'only-me': 'Chỉ bạn xem được bài viết mới.',
-  custom: 'Tự chọn theo từng nhóm người xem.',
+const POST_PRIVACY_DESCRIPTION_KEYS: Record<UserProfile['defaultPostPrivacy'], I18nKey> = {
+  public: 'privacy_public_desc',
+  friends: 'privacy_friends_desc',
+  'only-me': 'privacy_only_me_desc',
+  custom: 'privacy_custom_desc',
 };
 
 const POST_PRIVACY_ICONS: Record<UserProfile['defaultPostPrivacy'], keyof typeof Ionicons.glyphMap> = {
@@ -121,77 +122,66 @@ const POST_PRIVACY_ICONS: Record<UserProfile['defaultPostPrivacy'], keyof typeof
   custom: 'options-outline',
 };
 
-const FRIEND_REQUEST_LABELS: Record<UserProfile['friendRequestPrivacy'], string> = {
-  everyone: 'Mọi người',
-  friends_of_friends: 'Bạn của bạn bè',
+const FRIEND_REQUEST_LABEL_KEYS: Record<UserProfile['friendRequestPrivacy'], I18nKey> = {
+  everyone: 'friend_request_everyone',
+  friends_of_friends: 'friend_request_friends_of_friends',
 };
 
 const NOTIFICATION_ITEMS: Array<{
   key: NotificationType;
-  title: string;
-  desc: string;
+  titleKey: I18nKey;
+  descKey: I18nKey;
   icon: keyof typeof Ionicons.glyphMap;
 }> = [
   {
     key: 'friend_request',
-    title: 'Lời mời kết bạn',
-    desc: 'Có người gửi lời mời mới.',
+    titleKey: 'notif_friend_request',
+    descKey: 'notif_friend_request_desc',
     icon: 'person-add-outline',
   },
   {
     key: 'friend_accept',
-    title: 'Chấp nhận kết bạn',
-    desc: 'Lời mời của bạn được chấp nhận.',
+    titleKey: 'notif_friend_accept',
+    descKey: 'notif_friend_accept_desc',
     icon: 'checkmark-circle-outline',
   },
   {
     key: 'post_reaction',
-    title: 'Cảm xúc',
-    desc: 'Bài viết hoặc bình luận được thả cảm xúc.',
+    titleKey: 'notif_reaction',
+    descKey: 'notif_reaction_desc',
     icon: 'heart-outline',
   },
   {
     key: 'comment',
-    title: 'Bình luận',
-    desc: 'Có bình luận hoặc trả lời mới.',
+    titleKey: 'notif_comment',
+    descKey: 'notif_comment_desc',
     icon: 'chatbubble-ellipses-outline',
   },
   {
     key: 'mention',
-    title: 'Nhắc tên',
-    desc: 'Bạn được nhắc trong nội dung trên Surf.',
+    titleKey: 'notif_mention',
+    descKey: 'notif_mention_desc',
     icon: 'at-outline',
   },
   {
     key: 'share',
-    title: 'Chia sẻ',
-    desc: 'Nội dung của bạn được chia sẻ.',
+    titleKey: 'notif_share',
+    descKey: 'notif_share_desc',
     icon: 'arrow-redo-outline',
   },
   {
     key: 'missed_call',
-    title: 'Cuộc gọi nhỡ',
-    desc: 'Bạn bỏ lỡ cuộc gọi hoặc phòng trò chuyện.',
+    titleKey: 'notif_missed_call',
+    descKey: 'notif_missed_call_desc',
     icon: 'call-outline',
   },
   {
     key: 'system',
-    title: 'Hệ thống',
-    desc: 'Cập nhật quan trọng từ Surf.',
+    titleKey: 'notif_system',
+    descKey: 'notif_system_desc',
     icon: 'information-circle-outline',
   },
 ];
-
-const THEME_LABELS: Record<ThemeMode, string> = {
-  system: 'Theo hệ thống',
-  light: 'Sáng',
-  dark: 'Tối',
-};
-
-const LANGUAGE_LABELS: Record<LanguageCode, string> = {
-  vi: 'Tiếng Việt',
-  en: 'English',
-};
 
 function maskEmail(email: string) {
   const [local, domain] = email.split('@');
@@ -200,6 +190,7 @@ function maskEmail(email: string) {
 }
 
 export default function SettingsScreen({ navigation }: Props) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const { profile, loading, fetchProfile, updateProfile } = useUserStore();
@@ -240,7 +231,7 @@ export default function SettingsScreen({ navigation }: Props) {
       const data = await api.get<{ blocked: BlockedUser[] }>('/api/users/me/blocked');
       setBlockedUsers(data.blocked ?? []);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Không tải được danh sách chặn.';
+      const message = err instanceof Error ? err.message : t('block_list_desc');
       setDetailError(message);
     } finally {
       setDetailLoading(false);
@@ -254,7 +245,7 @@ export default function SettingsScreen({ navigation }: Props) {
       const data = await api.get<{ reports: UserReport[] }>('/api/users/me/reports');
       setReports(data.reports ?? []);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Không tải được báo cáo.';
+      const message = err instanceof Error ? err.message : t('violation_reports_desc');
       setDetailError(message);
     } finally {
       setDetailLoading(false);
@@ -280,7 +271,7 @@ export default function SettingsScreen({ navigation }: Props) {
       await updateProfile(data);
     } catch (err) {
       console.warn('Failed to update settings:', err);
-      Alert.alert('Không thể lưu', 'Vui lòng kiểm tra kết nối và thử lại.');
+      Alert.alert(t('cannot_save'), t('check_connection_retry'));
     } finally {
       setSaving(false);
     }
@@ -298,10 +289,10 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleLogout = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất khỏi Surf?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('logout'), t('logout_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Đăng xuất',
+        text: t('logout'),
         style: 'destructive',
         onPress: () => void resetAuth(),
       },
@@ -314,8 +305,8 @@ export default function SettingsScreen({ navigation }: Props) {
       await api.delete(`/api/users/${targetUid}/block`);
       setBlockedUsers((items) => items.filter((item) => item.id !== targetUid));
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Không thể bỏ chặn người dùng này.';
-      Alert.alert('Bỏ chặn thất bại', message);
+      const message = err instanceof Error ? err.message : t('unable_action');
+      Alert.alert(t('unable_action'), message);
     } finally {
       setProcessingId(null);
     }
@@ -344,7 +335,7 @@ export default function SettingsScreen({ navigation }: Props) {
         <Header C={C} navigation={navigation} saving={false} />
         <View style={s.center}>
           <ActivityIndicator size="large" color={C.accent} />
-          <Text style={[s.loadingText, { color: C.subtext }]}>Đang tải cài đặt...</Text>
+          <Text style={[s.loadingText, { color: C.subtext }]}>{t('settings_loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -371,131 +362,137 @@ export default function SettingsScreen({ navigation }: Props) {
           <QuickCard
             C={C}
             icon="lock-closed-outline"
-            title="Rà soát riêng tư"
-            desc="Kiểm tra nhanh"
+            title={t('privacy_review')}
+            desc={t('quick_check')}
             onPress={() => setDetail('privacy-checkup')}
           />
           <QuickCard
             C={C}
             icon="shield-checkmark-outline"
-            title="Bảo mật"
-            desc="Tài khoản"
+            title={t('security')}
+            desc={t('account')}
             onPress={() => setDetail('account-security')}
           />
           <QuickCard
             C={C}
             icon="notifications-outline"
-            title="Thông báo"
-            desc="Tùy chỉnh"
+            title={t('notifications_title')}
+            desc={t('customize')}
             onPress={scrollToNotifications}
           />
         </View>
 
-        <Section title="Tài khoản" C={C}>
+        <Section title={t('account')} C={C}>
           <SettingsRow
             C={C}
             icon="person-circle-outline"
-            title="Hồ sơ cá nhân"
-            desc="Ảnh đại diện, tiểu sử và thông tin hiển thị"
+            title={t('profile_personal')}
+            desc={t('profile_personal_desc')}
             onPress={() => navigation.navigate('EditProfile')}
           />
           <SettingsRow
             C={C}
             icon="shield-checkmark-outline"
-            title="Bảo mật tài khoản"
-            desc="Mật khẩu, email và xác thực đăng nhập"
+            title={t('account_security')}
+            desc={t('account_security_desc')}
             onPress={() => setDetail('account-security')}
           />
           <SettingsRow
             C={C}
             icon="phone-portrait-outline"
-            title="Phiên đăng nhập"
-            desc="Thiết bị này đang hoạt động"
+            title={t('active_sessions')}
+            desc={t('active_sessions_desc')}
             onPress={() => setDetail('active-sessions')}
           />
         </Section>
 
-        <Section title="Quyền riêng tư & bảo vệ" C={C}>
+        <Section title={t('privacy_protection')} C={C}>
           <SettingsRow
             C={C}
             icon="eye-outline"
-            title="Đối tượng xem mặc định"
-            desc={profile ? POST_PRIVACY_LABELS[profile.defaultPostPrivacy] : 'Chưa tải'}
+            title={t('default_audience')}
+            desc={profile ? t(POST_PRIVACY_LABEL_KEYS[profile.defaultPostPrivacy]) : t('not_loaded')}
             onPress={() => setSelectedPrivacy(true)}
           />
           <SettingsRow
             C={C}
             icon="person-add-outline"
-            title="Lời mời kết bạn"
-            desc={profile ? FRIEND_REQUEST_LABELS[profile.friendRequestPrivacy] : 'Chưa tải'}
+            title={t('friend_requests_title')}
+            desc={profile ? t(FRIEND_REQUEST_LABEL_KEYS[profile.friendRequestPrivacy]) : t('not_loaded')}
             onPress={() => setSelectedFriendRequests(true)}
           />
           <SettingsRow
             C={C}
             icon="ban-outline"
-            title="Danh sách chặn"
-            desc="Quản lý người bạn không muốn tương tác"
+            title={t('block_list')}
+            desc={t('block_list_desc')}
             onPress={() => setDetail('block-list')}
           />
         </Section>
 
-        <Section title="Giao diện & trải nghiệm mobile" C={C}>
+        <Section title={t('appearance_mobile')} C={C}>
           <SettingsRow
             C={C}
             icon="language-outline"
-            title={prefs.language === 'en' ? 'Language' : 'Ngôn ngữ'}
-            desc={LANGUAGE_LABELS[prefs.language]}
+            title={t('language')}
+            desc={prefs.language === 'vi' ? t('lang_vi') : t('lang_en')}
             onPress={() => setSelectedLanguage(true)}
           />
           <SettingsRow
             C={C}
             icon={prefs.themeMode === 'dark' ? 'moon-outline' : 'color-palette-outline'}
-            title="Giao diện"
-            desc={THEME_LABELS[prefs.themeMode]}
+            title={t('theme')}
+            desc={
+              prefs.themeMode === 'system'
+                ? t('theme_system')
+                : prefs.themeMode === 'dark'
+                ? t('theme_dark')
+                : t('theme_light')
+            }
             onPress={() => setSelectedTheme(true)}
           />
           <SettingsSwitchRow
             C={C}
             icon="moon-outline"
-            title="Dark Mode"
-            desc="Bật nhanh giao diện tối trên toàn app"
+            title={t('dark_mode')}
+            desc={t('dark_mode_desc')}
             value={prefs.themeMode === 'dark'}
             onValueChange={(value) => updateLocalPref('themeMode', value ? 'dark' : 'light')}
           />
           <SettingsSwitchRow
             C={C}
             icon="cloud-offline-outline"
-            title={prefs.language === 'en' ? 'Feed cache' : 'Cache feed'}
-            desc={prefs.language === 'en' ? 'Show recent feed when the network is unavailable' : 'Hiển thị feed gần đây khi mất kết nối'}
+            title={t('feed_cache')}
+            desc={t('feed_cache_desc')}
             value={prefs.feedCache}
             onValueChange={(value) => updateLocalPref('feedCache', value)}
           />
           <SettingsSwitchRow
             C={C}
             icon="play-circle-outline"
-            title={prefs.language === 'en' ? 'Autoplay Surf Clips' : 'Tự phát Surf Clips'}
-            desc={prefs.language === 'en' ? 'Play the visible clip automatically' : 'Tự phát clip đang hiển thị'}
+            title={t('autoplay_clips')}
+            desc={t('autoplay_clips_desc')}
             value={prefs.autoplayClips}
             onValueChange={(value) => updateLocalPref('autoplayClips', value)}
           />
           <SettingsSwitchRow
             C={C}
             icon="cellular-outline"
-            title={prefs.language === 'en' ? 'Data saver' : 'Tiết kiệm dữ liệu'}
-            desc={prefs.language === 'en' ? 'Use lighter images and videos where possible' : 'Ưu tiên ảnh và video nhẹ hơn khi có thể'}
+            title={t('data_saver')}
+            desc={t('data_saver_desc')}
             value={prefs.reduceDataUsage}
             onValueChange={(value) => updateLocalPref('reduceDataUsage', value)}
           />
         </Section>
 
-        <Section title="Thông báo & nhắc nhở" C={C} onLayout={handleNotificationsLayout}>
+        <Section title={t('notifications_reminders')} C={C} onLayout={handleNotificationsLayout}>
           {NOTIFICATION_ITEMS.map((item) => (
             <SettingsSwitchRow
               key={item.key}
               C={C}
               icon={item.icon}
-              title={item.title}
-              desc={item.desc}
+              title={t(item.titleKey)}
+              desc={t(item.descKey)}
               value={profile?.notificationPrefs?.[item.key] ?? true}
               disabled={!profile || saving}
               onValueChange={(value) => handleToggleNotification(item.key, value)}
@@ -503,26 +500,26 @@ export default function SettingsScreen({ navigation }: Props) {
           ))}
         </Section>
 
-        <Section title="Hỗ trợ & chính sách" C={C}>
+        <Section title={t('support_policy')} C={C}>
           <SettingsRow
             C={C}
             icon="flag-outline"
-            title="Báo cáo vi phạm"
-            desc="Gửi phản hồi an toàn cho đội ngũ Surf"
+            title={t('violation_reports')}
+            desc={t('violation_reports_desc')}
             onPress={() => setDetail('reports')}
           />
           <SettingsRow
             C={C}
             icon="document-text-outline"
-            title="Chính sách cộng đồng"
-            desc="Điều khoản, quyền riêng tư và tiêu chuẩn nội dung"
+            title={t('community_policy')}
+            desc={t('community_policy_desc')}
             onPress={() => setDetail('policy')}
           />
           <SettingsRow
             C={C}
             icon="trash-outline"
-            title="Xóa tài khoản"
-            desc="Vùng nguy hiểm, cần xác nhận thêm"
+            title={t('delete_account')}
+            desc={t('delete_account_desc')}
             danger
             onPress={() => setDetail('delete-account')}
           />
@@ -534,20 +531,20 @@ export default function SettingsScreen({ navigation }: Props) {
           onPress={handleLogout}
         >
           <Ionicons name="log-out-outline" size={20} color={C.danger} />
-          <Text style={[s.logoutText, { color: C.danger }]}>Đăng xuất</Text>
+          <Text style={[s.logoutText, { color: C.danger }]}>{t('logout')}</Text>
         </TouchableOpacity>
       </ScrollView>
 
       <ChoiceModal<UserProfile['defaultPostPrivacy']>
         C={C}
         visible={selectedPrivacy}
-        title="Đối tượng xem mặc định"
-        subtitle="Áp dụng cho bài viết mới của bạn."
+        title={t('default_audience')}
+        subtitle={t('default_audience_subtitle')}
         value={profile?.defaultPostPrivacy ?? 'friends'}
-        options={(Object.keys(POST_PRIVACY_LABELS) as UserProfile['defaultPostPrivacy'][]).map((value) => ({
+        options={(Object.keys(POST_PRIVACY_LABEL_KEYS) as UserProfile['defaultPostPrivacy'][]).map((value) => ({
           value,
-          label: POST_PRIVACY_LABELS[value],
-          desc: POST_PRIVACY_DESCRIPTIONS[value],
+          label: t(POST_PRIVACY_LABEL_KEYS[value]),
+          desc: t(POST_PRIVACY_DESCRIPTION_KEYS[value]),
           icon: POST_PRIVACY_ICONS[value],
         }))}
         onClose={() => setSelectedPrivacy(false)}
@@ -560,20 +557,20 @@ export default function SettingsScreen({ navigation }: Props) {
       <ChoiceModal<UserProfile['friendRequestPrivacy']>
         C={C}
         visible={selectedFriendRequests}
-        title="Ai có thể gửi lời mời?"
-        subtitle="Giảm lời mời lạ nếu bạn muốn trải nghiệm riêng tư hơn."
+        title={t('who_can_send_requests')}
+        subtitle={t('friend_requests_subtitle')}
         value={profile?.friendRequestPrivacy ?? 'everyone'}
         options={[
           {
             value: 'everyone',
-            label: 'Mọi người',
-            desc: 'Bất kỳ người dùng Surf nào cũng có thể gửi lời mời.',
+            label: t('friend_request_everyone'),
+            desc: t('friend_request_everyone_desc'),
             icon: 'people-outline',
           },
           {
             value: 'friends_of_friends',
-            label: 'Bạn của bạn bè',
-            desc: 'Chỉ người có bạn chung mới có thể gửi lời mời.',
+            label: t('friend_request_friends_of_friends'),
+            desc: t('friend_request_friends_of_friends_desc'),
             icon: 'git-network-outline',
           },
         ]}
@@ -584,56 +581,23 @@ export default function SettingsScreen({ navigation }: Props) {
         }}
       />
 
-      <ChoiceModal<ThemeMode>
-        C={C}
-        visible={selectedTheme}
-        title="Giao diện"
-        subtitle="Thiết lập này được lưu trên thiết bị hiện tại."
-        value={prefs.themeMode}
-        options={[
-          {
-            value: 'system',
-            label: 'Theo hệ thống',
-            desc: 'Surf tự đổi sáng/tối theo điện thoại.',
-            icon: 'phone-portrait-outline',
-          },
-          {
-            value: 'light',
-            label: 'Sáng',
-            desc: 'Nền sáng, dễ đọc ngoài trời.',
-            icon: 'sunny-outline',
-          },
-          {
-            value: 'dark',
-            label: 'Tối',
-            desc: 'Dịu mắt khi dùng vào ban đêm.',
-            icon: 'moon-outline',
-          },
-        ]}
-        onClose={() => setSelectedTheme(false)}
-        onSelect={(value) => {
-          setSelectedTheme(false);
-          updateLocalPref('themeMode', value);
-        }}
-      />
-
       <ChoiceModal<LanguageCode>
         C={C}
         visible={selectedLanguage}
-        title={prefs.language === 'en' ? 'Language' : 'Ngôn ngữ'}
-        subtitle={prefs.language === 'en' ? 'Applies to the mobile settings experience.' : 'Áp dụng cho trải nghiệm cài đặt trên mobile.'}
+        title={t('language')}
+        subtitle={t('language_desc')}
         value={prefs.language}
         options={[
           {
             value: 'vi',
-            label: 'Tiếng Việt',
-            desc: 'Hiển thị cài đặt bằng tiếng Việt.',
+            label: t('lang_vi'),
+            desc: t('lang_vi_desc'),
             icon: 'language-outline',
           },
           {
             value: 'en',
-            label: 'English',
-            desc: 'Show settings in English.',
+            label: t('lang_en'),
+            desc: t('lang_en_desc'),
             icon: 'language-outline',
           },
         ]}
@@ -641,6 +605,39 @@ export default function SettingsScreen({ navigation }: Props) {
         onSelect={(value) => {
           setSelectedLanguage(false);
           updateLocalPref('language', value);
+        }}
+      />
+
+      <ChoiceModal<ThemeMode>
+        C={C}
+        visible={selectedTheme}
+        title={t('theme')}
+        subtitle={t('setting_saved_on_device')}
+        value={prefs.themeMode}
+        options={[
+          {
+            value: 'system',
+            label: t('theme_system'),
+            desc: t('theme_system_desc'),
+            icon: 'phone-portrait-outline',
+          },
+          {
+            value: 'light',
+            label: t('theme_light'),
+            desc: t('theme_light_desc'),
+            icon: 'sunny-outline',
+          },
+          {
+            value: 'dark',
+            label: t('theme_dark'),
+            desc: t('theme_dark_desc'),
+            icon: 'moon-outline',
+          },
+        ]}
+        onClose={() => setSelectedTheme(false)}
+        onSelect={(value) => {
+          setSelectedTheme(false);
+          updateLocalPref('themeMode', value);
         }}
       />
 
@@ -687,14 +684,15 @@ function Header({
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
   saving: boolean;
 }) {
+  const t = useT();
   return (
     <View style={[s.header, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
       <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={HIT} accessibilityRole="button">
         <Ionicons name="arrow-back" size={24} color={C.text} />
       </TouchableOpacity>
       <View style={s.headerCopy}>
-        <Text style={[s.headerTitle, { color: C.text }]}>Cài đặt</Text>
-        <Text style={[s.headerSub, { color: C.subtext }]}>Mobile settings</Text>
+        <Text style={[s.headerTitle, { color: C.text }]}>{t('settings_title')}</Text>
+        <Text style={[s.headerSub, { color: C.subtext }]}>{t('settings_subtitle')}</Text>
       </View>
       <View style={s.headerStatus}>
         {saving ? (
@@ -718,6 +716,7 @@ function ProfileCard({
   profile: UserProfile | null;
   onEdit: () => void;
 }) {
+  const t = useT();
   return (
     <View style={[s.profileCard, { backgroundColor: C.surface, borderColor: C.border }]}>
       {profile?.photoURL ? (
@@ -729,10 +728,10 @@ function ProfileCard({
       )}
       <View style={s.profileCopy}>
         <Text style={[s.profileName, { color: C.text }]} numberOfLines={1}>
-          {profile?.displayName || 'Người dùng Surf'}
+          {profile?.displayName || t('user_surf_fallback')}
         </Text>
         <Text style={[s.profileEmail, { color: C.subtext }]} numberOfLines={1}>
-          {profile?.email || 'Đang đồng bộ hồ sơ'}
+          {profile?.email || t('profile_syncing')}
         </Text>
       </View>
       <TouchableOpacity
@@ -999,42 +998,43 @@ function DetailSheet({
   onOpenBlockList: () => void;
   onOpenNotifications: () => void;
 }) {
+  const t = useT();
   if (!detail) return null;
 
   const map: Record<DetailKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
     'privacy-checkup': {
-      title: 'Rà soát quyền riêng tư',
-      subtitle: 'Kiểm tra nhanh các quyền riêng tư quan trọng.',
+      title: t('privacy_review_title'),
+      subtitle: t('privacy_review_subtitle'),
       icon: 'lock-closed-outline',
     },
     'account-security': {
-      title: 'Bảo mật tài khoản',
-      subtitle: 'Các hành động nhạy cảm sẽ cần xác thực lại trước khi thay đổi.',
+      title: t('account_security'),
+      subtitle: t('account_security_subtitle'),
       icon: 'shield-checkmark-outline',
     },
     'active-sessions': {
-      title: 'Phiên đăng nhập',
-      subtitle: 'Quản lý thiết bị đang đăng nhập Surf.',
+      title: t('active_sessions'),
+      subtitle: t('active_sessions_subtitle'),
       icon: 'phone-portrait-outline',
     },
     'block-list': {
-      title: 'Danh sách chặn',
-      subtitle: 'Chặn người dùng sẽ ẩn tương tác hai chiều trên Surf.',
+      title: t('block_list'),
+      subtitle: t('block_list_subtitle'),
       icon: 'ban-outline',
     },
     reports: {
-      title: 'Báo cáo vi phạm',
-      subtitle: 'Gửi báo cáo nhanh, ưu tiên các tình huống an toàn cộng đồng.',
+      title: t('violation_reports'),
+      subtitle: t('reports_subtitle'),
       icon: 'flag-outline',
     },
     policy: {
-      title: 'Chính sách cộng đồng',
-      subtitle: 'Các tiêu chuẩn quan trọng khi sử dụng Surf.',
+      title: t('community_policy'),
+      subtitle: t('policy_subtitle'),
       icon: 'document-text-outline',
     },
     'delete-account': {
-      title: 'Xóa tài khoản',
-      subtitle: 'Cần nhập mật khẩu để xác nhận trước khi xóa.',
+      title: t('delete_account'),
+      subtitle: t('delete_account_subtitle'),
       icon: 'trash-outline',
     },
   };
@@ -1075,11 +1075,11 @@ function DetailSheet({
             <AccountSecurityContent C={C} profile={profile} />
           ) : detail === 'active-sessions' ? (
             <>
-              <InfoPill C={C} text="Thiết bị hiện tại đang đăng nhập bằng Firebase Auth và socket realtime của Surf." />
+              <InfoPill C={C} text={t('current_device_session')} />
               <ActionButton
                 C={C}
                 icon="log-out-outline"
-                title="Đăng xuất khỏi thiết bị này"
+                title={t('logout_this_device')}
                 danger
                 onPress={onLogout}
               />
@@ -1088,7 +1088,7 @@ function DetailSheet({
             <>
               <TextField
                 C={C}
-                label="Tìm trong danh sách chặn"
+                label={t('search_block_list')}
                 value={blockedQuery}
                 onChangeText={onBlockedQueryChange}
                 autoCapitalize="none"
@@ -1096,14 +1096,14 @@ function DetailSheet({
               <ActionButton
                 C={C}
                 icon="refresh-outline"
-                title={loading ? 'Đang tải...' : 'Tải lại danh sách chặn'}
+                title={loading ? t('loading') : t('reload_block_list')}
                 disabled={loading}
                 onPress={onRefreshBlocked}
               />
               {loading ? (
                 <InlineLoading C={C} />
               ) : visibleBlockedUsers.length === 0 ? (
-                <InfoPill C={C} text={blockedUsers.length === 0 ? 'Bạn chưa chặn người dùng nào.' : 'Không tìm thấy người dùng phù hợp.'} />
+                <InfoPill C={C} text={blockedUsers.length === 0 ? t('no_blocked_users') : t('no_blocked_match')} />
               ) : (
                 visibleBlockedUsers.map((user) => (
                   <BlockedUserRow
@@ -1121,14 +1121,14 @@ function DetailSheet({
               <ActionButton
                 C={C}
                 icon="refresh-outline"
-                title={loading ? 'Đang tải...' : 'Tải lại báo cáo'}
+                title={loading ? t('loading') : t('reload_reports')}
                 disabled={loading}
                 onPress={onRefreshReports}
               />
               {loading ? (
                 <InlineLoading C={C} />
               ) : reports.length === 0 ? (
-                <InfoPill C={C} text="Bạn chưa gửi báo cáo vi phạm nào." />
+                <InfoPill C={C} text={t('no_reports')} />
               ) : (
                 reports.slice(0, 20).map((report) => (
                   <ReportRow key={report.id} C={C} report={report} />
@@ -1137,16 +1137,16 @@ function DetailSheet({
             </>
           ) : detail === 'policy' ? (
             <>
-              <InfoPill C={C} text="Tôn trọng người khác, không spam, không quấy rối, không chia sẻ nội dung nguy hiểm hoặc vi phạm bản quyền." />
-              <InfoPill C={C} text="Các vi phạm có thể bị hạn chế hiển thị, gỡ nội dung hoặc khóa tài khoản tùy mức độ." />
+              <InfoPill C={C} text={t('policy_rule_1')} />
+              <InfoPill C={C} text={t('policy_rule_2')} />
             </>
           ) : detail === 'privacy-checkup' ? (
             <>
-              <InfoPill C={C} text="Kiểm tra nhanh các thiết lập riêng tư đang có trên Surf mobile." />
-              <ActionButton C={C} icon="eye-outline" title="Đổi đối tượng xem mặc định" onPress={onOpenDefaultAudience} />
-              <ActionButton C={C} icon="person-add-outline" title="Cài đặt lời mời kết bạn" onPress={onOpenFriendRequests} />
-              <ActionButton C={C} icon="ban-outline" title="Xem danh sách chặn" onPress={onOpenBlockList} />
-              <ActionButton C={C} icon="notifications-outline" title="Cài đặt thông báo" onPress={onOpenNotifications} />
+              <InfoPill C={C} text={t('privacy_check_intro')} />
+              <ActionButton C={C} icon="eye-outline" title={t('change_default_audience')} onPress={onOpenDefaultAudience} />
+              <ActionButton C={C} icon="person-add-outline" title={t('configure_friend_requests')} onPress={onOpenFriendRequests} />
+              <ActionButton C={C} icon="ban-outline" title={t('view_block_list')} onPress={onOpenBlockList} />
+              <ActionButton C={C} icon="notifications-outline" title={t('configure_notifications')} onPress={onOpenNotifications} />
             </>
           ) : detail === 'delete-account' ? (
             <DeleteAccountContent C={C} profile={profile} />
@@ -1197,6 +1197,7 @@ function ActionButton({
 }
 
 function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfile | null }) {
+  const t = useT();
   const [mode, setMode] = useState<'menu' | 'password' | 'email'>('menu');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1228,11 +1229,11 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
     setMessage(null);
 
     if (newPassword.length < 6) {
-      setError('Mật khẩu mới phải có ít nhất 6 ký tự.');
+      setError(t('password_min_error'));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp.');
+      setError(t('password_confirm_mismatch'));
       return;
     }
 
@@ -1245,15 +1246,15 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
       });
       setOtp('');
       setOtpPurpose('change-password');
-      setMessage('Mã xác nhận đã được gửi về email hiện tại.');
+      setMessage(t('otp_sent_current_email'));
     } catch (err: any) {
       const code = err?.code as string | undefined;
       setError(
         code === 'auth/wrong-password' || code === 'auth/invalid-credential'
-          ? 'Mật khẩu hiện tại không đúng.'
+          ? t('current_password_wrong')
           : err instanceof Error
             ? err.message
-            : 'Không gửi được mã xác nhận.'
+            : t('otp_send_failed')
       );
     } finally {
       setLoading(false);
@@ -1266,11 +1267,11 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
     const email = newEmail.trim().toLowerCase();
 
     if (!email.includes('@')) {
-      setError('Email mới không hợp lệ.');
+      setError(t('new_email_invalid'));
       return;
     }
     if (email === profile?.email?.toLowerCase()) {
-      setError('Email mới phải khác email hiện tại.');
+      setError(t('new_email_same'));
       return;
     }
 
@@ -1283,9 +1284,9 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
       setPendingEmail(email);
       setOtp('');
       setOtpPurpose('change-email');
-      setMessage('Mã xác nhận đã được gửi về email hiện tại.');
+      setMessage(t('otp_sent_current_email'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không gửi được mã xác nhận.');
+      setError(err instanceof Error ? err.message : t('otp_send_failed'));
     } finally {
       setLoading(false);
     }
@@ -1294,7 +1295,7 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
   const verifyOtp = async () => {
     if (!otpPurpose) return;
     if (otp.trim().length < 6) {
-      setError('Vui lòng nhập đủ 6 chữ số.');
+      setError(t('otp_enter_6_digits'));
       return;
     }
 
@@ -1307,13 +1308,13 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
       });
       if (otpPurpose === 'change-email') {
         await auth.currentUser?.reload();
-        setMessage(`Email đã được cập nhật thành ${maskEmail(pendingEmail)}.`);
+        setMessage(t('email_updated', { email: maskEmail(pendingEmail) }));
       } else {
-        setMessage('Đổi mật khẩu thành công.');
+        setMessage(t('password_changed'));
       }
       resetFlow();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Mã không đúng hoặc đã hết hạn.');
+      setError(err instanceof Error ? err.message : t('otp_invalid_expired'));
     } finally {
       setLoading(false);
     }
@@ -1336,9 +1337,9 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
         });
       }
       setOtp('');
-      setMessage('Đã gửi lại mã xác nhận.');
+      setMessage(t('otp_resent'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gửi lại mã thất bại.');
+      setError(err instanceof Error ? err.message : t('otp_resend_failed'));
     } finally {
       setLoading(false);
     }
@@ -1347,25 +1348,25 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
   if (mode === 'password') {
     return (
       <>
-        <TextField C={C} label="Mật khẩu hiện tại" value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry />
-        <TextField C={C} label="Mật khẩu mới" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
-        <TextField C={C} label="Xác nhận mật khẩu mới" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
+        <TextField C={C} label={t('current_password')} value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry />
+        <TextField C={C} label={t('new_password')} value={newPassword} onChangeText={setNewPassword} secureTextEntry />
+        <TextField C={C} label={t('confirm_new_password')} value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
         {otpPurpose === 'change-password' ? (
-          <TextField C={C} label="Mã xác nhận 6 số" value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={6} />
+          <TextField C={C} label={t('otp_6_digits')} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={6} />
         ) : null}
         {error ? <InfoPill C={C} tone="danger" text={error} /> : null}
         {message ? <InfoPill C={C} text={message} /> : null}
         <ActionButton
           C={C}
           icon={otpPurpose === 'change-password' ? 'checkmark-circle-outline' : 'mail-outline'}
-          title={loading ? 'Đang xử lý...' : otpPurpose === 'change-password' ? 'Xác nhận mã' : 'Gửi mã xác nhận'}
+          title={loading ? t('processing') : otpPurpose === 'change-password' ? t('verify_code') : t('send_verification_code')}
           disabled={loading}
           onPress={otpPurpose === 'change-password' ? verifyOtp : startPasswordOtp}
         />
         {otpPurpose === 'change-password' ? (
-          <ActionButton C={C} icon="refresh-outline" title="Gửi lại mã" disabled={loading} onPress={resendOtp} />
+          <ActionButton C={C} icon="refresh-outline" title={t('resend_code')} disabled={loading} onPress={resendOtp} />
         ) : null}
-        <ActionButton C={C} icon="arrow-back-outline" title="Quay lại" disabled={loading} onPress={resetFlow} />
+        <ActionButton C={C} icon="arrow-back-outline" title={t('back')} disabled={loading} onPress={resetFlow} />
       </>
     );
   }
@@ -1373,49 +1374,50 @@ function AccountSecurityContent({ C, profile }: { C: Palette; profile: UserProfi
   if (mode === 'email') {
     return (
       <>
-        <InfoPill C={C} text={`Email hiện tại: ${maskedEmail || 'Chưa có email'}`} />
-        <TextField C={C} label="Email mới" value={newEmail} onChangeText={setNewEmail} keyboardType="email-address" autoCapitalize="none" />
+        <InfoPill C={C} text={t('current_email', { email: maskedEmail || t('no_email') })} />
+        <TextField C={C} label={t('new_email')} value={newEmail} onChangeText={setNewEmail} keyboardType="email-address" autoCapitalize="none" />
         {otpPurpose === 'change-email' ? (
-          <TextField C={C} label="Mã xác nhận 6 số" value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={6} />
+          <TextField C={C} label={t('otp_6_digits')} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={6} />
         ) : null}
         {error ? <InfoPill C={C} tone="danger" text={error} /> : null}
         {message ? <InfoPill C={C} text={message} /> : null}
         <ActionButton
           C={C}
           icon={otpPurpose === 'change-email' ? 'checkmark-circle-outline' : 'mail-outline'}
-          title={loading ? 'Đang xử lý...' : otpPurpose === 'change-email' ? 'Xác nhận mã' : 'Gửi mã xác nhận'}
+          title={loading ? t('processing') : otpPurpose === 'change-email' ? t('verify_code') : t('send_verification_code')}
           disabled={loading || !profile?.email}
           onPress={otpPurpose === 'change-email' ? verifyOtp : startEmailOtp}
         />
         {otpPurpose === 'change-email' ? (
-          <ActionButton C={C} icon="refresh-outline" title="Gửi lại mã" disabled={loading} onPress={resendOtp} />
+          <ActionButton C={C} icon="refresh-outline" title={t('resend_code')} disabled={loading} onPress={resendOtp} />
         ) : null}
-        <ActionButton C={C} icon="arrow-back-outline" title="Quay lại" disabled={loading} onPress={resetFlow} />
+        <ActionButton C={C} icon="arrow-back-outline" title={t('back')} disabled={loading} onPress={resetFlow} />
       </>
     );
   }
 
   return (
     <>
-      <InfoPill C={C} text={`Tài khoản đang đăng nhập: ${maskedEmail || 'Chưa có email'}`} />
+      <InfoPill C={C} text={t('signed_in_account', { email: maskedEmail || t('no_email') })} />
       {message ? <InfoPill C={C} text={message} /> : null}
-      <ActionButton C={C} icon="lock-closed-outline" title="Đổi mật khẩu" onPress={() => setMode('password')} />
-      <ActionButton C={C} icon="mail-outline" title="Đổi email" disabled={!profile?.email} onPress={() => setMode('email')} />
+      <ActionButton C={C} icon="lock-closed-outline" title={t('change_password')} onPress={() => setMode('password')} />
+      <ActionButton C={C} icon="mail-outline" title={t('change_email')} disabled={!profile?.email} onPress={() => setMode('email')} />
     </>
   );
 }
 
 function DeleteAccountContent({ C, profile }: { C: Palette; profile: UserProfile | null }) {
+  const t = useT();
   const resetAuth = useAuthStore((state) => state.resetAuth);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleDelete = () => {
-    Alert.alert('Xóa tài khoản', 'Hành động này không thể hoàn tác.', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('delete_account'), t('delete_account_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Xóa tài khoản',
+        text: t('delete_account'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -1428,8 +1430,8 @@ function DeleteAccountContent({ C, profile }: { C: Palette; profile: UserProfile
             const code = err?.code as string | undefined;
             setError(
               code === 'auth/wrong-password' || code === 'auth/invalid-credential'
-                ? 'Mật khẩu không đúng.'
-                : 'Xóa tài khoản thất bại. Vui lòng thử lại.'
+                ? t('wrong_password')
+                : t('delete_account_failed')
             );
           } finally {
             setLoading(false);
@@ -1444,14 +1446,14 @@ function DeleteAccountContent({ C, profile }: { C: Palette; profile: UserProfile
       <InfoPill
         C={C}
         tone="danger"
-        text={`Tài khoản ${profile?.email ? maskEmail(profile.email) : ''} sẽ bị xóa vĩnh viễn khỏi Surf.`}
+        text={t('account_delete_warning', { email: profile?.email ? maskEmail(profile.email) : '' })}
       />
-      <TextField C={C} label="Nhập mật khẩu để xác nhận" value={password} onChangeText={setPassword} secureTextEntry />
+      <TextField C={C} label={t('enter_password_confirm')} value={password} onChangeText={setPassword} secureTextEntry />
       {error ? <InfoPill C={C} tone="danger" text={error} /> : null}
       <ActionButton
         C={C}
         icon="trash-outline"
-        title={loading ? 'Đang xóa...' : 'Xóa tài khoản vĩnh viễn'}
+        title={loading ? t('deleting') : t('delete_account_forever')}
         danger
         disabled={loading || password.length === 0}
         onPress={handleDelete}
@@ -1497,10 +1499,11 @@ function TextField({
 }
 
 function InlineLoading({ C }: { C: Palette }) {
+  const t = useT();
   return (
     <View style={[s.inlineLoading, { borderColor: C.border, backgroundColor: C.card }]}>
       <ActivityIndicator size="small" color={C.accent} />
-      <Text style={[s.infoText, { color: C.subtext }]}>Đang tải dữ liệu...</Text>
+      <Text style={[s.infoText, { color: C.subtext }]}>{t('loading_data')}</Text>
     </View>
   );
 }
@@ -1516,6 +1519,7 @@ function BlockedUserRow({
   processing: boolean;
   onUnblock: () => void;
 }) {
+  const t = useT();
   return (
     <View style={[s.listRow, { borderColor: C.border, backgroundColor: C.card }]}>
       {user.avatarUrl ? (
@@ -1527,7 +1531,7 @@ function BlockedUserRow({
       )}
       <View style={s.rowCopy}>
         <Text style={[s.rowTitle, { color: C.text }]} numberOfLines={1}>
-          {user.name || 'Người dùng Surf'}
+          {user.name || t('user_surf_fallback')}
         </Text>
         {user.email ? (
           <Text style={[s.rowDesc, { color: C.subtext }]} numberOfLines={1}>
@@ -1544,7 +1548,7 @@ function BlockedUserRow({
         {processing ? (
           <ActivityIndicator size="small" color={C.accent} />
         ) : (
-          <Text style={[s.smallActionText, { color: C.accent }]}>Bỏ chặn</Text>
+          <Text style={[s.smallActionText, { color: C.accent }]}>{t('unblock')}</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -1552,27 +1556,32 @@ function BlockedUserRow({
 }
 
 function ReportRow({ C, report }: { C: Palette; report: UserReport }) {
+  const t = useT();
   const created = report.createdAt ? new Date(report.createdAt) : null;
   const dateText = created && !Number.isNaN(created.getTime())
-    ? created.toLocaleDateString('vi-VN')
-    : 'Không rõ ngày';
+    ? created.toLocaleDateString()
+    : t('unknown_date');
 
   return (
     <View style={[s.reportRow, { borderColor: C.border, backgroundColor: C.card }]}>
       <View style={s.reportTop}>
         <Text style={[s.rowTitle, { color: C.text }]} numberOfLines={1}>
-          {report.reason || report.type || 'Báo cáo vi phạm'}
+          {report.reason || report.type || t('report_fallback')}
         </Text>
         <Text style={[s.reportStatus, { color: report.resolvedAt ? C.success : C.warning }]}>
-          {report.resolvedAt ? 'Đã xử lý' : report.status || 'Đang xem xét'}
+          {report.resolvedAt ? t('report_resolved') : report.status || t('report_pending')}
         </Text>
       </View>
       <Text style={[s.rowDesc, { color: C.subtext }]} numberOfLines={2}>
-        {report.commentId ? `Bình luận: ${report.commentId}` : report.postId ? `Bài viết: ${report.postId}` : `Mã báo cáo: ${report.id}`}
+        {report.commentId
+          ? t('report_comment', { id: report.commentId })
+          : report.postId
+          ? t('report_post', { id: report.postId })
+          : t('report_id', { id: report.id })}
       </Text>
       {report.aiReason ? (
         <Text style={[s.rowDesc, { color: C.subtext }]} numberOfLines={3}>
-          Phản hồi: {report.aiReason}
+          {t('report_feedback', { value: report.aiReason })}
         </Text>
       ) : null}
       <Text style={[s.rowDesc, { color: C.muted }]}>{dateText}</Text>

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
+import { useLanguage, useT, type I18nKey } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Messages'>;
@@ -36,17 +37,17 @@ type ConversationItem = {
 const DARK = { bg: '#0f172a', card: '#1e293b', border: '#334155', text: '#e2e8f0', subtext: '#64748b', accent: '#0ea5e9', input: '#1e293b' };
 const LIGHT = { bg: '#f8fafc', card: '#ffffff', border: '#e2e8f0', text: '#1f2937', subtext: '#94a3b8', accent: '#0ea5e9', input: '#f1f5f9' };
 
-function timeAgo(iso: string | null): string {
+function timeAgo(iso: string | null, locale: string, t: (key: I18nKey, params?: Record<string, string | number>) => string): string {
   if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1) return 'Vừa xong';
-  if (m < 60) return `${m} phút`;
+  if (m < 1) return t('post_just_now');
+  if (m < 60) return t('minutes_short', { count: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} giờ`;
+  if (h < 24) return t('hours_short', { count: h });
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d} ngày`;
-  return new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  if (d < 7) return t('days_short', { count: d });
+  return new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: '2-digit' });
 }
 
 function ConvAvatar({ src, name, size = 48 }: { src: string | null; name: string; size?: number }) {
@@ -63,6 +64,9 @@ function ConvAvatar({ src, name, size = 48 }: { src: string | null; name: string
 
 export default function MessagesScreen({ navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
+  const language = useLanguage();
+  const locale = language === 'en' ? 'en-US' : 'vi-VN';
   const C = scheme === 'dark' ? DARK : LIGHT;
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +91,7 @@ export default function MessagesScreen({ navigation }: Props) {
   };
 
   const getConvTitle = (conv: ConversationItem) =>
-    conv.type === 'group' ? (conv.title || 'Nhóm chat') : (conv.peer?.name || 'Người dùng');
+    conv.type === 'group' ? (conv.title || t('group_chat')) : (conv.peer?.name || t('user_fallback'));
 
   const getConvAvatar = (conv: ConversationItem) =>
     conv.type === 'group' ? null : (conv.peer?.avatarUrl ?? null);
@@ -134,7 +138,7 @@ export default function MessagesScreen({ navigation }: Props) {
               {title}
             </Text>
             <Text style={[s.convTime, { color: isUnread ? C.accent : C.subtext }]}>
-              {timeAgo(item.lastMessageAt)}
+              {timeAgo(item.lastMessageAt, locale, t)}
             </Text>
           </View>
           <View style={s.convBottom}>
@@ -142,7 +146,7 @@ export default function MessagesScreen({ navigation }: Props) {
               style={[s.convPreview, { color: isUnread ? C.text : C.subtext, fontWeight: isUnread ? '600' : '400' }]}
               numberOfLines={1}
             >
-              {item.lastMessagePreview || 'Bắt đầu trò chuyện'}
+              {item.lastMessagePreview || t('messages_start')}
             </Text>
             {item.unreadCount > 0 && (
               <View style={[s.unreadBadge, { backgroundColor: C.accent }]}>
@@ -162,7 +166,7 @@ export default function MessagesScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: C.text }]}>Tin nhắn</Text>
+        <Text style={[s.headerTitle, { color: C.text }]}>{t('messages_title')}</Text>
         <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="create-outline" size={24} color={C.text} />
         </TouchableOpacity>
@@ -174,7 +178,7 @@ export default function MessagesScreen({ navigation }: Props) {
           <Ionicons name="search" size={16} color={C.subtext} />
           <TextInput
             style={[s.searchInput, { color: C.text }]}
-            placeholder="Tìm kiếm..."
+            placeholder={t('messages_search')}
             placeholderTextColor={C.subtext}
             value={search}
             onChangeText={setSearch}
@@ -189,8 +193,8 @@ export default function MessagesScreen({ navigation }: Props) {
       ) : filtered.length === 0 ? (
         <View style={s.center}>
           <Ionicons name="chatbubbles-outline" size={56} color={C.subtext} />
-          <Text style={[s.emptyTitle, { color: C.text }]}>Chưa có tin nhắn</Text>
-          <Text style={[s.emptyText, { color: C.subtext }]}>Bắt đầu trò chuyện với bạn bè</Text>
+          <Text style={[s.emptyTitle, { color: C.text }]}>{t('messages_empty_title')}</Text>
+          <Text style={[s.emptyText, { color: C.subtext }]}>{t('messages_empty_subtitle')}</Text>
         </View>
       ) : (
         <FlatList

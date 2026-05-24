@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
+import { useT } from '@/lib/i18n';
 
 type Props = {
   visible: boolean;
@@ -41,6 +42,7 @@ const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
 
 export default function Sidebar({ visible, onClose, navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   
   const user = useAuthStore((s) => s.user);
@@ -48,12 +50,12 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
 
   const handleLogout = () => {
     Alert.alert(
-      'Đăng xuất',
-      'Bạn có chắc muốn đăng xuất?',
+      t('logout'),
+      t('logout_confirm'),
       [
-        { text: 'Hủy', onPress: () => {}, style: 'cancel' },
+        { text: t('cancel'), onPress: () => {}, style: 'cancel' },
         {
-          text: 'Đăng xuất',
+          text: t('logout'),
           onPress: async () => {
             setLoggingOut(true);
             try {
@@ -63,7 +65,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               console.log('✅ Đã đăng xuất - User state sẽ change to null');
             } catch (err) {
               console.error('❌ Lỗi đăng xuất:', err);
-              Alert.alert('Lỗi', 'Không thể đăng xuất. Vui lòng thử lại.');
+              Alert.alert(t('error'), t('logout_error'));
               setLoggingOut(false);
             }
           },
@@ -90,7 +92,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
         <View style={[s.sidebar, { backgroundColor: C.card }]}>
           {/* Header */}
           <View style={[s.header, { borderBottomColor: C.border }]}>
-            <Text style={[s.title, { color: C.text }]}>Menu</Text>
+            <Text style={[s.title, { color: C.text }]}>{t('menu')}</Text>
             <TouchableOpacity
               hitSlop={HIT}
               onPress={onClose}
@@ -118,7 +120,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               )}
               <View style={{ flex: 1 }}>
                 <Text style={[s.userName, { color: C.text }]}>
-                  {user.displayName || 'Người dùng'}
+                  {user.displayName || t('user_fallback')}
                 </Text>
                 <Text style={[s.userEmail, { color: C.subtext }]}>
                   {user.email}
@@ -138,7 +140,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               }}
             >
               <Ionicons name="person-outline" size={20} color={C.text} />
-              <Text style={[s.menuText, { color: C.text }]}>Hồ sơ của tôi</Text>
+              <Text style={[s.menuText, { color: C.text }]}>{t('my_profile')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -149,7 +151,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               }}
             >
               <Ionicons name="bookmark-outline" size={20} color={C.text} />
-              <Text style={[s.menuText, { color: C.text }]}>Bài viết đã lưu</Text>
+              <Text style={[s.menuText, { color: C.text }]}>{t('saved_posts')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -160,7 +162,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               }}
             >
               <Ionicons name="settings-outline" size={20} color={C.text} />
-              <Text style={[s.menuText, { color: C.text }]}>Cài đặt</Text>
+              <Text style={[s.menuText, { color: C.text }]}>{t('settings')}</Text>
             </TouchableOpacity>
           </ScrollView>
 
@@ -175,7 +177,7 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
             ) : (
               <>
                 <Ionicons name="log-out-outline" size={20} color="#dc2626" />
-                <Text style={[s.logoutText, { color: '#dc2626' }]}>Đăng xuất</Text>
+                <Text style={[s.logoutText, { color: '#dc2626' }]}>{t('logout')}</Text>
               </>
             )}
           </TouchableOpacity>

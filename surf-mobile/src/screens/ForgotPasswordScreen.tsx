@@ -15,12 +15,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation';
 import { sendPasswordResetEmail } from '@/lib/firebase/auth';
+import { useT, type I18nKey } from '@/lib/i18n';
 
-const ERRORS: Record<string, string> = {
-  'auth/invalid-email': 'Email không hợp lệ.',
-  'auth/user-not-found': 'Không tìm thấy tài khoản với email này.',
-  'auth/too-many-requests': 'Quá nhiều lần thử. Vui lòng thử lại sau.',
-  'auth/network-request-failed': 'Lỗi kết nối mạng.',
+const ERRORS: Record<string, I18nKey> = {
+  'auth/invalid-email': 'auth_invalid_email',
+  'auth/user-not-found': 'forgot_user_not_found',
+  'auth/too-many-requests': 'auth_too_many_requests',
+  'auth/network-request-failed': 'auth_network_error',
 };
 
 type Props = {
@@ -28,6 +29,7 @@ type Props = {
 };
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,7 +37,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 
   const handleSubmit = async () => {
     if (!email) {
-      setError('Vui lòng nhập email');
+      setError(t('forgot_required_email'));
       return;
     }
     setLoading(true);
@@ -62,7 +64,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
     } catch (err) {
       const code = (err as { code?: string }).code ?? '';
       console.log(`❌ ForgotPassword error [${code}]:`, err);
-      setError(ERRORS[code] || 'Gửi email thất bại.');
+      setError(ERRORS[code] ? t(ERRORS[code]) : t('forgot_send_failed'));
     } finally {
       setLoading(false);
     }
@@ -79,9 +81,9 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 
           {/* ── Card ── */}
           <View style={s.card}>
-            <Text style={s.title}>Quên mật khẩu</Text>
+            <Text style={s.title}>{t('forgot_title')}</Text>
             <Text style={s.subtitle}>
-              {sent ? 'Kiểm tra email của bạn' : 'Nhập email để nhận link đặt lại mật khẩu'}
+              {sent ? t('forgot_check_email') : t('forgot_subtitle')}
             </Text>
 
             {sent ? (
@@ -90,16 +92,15 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
                   <Text style={s.iconText}>✓</Text>
                 </View>
                 <Text style={s.sentText}>
-                  Chúng tôi đã gửi email chứa link đặt lại mật khẩu đến{' '}
-                  <Text style={s.cyanText}>{email}</Text>. Vui lòng kiểm tra hộp thư (và thư mục spam).
+                  {t('forgot_sent_message', { email })}
                 </Text>
                 <TouchableOpacity style={s.submitBtn} onPress={() => navigation.navigate('Auth', { initialTab: 'login' })}>
-                  <Text style={s.submitText}>← Quay lại đăng nhập</Text>
+                  <Text style={s.submitText}>{t('forgot_back_login')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View>
-                <Text style={s.label}>Email</Text>
+                <Text style={s.label}>{t('auth_email')}</Text>
                 <TextInput
                   style={s.input}
                   placeholder="you@example.com"
@@ -115,7 +116,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
                   {loading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={s.submitText}>Gửi link đặt lại mật khẩu</Text>
+                    <Text style={s.submitText}>{t('forgot_send_link')}</Text>
                   )}
                 </TouchableOpacity>
 
@@ -126,7 +127,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
                 )}
 
                 <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
-                  <Text style={s.backText}>← Quay lại đăng nhập</Text>
+                  <Text style={s.backText}>{t('forgot_back_login')}</Text>
                 </TouchableOpacity>
               </View>
             )}

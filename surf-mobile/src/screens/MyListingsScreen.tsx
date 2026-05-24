@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useMarketplaceStore, type Listing } from '@/stores/marketplaceStore';
+import { useLanguage, useT } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MyListings'>;
@@ -33,11 +34,11 @@ const LIGHT = {
   green: '#16a34a', red: '#dc2626',
 };
 
-function formatPrice(price: number): string {
-  if (price === 0) return 'Miễn phí';
-  if (price >= 1_000_000) return `${(price / 1_000_000).toFixed(1)} triệu`;
+function formatPrice(price: number, language: 'vi' | 'en', t: ReturnType<typeof useT>): string {
+  if (price === 0) return t('free');
+  if (price >= 1_000_000) return t('price_million', { value: (price / 1_000_000).toFixed(1) });
   if (price >= 1_000) return `${(price / 1_000).toFixed(0)}k`;
-  return price.toLocaleString('vi-VN') + ' đ';
+  return price.toLocaleString(language === 'en' ? 'en-US' : 'vi-VN') + (language === 'en' ? ' VND' : ' đ');
 }
 
 function MyListingRow({
@@ -46,12 +47,16 @@ function MyListingRow({
   onPress,
   onDelete,
   onMarkSold,
+  t,
+  language,
 }: {
   item: Listing;
   C: typeof DARK;
   onPress: () => void;
   onDelete: () => void;
   onMarkSold: () => void;
+  t: ReturnType<typeof useT>;
+  language: 'vi' | 'en';
 }) {
   const imgUri = item.mediaUrls?.[0];
   const isSold = item.status === 'sold';
@@ -71,7 +76,7 @@ function MyListingRow({
         )}
         {isSold && (
           <View style={[StyleSheet.absoluteFill, s.soldOverlay]}>
-            <Text style={s.soldText}>ĐÃ BÁN</Text>
+            <Text style={s.soldText}>{t('sold')}</Text>
           </View>
         )}
       </View>
@@ -80,14 +85,14 @@ function MyListingRow({
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={[s.rowTitle, { color: C.text }]} numberOfLines={2}>{item.title}</Text>
         <Text style={[s.rowPrice, { color: isSold ? C.subtext : C.accent }]}>
-          {formatPrice(item.price)}
+          {formatPrice(item.price, language, t)}
         </Text>
         {item.location ? (
           <Text style={{ color: C.subtext, fontSize: 12 }} numberOfLines={1}>
             📍 {item.location}
           </Text>
         ) : null}
-        <Text style={{ color: C.subtext, fontSize: 11 }}>{item.viewCount ?? 0} lượt xem</Text>
+        <Text style={{ color: C.subtext, fontSize: 11 }}>{t('views_count', { count: item.viewCount ?? 0 })}</Text>
       </View>
 
       {/* Actions */}
@@ -119,6 +124,8 @@ function MyListingRow({
 
 export default function MyListingsScreen({ navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
+  const language = useLanguage();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { myListings, myListingsLoading, error, fetchMyListings, deleteListing, markAsSold } =
     useMarketplaceStore();
@@ -128,16 +135,16 @@ export default function MyListingsScreen({ navigation }: Props) {
   }, [fetchMyListings]);
 
   const confirmDelete = (id: string) => {
-    Alert.alert('Xóa tin đăng', 'Bạn có chắc muốn xóa tin đăng này không?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('delete_listing'), t('delete_listing_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Xóa',
+        text: t('delete'),
         style: 'destructive',
         onPress: async () => {
           try {
             await deleteListing(id);
           } catch (e) {
-            Alert.alert('Lỗi', (e as Error).message ?? 'Không thể xóa tin đăng.');
+            Alert.alert(t('error'), (e as Error).message ?? t('listing_delete_error'));
           }
         },
       },
@@ -145,15 +152,15 @@ export default function MyListingsScreen({ navigation }: Props) {
   };
 
   const confirmMarkSold = (id: string) => {
-    Alert.alert('Đánh dấu đã bán', 'Tin này sẽ không còn hiển thị trong chợ. Tiếp tục?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('mark_sold'), t('mark_sold_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Đã bán',
+        text: t('sold'),
         onPress: async () => {
           try {
             await markAsSold(id);
           } catch (e) {
-            Alert.alert('Lỗi', (e as Error).message ?? 'Không thể cập nhật tin đăng.');
+            Alert.alert(t('error'), (e as Error).message ?? t('listing_update_error'));
           }
         },
       },
@@ -168,13 +175,13 @@ export default function MyListingsScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: C.text }]}>Tin của tôi</Text>
+        <Text style={[s.headerTitle, { color: C.text }]}>{t('my_listings')}</Text>
         <TouchableOpacity
           style={[s.postBtn, { backgroundColor: C.accent }]}
           onPress={() => navigation.navigate('CreateListing')}
         >
           <Ionicons name="add" size={20} color="#fff" />
-          <Text style={s.postBtnText}>Đăng tin</Text>
+          <Text style={s.postBtnText}>{t('post_listing')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -183,24 +190,24 @@ export default function MyListingsScreen({ navigation }: Props) {
       ) : error && myListings.length === 0 ? (
         <View style={s.empty}>
           <Ionicons name="warning-outline" size={52} color={C.red} />
-          <Text style={[s.emptyTitle, { color: C.text }]}>Không thể tải tin của tôi</Text>
+          <Text style={[s.emptyTitle, { color: C.text }]}>{t('my_listings_load_error')}</Text>
           <Text style={[s.emptySub, { color: C.subtext }]}>{error}</Text>
           <TouchableOpacity
             style={[s.createBtn, { backgroundColor: C.accent }]}
             onPress={() => fetchMyListings()}
           >
-            <Text style={s.createBtnText}>Thử lại</Text>
+            <Text style={s.createBtnText}>{t('retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : myListings.length === 0 ? (
         <View style={s.empty}>
           <Ionicons name="storefront-outline" size={52} color={C.subtext} />
-          <Text style={[s.emptyTitle, { color: C.text }]}>Bạn chưa có tin đăng nào</Text>
+          <Text style={[s.emptyTitle, { color: C.text }]}>{t('no_my_listings')}</Text>
           <TouchableOpacity
             style={[s.createBtn, { backgroundColor: C.accent }]}
             onPress={() => navigation.navigate('CreateListing')}
           >
-            <Text style={s.createBtnText}>Đăng tin ngay</Text>
+            <Text style={s.createBtnText}>{t('post_listing_now')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -215,6 +222,8 @@ export default function MyListingsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('MarketplaceDetail', { listingId: item.id })}
               onDelete={() => confirmDelete(item.id)}
               onMarkSold={() => confirmMarkSold(item.id)}
+              t={t}
+              language={language}
             />
           )}
           refreshControl={

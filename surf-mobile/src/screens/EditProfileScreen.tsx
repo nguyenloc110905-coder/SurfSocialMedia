@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useUserStore } from '@/stores/userStore';
+import { useT } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'EditProfile'>;
@@ -67,6 +68,7 @@ function nullableText(value: string) {
 
 export default function EditProfileScreen({ navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const insets = useSafeAreaInsets();
   const { profile, loading, fetchProfile, updateProfile } = useUserStore();
@@ -111,7 +113,7 @@ export default function EditProfileScreen({ navigation }: Props) {
       });
       navigation.goBack();
     } catch {
-      Alert.alert('Chưa thể lưu', 'Vui lòng kiểm tra kết nối và thử lại.');
+      Alert.alert(t('cannot_save'), t('check_connection_retry'));
     } finally {
       setSaving(false);
     }
@@ -165,7 +167,7 @@ export default function EditProfileScreen({ navigation }: Props) {
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="arrow-back" size={24} color={C.text} />
           </TouchableOpacity>
-          <Text style={[s.headerTitle, { color: C.text }]}>Chỉnh sửa trang cá nhân</Text>
+          <Text style={[s.headerTitle, { color: C.text }]}>{t('edit_profile_title')}</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -176,12 +178,12 @@ export default function EditProfileScreen({ navigation }: Props) {
           showsVerticalScrollIndicator={false}
         >
           <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
-            {renderInput('displayName', 'Tên hiển thị', 'person-outline', { placeholder: 'Tên của bạn' })}
-            {renderInput('bio', 'Tiểu sử', 'reader-outline', { multiline: true, placeholder: 'Viết vài dòng về bạn' })}
-            {renderInput('currentCity', 'Nơi ở hiện tại', 'location-outline', { placeholder: 'Ví dụ: Tân An' })}
-            {renderInput('hometown', 'Quê quán', 'home-outline', { placeholder: 'Quê quán' })}
-            {renderInput('birthday', 'Ngày sinh', 'calendar-outline', { placeholder: '10 tháng 6, 2005' })}
-            {renderInput('relationship', 'Mối quan hệ', 'heart-outline', { placeholder: 'Độc thân, hẹn hò...' })}
+            {renderInput('displayName', t('display_name'), 'person-outline', { placeholder: t('display_name_placeholder') })}
+            {renderInput('bio', t('bio'), 'reader-outline', { multiline: true, placeholder: t('bio_placeholder') })}
+            {renderInput('currentCity', t('current_city'), 'location-outline', { placeholder: t('current_city_placeholder') })}
+            {renderInput('hometown', t('hometown'), 'home-outline', { placeholder: t('hometown') })}
+            {renderInput('birthday', t('birthday'), 'calendar-outline', { placeholder: t('birthday_placeholder') })}
+            {renderInput('relationship', t('relationship'), 'heart-outline', { placeholder: t('relationship_placeholder') })}
           </View>
         </ScrollView>
 
@@ -191,7 +193,7 @@ export default function EditProfileScreen({ navigation }: Props) {
             onPress={handleSave}
             disabled={!canSave}
           >
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveText}>Lưu thay đổi</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveText}>{t('save_changes')}</Text>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

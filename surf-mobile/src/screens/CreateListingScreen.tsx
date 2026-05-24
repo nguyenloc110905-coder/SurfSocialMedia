@@ -20,6 +20,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useMarketplaceStore, type CreateListingInput } from '@/stores/marketplaceStore';
 import { uploadMarketplaceImages } from '@/lib/cloudinary';
+import { useT, type I18nKey } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'CreateListing'>;
@@ -41,20 +42,20 @@ const LIGHT = {
 
 // ── Category / Condition options ──────────────────────────────────────────────
 const CATEGORIES = [
-  { key: 'electronics', label: 'Điện tử', icon: 'phone-portrait-outline' },
-  { key: 'clothing',    label: 'Thời trang', icon: 'shirt-outline' },
-  { key: 'vehicles',   label: 'Xe cộ', icon: 'car-outline' },
-  { key: 'property',   label: 'Bất động sản', icon: 'business-outline' },
-  { key: 'home',       label: 'Gia dụng', icon: 'home-outline' },
-  { key: 'sports',     label: 'Thể thao', icon: 'football-outline' },
-  { key: 'other',      label: 'Khác', icon: 'ellipsis-horizontal-outline' },
+  { key: 'electronics', labelKey: 'market_category_electronics', icon: 'phone-portrait-outline' },
+  { key: 'clothing', labelKey: 'market_category_clothing', icon: 'shirt-outline' },
+  { key: 'vehicles', labelKey: 'market_category_vehicles', icon: 'car-outline' },
+  { key: 'property', labelKey: 'market_category_property', icon: 'business-outline' },
+  { key: 'home', labelKey: 'market_category_home', icon: 'home-outline' },
+  { key: 'sports', labelKey: 'market_category_sports', icon: 'football-outline' },
+  { key: 'other', labelKey: 'market_category_other', icon: 'ellipsis-horizontal-outline' },
 ] as const;
 
 const CONDITIONS = [
-  { key: 'new',      label: 'Mới 100%' },
-  { key: 'like_new', label: 'Như mới' },
-  { key: 'good',     label: 'Tốt' },
-  { key: 'fair',     label: 'Khá' },
+  { key: 'new', labelKey: 'market_condition_new_full' },
+  { key: 'like_new', labelKey: 'market_condition_like_new' },
+  { key: 'good', labelKey: 'market_condition_good' },
+  { key: 'fair', labelKey: 'market_condition_fair' },
 ] as const;
 
 type Category = typeof CATEGORIES[number]['key'];
@@ -75,6 +76,7 @@ function Field({ label, children, required }: { label: string; children: React.R
 }
 
 export default function CreateListingScreen({ navigation }: Props) {
+  const t = useT();
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { createListing } = useMarketplaceStore();
@@ -90,13 +92,13 @@ export default function CreateListingScreen({ navigation }: Props) {
 
   const handlePickImages = async () => {
     if (selectedImages.length >= 5) {
-      Alert.alert('Đã đủ ảnh', 'Bạn chỉ có thể thêm tối đa 5 ảnh.');
+      Alert.alert(t('listing_max_images_title'), t('listing_max_images_message'));
       return;
     }
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Cần quyền truy cập', 'Vui lòng cấp quyền thư viện ảnh để thêm ảnh sản phẩm.');
+      Alert.alert(t('listing_permission_title'), t('listing_permission_message'));
       return;
     }
 
@@ -117,7 +119,7 @@ export default function CreateListingScreen({ navigation }: Props) {
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tiêu đề sản phẩm.');
+      Alert.alert(t('listing_missing_info'), t('listing_missing_title'));
       return;
     }
 
@@ -151,11 +153,11 @@ export default function CreateListingScreen({ navigation }: Props) {
       };
       const listing = await createListing(input);
       const successMessage = listing.status === 'active'
-        ? 'Tin đăng của bạn đã được hiển thị trên Surf Market.'
-        : 'Tin đăng đã được gửi và đang chờ kiểm duyệt trước khi hiển thị.';
-      Alert.alert('Đã gửi tin đăng', successMessage, [
+        ? t('listing_success_active')
+        : t('listing_success_pending');
+      Alert.alert(t('listing_success_title'), successMessage, [
         {
-          text: 'Xem tin',
+          text: t('view_listing'),
           onPress: () => {
             navigation.goBack();
             navigation.navigate('MarketplaceDetail', { listingId: listing.id });
@@ -164,7 +166,7 @@ export default function CreateListingScreen({ navigation }: Props) {
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
-      Alert.alert('Lỗi', (e as Error).message ?? 'Không thể đăng tin. Thử lại sau.');
+      Alert.alert(t('error'), (e as Error).message ?? t('listing_create_error'));
     } finally {
       setLoading(false);
     }
@@ -184,7 +186,7 @@ export default function CreateListingScreen({ navigation }: Props) {
           >
             <Ionicons name="close" size={22} color={C.text} />
           </TouchableOpacity>
-          <Text style={[s.headerTitle, { color: C.text }]}>Đăng tin bán</Text>
+          <Text style={[s.headerTitle, { color: C.text }]}>{t('create_listing_title')}</Text>
           <TouchableOpacity
             style={[s.submitBtn, { backgroundColor: loading ? C.subtext : C.accent }]}
             onPress={handleSubmit}
@@ -192,7 +194,7 @@ export default function CreateListingScreen({ navigation }: Props) {
           >
             {loading
               ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={s.submitBtnText}>Đăng</Text>
+              : <Text style={s.submitBtnText}>{t('create_listing_submit')}</Text>
             }
           </TouchableOpacity>
         </View>
@@ -203,7 +205,7 @@ export default function CreateListingScreen({ navigation }: Props) {
           keyboardShouldPersistTaps="handled"
         >
 
-          {/* ── Ảnh placeholder ── */}
+          {/* Image picker */}
           {selectedImages.length === 0 ? (
             <TouchableOpacity
               style={[s.imgPicker, { backgroundColor: C.card, borderColor: C.border }]}
@@ -211,8 +213,8 @@ export default function CreateListingScreen({ navigation }: Props) {
               disabled={loading}
             >
               <Ionicons name="camera-outline" size={36} color={C.subtext} />
-              <Text style={[s.imgPickerText, { color: C.subtext }]}>Thêm ảnh sản phẩm</Text>
-              <Text style={{ color: C.placeholder, fontSize: 11, marginTop: 2 }}>Tối đa 5 ảnh</Text>
+              <Text style={[s.imgPickerText, { color: C.subtext }]}>{t('add_product_photos')}</Text>
+              <Text style={{ color: C.placeholder, fontSize: 11, marginTop: 2 }}>{t('max_5_photos')}</Text>
             </TouchableOpacity>
           ) : (
             <View style={{ marginBottom: 20 }}>
@@ -240,16 +242,16 @@ export default function CreateListingScreen({ navigation }: Props) {
                 )}
               </ScrollView>
               <Text style={{ color: C.subtext, fontSize: 12, marginTop: 8 }}>
-                {selectedImages.length}/5 ảnh đã chọn
+                {t('selected_photos_count', { count: selectedImages.length })}
               </Text>
             </View>
           )}
 
-          {/* ── Tiêu đề ── */}
-          <Field label="Tiêu đề" required>
+          {/* Title */}
+          <Field label={t('listing_title_label')} required>
             <TextInput
               style={[s.input, { backgroundColor: C.input, borderColor: C.border, color: C.text }]}
-              placeholder="VD: iPhone 15 Pro Max 256GB"
+              placeholder={t('listing_title_placeholder')}
               placeholderTextColor={C.placeholder}
               value={title}
               onChangeText={setTitle}
@@ -257,8 +259,8 @@ export default function CreateListingScreen({ navigation }: Props) {
             />
           </Field>
 
-          {/* ── Giá ── */}
-          <Field label="Giá (để 0 = Cho tặng)" required>
+          {/* Price */}
+          <Field label={t('listing_price_label')} required>
             <View style={{ position: 'relative' }}>
               <TextInput
                 style={[s.input, { backgroundColor: C.input, borderColor: C.border, color: C.text, paddingRight: 48 }]}
@@ -272,8 +274,8 @@ export default function CreateListingScreen({ navigation }: Props) {
             </View>
           </Field>
 
-          {/* ── Danh mục ── */}
-          <Field label="Danh mục" required>
+          {/* Category */}
+          <Field label={t('listing_category_label')} required>
             <View style={s.optionGrid}>
               {CATEGORIES.map((cat) => (
                 <TouchableOpacity
@@ -293,15 +295,15 @@ export default function CreateListingScreen({ navigation }: Props) {
                     color={category === cat.key ? '#fff' : C.text}
                   />
                   <Text style={[s.optionLabel, { color: category === cat.key ? '#fff' : C.text }]}>
-                    {cat.label}
+                    {t(cat.labelKey as I18nKey)}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </Field>
 
-          {/* ── Tình trạng ── */}
-          <Field label="Tình trạng" required>
+          {/* Condition */}
+          <Field label={t('listing_condition_label')} required>
             <View style={s.condRow}>
               {CONDITIONS.map((cond) => (
                 <TouchableOpacity
@@ -317,22 +319,22 @@ export default function CreateListingScreen({ navigation }: Props) {
                   onPress={() => setCondition(cond.key)}
                 >
                   <Text style={[s.condBtnText, { color: condition === cond.key ? '#fff' : C.text }]}>
-                    {cond.label}
+                    {t(cond.labelKey as I18nKey)}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </Field>
 
-          {/* ── Mô tả ── */}
-          <Field label="Mô tả sản phẩm">
+          {/* Description */}
+          <Field label={t('market_description')}>
             <TextInput
               style={[
                 s.input,
                 s.textarea,
                 { backgroundColor: C.input, borderColor: C.border, color: C.text },
               ]}
-              placeholder="Thêm thông tin về sản phẩm, lý do bán, tình trạng thực tế..."
+              placeholder={t('listing_description_placeholder')}
               placeholderTextColor={C.placeholder}
               value={description}
               onChangeText={setDescription}
@@ -343,13 +345,13 @@ export default function CreateListingScreen({ navigation }: Props) {
             />
           </Field>
 
-          {/* ── Địa điểm ── */}
-          <Field label="Địa điểm">
+          {/* Location */}
+          <Field label={t('listing_location_label')}>
             <View style={[s.inputRow, { backgroundColor: C.input, borderColor: C.border }]}>
               <Ionicons name="location-outline" size={18} color={C.subtext} />
               <TextInput
                 style={[s.inputInner, { color: C.text }]}
-                placeholder="VD: Hà Nội, TP.HCM..."
+                placeholder={t('listing_location_placeholder')}
                 placeholderTextColor={C.placeholder}
                 value={location}
                 onChangeText={setLocation}

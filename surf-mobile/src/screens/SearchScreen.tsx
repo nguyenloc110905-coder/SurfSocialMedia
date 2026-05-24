@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
+import { useT, type I18nKey } from '@/lib/i18n';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -56,17 +57,17 @@ const LIGHT = {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'people', label: 'Mọi người', icon: 'people-outline' },
-  { key: 'posts',  label: 'Bài viết',  icon: 'newspaper-outline' },
-  { key: 'videos', label: 'Video',     icon: 'videocam-outline' },
+const TABS: { key: Tab; labelKey: I18nKey; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'people', labelKey: 'search_people', icon: 'people-outline' },
+  { key: 'posts',  labelKey: 'search_posts',  icon: 'newspaper-outline' },
+  { key: 'videos', labelKey: 'search_videos', icon: 'videocam-outline' },
 ];
 
-const DATE_FILTERS: { key: DateFilter; label: string }[] = [
-  { key: 'any',   label: 'Mọi thời gian' },
-  { key: 'today', label: 'Hôm nay' },
-  { key: 'week',  label: '7 ngày' },
-  { key: 'month', label: '30 ngày' },
+const DATE_FILTERS: { key: DateFilter; labelKey: I18nKey }[] = [
+  { key: 'any',   labelKey: 'search_any_time' },
+  { key: 'today', labelKey: 'search_today' },
+  { key: 'week',  labelKey: 'search_week' },
+  { key: 'month', labelKey: 'search_month' },
 ];
 
 function isVideoUrl(url: string) {
@@ -76,13 +77,14 @@ function isVideoUrl(url: string) {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function EmptyState({ q, C }: { q: string; C: typeof DARK }) {
+  const t = useT();
   return (
     <View style={es.wrap}>
       <Ionicons name="search-outline" size={56} color={C.subtext} />
       <Text style={[es.title, { color: C.subtext }]}>
-        Không tìm thấy kết quả cho "{q}"
+        {t('search_no_results', { query: q })}
       </Text>
-      <Text style={[es.sub, { color: C.placeholder }]}>Thử tìm với từ khoá khác</Text>
+      <Text style={[es.sub, { color: C.placeholder }]}>{t('search_try_other')}</Text>
     </View>
   );
 }
@@ -94,6 +96,7 @@ const es = StyleSheet.create({
 });
 
 function UserCard({ user, C, onPress }: { user: SearchUser; C: typeof DARK; onPress: () => void }) {
+  const t = useT();
   const initial = (user.name ?? '?').charAt(0).toUpperCase();
   return (
     <TouchableOpacity style={[uc.row]} onPress={onPress} activeOpacity={0.7}>
@@ -107,7 +110,7 @@ function UserCard({ user, C, onPress }: { user: SearchUser; C: typeof DARK; onPr
       <View style={{ flex: 1 }}>
         <Text style={[uc.name, { color: C.text }]}>{user.name}</Text>
         {(user.mutualCount ?? 0) > 0 && (
-          <Text style={[uc.mutual, { color: C.subtext }]}>{user.mutualCount} bạn chung</Text>
+          <Text style={[uc.mutual, { color: C.subtext }]}>{t('mutual_friends', { count: user.mutualCount ?? 0 })}</Text>
         )}
       </View>
       <Ionicons name="chevron-forward" size={16} color={C.subtext} />
@@ -195,6 +198,7 @@ function Separator({ C }: { C: typeof DARK }) {
 
 export default function SearchScreen({ navigation }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
 
   const [query, setQuery] = useState('');
@@ -317,16 +321,16 @@ export default function SearchScreen({ navigation }: Props) {
         return (
           <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
             <Ionicons name="search-outline" size={56} color={C.subtext} />
-            <Text style={{ color: C.subtext, fontSize: 15 }}>Nhập từ khoá để tìm kiếm</Text>
+            <Text style={{ color: C.subtext, fontSize: 15 }}>{t('search_prompt')}</Text>
           </View>
         );
       }
       return (
         <View style={[s.recentBox, { backgroundColor: C.card, borderColor: C.border }]}>
           <View style={s.recentHeader}>
-            <Text style={[s.recentTitle, { color: C.text }]}>Tìm kiếm gần đây</Text>
+            <Text style={[s.recentTitle, { color: C.text }]}>{t('search_recent')}</Text>
             <TouchableOpacity onPress={() => { setRecentSearches([]); api.put('/api/users/me/recent-searches', { recentSearches: [] }).catch(() => {}); }}>
-              <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600' }}>Xóa tất cả</Text>
+              <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600' }}>{t('clear_all')}</Text>
             </TouchableOpacity>
           </View>
           {recentSearches.map((q) => (
@@ -358,7 +362,7 @@ export default function SearchScreen({ navigation }: Props) {
             <UserCard user={item} C={C} onPress={() => navigation.navigate('Profile', { userId: item.id })} />
           )}
           ItemSeparatorComponent={() => <Separator C={C} />}
-          ListHeaderComponent={<Text style={[s.resultCount, { color: C.subtext }]}>{users.length} người dùng</Text>}
+          ListHeaderComponent={<Text style={[s.resultCount, { color: C.subtext }]}>{t('users_count', { count: users.length })}</Text>}
           keyboardShouldPersistTaps="handled"
           scrollEnabled={false}
         />
@@ -375,7 +379,7 @@ export default function SearchScreen({ navigation }: Props) {
             <PostCard post={item} C={C} onPress={() => navigation.navigate('Profile', { userId: item.authorId })} />
           )}
           ItemSeparatorComponent={() => <Separator C={C} />}
-          ListHeaderComponent={<Text style={[s.resultCount, { color: C.subtext }]}>{posts.length} bài viết</Text>}
+          ListHeaderComponent={<Text style={[s.resultCount, { color: C.subtext }]}>{t('posts_count', { count: posts.length })}</Text>}
           keyboardShouldPersistTaps="handled"
           scrollEnabled={false}
         />
@@ -420,7 +424,7 @@ export default function SearchScreen({ navigation }: Props) {
             value={query}
             onChangeText={handleChangeText}
             onSubmitEditing={handleSubmit}
-            placeholder="Tìm kiếm..."
+            placeholder={t('search')}
             placeholderTextColor={C.placeholder}
             returnKeyType="search"
             clearButtonMode="while-editing"
@@ -451,7 +455,7 @@ export default function SearchScreen({ navigation }: Props) {
                   onPress={() => setActiveTab(tab.key)}
                 >
                   <Ionicons name={tab.icon} size={16} color={active ? C.accent : C.subtext} />
-                  <Text style={[s.tabText, { color: active ? C.accent : C.subtext }]}>{tab.label}</Text>
+                  <Text style={[s.tabText, { color: active ? C.accent : C.subtext }]}>{t(tab.labelKey)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -474,7 +478,7 @@ export default function SearchScreen({ navigation }: Props) {
                   style={[s.chip, { backgroundColor: active ? C.chipActive : C.chip, borderColor: active ? C.chipActive : C.border }]}
                   onPress={() => handleDateFilter(f.key)}
                 >
-                  <Text style={[s.chipText, { color: active ? C.chipActiveText : C.chipText }]}>{f.label}</Text>
+                  <Text style={[s.chipText, { color: active ? C.chipActiveText : C.chipText }]}>{t(f.labelKey)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -483,7 +487,7 @@ export default function SearchScreen({ navigation }: Props) {
 
         {/* Result count for people */}
         {hasQuery && donePeople && activeTab === 'people' && users.length > 0 && (
-          <Text style={[s.resultCount, { color: C.subtext }]}>{users.length} người dùng</Text>
+          <Text style={[s.resultCount, { color: C.subtext }]}>{t('users_count', { count: users.length })}</Text>
         )}
 
         {/* Content */}

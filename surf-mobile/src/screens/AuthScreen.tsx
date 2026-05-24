@@ -20,33 +20,34 @@ import { signIn, signUp, setAuthPersistence, getCurrentUser, getAuthPersistMode 
 import { useAppleSignIn, useGoogleSignIn, useFacebookSignIn } from '@/lib/social-auth';
 import { isDevModeEnabled, shouldClearAuthOnStartup } from '@/lib/debug-config';
 import { useAuthStore } from '@/stores/authStore';
+import { useT, type I18nKey } from '@/lib/i18n';
 
-const LOGIN_ERRORS: Record<string, string> = {
-  'auth/invalid-email': 'Email không hợp lệ.',
-  'auth/user-disabled': 'Tài khoản đã bị vô hiệu hóa.',
-  'auth/user-not-found': 'Tài khoản không tồn tại.',
-  'auth/wrong-password': 'Mật khẩu không đúng.',
-  'auth/invalid-credential': 'Email hoặc mật khẩu không đúng.',
-  'auth/invalid-login-credentials': 'Email hoặc mật khẩu không đúng.',
-  'auth/too-many-requests': 'Quá nhiều lần thử. Vui lòng thử lại sau.',
-  'auth/network-request-failed': 'Lỗi kết nối mạng.',
-  'auth/popup-closed-by-user': 'Bạn đã đóng cửa sổ đăng nhập.',
-  'auth/account-exists-with-different-credential': 'Email đã liên kết với phương thức khác.',
+const LOGIN_ERRORS: Record<string, I18nKey> = {
+  'auth/invalid-email': 'auth_invalid_email',
+  'auth/user-disabled': 'auth_user_disabled',
+  'auth/user-not-found': 'auth_user_not_found',
+  'auth/wrong-password': 'auth_wrong_password',
+  'auth/invalid-credential': 'auth_invalid_credentials',
+  'auth/invalid-login-credentials': 'auth_invalid_credentials',
+  'auth/too-many-requests': 'auth_too_many_requests',
+  'auth/network-request-failed': 'auth_network_error',
+  'auth/popup-closed-by-user': 'auth_popup_closed',
+  'auth/account-exists-with-different-credential': 'auth_account_exists',
 };
 
-const REGISTER_ERRORS: Record<string, string> = {
-  'auth/email-already-in-use': 'Email này đã được sử dụng.',
-  'auth/weak-password': 'Mật khẩu quá yếu.',
-  'auth/invalid-email': 'Email không hợp lệ.',
-  'auth/network-request-failed': 'Lỗi kết nối mạng.',
-  'auth/operation-not-allowed': 'Phương thức đăng nhập chưa được bật.',
+const REGISTER_ERRORS: Record<string, I18nKey> = {
+  'auth/email-already-in-use': 'auth_email_in_use',
+  'auth/weak-password': 'auth_weak_password',
+  'auth/invalid-email': 'auth_invalid_email',
+  'auth/network-request-failed': 'auth_network_error',
+  'auth/operation-not-allowed': 'auth_operation_not_allowed',
 };
 
-function validatePassword(pw: string): string | null {
-  if (pw.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự.';
-  if (!/[A-Z]/.test(pw)) return 'Cần ít nhất 1 chữ viết hoa.';
-  if (!/[0-9]/.test(pw)) return 'Cần ít nhất 1 chữ số.';
-  if (!/[^A-Za-z0-9]/.test(pw)) return 'Cần ít nhất 1 ký tự đặc biệt.';
+function validatePassword(pw: string): I18nKey | null {
+  if (pw.length < 6) return 'auth_password_min';
+  if (!/[A-Z]/.test(pw)) return 'auth_password_upper';
+  if (!/[0-9]/.test(pw)) return 'auth_password_number';
+  if (!/[^A-Za-z0-9]/.test(pw)) return 'auth_password_special';
   return null;
 }
 
@@ -56,6 +57,7 @@ type Props = {
 };
 
 export default function AuthScreen({ navigation, route }: Props) {
+  const t = useT();
   const initialTab = route.params?.initialTab || 'login';
   const [activeTab, setActiveTab] = useState<'login' | 'register'>(initialTab);
   
@@ -127,7 +129,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   };
 
   const handleLogin = async () => {
-    if (!loginEmail || !loginPassword) { setError('Vui lòng nhập email và mật khẩu'); return; }
+    if (!loginEmail || !loginPassword) { setError(t('auth_required_login')); return; }
     setLoading(true); setError('');
     try {
       // Bypass auth logic...
@@ -160,18 +162,18 @@ export default function AuthScreen({ navigation, route }: Props) {
       }
     } catch (err) {
       const code = (err as { code?: string }).code ?? '';
-      setError(LOGIN_ERRORS[code] || 'Đăng nhập thất bại.');
+      setError(LOGIN_ERRORS[code] ? t(LOGIN_ERRORS[code]) : t('auth_login_failed'));
     } finally { setLoading(false); }
   };
 
   const handleRegister = async () => {
     setError('');
     if (!name || !registerEmail || !registerPassword || !confirmPassword) {
-      setError('Vui lòng điền đầy đủ thông tin'); return;
+      setError(t('auth_required_register')); return;
     }
     const pwError = validatePassword(registerPassword);
-    if (pwError) { setError(pwError); return; }
-    if (registerPassword !== confirmPassword) { setError('Mật khẩu xác nhận không khớp.'); return; }
+    if (pwError) { setError(t(pwError)); return; }
+    if (registerPassword !== confirmPassword) { setError(t('auth_password_mismatch')); return; }
     
     setLoading(true);
     try {
@@ -179,7 +181,7 @@ export default function AuthScreen({ navigation, route }: Props) {
       await signUp(registerEmail.trim(), registerPassword, name.trim());
     } catch (err) {
       const code = (err as { code?: string }).code ?? '';
-      setError(REGISTER_ERRORS[code] || 'Đăng ký thất bại.');
+      setError(REGISTER_ERRORS[code] ? t(REGISTER_ERRORS[code]) : t('auth_register_failed'));
     } finally { setLoading(false); }
   };
 
@@ -191,7 +193,7 @@ export default function AuthScreen({ navigation, route }: Props) {
           {/* ── Logo ── */}
           <View style={s.logoWrap}>
             <Image source={require('../../assets/SurfLogo.png')} style={s.logo} resizeMode="contain" />
-            <Text style={s.tagline}>Kết nối, chia sẻ và khám phá thế giới cùng <Text style={s.tagCyan}>Surf</Text></Text>
+            <Text style={s.tagline}>{t('app_tagline')} <Text style={s.tagCyan}>Surf</Text></Text>
           </View>
 
           {/* ── Card ── */}
@@ -202,20 +204,20 @@ export default function AuthScreen({ navigation, route }: Props) {
                 style={activeTab === 'login' ? s.tabActive : s.tabInactive} 
                 onPress={() => switchTab('login')}
               >
-                <Text style={activeTab === 'login' ? s.tabActiveText : s.tabInactiveText}>Đăng nhập</Text>
+                <Text style={activeTab === 'login' ? s.tabActiveText : s.tabInactiveText}>{t('auth_login')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={activeTab === 'register' ? s.tabActive : s.tabInactive} 
                 onPress={() => switchTab('register')}
               >
-                <Text style={activeTab === 'register' ? s.tabActiveText : s.tabInactiveText}>Đăng ký</Text>
+                <Text style={activeTab === 'register' ? s.tabActiveText : s.tabInactiveText}>{t('auth_register')}</Text>
               </TouchableOpacity>
             </View>
 
             {activeTab === 'login' ? (
               // ================= LOGIN FORM =================
               <View>
-                <Text style={s.label}>Email</Text>
+                <Text style={s.label}>{t('auth_email')}</Text>
                 <TextInput
                   style={s.input}
                   placeholder="you@example.com"
@@ -227,7 +229,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                   autoComplete="email"
                 />
 
-                <Text style={s.label}>Mật khẩu</Text>
+                <Text style={s.label}>{t('auth_password')}</Text>
                 <View style={s.pwWrap}>
                   <TextInput
                     style={[s.input, { flex: 1, marginBottom: 0 }]}
@@ -245,7 +247,7 @@ export default function AuthScreen({ navigation, route }: Props) {
 
                 <View style={s.formRow}>
                   <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword' as never)}>
-                    <Text style={s.forgotText}>Quên mật khẩu?</Text>
+                    <Text style={s.forgotText}>{t('auth_forgot_password')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={s.rememberMeBtn}
@@ -254,27 +256,27 @@ export default function AuthScreen({ navigation, route }: Props) {
                     <View style={[s.checkbox, rememberMe && s.checkboxChecked]}>
                       {rememberMe && <Text style={s.checkmark}>✓</Text>}
                     </View>
-                    <Text style={s.rememberMeText}>Ghi nhớ tôi</Text>
+                    <Text style={s.rememberMeText}>{t('auth_remember_me')}</Text>
                   </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity style={[s.submitBtn, (loading || socialLoading) && s.disabled]} onPress={handleLogin} disabled={loading || socialLoading}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>Đăng nhập</Text>}
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>{t('auth_login')}</Text>}
                 </TouchableOpacity>
               </View>
             ) : (
               // ================= REGISTER FORM =================
               <View>
-                <Text style={s.label}>Tên hiển thị</Text>
+                <Text style={s.label}>{t('auth_display_name')}</Text>
                 <TextInput
                   style={s.input}
-                  placeholder="Nguyễn Văn A"
+                  placeholder={t('auth_name_placeholder')}
                   placeholderTextColor="rgba(255,255,255,0.3)"
                   value={name}
                   onChangeText={setName}
                 />
 
-                <Text style={s.label}>Email</Text>
+                <Text style={s.label}>{t('auth_email')}</Text>
                 <TextInput
                   style={s.input}
                   placeholder="you@example.com"
@@ -286,11 +288,11 @@ export default function AuthScreen({ navigation, route }: Props) {
                   autoComplete="email"
                 />
 
-                <Text style={s.label}>Mật khẩu</Text>
+                <Text style={s.label}>{t('auth_password')}</Text>
                 <View style={s.pwWrap}>
                   <TextInput
                     style={[s.input, { flex: 1, marginBottom: 0 }]}
-                    placeholder="Ít nhất 6 ký tự"
+                    placeholder={t('auth_password_min')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     value={registerPassword}
                     onChangeText={setRegisterPassword}
@@ -301,11 +303,11 @@ export default function AuthScreen({ navigation, route }: Props) {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={s.label}>Nhập lại mật khẩu</Text>
+                <Text style={s.label}>{t('auth_confirm_password')}</Text>
                 <View style={s.pwWrap}>
                   <TextInput
                     style={[s.input, { flex: 1, marginBottom: 0 }]}
-                    placeholder="Xác nhận mật khẩu"
+                    placeholder={t('auth_confirm_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -317,13 +319,13 @@ export default function AuthScreen({ navigation, route }: Props) {
                 </View>
 
                 <View style={s.hints}>
-                  {['Ít nhất 6 ký tự', '1 chữ hoa', '1 chữ số', '1 ký tự đặc biệt'].map(h => (
+                  {[t('auth_password_min'), t('auth_password_upper'), t('auth_password_number'), t('auth_password_special')].map(h => (
                     <Text key={h} style={s.hintText}>• {h}</Text>
                   ))}
                 </View>
 
                 <TouchableOpacity style={[s.submitBtn, (loading || socialLoading) && s.disabled]} onPress={handleRegister} disabled={loading || socialLoading}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>Tạo tài khoản</Text>}
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>{t('auth_create_account')}</Text>}
                 </TouchableOpacity>
               </View>
             )}
@@ -336,20 +338,20 @@ export default function AuthScreen({ navigation, route }: Props) {
             {/* Divider */}
             <View style={s.divider}>
               <View style={s.dividerLine} />
-              <Text style={s.dividerText}>HOẶC</Text>
+              <Text style={s.dividerText}>{t('auth_or')}</Text>
               <View style={s.dividerLine} />
             </View>
 
             {/* Google */}
             <TouchableOpacity style={[s.googleBtn, (loading || socialLoading || googleDisabled) && s.disabled]} onPress={() => { setError(''); googlePrompt(); }} disabled={loading || socialLoading || googleDisabled}>
               <View style={s.gCircle}><Text style={s.gLetter}>G</Text></View>
-              <Text style={s.socialText}>{activeTab === 'login' ? 'Đăng nhập' : 'Đăng ký'} với Google</Text>
+              <Text style={s.socialText}>{t('auth_continue_with', { action: activeTab === 'login' ? t('auth_login') : t('auth_register'), provider: 'Google' })}</Text>
             </TouchableOpacity>
 
             {/* Facebook */}
             <TouchableOpacity style={[s.fbBtn, (loading || socialLoading || fbDisabled) && s.disabled]} onPress={() => { setError(''); fbPrompt(); }} disabled={loading || socialLoading || fbDisabled}>
               <Text style={s.fbLetter}>f</Text>
-              <Text style={s.fbText}>{activeTab === 'login' ? 'Đăng nhập' : 'Đăng ký'} với Facebook</Text>
+              <Text style={s.fbText}>{t('auth_continue_with', { action: activeTab === 'login' ? t('auth_login') : t('auth_register'), provider: 'Facebook' })}</Text>
             </TouchableOpacity>
 
             {appleAvailable && (
@@ -375,11 +377,11 @@ export default function AuthScreen({ navigation, route }: Props) {
           {/* Switch */}
           <View style={s.switchRow}>
             <Text style={s.switchLabel}>
-              {activeTab === 'login' ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? '}
+              {activeTab === 'login' ? t('auth_no_account') : t('auth_has_account')}
             </Text>
             <TouchableOpacity onPress={() => switchTab(activeTab === 'login' ? 'register' : 'login')}>
               <Text style={s.switchLink}>
-                {activeTab === 'login' ? 'Đăng ký ngay' : 'Đăng nhập'}
+                {activeTab === 'login' ? t('auth_register_now') : t('auth_login')}
               </Text>
             </TouchableOpacity>
           </View>

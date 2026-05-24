@@ -20,6 +20,7 @@ import { useAuthStore } from '@/stores/authStore';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import PostCard from '@/components/PostCard';
+import { useT } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Feed'>;
@@ -81,6 +82,7 @@ const SKELETON_KEYS = ['sk1', 'sk2', 'sk3', 'sk4', 'sk5'];
 
 export default function FeedScreen({ navigation, isActive = true, resetSignal = 0, safeTop = true, onCreatePost }: Props) {
   const scheme = useColorScheme();
+  const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const listRef = useRef<FlatList<string | Post>>(null);
   const user = useAuthStore((state) => state.user);
@@ -109,7 +111,7 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
   }, [fetchFeed, setRefreshing]);
 
   const isFirstLoad = loading && posts.length === 0;
-  const displayName = user?.displayName || user?.email || 'Bạn';
+  const displayName = user?.displayName || user?.email || t('user_fallback');
   const initial = displayName.charAt(0).toUpperCase();
   const openCreatePost = () => {
     if (onCreatePost) onCreatePost();
@@ -136,14 +138,14 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
         onPress={openCreatePost}
         activeOpacity={0.82}
       >
-        <Text style={[s.composerText, { color: C.text }]} numberOfLines={1}>Bạn đang nghĩ gì?</Text>
+        <Text style={[s.composerText, { color: C.text }]} numberOfLines={1}>{t('feed_composer_placeholder')}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={s.composerMediaBtn}
         onPress={openCreatePost}
         activeOpacity={0.78}
         accessibilityRole="button"
-        accessibilityLabel="Thêm ảnh hoặc video"
+        accessibilityLabel={t('feed_add_media')}
       >
         <Ionicons name="image-outline" size={26} color="#22c55e" />
       </TouchableOpacity>
@@ -185,7 +187,7 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
             ? (
                 <View style={{ alignItems: 'center', paddingVertical: 24, gap: 6 }}>
                   <Ionicons name="checkmark-circle-outline" size={28} color={C.subtext} />
-                  <Text style={{ color: C.subtext, fontSize: 13 }}>Da xem het bai viet</Text>
+                  <Text style={{ color: C.subtext, fontSize: 13 }}>{t('feed_all_caught_up')}</Text>
                 </View>
               )
             : null
@@ -194,17 +196,17 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
           isFirstLoad ? null : error ? (
             <View style={s.emptyWrap}>
               <Ionicons name="cloud-offline-outline" size={52} color={C.subtext} />
-              <Text style={[s.emptyTitle, { color: C.text }]}>Khong the tai feed</Text>
+              <Text style={[s.emptyTitle, { color: C.text }]}>{t('feed_load_error')}</Text>
               <Text style={[s.emptySub, { color: C.subtext }]}>{error}</Text>
               <TouchableOpacity style={[s.retryBtn, { borderColor: C.accent }]} onPress={() => fetchFeed(true)}>
-                <Text style={[s.retryText, { color: C.accent }]}>Thu lai</Text>
+                <Text style={[s.retryText, { color: C.accent }]}>{t('retry')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={s.emptyWrap}>
               <Ionicons name="newspaper-outline" size={52} color={C.subtext} />
-              <Text style={[s.emptyTitle, { color: C.text }]}>Chua co bai dang</Text>
-              <Text style={[s.emptySub, { color: C.subtext }]}>Ket noi voi ban be de xem bai viet cua ho</Text>
+              <Text style={[s.emptyTitle, { color: C.text }]}>{t('feed_empty_title')}</Text>
+              <Text style={[s.emptySub, { color: C.subtext }]}>{t('feed_empty_subtitle')}</Text>
             </View>
           )
         }
