@@ -286,6 +286,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       customGender,
       website,
       phone,
+      coverImageUrl,
     } = req.body as {
       displayName?: unknown;
       bio?: unknown;
@@ -306,6 +307,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       customGender?: unknown;
       website?: unknown;
       phone?: unknown;
+      coverImageUrl?: unknown;
     };
 
     if (defaultPostPrivacy !== undefined && !isDefaultPostPrivacy(defaultPostPrivacy)) {
@@ -352,6 +354,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (customGender !== undefined) data.customGender = customGender;
     if (website !== undefined) data.website = website;
     if (phone !== undefined) data.phone = phone;
+    if (coverImageUrl !== undefined) data.coverImageUrl = coverImageUrl;
     if (notificationPrefsPatch !== undefined) {
       const currentPrefs = normalizeNotificationPrefs(existing.notificationPrefs);
       data.notificationPrefs = {

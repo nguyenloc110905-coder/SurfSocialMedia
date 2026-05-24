@@ -65,6 +65,7 @@ export type ConversationListDetail = {
   item: ConservationDoc;
   memberIds: string[];
   unreadCount: number;
+  muted: boolean;
 };
 
 export const conversationRepository = {
@@ -194,14 +195,22 @@ export const conversationRepository = {
       .limit(limit)
       .get();
 
-    return snap.docs.map((doc) => {
-      const data = (doc.data() ?? {}) as Record<string, unknown>;
-      return {
-        item: mapConservationDoc(doc.id, data),
-        memberIds: mapMemberIds(data.memberIds),
-        unreadCount: getUnreadCountForUser(data, userId),
-      };
-    });
+    return snap.docs
+      .filter((doc) => {
+        const data = (doc.data() ?? {}) as Record<string, unknown>;
+        const hiddenFor = Array.isArray(data.hiddenFor) ? (data.hiddenFor as string[]) : [];
+        return !hiddenFor.includes(userId);
+      })
+      .map((doc) => {
+        const data = (doc.data() ?? {}) as Record<string, unknown>;
+        const mutedBy = Array.isArray(data.mutedBy) ? (data.mutedBy as string[]) : [];
+        return {
+          item: mapConservationDoc(doc.id, data),
+          memberIds: mapMemberIds(data.memberIds),
+          unreadCount: getUnreadCountForUser(data, userId),
+          muted: mutedBy.includes(userId),
+        };
+      });
   },
 
   async listMarketplaceByListingForSeller(
@@ -235,6 +244,7 @@ export const conversationRepository = {
         item: detail.item,
         memberIds: detail.memberIds,
         unreadCount: detail.unreadCount,
+        muted: false,
       }));
   },
 
@@ -313,6 +323,27 @@ export const conversationRepository = {
     if (redis) {
       await Promise.all(newMemberIds.map(uid => redis.del(`unreadCount:${uid}`)));
     }
+  },
+
+  async hideForUser(conversationId: string, userId: string): Promise<void> {
+    await col().doc(conversationId).update({
+      hiddenFor: FieldValue.arrayUnion(userId),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  },
+
+  async setMutedForUser(conversationId: string, userId: string, muted: boolean): Promise<void> {
+    await col().doc(conversationId).update({
+      mutedBy: muted ? FieldValue.arrayUnion(userId) : FieldValue.arrayRemove(userId),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  },
+
+  async getMutedBy(conversationId: string): Promise<string[]> {
+    const snap = await col().doc(conversationId).get();
+    if (!snap.exists) return [];
+    const data = snap.data() ?? {};
+    return Array.isArray(data.mutedBy) ? (data.mutedBy as string[]) : [];
   },
 
   async refreshPreviewIfLatestMessage(

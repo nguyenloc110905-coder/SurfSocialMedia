@@ -21,6 +21,7 @@ import {
   emitMessageRead,
   emitMessageUnreadCount,
 } from '../realtime/emitters/message.emitter.js';
+import { conversationRepository } from '../repositories/conversation.repository.js';
 
 const router = Router();
 
@@ -471,8 +472,9 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       }
 
       const payload = toRealtimeMessagePayload(result.item);
+      const mutedBy = await conversationRepository.getMutedBy(req.params.id);
       result.recipientIds.forEach((uid) => {
-        emitMessageNew(uid, payload);
+        emitMessageNew(uid, { ...payload, muted: mutedBy.includes(uid) });
       });
       emitMessageNew(senderId, payload);
 
@@ -521,9 +523,10 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(result.item);
+    const mutedBy = await conversationRepository.getMutedBy(req.params.id);
 
     result.recipientIds.forEach((uid) => {
-      emitMessageNew(uid, payload);
+      emitMessageNew(uid, { ...payload, muted: mutedBy.includes(uid) });
     });
 
     emitMessageNew(senderId, payload);
@@ -543,6 +546,33 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     emitMessageUnreadCount(senderId, senderCount);
 
     res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const snap = await conversationRepository.getById(req.params.id);
+    if (!snap) { res.status(404).json({ error: 'Conversation not found' }); return; }
+    const memberIds = await conversationRepository.getMemberIds(req.params.id);
+    if (!memberIds.includes(uid)) { res.status(403).json({ error: 'Forbidden' }); return; }
+    await conversationRepository.hideForUser(req.params.id, uid);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.patch('/:id/mute', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const muted = req.body?.muted !== false;
+    const memberIds = await conversationRepository.getMemberIds(req.params.id);
+    if (!memberIds.includes(uid)) { res.status(403).json({ error: 'Forbidden' }); return; }
+    await conversationRepository.setMutedForUser(req.params.id, uid, muted);
+    res.json({ success: true, muted });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

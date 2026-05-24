@@ -24,7 +24,8 @@ type CloudinaryUploadResponse = {
 
 function endpoint(kind: 'image' | 'video') {
   if (!CLOUD_NAME) throw new Error('Cloudinary cloud name is required');
-  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${kind}/upload`;
+  const resourceType = kind === 'video' ? 'auto' : 'image';
+  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
 }
 
 function fileNameFor(asset: UploadableAsset, kind: 'image' | 'video') {

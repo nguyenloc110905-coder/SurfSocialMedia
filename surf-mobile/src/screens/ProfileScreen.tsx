@@ -45,14 +45,19 @@ type UserProfile = {
   coverImageUrl?: string | null;
   currentCity?: string | null;
   hometown?: string | null;
-  birthday?: string | null;
+  birthday?: string | Birthday | null;
   birthDate?: string | null;
   work?: Array<{ company: string; title?: string; current?: boolean }>;
   education?: Array<{ school: string; degree?: string; year?: string }>;
   relationship?: string | null;
+  gender?: string | null;
+  customGender?: string | null;
+  website?: string | null;
+  phone?: string | null;
   joinedAt?: unknown;
 };
 
+type Birthday = { day: number; month: number; year: number; showYear: boolean };
 type Friend = { id: string; displayName?: string; photoURL?: string | null };
 
 const DARK = {
@@ -89,6 +94,22 @@ const TABS: Array<{ key: ProfileTab; labelKey: I18nKey }> = [
   { key: 'reels', labelKey: 'profile_tab_reels' },
 ];
 
+const RELATIONSHIP_KEYS: Record<string, I18nKey> = {
+  single: 'relationship_single',
+  in_relationship: 'relationship_in_relationship',
+  engaged: 'relationship_engaged',
+  married: 'relationship_married',
+  complicated: 'relationship_complicated',
+  open: 'relationship_open',
+  widowed: 'relationship_widowed',
+};
+
+const GENDER_KEYS: Record<string, I18nKey> = {
+  male: 'gender_male',
+  female: 'gender_female',
+  custom: 'gender_custom',
+};
+
 function formatJoined(raw: unknown, t: ReturnType<typeof useT>): string {
   if (!raw) return '';
   let ms = 0;
@@ -113,6 +134,15 @@ function formatDateText(raw: string | null | undefined, t: ReturnType<typeof use
     month: date.getMonth() + 1,
     year: date.getFullYear(),
   });
+}
+
+function formatBirthday(raw: UserProfile['birthday'] | undefined, birthDate: string | null | undefined, t: ReturnType<typeof useT>) {
+  if (raw && typeof raw === 'object') {
+    return raw.showYear
+      ? t('date_day_month_year', { day: raw.day, month: raw.month, year: raw.year })
+      : t('date_day_month', { day: raw.day, month: raw.month });
+  }
+  return formatDateText(typeof raw === 'string' ? raw : birthDate ?? null, t);
 }
 
 function isVideoUrl(url: string) {
@@ -254,7 +284,15 @@ export default function ProfileScreen({
   const initial = displayName.charAt(0).toUpperCase();
   const joined = formatJoined(profile?.joinedAt, t);
   const city = profile?.currentCity || profile?.hometown || '';
-  const birthday = formatDateText(profile?.birthday || profile?.birthDate || null, t);
+  const birthday = formatBirthday(profile?.birthday, profile?.birthDate, t);
+  const relationship = profile?.relationship
+    ? t(RELATIONSHIP_KEYS[profile.relationship] ?? 'relationship')
+    : '';
+  const gender = profile?.gender === 'custom'
+    ? (profile?.customGender || t('gender_custom'))
+    : profile?.gender
+      ? t(GENDER_KEYS[profile.gender] ?? 'gender')
+      : '';
 
   const imagePosts = useMemo(() => posts.filter((post) => firstMedia(post, 'image')), [posts]);
   const reelPosts = useMemo(() => posts.filter((post) => firstMedia(post, 'video')), [posts]);
@@ -591,7 +629,8 @@ export default function ProfileScreen({
     const details = [
       city ? { icon: 'location-outline' as const, text: city } : null,
       birthday ? { icon: 'calendar-outline' as const, text: birthday } : null,
-      profile?.relationship ? { icon: 'heart-outline' as const, text: profile.relationship } : null,
+      relationship ? { icon: 'heart-outline' as const, text: relationship } : null,
+      gender ? { icon: 'person-outline' as const, text: gender } : null,
       ...(profile?.work ?? []).map((item) => ({
         icon: 'briefcase-outline' as const,
         text: item.title ? t('work_at_company', { title: item.title, company: item.company }) : item.company,
@@ -600,6 +639,8 @@ export default function ProfileScreen({
         icon: 'school-outline' as const,
         text: item.degree ? `${item.school} · ${item.degree}` : item.school,
       })),
+      profile?.website ? { icon: 'globe-outline' as const, text: profile.website } : null,
+      profile?.phone ? { icon: 'call-outline' as const, text: profile.phone } : null,
       joined ? { icon: 'water-outline' as const, text: joined } : null,
     ].filter(Boolean) as Array<{ icon: keyof typeof Ionicons.glyphMap; text: string }>;
 

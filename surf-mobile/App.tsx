@@ -94,6 +94,8 @@ export default function App() {
       notificationStore.upsertNotification(payload as any);
     };
     const handleMessage = (payload: unknown) => {
+      const p = payload as { muted?: boolean } & Record<string, unknown>;
+      if (p.muted) return;
       useNotificationStore.getState().upsertMessage(payload as any, user.uid);
     };
     const handleFriendRequest = (payload: unknown) => {
