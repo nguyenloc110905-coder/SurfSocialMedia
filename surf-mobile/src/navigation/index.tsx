@@ -23,6 +23,8 @@ import MyListingsScreen from '@/screens/MyListingsScreen';
 import { NotificationPostDetailScreen } from '@/screens/NotificationCenterScreen';
 import SearchScreen from '@/screens/SearchScreen';
 import SavedPostsScreen from '@/screens/SavedPostsScreen';
+import GroupsScreen from '@/screens/GroupsScreen';
+import GroupDetailScreen from '@/screens/GroupDetailScreen';
 
 export type RootStackParamList = {
   Auth: { initialTab?: 'login' | 'register' };
@@ -37,7 +39,7 @@ export type RootStackParamList = {
   Settings: undefined;
   EditProfile: undefined;
   ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
-  CreatePost: undefined;
+  CreatePost: { groupId?: string; groupName?: string } | undefined;
   CreateClip: undefined;
   Marketplace: undefined;
   MarketplaceDetail: { listingId: string };
@@ -46,6 +48,8 @@ export type RootStackParamList = {
   NotificationPost: { postId: string };
   Search: undefined;
   SavedPosts: undefined;
+  Groups: undefined;
+  GroupDetail: { groupId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -124,6 +128,8 @@ export default function Navigation() {
             />
             <Stack.Screen name="MyListings" component={MyListingsScreen} />
             <Stack.Screen name="SavedPosts" component={SavedPostsScreen} />
+            <Stack.Screen name="Groups" component={GroupsScreen} />
+            <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
           </>
         ) : (
           <>
