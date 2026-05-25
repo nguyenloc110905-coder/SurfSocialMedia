@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Contacts from 'expo-contacts';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
@@ -31,7 +32,7 @@ type Props = {
   showTitleBlock?: boolean;
 };
 
-type MainTab = 'friends' | 'requests' | 'suggestions';
+type MainTab = 'friends' | 'requests' | 'suggestions' | 'contacts';
 type RequestTab = 'incoming' | 'outgoing';
 
 const DARK = {
@@ -98,6 +99,8 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
   const incomingRequests = useFriendStore((state) => state.incomingRequests);
   const outgoingRequests = useFriendStore((state) => state.outgoingRequests);
   const suggestions = useFriendStore((state) => state.suggestions);
+  const contactMatches = useFriendStore((state) => state.contactMatches);
+  const contactSyncing = useFriendStore((state) => state.contactSyncing);
   const loading = useFriendStore((state) => state.loading);
   const requestsLoading = useFriendStore((state) => state.requestsLoading);
   const suggestionsLoading = useFriendStore((state) => state.suggestionsLoading);
@@ -106,6 +109,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
   const error = useFriendStore((state) => state.error);
   const fetchAll = useFriendStore((state) => state.fetchAll);
   const refreshAll = useFriendStore((state) => state.refreshAll);
+  const fetchContactMatches = useFriendStore((state) => state.fetchContactMatches);
   const acceptRequest = useFriendStore((state) => state.acceptRequest);
   const rejectRequest = useFriendStore((state) => state.rejectRequest);
   const cancelRequest = useFriendStore((state) => state.cancelRequest);
@@ -133,7 +137,25 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
       ? loading
       : activeTab === 'requests'
         ? requestsLoading
-        : suggestionsLoading;
+        : activeTab === 'contacts'
+          ? contactSyncing
+          : suggestionsLoading;
+
+  const syncContacts = useCallback(async () => {
+    const { status } = await Contacts.requestPermissionsAsync();
+    if (status !== Contacts.PermissionStatus.GRANTED) {
+      Alert.alert('Quyền truy cập', 'Surf cần quyền truy cập danh bạ để tìm bạn bè.');
+      return;
+    }
+    const result = await Contacts.getContactsAsync({
+      fields: [Contacts.Fields.PhoneNumbers],
+    });
+    const phones = result.data
+      .flatMap((c) => c.phoneNumbers ?? [])
+      .map((p) => (p.number ?? '').replace(/\D/g, ''))
+      .filter((p) => p.length >= 7);
+    await fetchContactMatches(phones);
+  }, [fetchContactMatches]);
 
   const showActionError = (fallback: string) => (e: unknown) => {
     Alert.alert(t('unable_action'), (e as Error).message || fallback);
@@ -230,6 +252,33 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
     );
   };
 
+  const renderContactMatch = ({ item }: { item: FriendPerson }) => {
+    const busy = !!actionById[item.id];
+    return (
+      <TouchableOpacity
+        style={[s.row, { borderBottomColor: C.border }]}
+        activeOpacity={0.75}
+        onPress={() => openProfile(item.id)}
+      >
+        <Avatar name={item.name} url={item.avatarUrl} />
+        <View style={s.rowBody}>
+          <Text style={[s.name, { color: C.text }]} numberOfLines={1}>{item.name}</Text>
+          <Text style={[s.meta, { color: C.subtext }]}>Trong danh bạ của bạn</Text>
+        </View>
+        <TouchableOpacity
+          style={[s.addBtn, { backgroundColor: C.accent }]}
+          onPress={() => sendRequest(item).catch(showActionError(t('unable_action')))}
+          disabled={busy}
+        >
+          {busy
+            ? <ActivityIndicator size={14} color="#fff" />
+            : <Ionicons name="person-add-outline" size={16} color="#fff" />}
+          <Text style={s.primaryText}>{t('add')}</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
+
   const renderSuggestion = ({ item }: { item: FriendPerson }) => {
     const busy = !!actionById[item.id];
     return (
@@ -287,6 +336,14 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
         />
         <TabButton
           C={C}
+          active={activeTab === 'contacts'}
+          icon="book-outline"
+          label="Danh bạ"
+          count={contactMatches.length}
+          onPress={() => setActiveTab('contacts')}
+        />
+        <TabButton
+          C={C}
           active={activeTab === 'friends'}
           icon="people-outline"
           label={t('your_friends')}
@@ -319,7 +376,9 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
             ? `${t('your_friends')} ${friends.length ? `(${friends.length})` : ''}`
             : activeTab === 'requests'
               ? `${t('friend_requests')} ${incomingRequests.length ? incomingRequests.length : ''}`
-              : `${t('suggestions')} ${suggestions.length ? `(${suggestions.length})` : ''}`}
+              : activeTab === 'contacts'
+                ? `Danh bạ ${contactMatches.length ? `(${contactMatches.length})` : ''}`
+                : `${t('suggestions')} ${suggestions.length ? `(${suggestions.length})` : ''}`}
         </Text>
         {activeTab === 'friends' && query.trim() ? (
           <Text style={[s.sectionMeta, { color: C.subtext }]}>{t('results_count', { count: filteredFriends.length })}</Text>
@@ -331,6 +390,26 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           <RequestFilter C={C} active={requestTab === 'incoming'} label={t('incoming_requests', { count: incomingRequests.length })} onPress={() => setRequestTab('incoming')} />
           <RequestFilter C={C} active={requestTab === 'outgoing'} label={t('outgoing_requests', { count: outgoingRequests.length })} onPress={() => setRequestTab('outgoing')} />
         </View>
+      ) : null}
+
+      {activeTab === 'contacts' ? (
+        <TouchableOpacity
+          style={[s.contactBanner, { backgroundColor: C.card, borderColor: C.border }]}
+          onPress={syncContacts}
+          disabled={contactSyncing}
+          activeOpacity={0.75}
+        >
+          <View style={[s.contactBannerIcon, { backgroundColor: `${C.accent}22` }]}>
+            <Ionicons name="book-outline" size={22} color={C.accent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.contactBannerTitle, { color: C.text }]}>Đồng bộ danh bạ</Text>
+            <Text style={[s.contactBannerSub, { color: C.subtext }]}>Tìm người dùng Surf trong danh bạ điện thoại của bạn</Text>
+          </View>
+          {contactSyncing
+            ? <ActivityIndicator size={18} color={C.accent} />
+            : <Ionicons name="refresh-outline" size={18} color={C.subtext} />}
+        </TouchableOpacity>
       ) : null}
 
       {error ? (
@@ -347,10 +426,13 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
       ? filteredFriends
       : activeTab === 'requests'
         ? requests
-        : suggestions;
+        : activeTab === 'contacts'
+          ? contactMatches
+          : suggestions;
 
   const renderListItem = ({ item }: { item: FriendPerson | FriendRequestItem }) => {
     if (activeTab === 'requests') return renderRequest({ item: item as FriendRequestItem });
+    if (activeTab === 'contacts') return renderContactMatch({ item: item as FriendPerson });
     if (activeTab === 'suggestions') return renderSuggestion({ item: item as FriendPerson });
     return renderFriend({ item: item as FriendPerson });
   };
@@ -450,19 +532,25 @@ function EmptyState({ C, activeTab, requestTab, query }: { C: typeof DARK; activ
       ? 'people-outline'
       : activeTab === 'requests'
         ? 'person-add-outline'
-        : 'sparkles-outline';
+        : activeTab === 'contacts'
+          ? 'book-outline'
+          : 'sparkles-outline';
   const title =
     activeTab === 'friends'
       ? query.trim() ? t('friends_not_found') : t('friends_empty')
       : activeTab === 'requests'
         ? requestTab === 'incoming' ? t('requests_empty_incoming') : t('requests_empty_outgoing')
-        : t('suggestions_empty');
+        : activeTab === 'contacts'
+          ? 'Chưa đồng bộ danh bạ'
+          : t('suggestions_empty');
   const body =
     activeTab === 'friends'
       ? t('friends_empty_body')
       : activeTab === 'requests'
         ? t('requests_empty_body')
-        : t('suggestions_empty_body');
+        : activeTab === 'contacts'
+          ? 'Bấm "Đồng bộ danh bạ" ở trên để tìm bạn bè trong danh bạ điện thoại.'
+          : t('suggestions_empty_body');
 
   return (
     <View style={s.empty}>
@@ -605,4 +693,24 @@ const s = StyleSheet.create({
   skAvatar: { width: 52, height: 52, borderRadius: 26 },
   skLine: { height: 12, borderRadius: 8, marginBottom: 6 },
   skBtn: { width: 72, height: 34, borderRadius: 17 },
+  contactBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+  },
+  contactBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactBannerTitle: { fontSize: 14, fontWeight: '800' },
+  contactBannerSub: { fontSize: 12, marginTop: 2 },
 });
