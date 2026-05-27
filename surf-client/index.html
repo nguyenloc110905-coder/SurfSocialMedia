@@ -1,15 +1,28 @@
 <!DOCTYPE html>
 <html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Surf - Social</title>
-    <!-- Google AdSense -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7296491209846267" crossorigin="anonymous"></script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Surf - Social</title>
+  <script>
+    if (
+      window.location.hostname === 'surf-7ce71.web.app' ||
+      window.location.hostname === 'surf-7ce71.firebaseapp.com'
+    ) {
+      document.documentElement.innerHTML = '<div style="display:flex;height:100vh;width:100vw;justify-content:center;align-items:center;font-family:sans-serif;background:#000;color:#fff;"><h1>404 Page not found</h1></div>';
+      throw new Error("Site shut down"); // Dừng không cho chạy ứng dụng React
+    }
+  </script>
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7296491209846267"
+    crossorigin="anonymous"></script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

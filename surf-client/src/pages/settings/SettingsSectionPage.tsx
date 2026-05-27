@@ -2,6 +2,7 @@ import { SETTINGS_DETAIL_SECTIONS } from '@/lib/settings-constants';
 import { SettingsIcon } from '@/lib/settings-data';
 import { useT, useSettingsT } from '@/lib/i18n';
 import PrivacySettingsPanel from './PrivacySettingsPanel';
+import { useNavigate } from 'react-router-dom';
 
 interface SettingsSectionPageProps {
   sectionKey: string;
@@ -10,6 +11,7 @@ interface SettingsSectionPageProps {
 
 export default function SettingsSectionPage({ sectionKey, activeItem }: SettingsSectionPageProps) {
   const t = useT();
+  const navigate = useNavigate();
   const { tSection, tSectionSub, tItem } = useSettingsT();
   const section = SETTINGS_DETAIL_SECTIONS.find((s) => s.key === sectionKey);
   if (!section) return null;
@@ -31,9 +33,11 @@ export default function SettingsSectionPage({ sectionKey, activeItem }: Settings
         {section.items.map((item) => {
           const isActive = activeItem === item.key;
           return (
-            <div
+            <button
               key={item.key}
-              className={`flex items-center gap-4 p-4 rounded-2xl transition-all border-l-4 ${
+              type="button"
+              onClick={() => navigate(`?detail=${item.key}`)}
+              className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all border-l-4 text-left ${
                 isActive
                   ? 'border-l-surf-primary dark:border-l-surf-secondary bg-surf-primary/10 dark:bg-surf-secondary/15 shadow-md shadow-surf-primary/10 dark:shadow-surf-secondary/10'
                   : 'border-l-transparent bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-600/80 hover:border-surf-primary/40 dark:hover:border-surf-secondary/50 hover:shadow-lg hover:shadow-surf-primary/10'
@@ -53,7 +57,7 @@ export default function SettingsSectionPage({ sectionKey, activeItem }: Settings
                   {tItem(item.key)}
                 </span>
                 <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {t('settings_no_change')}
+                  Nhấn để xem cấu hình
                 </span>
               </div>
               <svg
@@ -63,7 +67,7 @@ export default function SettingsSectionPage({ sectionKey, activeItem }: Settings
               >
                 <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
               </svg>
-            </div>
+            </button>
           );
         })}
       </div>

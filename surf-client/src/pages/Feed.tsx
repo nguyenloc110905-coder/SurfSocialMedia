@@ -9,6 +9,7 @@ import CreatePost from '../components/feed/CreatePost';
 import MomentsBar from '../components/feed/MomentsBar';
 import PostCard from '../components/feed/PostCard';
 import Avatar from '../components/ui/Avatar';
+import AdBanner from '../components/ui/AdBanner';
 
 type Post = FeedPost;
 
@@ -80,7 +81,7 @@ export default function Feed() {
   const t = useT();
   const { posts, hasMore, nextCursor, loaded, setPosts, appendPosts, prependPost, updatePost, scrollTop, setScrollTop } =
     useFeedStore();
-  const [loading, setLoading] = useState(!loaded);
+  const [loading, setLoading] = useState(posts.length === 0 && !loaded);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedBoostListings, setFeedBoostListings] = useState<Listing[]>([]);
@@ -102,7 +103,7 @@ export default function Feed() {
 
   const loadPosts = async () => {
     try {
-      setLoading(true);
+      if (posts.length === 0) setLoading(true);
       setError(null);
       const response = await api.get<{ posts: Post[]; nextLastId?: string }>('/api/feed');
       setPosts(response.posts || [], !!response.nextLastId, response.nextLastId ?? null);
@@ -149,7 +150,9 @@ export default function Feed() {
   }, [loadMore]);
 
   useEffect(() => {
-    if (!loaded) void loadPosts();
+    // Luôn gọi API để lấy dữ liệu mới nhất (revalidate)
+    // Nhưng nếu đã có dữ liệu cache, nó sẽ tự động render ra màn hình TRƯỚC khi API chạy xong
+    void loadPosts();
   }, []);
 
   useEffect(() => {
@@ -269,6 +272,8 @@ export default function Feed() {
             {idx === 6 && feedBoostListings[2] && (
               <FeedBoostPlacement listing={feedBoostListings[2]} onOpen={handleOpenBoostListing} />
             )}
+            {/* Hiện quảng cáo Google AdSense sau mỗi 4 bài viết */}
+            {(idx + 1) % 4 === 0 && <AdBanner />}
           </div>
         ))}
 

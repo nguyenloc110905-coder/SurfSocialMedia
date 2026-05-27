@@ -98,17 +98,24 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const visibleAuthors = new Set([uid, ...friendIds, ...followingIds]);
     const isNewUser = friendIds.length === 0 && followingIds.length === 0;
 
+    // Tăng limit để lấy pool đủ lớn cho thuật toán ranking
     let q = postsRef
       .where('parentId', '==', null)
       .orderBy('createdAt', 'desc')
-      .limit(limitNum * 2);
-
-    if (lastId) {
-      const lastDoc = await postsRef.doc(lastId).get();
-      if (lastDoc.exists) q = q.startAfter(lastDoc);
-    }
+      .limit(200);
 
     const snap = await q.get();
+
+    // Lấy danh sách bài đã đọc từ Redis để giảm điểm (ít xuất hiện lại)
+    let seenPosts = new Set<string>();
+    if (redis) {
+      const seenStr = await redis.get(`seen_posts:${uid}`);
+      if (seenStr) {
+        try {
+          seenPosts = new Set(JSON.parse(seenStr));
+        } catch {}
+      }
+    }
 
     type PostDoc = {
       id: string;
@@ -162,26 +169,73 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
           return privacy === 'public'; // chỉ follow
         });
 
-    // ── Bổ sung "Khám phá" khi feed cá nhân thiếu ────────────────────────
-    const needDiscover = personalizedPosts.length < limitNum;
-    let posts = personalizedPosts;
+    // ── Gộp và Ranking Bài viết ──────────────────────────────────────────
+    const personalIds = new Set(personalizedPosts.map((p) => p.id));
+    const discoverPosts = activeDocs.filter((p) => {
+      if (personalIds.has(p.id)) return false; // đã có rồi
+      if (p.authorId === uid) return false; // bài của mình
+      const authorPostsSetting = authorPrivacyMap.get(p.authorId) ?? 'public';
+      if (authorPostsSetting === 'only-me') return false;
+      const isFriendAuthor = friendIds.includes(p.authorId);
+      if (authorPostsSetting === 'friends' && !isFriendAuthor) return false;
+      return (p.privacy ?? 'public') === 'public'; // chỉ lấy public
+    });
+    // Đánh dấu bài khám phá để client có thể hiện label "Khám phá"
+    discoverPosts.forEach((p) => {
+      p._discover = true;
+    });
 
-    if (needDiscover) {
-      const personalIds = new Set(personalizedPosts.map((p) => p.id));
-      const discoverPosts = activeDocs.filter((p) => {
-        if (personalIds.has(p.id)) return false; // đã có rồi
-        if (p.authorId === uid) return false; // bài của mình
-        const authorPostsSetting = authorPrivacyMap.get(p.authorId) ?? 'public';
-        if (authorPostsSetting === 'only-me') return false;
-        const isFriendAuthor = friendIds.includes(p.authorId);
-        if (authorPostsSetting === 'friends' && !isFriendAuthor) return false;
-        return (p.privacy ?? 'public') === 'public'; // chỉ lấy public
-      });
-      // Đánh dấu bài khám phá để client có thể hiện label "Khám phá"
-      discoverPosts.forEach((p) => {
-        p._discover = true;
-      });
-      posts = [...personalizedPosts, ...discoverPosts].slice(0, limitNum);
+    let posts = [...personalizedPosts, ...discoverPosts];
+    
+    type FsTs = { toMillis?: () => number, _seconds?: number, seconds?: number };
+    const toMs = (val: unknown): number => {
+      if (!val) return Date.now();
+      if (typeof (val as FsTs).toMillis === 'function') return (val as FsTs).toMillis!();
+      if ((val as FsTs)._seconds) return (val as FsTs)._seconds! * 1000;
+      if ((val as FsTs).seconds) return (val as FsTs).seconds! * 1000;
+      if (val instanceof Date) return val.getTime();
+      if (typeof val === 'string' || typeof val === 'number') return new Date(val).getTime();
+      return Date.now();
+    };
+
+    // Tính điểm (Scoring) cho từng bài
+    posts = posts.map(p => {
+      const likes = (p.likeCount as number) || 0;
+      const replies = (p.replyCount as number) || 0;
+      const ageHours = (Date.now() - toMs(p.createdAt)) / (1000 * 60 * 60);
+      
+      let score = (likes * 2) + (replies * 3) + 100 - (ageHours * 1.5);
+      
+      // Ưu tiên bài cá nhân hóa (bạn bè, follow) hơn khám phá
+      if (!p._discover) score += 20;
+      
+      // Phạt nặng nếu đã đọc rồi (để rơi xuống đáy)
+      if (seenPosts.has(p.id)) score -= 1000;
+
+      // Yếu tố ngẫu nhiên nhỏ để làm mới feed
+      score += Math.random() * 5;
+
+      return { ...p, _score: score };
+    });
+
+    // Sắp xếp theo điểm giảm dần
+    posts.sort((a, b) => (b._score as number) - (a._score as number));
+
+    // Pagination dựa trên vị trí của lastId trong mảng đã sort
+    let startIndex = 0;
+    if (lastId) {
+      const idx = posts.findIndex(p => p.id === lastId);
+      if (idx !== -1) startIndex = idx + 1;
+    }
+    
+    const hasMore = startIndex + limitNum < posts.length;
+    posts = posts.slice(startIndex, startIndex + limitNum);
+
+    // Lưu các bài đã trả về vào danh sách seen trong Redis
+    if (redis && posts.length > 0) {
+      posts.forEach(p => seenPosts.add(p.id));
+      const seenArr = Array.from(seenPosts).slice(-1000); // Giữ tối đa 1000 bài gần nhất
+      redis.set(`seen_posts:${uid}`, JSON.stringify(seenArr), { EX: 86400 * 3 }).catch(() => {});
     }
 
     posts = posts.map((p) => {
@@ -201,7 +255,6 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       return modified;
     });
 
-    const hasMore = allDocs.length > limitNum;
     const nextLastId = posts.length ? posts[posts.length - 1].id : null;
 
     res.json({ posts, hasMore, nextLastId });

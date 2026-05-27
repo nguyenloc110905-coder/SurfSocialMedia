@@ -41,9 +41,25 @@ type RequestOptions = {
   requireAuth?: boolean;
 };
 
+// --- Device ID Management ---
+function getOrCreateDeviceId(): string {
+  if (typeof window === 'undefined') return 'server-device';
+  let deviceId = localStorage.getItem('surf:device_id');
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem('surf:device_id', deviceId);
+  }
+  return deviceId;
+}
+
+export const DEVICE_ID = getOrCreateDeviceId();
+
 async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const url = path.startsWith('http') ? path : API_BASE ? `${API_BASE}${path}` : path;
   const headers = new Headers(options.headers);
+
+  // Attach Device ID to all requests
+  headers.set('x-device-id', DEVICE_ID);
 
   if (options.requireAuth !== false) {
     console.log(`🔒 API ${options.method} ${path} - checking auth...`);
@@ -117,6 +133,18 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
       console.error('Failed to parse error response:', e);
     }
     console.error(`❌ API ${options.method} ${path} failed: ${res.status} ${message}`);
+    
+    // Check for session limit exceeded
+    try {
+      const data = await res.clone().json().catch(() => ({}));
+      if (res.status === 401 && data.code === 'SESSION_LIMIT_EXCEEDED') {
+        auth.signOut().catch(console.error);
+        throw new Error('Bạn đã bị đăng xuất vì đăng nhập quá số thiết bị cho phép.');
+      }
+    } catch (e) {
+      // Ignore clone error
+    }
+
     throw new Error(message || 'Request failed');
   }
 
