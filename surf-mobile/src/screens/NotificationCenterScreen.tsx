@@ -104,7 +104,8 @@ function getActorPhoto(item: NotificationItem): string | null {
   return item.actorPhoto ?? item.actorPhotoURL ?? null;
 }
 
-function getNotificationIcon(type: string): keyof typeof Ionicons.glyphMap {
+function getNotificationIcon(type: string, entityType?: string): keyof typeof Ionicons.glyphMap {
+  if (entityType === 'group') return 'people-outline';
   if (type === 'friend_request' || type === 'friend_accept') return 'person-add-outline';
   if (type === 'reaction' || type === 'post_reaction' || type === 'comment_reaction') return 'heart-outline';
   if (type === 'comment' || type === 'reply' || type === 'mention') return 'chatbubble-ellipses-outline';
@@ -259,6 +260,7 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
     if (isUnread(item)) await markRead(item.id);
 
     const postId = item.postId ?? (item.entityType === 'post' ? item.entityId : undefined);
+    const groupId = item.entityType === 'group' ? item.entityId : undefined;
     const conversationId =
       item.conversationId ?? (item.entityType === 'conversation' || item.entityType === 'chat' ? item.entityId : undefined);
 
@@ -274,6 +276,11 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
 
     if (postId) {
       navigation.navigate('NotificationPost', { postId });
+      return;
+    }
+
+    if (groupId) {
+      navigation.navigate('GroupDetail', { groupId });
       return;
     }
 
@@ -301,7 +308,7 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
         <View style={s.avatarWrap}>
           <NotificationAvatar item={item} C={C} />
           <View style={[s.typeBadge, { backgroundColor: C.card, borderColor: C.border }]}>
-            <Ionicons name={getNotificationIcon(item.type)} size={12} color={C.accent} />
+            <Ionicons name={getNotificationIcon(item.type, item.entityType)} size={12} color={C.accent} />
           </View>
         </View>
         <View style={s.rowBody}>

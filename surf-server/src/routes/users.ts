@@ -305,7 +305,6 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       customGender?: unknown;
       website?: unknown;
       phone?: unknown;
-      coverImageUrl?: unknown;
     };
 
     if (defaultPostPrivacy !== undefined && !isDefaultPostPrivacy(defaultPostPrivacy)) {

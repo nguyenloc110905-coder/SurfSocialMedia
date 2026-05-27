@@ -158,6 +158,17 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
               style={[s.menuItem, { borderBottomColor: C.border }]}
               onPress={() => {
                 onClose();
+                navigation.navigate('Groups');
+              }}
+            >
+              <Ionicons name="people-outline" size={20} color={C.text} />
+              <Text style={[s.menuText, { color: C.text }]}>Nhóm</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.menuItem, { borderBottomColor: C.border }]}
+              onPress={() => {
+                onClose();
                 navigation.navigate('Settings');
               }}
             >

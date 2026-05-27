@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '@/navigation';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -28,6 +29,7 @@ import { api } from '@/lib/api';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'CreatePost'>;
+  route: RouteProp<RootStackParamList, 'CreatePost'>;
 };
 
 type Privacy = 'public' | 'friends' | 'only-me' | 'custom';
@@ -96,9 +98,11 @@ const FEELINGS = [
   { emoji: '😤', label: 'Tự hào' },
 ];
 
-export default function CreatePostScreen({ navigation }: Props) {
+export default function CreatePostScreen({ navigation, route }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
+  const groupId = route.params?.groupId;
+  const groupName = route.params?.groupName;
 
   const { profile, fetchProfile } = useUserStore();
   const { user } = useAuthStore();
@@ -177,14 +181,15 @@ export default function CreatePostScreen({ navigation }: Props) {
         mediaUrls.push(url);
         setUploadProgress(Math.round(((i + 1) / total) * 100));
       }
-      await api.post('/api/posts', {
+      const endpoint = groupId ? `/api/groups/${groupId}/posts` : '/api/posts';
+      await api.post(endpoint, {
         content: content.trim(),
         mediaUrls,
         feeling: feeling || null,
         location: location.trim() || null,
-        privacy,
+        privacy: groupId ? 'group' : privacy,
       });
-      await refreshFeed(true);
+      if (!groupId) await refreshFeed(true);
       navigation.goBack();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Không thể đăng bài. Vui lòng thử lại!';
@@ -202,7 +207,9 @@ export default function CreatePostScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="close" size={26} color={C.text} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: C.text }]}>Tạo bài viết</Text>
+        <Text style={[s.headerTitle, { color: C.text }]} numberOfLines={1}>
+          {groupName ? `Đăng vào ${groupName}` : 'Tạo bài viết'}
+        </Text>
         <TouchableOpacity
           style={[s.postBtn, { backgroundColor: canSubmit && !submitting ? C.accent : C.border }]}
           disabled={!canSubmit || submitting}
@@ -240,11 +247,14 @@ export default function CreatePostScreen({ navigation }: Props) {
               </Text>
               <TouchableOpacity
                 style={[s.privacyBtn, { borderColor: C.border }]}
-                onPress={() => setShowPrivacyModal(true)}
+                onPress={() => !groupId && setShowPrivacyModal(true)}
+                disabled={Boolean(groupId)}
               >
-                <Ionicons name={PRIVACY_ICONS[privacy]} size={13} color={C.accent} />
-                <Text style={[s.privacyText, { color: C.accent }]}>{PRIVACY_LABELS[privacy]}</Text>
-                <Ionicons name="caret-down" size={11} color={C.accent} />
+                <Ionicons name={groupId ? 'people-outline' : PRIVACY_ICONS[privacy]} size={13} color={C.accent} />
+                <Text style={[s.privacyText, { color: C.accent }]} numberOfLines={1}>
+                  {groupName ? `Nhóm: ${groupName}` : PRIVACY_LABELS[privacy]}
+                </Text>
+                {!groupId && <Ionicons name="caret-down" size={11} color={C.accent} />}
               </TouchableOpacity>
             </View>
           </View>
@@ -363,7 +373,7 @@ export default function CreatePostScreen({ navigation }: Props) {
       </KeyboardAvoidingView>
 
       {/* Privacy Modal */}
-      <Modal visible={showPrivacyModal} transparent animationType="slide">
+      <Modal visible={!groupId && showPrivacyModal} transparent animationType="slide">
         <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setShowPrivacyModal(false)}>
           <View style={[s.modalContent, { backgroundColor: C.card }]}>
             <Text style={[s.modalTitle, { color: C.text }]}>Đối tượng của bài viết</Text>
@@ -400,7 +410,7 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700' },
+  headerTitle: { flex: 1, marginHorizontal: 12, textAlign: 'center', fontSize: 18, fontWeight: '700' },
   postBtn: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20 },
   postBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   progressBar: { height: 3, width: '100%' },
