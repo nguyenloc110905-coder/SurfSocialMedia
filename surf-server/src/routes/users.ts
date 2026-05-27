@@ -290,6 +290,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       displayName?: unknown;
       bio?: unknown;
       photoURL?: unknown;
+      coverImageUrl?: unknown;
       currentCity?: unknown;
       hometown?: unknown;
       birthday?: unknown;
