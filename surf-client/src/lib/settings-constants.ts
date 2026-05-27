@@ -23,6 +23,7 @@ export const SETTINGS_DETAIL_SECTIONS: {
     subtitle: 'Quản lý cài đặt tài khoản và bảo mật.',
     items: [
       { label: 'Bảo mật tài khoản', icon: 'shield', key: 'account-security' },
+      { label: 'Thiết bị đăng nhập', icon: 'smartphone', key: 'active-sessions' },
       { label: 'Ngôn ngữ & Múi giờ', icon: 'globe', key: 'language-timezone' },
       { label: 'Xóa tài khoản', icon: 'trash', key: 'delete-account' },
     ],
@@ -33,6 +34,7 @@ export const SETTINGS_DETAIL_SECTIONS: {
     subtitle: 'Kiểm soát ai có thể xem nội dung và tương tác với bạn.',
     items: [
       { label: 'Kiểm tra quyền riêng tư', icon: 'lock', key: 'privacy-checkup' },
+      { label: 'Cài đặt quyền riêng tư', icon: 'eye', key: 'privacy-settings' },
       { label: 'Đối tượng xem mặc định', icon: 'gear', key: 'default-audience' },
       { label: 'Lời mời kết bạn', icon: 'people', key: 'friend-request-privacy' },
       { label: 'Danh sách chặn', icon: 'block', key: 'block-list' },
@@ -43,6 +45,7 @@ export const SETTINGS_DETAIL_SECTIONS: {
     key: 'personalization',
     subtitle: 'Cá nhân hóa trải nghiệm lướt Surf.',
     items: [
+      { label: 'Giao diện hiển thị', icon: 'moon', key: 'appearance' },
       { label: 'Thông báo & Nhắc nhở', icon: 'bell', key: 'notifications' },
     ],
   },

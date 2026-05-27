@@ -156,6 +156,8 @@ const dict = {
     item_media_files2: 'Tệp phương tiện',
     item_policy: 'Chính sách cộng đồng & Điều khoản',
     item_reports: 'Báo cáo vi phạm',
+    item_appearance: 'Giao diện hiển thị',
+    item_active_sessions: 'Thiết bị đăng nhập',
 
     // --- Settings privacy panel items ---
     sp_settings: 'Cài đặt',
@@ -480,6 +482,8 @@ const dict = {
     item_media_files2: 'Media files',
     item_policy: 'Community Policy & Terms',
     item_reports: 'Violation Reports',
+    item_appearance: 'Appearance',
+    item_active_sessions: 'Active Sessions',
 
     // --- Settings privacy panel items ---
     sp_settings: 'Settings',
@@ -700,6 +704,8 @@ const ITEM_LABEL_MAP: Record<string, I18nKey> = {
   'block-list': 'item_block_list',
   policy: 'item_policy',
   reports: 'item_reports',
+  appearance: 'item_appearance',
+  'active-sessions': 'item_active_sessions',
 };
 
 /** Hook lấy hàm dịch theo ngôn ngữ hiện tại */

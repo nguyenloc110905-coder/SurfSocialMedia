@@ -70,7 +70,6 @@ interface PostCardProps {
     taggedFriends?: Array<{ uid: string; displayName: string }>;
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     groupId?: string;
-    group?: { id: string; name: string; coverImageUrl?: string };
     isEdited?: boolean;
     isAnonymous?: boolean;
     poll?: { options: { id: string; text: string; votes: string[] }[] };

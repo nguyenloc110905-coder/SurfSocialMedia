@@ -11,11 +11,14 @@ import QuickAccessSection from './QuickAccessSection';
 import ReviewModal from './ReviewModal';
 import CustomSettingsModal from './CustomSettingsModal';
 import SettingsSectionPage from './SettingsSectionPage';
+
 import BlockListPanel from './BlockListPanel';
-import NotificationPreferencesPanel from './NotificationPreferencesPanel';
 import FriendRequestPrivacyPanel from './FriendRequestPrivacyPanel';
 import LanguagePanel from './LanguagePanel';
 import ReportsPanel from './ReportsPanel';
+import PrivacySettingsPanel from './PrivacySettingsPanel';
+import AppearancePanel from './AppearancePanel';
+import ActiveSessionsPanel from './ActiveSessionsPanel';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -86,6 +89,12 @@ export default function SettingsPage() {
             <BlockListPanel />
           ) : selectedDetail === 'friend-request-privacy' ? (
             <FriendRequestPrivacyPanel />
+          ) : selectedDetail === 'privacy-settings' ? (
+            <PrivacySettingsPanel />
+          ) : selectedDetail === 'active-sessions' ? (
+            <ActiveSessionsPanel />
+          ) : selectedDetail === 'appearance' ? (
+            <AppearancePanel />
           ) : selectedDetail === 'notifications' ? (
             <NotificationPreferencesPanel />
           ) : selectedDetail === 'language-timezone' ? (

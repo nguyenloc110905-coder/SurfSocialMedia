@@ -21,13 +21,15 @@ const MAIN_PATHS = [
   '/feed/explore',
   '/feed/moments',
   '/feed/live',
+  '/feed/settings',
 ] as const;
 function isMainPage(pathname: string): boolean {
   return (
     MAIN_PATHS.some((p) => pathname === p) ||
     pathname.startsWith('/feed/friends/') ||
     pathname.startsWith('/feed/groups/') ||
-    pathname.startsWith('/feed/live/')
+    pathname.startsWith('/feed/live/') ||
+    pathname.startsWith('/feed/profile/')
   );
 }
 function isFriendsSection(pathname: string): boolean {
@@ -44,9 +46,9 @@ export default function Layout() {
   const useThreeColumn = isMainPage(location.pathname);
   const showFriendsLeftNav = isFriendsSection(location.pathname);
   const isShortVideo = location.pathname === '/feed/short-video';
-  const useWideMain = isWaves || isMarket || isLive;
-  const useEmbeddedFullHeight = isWaves || isMarket;
-  const showQuickContactBar = useThreeColumn;
+  const useWideMain = isWaves || isMarket || isLive || isSettings || isProfile;
+  const useEmbeddedFullHeight = isWaves || isMarket || isSettings;
+  const showQuickContactBar = useThreeColumn && !isSettings && !isProfile;
   const [mainNavCollapsed, setMainNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('surf:main-left-nav-collapsed') === '1';
@@ -78,13 +80,9 @@ export default function Layout() {
       <Header hideCenterNav={useThreeColumn} />
       <main
         className={
-          isSettings
-            ? 'flex-1 w-full pt-0 pb-20 md:pb-0 flex flex-col min-h-0 overflow-hidden'
-            : isProfile
-              ? 'flex-1 w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-20 md:pb-0 max-w-4xl'
-              : useThreeColumn
-                ? 'flex-1 flex min-h-0 w-full pb-20 md:pb-0 overflow-hidden'
-                : 'flex-1 max-w-2xl w-full mx-auto px-4 py-4 sm:py-6 pb-20 md:pb-0'
+          useThreeColumn
+            ? 'flex-1 flex min-h-0 w-full pb-20 md:pb-0 overflow-hidden'
+            : 'flex-1 max-w-2xl w-full mx-auto px-4 py-4 sm:py-6 pb-20 md:pb-0'
         }
       >
         {useThreeColumn ? (
@@ -119,7 +117,9 @@ export default function Layout() {
                     className={
                       useEmbeddedFullHeight
                         ? 'flex h-full min-h-0 min-w-0 w-full flex-1'
-                        : 'flex-1 w-full'
+                        : isProfile
+                          ? 'flex-1 w-full mx-auto px-4 sm:px-6 py-4 sm:py-6 max-w-4xl'
+                          : 'flex-1 w-full'
                     }
                   >
                     <Outlet />

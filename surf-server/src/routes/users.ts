@@ -246,6 +246,109 @@ router.get('/me/reports', requireAuth, async (req: AuthRequest, res) => {
 
 /**
  * @swagger
+ * /api/users/me/sessions/heartbeat:
+ *   post:
+ *     tags: [Users]
+ *     summary: Heartbeat cho session
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/me/sessions/heartbeat', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const deviceId = req.headers['x-device-id'] as string;
+    if (!deviceId) {
+      res.status(400).json({ error: 'Missing x-device-id header' });
+      return;
+    }
+    const { init, userAgent } = req.body;
+    
+    const db = getDb();
+    const sessionsRef = db.collection('users').doc(req.uid!).collection('sessions');
+    const docRef = sessionsRef.doc(deviceId);
+    
+    const doc = await docRef.get();
+    
+    // Nếu không phải init và doc không tồn tại (đã bị xóa do vượt quá giới hạn)
+    if (!init && !doc.exists) {
+      res.status(401).json({ error: 'Session limit exceeded or revoked', code: 'SESSION_LIMIT_EXCEEDED' });
+      return;
+    }
+    
+    if (!doc.exists) {
+      await docRef.set({
+        id: deviceId,
+        os: req.body.os || 'Unknown',
+        browser: req.body.browser || 'Unknown',
+        device: req.body.device || 'Desktop',
+        userAgent: userAgent || req.headers['user-agent'] || 'Unknown',
+        ip: req.ip || req.headers['x-forwarded-for'] || 'Unknown IP',
+        createdAt: FieldValue.serverTimestamp(),
+        lastActive: FieldValue.serverTimestamp(),
+      });
+    } else {
+      await docRef.update({
+        lastActive: FieldValue.serverTimestamp(),
+        ip: req.ip || req.headers['x-forwarded-for'] || 'Unknown IP',
+        os: req.body.os || 'Unknown',
+        browser: req.body.browser || 'Unknown',
+        device: req.body.device || 'Desktop',
+      });
+    }
+
+    // Limit to 2 devices
+    const snap = await sessionsRef.orderBy('lastActive', 'desc').get();
+    if (snap.docs.length > 2) {
+      const batch = db.batch();
+      for (let i = 2; i < snap.docs.length; i++) {
+        batch.delete(snap.docs[i].ref);
+      }
+      await batch.commit();
+    }
+    
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/users/me/sessions:
+ *   get:
+ *     tags: [Users]
+ *     summary: Lấy danh sách session
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/me/sessions', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const snap = await db.collection('users').doc(req.uid!).collection('sessions').orderBy('lastActive', 'desc').get();
+    const sessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json({ sessions });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/users/me/sessions/{deviceId}:
+ *   delete:
+ *     tags: [Users]
+ *     summary: Xóa một session (đăng xuất thiết bị)
+ *     security: [{ bearerAuth: [] }]
+ */
+router.delete('/me/sessions/:deviceId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    await db.collection('users').doc(req.uid!).collection('sessions').doc(req.params.deviceId).delete();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
  * /api/users/me:
  *   put:
  *     tags: [Users]
