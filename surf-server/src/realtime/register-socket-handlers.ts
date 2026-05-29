@@ -338,9 +338,19 @@ export const registerSocketHandlers = (io: Server) => {
         const memberIds = await conversationRepository.getMemberIds(conversationId);
         if (!memberIds.includes(uid)) return;
 
-        socket.to(conversationRoom(conversationId)).emit(eventName, {
+        const eventPayload = {
           conversationId,
           userId: uid,
+        };
+
+        memberIds
+          .filter((memberId) => memberId !== uid)
+          .forEach((memberId) => {
+            io.to(userRoom(memberId)).emit(eventName, eventPayload);
+          });
+
+        socket.to(conversationRoom(conversationId)).emit(eventName, {
+          ...eventPayload,
         });
       } catch (error) {
         console.error(`[messages] failed to emit ${eventName}:`, error);

@@ -19,6 +19,7 @@ export interface FeedPost {
   taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
   isEdited?: boolean;
+  pinnedAt?: string | null;
   _discover?: boolean;
   group?: {
     id: string;

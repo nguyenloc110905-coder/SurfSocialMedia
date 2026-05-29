@@ -165,9 +165,19 @@ export const createSocketServer = async (app: FastifyInstance): Promise<Server> 
       const conversation = await getConversationById(conversationId);
       if (!conversation || !conversation.memberIds.includes(uid)) return;
 
-      socket.to(roomForConversation(conversationId)).emit(eventName, {
+      const eventPayload = {
         conversationId,
         userId: uid,
+      };
+
+      conversation.memberIds
+        .filter((memberId) => memberId !== uid)
+        .forEach((memberId) => {
+          io.to(roomForUser(memberId)).emit(eventName, eventPayload);
+        });
+
+      socket.to(roomForConversation(conversationId)).emit(eventName, {
+        ...eventPayload,
       });
     };
 

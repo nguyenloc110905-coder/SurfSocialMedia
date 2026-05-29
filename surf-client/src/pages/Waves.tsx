@@ -17,7 +17,6 @@ import { uploadFile, uploadImage } from '@/lib/cloudinary';
 import { optimizeImageUrl } from '@/lib/image-cdn';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
-import { type Listing } from '@/stores/marketplaceStore';
 import { useGlobalCall } from '@/components/call/GlobalCallProvider';
 
 type ConversationItem = {
@@ -74,14 +73,7 @@ type ApiMessage = {
   pinnedBy?: string[];
   reactions?: MessageReactionsByEmoji;
   callMode?: 'audio' | 'video';
-  callOutcome?:
-    | 'completed'
-    | 'missed'
-    | 'declined'
-    | 'busy'
-    | 'failed'
-    | 'ended'
-    | 'started';
+  callOutcome?: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended' | 'started';
   durationSeconds?: number;
 };
 
@@ -90,8 +82,13 @@ type UiMessage = ApiMessage & {
 };
 
 type RealtimePayload = {
-  conversationId: string;
+  conversationId?: string;
   message: ApiMessage;
+  conversation?: {
+    id: string;
+    lastMessagePreview?: string;
+    lastMessageAt?: string;
+  };
 };
 
 type MessagePage = {
@@ -114,6 +111,7 @@ type ReadReceiptPayload = {
 type TypingPayload = {
   conversationId: string;
   userId: string;
+  isTyping?: boolean;
 };
 
 type MessageSelfHiddenPayload = {
@@ -151,63 +149,6 @@ type FriendDirectoryItem = {
 };
 
 type CallMode = 'audio' | 'video';
-
-type CallInvitePayload = {
-  callId: string;
-  conversationId: string;
-  fromUserId: string;
-  toUserId: string;
-  fromName: string;
-  fromAvatarUrl: string | null;
-  mode: CallMode;
-};
-
-type CallAcceptedPayload = {
-  callId: string;
-  conversationId: string;
-  fromUserId: string;
-  toUserId: string;
-  mode: CallMode;
-};
-
-type CallSignalPayload = {
-  callId: string;
-  conversationId: string;
-  fromUserId: string;
-  toUserId: string;
-  mode: CallMode;
-  signal:
-    | { type: 'offer' | 'answer'; sdp: RTCSessionDescriptionInit }
-    | { type: 'ice'; candidate: RTCIceCandidateInit };
-};
-
-type CallEndPayload = {
-  callId: string;
-  conversationId: string;
-  fromUserId: string;
-  toUserId: string;
-  reason?: string;
-};
-
-type IncomingCall = {
-  callId: string;
-  conversationId: string;
-  fromUserId: string;
-  fromName: string;
-  fromAvatarUrl: string | null;
-  mode: CallMode;
-};
-
-type ActiveCall = {
-  callId: string;
-  conversationId: string;
-  peerId: string;
-  peerName: string;
-  peerAvatarUrl: string | null;
-  mode: CallMode;
-  isOutgoing: boolean;
-  status: 'outgoing' | 'connecting' | 'connected';
-};
 
 type RecallAudience = 'everyone' | 'self';
 type MessageAction = 'edit' | 'recall' | 'forward' | 'pin' | 'report';
@@ -274,47 +215,6 @@ function formatBoostListingPrice(price: number) {
   return price.toLocaleString('vi-VN') + ' ₫';
 }
 
-function isChatBoostListing(listing: Listing) {
-  return listing.boostEnabled && listing.boostStatus === 'active' && listing.boostPlan?.placements?.includes('surf_chat');
-}
-
-function WavesBoostPlacement({ listing }: { listing: Listing }) {
-  const imageUrl = listing.mediaUrls?.[0];
-  return (
-    <Link
-      to={`/feed/market/${listing.id}`}
-      className="mb-3 block overflow-hidden rounded-[24px] border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-3 text-left shadow-sm transition hover:border-cyan-300 hover:shadow-md dark:border-cyan-900/50 dark:from-cyan-950/30 dark:via-slate-900 dark:to-slate-900"
-    >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-300">
-          Được tài trợ · Surf Boost
-        </span>
-        <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-700 dark:text-cyan-200">
-          Market
-        </span>
-      </div>
-      <div className="flex gap-3">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
-          {imageUrl ? (
-            <img src={optimizeImageUrl(imageUrl)} alt={listing.title} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-600">
-              <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor">
-                <path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm-1 14H6l3.5-4.5 2.5 3.01L15.5 11 18 14.3V17Z" />
-              </svg>
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-white">{listing.title}</div>
-          <div className="mt-1 text-xs font-black text-cyan-700 dark:text-cyan-300">{formatBoostListingPrice(listing.price)}</div>
-          <div className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{listing.location || 'Surf Market'}</div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
 function MarketplaceThreadCard({ marketplace }: { marketplace: MarketplaceConversationContext }) {
   return (
     <Link
@@ -332,7 +232,11 @@ function MarketplaceThreadCard({ marketplace }: { marketplace: MarketplaceConver
       <div className="flex gap-3">
         <div className="h-[72px] w-[72px] shrink-0 overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
           {marketplace.imageUrl ? (
-            <img src={optimizeImageUrl(marketplace.imageUrl)} alt={marketplace.title} className="h-full w-full object-cover" />
+            <img
+              src={optimizeImageUrl(marketplace.imageUrl)}
+              alt={marketplace.title}
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-400 dark:text-slate-500">
               Market
@@ -340,9 +244,15 @@ function MarketplaceThreadCard({ marketplace }: { marketplace: MarketplaceConver
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-white">{marketplace.title}</div>
-          <div className="mt-1 text-sm font-black text-cyan-700 dark:text-cyan-300">{formatBoostListingPrice(marketplace.price)}</div>
-          <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{marketplace.location || 'Surf Market'}</div>
+          <div className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-white">
+            {marketplace.title}
+          </div>
+          <div className="mt-1 text-sm font-black text-cyan-700 dark:text-cyan-300">
+            {formatBoostListingPrice(marketplace.price)}
+          </div>
+          <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+            {marketplace.location || 'Surf Market'}
+          </div>
         </div>
       </div>
     </Link>
@@ -354,6 +264,29 @@ const MARKETPLACE_QUICK_REPLIES = [
   'Tôi sẽ báo cho bạn biết.',
   'Tiếc quá, hết hàng rồi bạn ạ.',
 ];
+
+function TypingDots({ className = '' }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-0.5 ${className}`} aria-label="...">
+      {[0, 1, 2].map((index) => (
+        <span
+          key={index}
+          className="h-1.5 w-1.5 rounded-full bg-current animate-bounce"
+          style={{ animationDelay: `${index * 120}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function TypingIndicator({ label, className = '' }: { label: string; className?: string }) {
+  return (
+    <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
+      <span className="truncate">{label}</span>
+      <TypingDots className="shrink-0" />
+    </span>
+  );
+}
 
 const unwrapReplyPrefix = (value: string) => {
   let normalized = value.trim();
@@ -651,7 +584,8 @@ const getConversationPreviewText = (message: ApiMessage) => {
   if (normalizedText) return normalizedText;
 
   if (message.type === 'image') return 'Đã gửi ảnh';
-  if (message.type === 'file') return message.fileName ? `Đã gửi ${message.fileName}` : 'Đã gửi tệp';
+  if (message.type === 'file')
+    return message.fileName ? `Đã gửi ${message.fileName}` : 'Đã gửi tệp';
   if (message.type === 'audio') return 'Đã gửi ghi âm';
   if (message.type === 'call_log') return getCallMetaLabel(message);
 
@@ -712,25 +646,112 @@ function WaveAvatar({
   );
 }
 
-function SharedVideoCard({ text, outgoing }: { text: string; outgoing: boolean }) {
+type SharedVideoPreview = {
+  thumbnailUrl?: string | null;
+  videoUrl?: string | null;
+  authorId?: string | null;
+  authorPhotoURL?: string | null;
+  authorDisplayName?: string | null;
+};
+
+const URL_TOKEN_PATTERN = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
+const TRAILING_URL_PUNCTUATION_PATTERN = /[.,!?;:)\]}]+$/;
+
+const normalizeLinkHref = (value: string) =>
+  value.toLowerCase().startsWith('www.') ? `https://${value}` : value;
+
+const splitUrlToken = (value: string) => {
+  let url = value;
+  let suffix = '';
+
+  while (url && TRAILING_URL_PUNCTUATION_PATTERN.test(url)) {
+    suffix = `${url.slice(-1)}${suffix}`;
+    url = url.slice(0, -1);
+  }
+
+  return { url, suffix };
+};
+
+function LinkifiedMessageText({
+  text,
+  className,
+  outgoing,
+}: {
+  text: string;
+  className?: string;
+  outgoing: boolean;
+}) {
+  const parts = [];
+  const matcher = new RegExp(URL_TOKEN_PATTERN);
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = matcher.exec(text)) !== null) {
+    const rawToken = match[0];
+    const tokenStart = match.index;
+    const { url, suffix } = splitUrlToken(rawToken);
+
+    if (!url) continue;
+
+    if (tokenStart > lastIndex) {
+      parts.push(text.slice(lastIndex, tokenStart));
+    }
+
+    parts.push(
+      <a
+        key={`${tokenStart}-${url}`}
+        href={normalizeLinkHref(url)}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(event) => event.stopPropagation()}
+        className={
+          outgoing
+            ? 'font-bold text-blue-950 underline decoration-blue-200 underline-offset-2 hover:text-blue-900 dark:text-sky-100 dark:decoration-sky-200'
+            : 'font-semibold text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-sky-300 dark:decoration-sky-500'
+        }
+      >
+        {url}
+      </a>
+    );
+
+    if (suffix) {
+      parts.push(suffix);
+    }
+
+    lastIndex = tokenStart + rawToken.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return <p className={className}>{parts.length > 0 ? parts : text}</p>;
+}
+
+function SharedVideoCard({ text, outgoing: _outgoing }: { text: string; outgoing: boolean }) {
   const match = text.match(/feed\/short-video\?v=([a-zA-Z0-9_-]+)/);
   const videoId = match ? match[1] : null;
-  const [video, setVideo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [video, setVideo] = useState<SharedVideoPreview | null>(null);
+  const [loading, setLoading] = useState(() => Boolean(videoId));
 
   useEffect(() => {
-    if (videoId) {
-      api.get(`/api/videos/${videoId}`)
-        .then(res => {
-          setVideo(res);
-          setLoading(false);
-        })
-        .catch(() => {
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
-    }
+    if (!videoId) return;
+
+    let cancelled = false;
+    api
+      .get<SharedVideoPreview>(`/api/videos/${videoId}`)
+      .then((res) => {
+        if (cancelled) return;
+        setVideo(res);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [videoId]);
 
   const isAutoGeneratedText = text.includes('/feed/short-video?v=');
@@ -738,14 +759,26 @@ function SharedVideoCard({ text, outgoing }: { text: string; outgoing: boolean }
   if (loading) {
     return (
       <div className="flex flex-col gap-2">
-        {!isAutoGeneratedText && <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>}
+        {!isAutoGeneratedText && (
+          <LinkifiedMessageText
+            text={text}
+            outgoing={_outgoing}
+            className="whitespace-pre-wrap text-sm leading-6"
+          />
+        )}
         <div className="w-[220px] h-[340px] bg-black/20 animate-pulse rounded-[20px]" />
       </div>
     );
   }
 
   if (!videoId || !video) {
-    return <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>;
+    return (
+      <LinkifiedMessageText
+        text={text}
+        outgoing={_outgoing}
+        className="whitespace-pre-wrap text-sm leading-6"
+      />
+    );
   }
 
   const handlePlay = () => {
@@ -754,19 +787,27 @@ function SharedVideoCard({ text, outgoing }: { text: string; outgoing: boolean }
 
   return (
     <div className="flex flex-col gap-2 -mx-1 -my-1">
-      {!isAutoGeneratedText && <p className="whitespace-pre-wrap text-sm leading-6 px-1 pt-1">{text}</p>}
-      <div 
+      {!isAutoGeneratedText && (
+        <LinkifiedMessageText
+          text={text}
+          outgoing={_outgoing}
+          className="whitespace-pre-wrap text-sm leading-6 px-1 pt-1"
+        />
+      )}
+      <div
         onClick={handlePlay}
         className="relative overflow-hidden rounded-[20px] cursor-pointer w-[220px] h-[340px] bg-slate-900 group shadow-md flex-shrink-0"
       >
-        <img 
-          src={video.thumbnailUrl || (video.videoUrl?.replace(/\.[^/.]+$/, ".jpg"))} 
-          alt="Thumbnail" 
+        <img
+          src={video.thumbnailUrl || video.videoUrl?.replace(/\.[^/.]+$/, '.jpg')}
+          alt="Thumbnail"
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/70" />
-        
+
         {/* Top bar with avatar and name */}
         <div className="absolute top-3 left-3 flex items-center gap-2">
           <WaveAvatar
@@ -910,7 +951,6 @@ export default function Waves() {
   const [recallTargetMessage, setRecallTargetMessage] = useState<UiMessage | null>(null);
   const [recallAudience, setRecallAudience] = useState<RecallAudience>('everyone');
   const [showPinnedMessagesModal, setShowPinnedMessagesModal] = useState(false);
-  const [chatBoostListings, setChatBoostListings] = useState<Listing[]>([]);
   const targetConversationId =
     typeof location.state === 'object' &&
     location.state !== null &&
@@ -1022,18 +1062,6 @@ export default function Waves() {
     () => (activeConversationId ? (threads[activeConversationId] ?? []) : []),
     [activeConversationId, threads]
   );
-  const typingConversationIds = useMemo(() => {
-    const now = Date.now();
-    return new Set(
-      Object.entries(typingUsersByConversation)
-        .filter(([, usersById]) =>
-          Object.entries(usersById).some(
-            ([uid, expiresAt]) => uid !== user?.uid && expiresAt > now
-          )
-        )
-        .map(([conversationId]) => conversationId)
-    );
-  }, [typingUsersByConversation, user?.uid]);
   const activeTypingUserIds = useMemo(() => {
     if (!activeConversationId) return [] as string[];
     const now = Date.now();
@@ -1041,6 +1069,31 @@ export default function Waves() {
       .filter(([uid, expiresAt]) => uid !== user?.uid && expiresAt > now)
       .map(([uid]) => uid);
   }, [activeConversationId, typingUsersByConversation, user?.uid]);
+  const getTypingUserName = useCallback(
+    (conversation: ConversationItem | null | undefined, userId: string) => {
+      if (!conversation) return 'Ai đó';
+      if (conversation.type === 'group') {
+        return conversation.members?.find((member) => member.uid === userId)?.name ?? 'Thành viên';
+      }
+      if (conversation.peer?.uid === userId) return conversation.peer.name;
+      return conversation.peer?.name ?? 'Ai đó';
+    },
+    []
+  );
+  const getTypingIndicatorText = useCallback(
+    (conversation: ConversationItem | null | undefined, userIds: string[]) => {
+      const names = userIds.map((uid) => getTypingUserName(conversation, uid)).filter(Boolean);
+      if (names.length === 0) return '';
+      if (names.length === 1) return `${names[0]} đang nhập tin nhắn`;
+      if (names.length === 2) return `${names[0]} và ${names[1]} đang nhập tin nhắn`;
+      return `${names[0]} và ${names.length - 1} người khác đang nhập tin nhắn`;
+    },
+    [getTypingUserName]
+  );
+  const activeTypingText = useMemo(
+    () => getTypingIndicatorText(activeConversation, activeTypingUserIds),
+    [activeConversation, activeTypingUserIds, getTypingIndicatorText]
+  );
   const activePinnedMessages = useMemo(() => {
     if (!user?.uid) return [] as UiMessage[];
 
@@ -1058,6 +1111,19 @@ export default function Waves() {
     activeConversation?.type === 'group'
       ? (activeConversation.members?.length ?? 0) > 0
       : Boolean(activeConversation?.peer);
+  const isAddingMembersToActiveGroup =
+    activeConversation?.type === 'group' && activeTab !== 'groups';
+  const baseCreateGroupParticipantIds = useMemo(
+    () =>
+      !isAddingMembersToActiveGroup && activeConversation?.type === 'dm' && activeConversation.peer
+        ? [activeConversation.peer.uid]
+        : [],
+    [activeConversation, isAddingMembersToActiveGroup]
+  );
+  const createGroupParticipantIds = useMemo(
+    () => Array.from(new Set([...baseCreateGroupParticipantIds, ...selectedGroupMembers])),
+    [baseCreateGroupParticipantIds, selectedGroupMembers]
+  );
   const activeReceiptMembersByMessageId = useMemo(() => {
     if (!activeConversation) return {} as Record<string, ReceiptAvatarMember[]>;
 
@@ -1437,8 +1503,8 @@ export default function Waves() {
 
         if (!matchedMessageId) {
           matchedMessageId =
-            items.find((item) => normalizeReplySnippet(getReplySnippet(item)) === targetSnippet)?.id ??
-            null;
+            items.find((item) => normalizeReplySnippet(getReplySnippet(item)) === targetSnippet)
+              ?.id ?? null;
         }
 
         setThreads((current) => ({
@@ -1591,9 +1657,7 @@ export default function Waves() {
         setThreads((current) => ({
           ...current,
           [data.conversationId]: mergeMessages([
-            ...(current[data.conversationId] ?? []).filter(
-              (item) => item.id !== data.message.id
-            ),
+            ...(current[data.conversationId] ?? []).filter((item) => item.id !== data.message.id),
             data.message,
           ]),
         }));
@@ -1604,17 +1668,14 @@ export default function Waves() {
     [activeConversationId]
   );
 
-  const handleReplyToMessage = useCallback(
-    (message: UiMessage) => {
-      setReplyTargetMessage(message);
-      setOpenedMessageActionId(null);
-      setOpenedReactionMessageId(null);
-      requestAnimationFrame(() => {
-        wavesTextInputRef.current?.focus();
-      });
-    },
-    []
-  );
+  const handleReplyToMessage = useCallback((message: UiMessage) => {
+    setReplyTargetMessage(message);
+    setOpenedMessageActionId(null);
+    setOpenedReactionMessageId(null);
+    requestAnimationFrame(() => {
+      wavesTextInputRef.current?.focus();
+    });
+  }, []);
 
   const mergeReadReceipts = useCallback((conversationId: string, items: ReadReceiptItem[]) => {
     if (items.length === 0) return;
@@ -2168,9 +2229,7 @@ export default function Waves() {
             data-message-actions-trigger
             onClick={() => {
               setOpenedReactionMessageId(null);
-              setOpenedMessageActionId((current) =>
-                current === message.id ? null : message.id
-              );
+              setOpenedMessageActionId((current) => (current === message.id ? null : message.id));
             }}
             className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-100/80 bg-white/95 text-slate-500 shadow-sm transition hover:border-cyan-300 hover:text-cyan-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-500"
             aria-label="Mở tùy chọn tin nhắn"
@@ -2209,16 +2268,15 @@ export default function Waves() {
             data-message-actions-menu
             className={`absolute top-9 z-30 w-44 overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 ${outgoing ? 'right-0' : 'left-0'}`}
           >
-            {(
-              message.type === 'call_log'
-                ? ([['recall', 'Thu hồi']] as Array<[MessageAction, string]>)
-                : ([
-                    ['edit', 'Chỉnh sửa'],
-                    ['recall', 'Thu hồi'],
-                    ['forward', 'Chuyển tiếp'],
-                    ['pin', 'Ghim'],
-                    ['report', 'Báo cáo'],
-                  ] as Array<[MessageAction, string]>)
+            {(message.type === 'call_log'
+              ? ([['recall', 'Thu hồi']] as Array<[MessageAction, string]>)
+              : ([
+                  ['edit', 'Chỉnh sửa'],
+                  ['recall', 'Thu hồi'],
+                  ['forward', 'Chuyển tiếp'],
+                  ['pin', 'Ghim'],
+                  ['report', 'Báo cáo'],
+                ] as Array<[MessageAction, string]>)
             ).map(([action, label]) => {
               const notAllowed =
                 action === 'edit'
@@ -2478,8 +2536,7 @@ export default function Waves() {
   }, [sharedFilesFromMessages, sharedLinks]);
 
   const sharedPages = useMemo(
-    () =>
-      sharedLinks.filter((item) => !getMediaTypeFromUrl(item.url) && !isFileUrl(item.url)),
+    () => sharedLinks.filter((item) => !getMediaTypeFromUrl(item.url) && !isFileUrl(item.url)),
     [sharedLinks]
   );
 
@@ -2553,10 +2610,8 @@ export default function Waves() {
       socket.emit('typing:stop', { conversationId: previousConversationId });
     }
 
-    if (previousConversationId !== activeConversationId) {
-      socket.emit('typing:start', { conversationId: activeConversationId });
-      activeTypingConversationRef.current = activeConversationId;
-    }
+    socket.emit('typing:start', { conversationId: activeConversationId });
+    activeTypingConversationRef.current = activeConversationId;
 
     if (typingStopTimeoutRef.current) {
       window.clearTimeout(typingStopTimeoutRef.current);
@@ -2662,19 +2717,6 @@ export default function Waves() {
   }, [activeConversationId, messageSearchOpen, messageSearchQuery]);
 
   useEffect(() => {
-    const loadChatBoostListings = async () => {
-      try {
-        const data = await api.get<{ items: Listing[]; nextCursor: string | null }>('/api/marketplace');
-        setChatBoostListings((data.items ?? []).filter(isChatBoostListing).slice(0, 1));
-      } catch {
-        setChatBoostListings([]);
-      }
-    };
-
-    void loadChatBoostListings();
-  }, []);
-
-  useEffect(() => {
     const socket = getSocket();
     if (!activeConversationId) return;
 
@@ -2692,7 +2734,9 @@ export default function Waves() {
         const data = await api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30');
         const items = sortConversations(data.items ?? []);
         setConversations(items);
-        setActiveConversationId((current) => current ?? targetConversationId ?? items[0]?.id ?? null);
+        setActiveConversationId(
+          (current) => current ?? targetConversationId ?? items[0]?.id ?? null
+        );
         if (targetConversationId) setMobileView('thread');
       } catch (e) {
         setError((e as Error).message);
@@ -2815,31 +2859,28 @@ export default function Waves() {
   useEffect(() => {
     const socket = getSocket();
     const onMessageNew = (payload: RealtimePayload) => {
+      const conversationId =
+        payload.conversationId || payload.message?.conversationId || payload.conversation?.id;
+      if (!conversationId || !payload.message) return;
+
       if (payload.message.senderId !== user?.uid) {
-        clearTypingUser(payload.message.conversationId, payload.message.senderId);
+        clearTypingUser(conversationId, payload.message.senderId);
       }
 
       setThreads((current) => ({
         ...current,
-        [payload.message.conversationId]: replaceOptimisticMessage(
-          current[payload.message.conversationId] ?? [],
-          payload.message
-        ),
+        [conversationId]: replaceOptimisticMessage(current[conversationId] ?? [], payload.message),
       }));
 
       setConversations((current) =>
         sortConversations(
           current.map((item) => {
-            if (item.id !== payload.conversationId) return item;
+            if (item.id !== conversationId) return item;
             const shouldIncreaseUnread =
               payload.message.senderId !== user?.uid && activeConversationIdRef.current !== item.id;
             return {
               ...item,
-              lastMessagePreview: getConversationListPreviewText(
-                item,
-                payload.message,
-                user?.uid
-              ),
+              lastMessagePreview: getConversationListPreviewText(item, payload.message, user?.uid),
               lastMessageAt: payload.message.createdAt,
               unreadCount: shouldIncreaseUnread ? item.unreadCount + 1 : 0,
             };
@@ -2880,6 +2921,13 @@ export default function Waves() {
       if (!payload?.conversationId || !payload.userId || payload.userId === user?.uid) return;
       clearTypingUser(payload.conversationId, payload.userId);
     };
+    const onTypingStatus = (payload: TypingPayload) => {
+      if (payload?.isTyping) {
+        onTypingStart(payload);
+        return;
+      }
+      onTypingStop(payload);
+    };
 
     socket.on('message:new', onMessageNew);
     socket.on('message:read', onMessageRead);
@@ -2889,6 +2937,7 @@ export default function Waves() {
     socket.on('message:updated', onMessageUpdated);
     socket.on('typing:start', onTypingStart);
     socket.on('typing:stop', onTypingStop);
+    socket.on('typing', onTypingStatus);
     return () => {
       socket.off('message:new', onMessageNew);
       socket.off('message:read', onMessageRead);
@@ -2898,6 +2947,7 @@ export default function Waves() {
       socket.off('message:updated', onMessageUpdated);
       socket.off('typing:start', onTypingStart);
       socket.off('typing:stop', onTypingStop);
+      socket.off('typing', onTypingStatus);
     };
   }, [
     clearTypingUser,
@@ -3093,11 +3143,7 @@ export default function Waves() {
               item.id === activeConversationId
                 ? {
                     ...item,
-                    lastMessagePreview: getConversationListPreviewText(
-                      item,
-                      data.item,
-                      user?.uid
-                    ),
+                    lastMessagePreview: getConversationListPreviewText(item, data.item, user?.uid),
                     lastMessageAt: data.item.createdAt,
                     unreadCount: 0,
                   }
@@ -3203,7 +3249,7 @@ export default function Waves() {
     e.target.value = '';
     setUploading(true);
     try {
-        const url = await uploadFile(file, { folder: 'surf_chat_files' });
+      const url = await uploadFile(file, { folder: 'surf_chat_files' });
       await api.post(`/api/conversations/${activeConversationId}/messages`, {
         mediaUrl: url,
         mediaType: 'file',
@@ -3260,9 +3306,9 @@ export default function Waves() {
     try {
       setCreatingGroup(true);
       setError(null);
-      const created = await api.post<{ item: { id: string } }>('/api/conversations/group', {
-        title: newGroupTitle.trim(),
-        memberIds: selectedGroupMembers,
+      const created = await api.post<{ item: { id: string } }>('/api/conversations', {
+        groupName: newGroupTitle.trim(),
+        participants: createGroupParticipantIds,
       });
       const data = await api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30');
       const items = sortConversations(data.items ?? []);
@@ -3499,7 +3545,6 @@ export default function Waves() {
                 </>
               ) : (
                 <>
-                  {chatBoostListings[0] && <WavesBoostPlacement listing={chatBoostListings[0]} />}
                   {loading && (
                     <div className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
                       Đang tải conversations...
@@ -3524,11 +3569,15 @@ export default function Waves() {
                   <div className="space-y-2">
                     {filteredConversations.map((conversation) => {
                       const marketplace = conversation.marketplace;
-                      const isTyping = typingConversationIds.has(conversation.id);
-                      const displayName =
-                        marketplace
-                          ? (conversation.peer?.name ?? 'Người mua')
-                          : conversation.type === 'group'
+                      const typingUserIds = Object.entries(
+                        typingUsersByConversation[conversation.id] ?? {}
+                      )
+                        .filter(([uid, expiresAt]) => uid !== user?.uid && expiresAt > Date.now())
+                        .map(([uid]) => uid);
+                      const typingText = getTypingIndicatorText(conversation, typingUserIds);
+                      const displayName = marketplace
+                        ? (conversation.peer?.name ?? 'Người mua')
+                        : conversation.type === 'group'
                           ? (conversation.title ?? 'Nhóm')
                           : (conversation.peer?.name ?? 'Unknown Wave');
                       const avatarSrc =
@@ -3578,15 +3627,17 @@ export default function Waves() {
                               </span>
                             </div>
                             <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
-                              {isTyping
-                                ? '...'
-                                : marketplace
-                                ? `${marketplace.title} · ${
-                                    normalizeConversationPreview(conversation.lastMessagePreview) ||
-                                    'Bắt đầu trao đổi về bài niêm yết'
-                                  }`
-                                : normalizeConversationPreview(conversation.lastMessagePreview) ||
-                                  'Bắt đầu cuộc trò chuyện mới'}
+                              {typingText ? (
+                                <TypingIndicator label={typingText} />
+                              ) : marketplace ? (
+                                `${marketplace.title} · ${
+                                  normalizeConversationPreview(conversation.lastMessagePreview) ||
+                                  'Bắt đầu trao đổi về bài niêm yết'
+                                }`
+                              ) : (
+                                normalizeConversationPreview(conversation.lastMessagePreview) ||
+                                'Bắt đầu cuộc trò chuyện mới'
+                              )}
                             </p>
                           </div>
                           {conversation.unreadCount > 0 && (
@@ -3643,19 +3694,22 @@ export default function Waves() {
                       {activeMarketplace
                         ? `${activeConversation.peer?.name ?? 'Người mua'} · ${activeMarketplace.title}`
                         : activeConversation.type === 'group'
-                        ? (activeConversation.title ?? 'Nhóm')
-                        : (activeConversation.peer?.name ?? 'Unknown Wave')}
+                          ? (activeConversation.title ?? 'Nhóm')
+                          : (activeConversation.peer?.name ?? 'Unknown Wave')}
                     </h2>
                     {activeMarketplace ? (
                       <p className="mt-1 truncate text-xs font-semibold text-cyan-600 dark:text-cyan-300">
                         Surf Market · {formatBoostListingPrice(activeMarketplace.price)}
                       </p>
-                    ) : activeConversation.type === 'dm' && activeConversation.peer?.uid && (
-                      <PresenceBadge
-                        uid={activeConversation.peer.uid}
-                        variant="label"
-                        className="mt-1"
-                      />
+                    ) : (
+                      activeConversation.type === 'dm' &&
+                      activeConversation.peer?.uid && (
+                        <PresenceBadge
+                          uid={activeConversation.peer.uid}
+                          variant="label"
+                          className="mt-1"
+                        />
+                      )
                     )}
                     {activeConversation.type === 'group' && activeConversation.memberCount && (
                       <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -3723,7 +3777,11 @@ export default function Waves() {
                     }`}
                   >
                     <div className="flex items-center gap-2 rounded-2xl border border-cyan-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/80">
-                      <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-slate-400" fill="currentColor">
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4 shrink-0 text-slate-400"
+                        fill="currentColor"
+                      >
                         <path d="M10 2a8 8 0 1 0 4.9 14.32l4.39 4.39 1.41-1.41-4.39-4.39A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z" />
                       </svg>
                       <input
@@ -3781,7 +3839,9 @@ export default function Waves() {
                                   <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
                                     {getSenderNameForMessage(message)}
                                   </span>
-                                  <span className="shrink-0">{formatFullTime(message.createdAt)}</span>
+                                  <span className="shrink-0">
+                                    {formatFullTime(message.createdAt)}
+                                  </span>
                                 </span>
                                 <span className="mt-0.5 block truncate text-sm text-slate-600 dark:text-slate-300">
                                   {normalizeConversationPreview(message.text) ||
@@ -3849,9 +3909,7 @@ export default function Waves() {
                 )}
                 <div
                   className={`min-h-0 min-w-0 flex-1 ${
-                    showInfo
-                      ? 'overflow-visible xl:mr-[320px] 2xl:mr-[340px]'
-                      : 'overflow-hidden'
+                    showInfo ? 'overflow-visible xl:mr-[320px] 2xl:mr-[340px]' : 'overflow-hidden'
                   }`}
                 >
                   <div
@@ -3871,7 +3929,9 @@ export default function Waves() {
                           {error}
                         </div>
                       )}
-                      {activeMarketplace && <MarketplaceThreadCard marketplace={activeMarketplace} />}
+                      {activeMarketplace && (
+                        <MarketplaceThreadCard marketplace={activeMarketplace} />
+                      )}
                       {loadingThreads[activeConversation.id] && activeMessages.length === 0 ? (
                         <div className="mx-auto mt-10 max-w-lg rounded-[32px] border border-cyan-100 bg-white/90 px-8 py-10 text-center dark:border-slate-700 dark:bg-slate-900/80">
                           <h3 className="text-2xl font-semibold text-slate-900 dark:text-white">
@@ -3887,8 +3947,11 @@ export default function Waves() {
                             Bắt đầu Wave mới
                           </h3>
                           <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                            Khung chat đã sẵn sàng. Gửi tin nhắn đầu tiên để cuộc trò chuyện bắt đầu
-                            realtime.
+                            {activeTypingText ? (
+                              <TypingIndicator label={activeTypingText} />
+                            ) : (
+                              'Khung chat đã sẵn sàng. Gửi tin nhắn đầu tiên để cuộc trò chuyện bắt đầu realtime.'
+                            )}
                           </p>
                         </div>
                       ) : (
@@ -3949,16 +4012,20 @@ export default function Waves() {
                               highlightedReplyMessageId === message.id;
 
                             const messageTime = new Date(message.createdAt);
-                            const prevMessageTime = previousMessage ? new Date(previousMessage.createdAt) : null;
-                            const showTimeSeparator = !prevMessageTime || (messageTime.getTime() - prevMessageTime.getTime()) > 30 * 60000;
-                            
+                            const prevMessageTime = previousMessage
+                              ? new Date(previousMessage.createdAt)
+                              : null;
+                            const showTimeSeparator =
+                              !prevMessageTime ||
+                              messageTime.getTime() - prevMessageTime.getTime() > 30 * 60000;
+
                             const h = messageTime.getHours().toString().padStart(2, '0');
                             const m = messageTime.getMinutes().toString().padStart(2, '0');
                             const d = messageTime.getDate();
                             const mo = messageTime.getMonth() + 1;
                             const y = messageTime.getFullYear().toString().slice(-2);
                             const yFull = messageTime.getFullYear();
-                            
+
                             const separatorTimeLabel = `${h}:${m} ${d}/${mo}/${y}`;
                             const hoverTimeLabel = `${h}:${m} ${d} Tháng ${mo}, ${yFull}`;
 
@@ -3977,140 +4044,175 @@ export default function Waves() {
                                     data-message-id={message.id}
                                     className={`group/message-row flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
                                   >
-                                  {!outgoing &&
-                                    (shouldShowIncomingAvatar ? (
-                                      <div className="relative z-10">
-                                        <button 
-                                          type="button" 
-                                          data-avatar-trigger
-                                          onClick={() => setOpenedAvatarMenuMessageId(current => current === message.id ? null : message.id)}
-                                        >
-                                          <WaveAvatar
-                                            src={senderAvatar}
-                                            uid={senderUid}
-                                            name={senderName}
-                                            presenceSize="sm"
-                                            className="h-10 w-10 rounded-full object-cover transition hover:opacity-90 hover:shadow-sm"
-                                            fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white transition hover:opacity-90 hover:shadow-sm"
-                                          />
-                                        </button>
-                                        {openedAvatarMenuMessageId === message.id && (
-                                          <div 
-                                            data-avatar-menu
-                                            className="absolute left-0 top-[110%] z-40 w-[220px] overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1.5 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-[#202020]"
+                                    {!outgoing &&
+                                      (shouldShowIncomingAvatar ? (
+                                        <div className="relative z-10">
+                                          <button
+                                            type="button"
+                                            data-avatar-trigger
+                                            onClick={() =>
+                                              setOpenedAvatarMenuMessageId((current) =>
+                                                current === message.id ? null : message.id
+                                              )
+                                            }
                                           >
-                                            <Link
-                                              to={`/profile/${senderUid}`}
-                                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
-                                              onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                            <WaveAvatar
+                                              src={senderAvatar}
+                                              uid={senderUid}
+                                              name={senderName}
+                                              presenceSize="sm"
+                                              className="h-10 w-10 rounded-full object-cover transition hover:opacity-90 hover:shadow-sm"
+                                              fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white transition hover:opacity-90 hover:shadow-sm"
+                                            />
+                                          </button>
+                                          {openedAvatarMenuMessageId === message.id && (
+                                            <div
+                                              data-avatar-menu
+                                              className="absolute left-0 top-[110%] z-40 w-[220px] overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1.5 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-[#202020]"
                                             >
-                                              <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                                              Xem trang cá nhân
-                                            </Link>
-                                            <button
-                                              type="button"
-                                              onClick={() => setOpenedAvatarMenuMessageId(null)}
-                                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
-                                            >
-                                              <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
-                                              Chặn
-                                            </button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <div className="h-10 w-10 shrink-0" />
-                                    ))}
-                                  <div
-                                    className={`flex max-w-[18.5rem] flex-col ${outgoing ? 'items-end' : 'items-start'}`}
-                                  >
-                                    {shouldShowSenderName && (
-                                      <p className="mb-1 px-1 text-[13px] font-medium leading-5 text-slate-500 dark:text-slate-400">
-                                        {senderName}
-                                      </p>
-                                    )}
-                                    <div
-                                      className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''} relative`}
-                                    >
-                                      <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message-row:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 ${outgoing ? 'right-full mr-3' : 'left-full ml-3'}`}>
-                                        <span className="text-[12px] font-medium text-slate-600 bg-slate-100/90 dark:bg-slate-800/90 dark:text-slate-300 backdrop-blur-sm px-3 py-1.5 rounded-[14px] shadow-sm">
-                                          {hoverTimeLabel}
-                                        </span>
-                                      </div>
-                                      <div
-                                        className={`w-full rounded-[22px] border px-3.5 py-2.5 shadow-[0_16px_40px_-32px_rgba(8,145,178,0.45)] ${
-                                          outgoing
-                                            ? 'border-cyan-200 bg-cyan-50/95 dark:border-cyan-900/60 dark:bg-cyan-950/35'
-                                            : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/95'
-                                        }`}
-                                      >
-                                        <div className="flex items-start gap-3">
-                                          <div
-                                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${callTone.iconWrap}`}
-                                          >
-                                            {callTone.iconVariant === 'hangup' ? (
-                                              <svg
-                                                viewBox="0 0 24 24"
-                                                className="h-[18px] w-[18px]"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2.2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
+                                              <Link
+                                                to={`/profile/${senderUid}`}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                                onClick={() => setOpenedAvatarMenuMessageId(null)}
                                               >
-                                                <path d="M4.5 15.5c4.7-3.2 10.3-3.2 15 0" />
-                                                <path d="M7.2 15.2 6 18" />
-                                                <path d="M16.8 15.2 18 18" />
-                                              </svg>
-                                            ) : (
-                                              <svg
-                                                viewBox="0 0 24 24"
-                                                className={`h-[18px] w-[18px] ${callTone.iconClassName ?? ''}`}
-                                                fill="currentColor"
+                                                <svg
+                                                  viewBox="0 0 24 24"
+                                                  className="h-5 w-5 text-slate-500 dark:text-slate-400"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  strokeWidth="2"
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                >
+                                                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                                                  <circle cx="12" cy="7" r="4"></circle>
+                                                </svg>
+                                                Xem trang cá nhân
+                                              </Link>
+                                              <button
+                                                type="button"
+                                                onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
                                               >
-                                                <path d={callTone.iconPath} />
-                                              </svg>
-                                            )}
-                                          </div>
-                                          <div className="min-w-0 flex-1">
-                                            <p
-                                              className={`text-[15px] font-semibold leading-6 ${callTone.title}`}
-                                            >
-                                              {getCallDisplayTitle(
-                                                message,
-                                                outgoing,
-                                                activeConversation.type === 'group'
-                                              )}
-                                            </p>
-                                            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-300">
-                                              {getCallMetaLabel(message)}
-                                            </p>
-                                            <div className="mt-2 border-t border-slate-100 pt-2 text-xs font-medium text-slate-400 dark:border-slate-700/80 dark:text-slate-500">
-                                              {new Intl.DateTimeFormat('vi-VN', {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                day: '2-digit',
-                                                month: '2-digit',
-                                              }).format(new Date(message.createdAt))}
+                                                <svg
+                                                  viewBox="0 0 24 24"
+                                                  className="h-5 w-5 text-slate-500 dark:text-slate-400"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  strokeWidth="2"
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                >
+                                                  <circle cx="12" cy="12" r="10"></circle>
+                                                  <line
+                                                    x1="4.93"
+                                                    y1="4.93"
+                                                    x2="19.07"
+                                                    y2="19.07"
+                                                  ></line>
+                                                </svg>
+                                                Chặn
+                                              </button>
                                             </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                startConversationCall(message.callMode ?? 'audio');
-                                              }}
-                                              disabled={!canCallActiveConversation || isCallBusy}
-                                              className="mt-2 inline-flex h-9 items-center justify-center rounded-2xl border border-cyan-200 bg-cyan-50 px-3.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200 dark:hover:bg-cyan-900/45"
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="h-10 w-10 shrink-0" />
+                                      ))}
+                                    <div
+                                      className={`flex max-w-[18.5rem] flex-col ${outgoing ? 'items-end' : 'items-start'}`}
+                                    >
+                                      {shouldShowSenderName && (
+                                        <p className="mb-1 px-1 text-[13px] font-medium leading-5 text-slate-500 dark:text-slate-400">
+                                          {senderName}
+                                        </p>
+                                      )}
+                                      <div
+                                        className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''} relative`}
+                                      >
+                                        <div
+                                          className={`hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message-row:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 ${outgoing ? 'right-full mr-3' : 'left-full ml-3'}`}
+                                        >
+                                          <span className="text-[12px] font-medium text-slate-600 bg-slate-100/90 dark:bg-slate-800/90 dark:text-slate-300 backdrop-blur-sm px-3 py-1.5 rounded-[14px] shadow-sm">
+                                            {hoverTimeLabel}
+                                          </span>
+                                        </div>
+                                        <div
+                                          className={`w-full rounded-[22px] border px-3.5 py-2.5 shadow-[0_16px_40px_-32px_rgba(8,145,178,0.45)] ${
+                                            outgoing
+                                              ? 'border-cyan-200 bg-cyan-50/95 dark:border-cyan-900/60 dark:bg-cyan-950/35'
+                                              : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/95'
+                                          }`}
+                                        >
+                                          <div className="flex items-start gap-3">
+                                            <div
+                                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl ${callTone.iconWrap}`}
                                             >
-                                              Gọi lại
-                                            </button>
+                                              {callTone.iconVariant === 'hangup' ? (
+                                                <svg
+                                                  viewBox="0 0 24 24"
+                                                  className="h-[18px] w-[18px]"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  strokeWidth="2.2"
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                >
+                                                  <path d="M4.5 15.5c4.7-3.2 10.3-3.2 15 0" />
+                                                  <path d="M7.2 15.2 6 18" />
+                                                  <path d="M16.8 15.2 18 18" />
+                                                </svg>
+                                              ) : (
+                                                <svg
+                                                  viewBox="0 0 24 24"
+                                                  className={`h-[18px] w-[18px] ${callTone.iconClassName ?? ''}`}
+                                                  fill="currentColor"
+                                                >
+                                                  <path d={callTone.iconPath} />
+                                                </svg>
+                                              )}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p
+                                                className={`text-[15px] font-semibold leading-6 ${callTone.title}`}
+                                              >
+                                                {getCallDisplayTitle(
+                                                  message,
+                                                  outgoing,
+                                                  activeConversation.type === 'group'
+                                                )}
+                                              </p>
+                                              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-300">
+                                                {getCallMetaLabel(message)}
+                                              </p>
+                                              <div className="mt-2 border-t border-slate-100 pt-2 text-xs font-medium text-slate-400 dark:border-slate-700/80 dark:text-slate-500">
+                                                {new Intl.DateTimeFormat('vi-VN', {
+                                                  hour: '2-digit',
+                                                  minute: '2-digit',
+                                                  day: '2-digit',
+                                                  month: '2-digit',
+                                                }).format(new Date(message.createdAt))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  startConversationCall(
+                                                    message.callMode ?? 'audio'
+                                                  );
+                                                }}
+                                                disabled={!canCallActiveConversation || isCallBusy}
+                                                className="mt-2 inline-flex h-9 items-center justify-center rounded-2xl border border-cyan-200 bg-cyan-50 px-3.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200 dark:hover:bg-cyan-900/45"
+                                              >
+                                                Gọi lại
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
+                                        {renderMessageActions(message, outgoing)}
                                       </div>
-                                      {renderMessageActions(message, outgoing)}
+                                      {renderSeenReceipts(receiptMembers)}
                                     </div>
-                                    {renderSeenReceipts(receiptMembers)}
                                   </div>
-                                </div>
                                 </Fragment>
                               );
                             }
@@ -4129,199 +4231,241 @@ export default function Waves() {
                                   data-message-id={message.id}
                                   className={`group/message-row flex items-end gap-3 ${outgoing ? 'justify-end' : 'justify-start'}`}
                                 >
-                                {!outgoing &&
-                                  (shouldShowIncomingAvatar ? (
-                                    <div className="relative z-10">
-                                      <button 
-                                        type="button" 
-                                        data-avatar-trigger
-                                        onClick={() => setOpenedAvatarMenuMessageId(current => current === message.id ? null : message.id)}
-                                      >
-                                        <WaveAvatar
-                                          src={senderAvatar}
-                                          uid={senderUid}
-                                          name={senderName}
-                                          presenceSize="sm"
-                                          className="h-10 w-10 rounded-full object-cover transition hover:opacity-90 hover:shadow-sm"
-                                          fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white transition hover:opacity-90 hover:shadow-sm"
-                                        />
-                                      </button>
-                                      {openedAvatarMenuMessageId === message.id && (
-                                        <div 
-                                          data-avatar-menu
-                                          className="absolute left-0 top-[110%] z-40 w-[220px] overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1.5 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-[#202020]"
-                                        >
-                                          <Link
-                                            to={`/profile/${senderUid}`}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
-                                            onClick={() => setOpenedAvatarMenuMessageId(null)}
-                                          >
-                                            <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                                            Xem trang cá nhân
-                                          </Link>
-                                          <button
-                                            type="button"
-                                            onClick={() => setOpenedAvatarMenuMessageId(null)}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
-                                          >
-                                            <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
-                                            Chặn
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="h-10 w-10 shrink-0" />
-                                  ))}
-                                <div
-                                  className={`flex flex-col ${outgoing ? 'items-end' : 'items-start'}`}
-                                >
-                                  {shouldShowSenderName && (
-                                    <p className="mb-1 px-1 text-[13px] font-medium leading-5 text-slate-500 dark:text-slate-400">
-                                      {senderName}
-                                    </p>
-                                  )}
-                                  <div
-                                    className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''} relative`}
-                                  >
-                                    <div className={`hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message-row:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 ${outgoing ? 'right-full mr-3' : 'left-full ml-3'}`}>
-                                      <span className="text-[12px] font-medium text-slate-600 bg-slate-100/90 dark:bg-slate-800/90 dark:text-slate-300 backdrop-blur-sm px-3 py-1.5 rounded-[14px] shadow-sm">
-                                        {hoverTimeLabel}
-                                      </span>
-                                    </div>
-                                    <div
-                                      className={`max-w-[82%] rounded-[26px] px-4 py-3 shadow-sm lg:max-w-[46rem] ${outgoing ? 'bg-gradient-to-r from-surf-primary to-cyan-500 text-white' : 'border border-cyan-100/80 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'} ${
-                                        isReplyTargetHighlighted
-                                          ? 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-white dark:ring-cyan-500/80 dark:ring-offset-slate-900'
-                                          : ''
-                                      } relative ${Object.keys(message.reactions || {}).length > 0 ? 'mb-3.5' : ''}`}
-                                    >
-                                      {parsedReplyQuote && (
+                                  {!outgoing &&
+                                    (shouldShowIncomingAvatar ? (
+                                      <div className="relative z-10">
                                         <button
                                           type="button"
-                                          onClick={() => {
-                                            void jumpToReplyTarget(parsedReplyQuote, index);
-                                          }}
-                                          title="Nhấn để đến tin nhắn gốc"
-                                          className={`group/reply relative mb-2 block w-full overflow-hidden rounded-xl px-3 py-2.5 text-left transition ${
-                                            outgoing
-                                              ? 'border border-white/65 bg-white/88 text-slate-800 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.55)] hover:bg-white'
-                                              : 'border border-orange-200/70 bg-[#fff4df] text-slate-700 hover:bg-[#ffeacc] dark:border-orange-300/40 dark:bg-[#3a2a13]/80 dark:text-slate-200 dark:hover:bg-[#4b3517]'
-                                          }`}
-                                        >
-                                          <span
-                                            className={`absolute bottom-2 left-1 top-2 w-[3px] rounded-full ${
-                                              outgoing
-                                                ? 'bg-cyan-600'
-                                                : 'bg-orange-500 dark:bg-amber-300'
-                                            }`}
-                                          />
-                                          <div className="pl-2">
-                                            <p
-                                              className={`max-w-full truncate text-sm font-semibold transition ${
-                                                outgoing
-                                                  ? 'text-slate-800 group-hover/reply:text-cyan-700'
-                                                  : 'text-slate-900 group-hover/reply:text-orange-700 dark:text-amber-100 dark:group-hover/reply:text-amber-50'
-                                              }`}
-                                            >
-                                              {getReplyQuoteSenderLabel(parsedReplyQuote)}
-                                            </p>
-                                            <p
-                                              className={`mt-0.5 truncate text-[13px] ${
-                                                outgoing
-                                                  ? 'text-slate-600'
-                                                  : 'text-slate-600 dark:text-slate-300'
-                                              }`}
-                                            >
-                                              {normalizeReplySnippetDisplay(
-                                                parsedReplyQuote.snippet
-                                              )}
-                                            </p>
-                                          </div>
-                                        </button>
-                                      )}
-
-                                      {message.type === 'image' && message.mediaUrl ? (
-                                        <img
-                                          src={optimizeImageUrl(message.mediaUrl)}
-                                          alt="image"
-                                          className="max-w-[300px] rounded-2xl cursor-pointer"
-                                          onClick={() => {
-                                            openMediaPreview(message.mediaUrl!, 'image', 'Ảnh trong cuộc trò chuyện');
-                                          }}
-                                        />
-                                      ) : message.type === 'audio' && message.mediaUrl ? (
-                                        <audio
-                                          controls
-                                          src={message.mediaUrl}
-                                          className="max-w-full"
-                                        />
-                                      ) : message.type === 'file' && message.mediaUrl ? (
-                                        <button
-                                          type="button"
+                                          data-avatar-trigger
                                           onClick={() =>
-                                            downloadFile(
-                                              message.mediaUrl!,
-                                              message.fileName ?? 'file'
+                                            setOpenedAvatarMenuMessageId((current) =>
+                                              current === message.id ? null : message.id
                                             )
                                           }
-                                          className={`flex items-center gap-2 underline ${outgoing ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`}
                                         >
-                                          <svg
-                                            className="w-5 h-5 flex-shrink-0"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth={2}
-                                            viewBox="0 0 24 24"
-                                          >
-                                            <path
-                                              strokeLinecap="round"
-                                              strokeLinejoin="round"
-                                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                                            />
-                                          </svg>
-                                          {message.fileName ?? 'Tệp đính kèm'}
+                                          <WaveAvatar
+                                            src={senderAvatar}
+                                            uid={senderUid}
+                                            name={senderName}
+                                            presenceSize="sm"
+                                            className="h-10 w-10 rounded-full object-cover transition hover:opacity-90 hover:shadow-sm"
+                                            fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-xs font-semibold text-white transition hover:opacity-90 hover:shadow-sm"
+                                          />
                                         </button>
-                                      ) : messageBodyText ? (
-                                        <SharedVideoCard text={messageBodyText} outgoing={outgoing} />
-                                      ) : null}
-                                      {messageBodyText && message.type !== 'text' && (
-                                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6">
-                                          {messageBodyText}
-                                        </p>
-                                      )}
-                                      <div
-                                        className={`mt-2 text-[11px] ${outgoing ? 'text-cyan-50/90' : 'text-slate-400 dark:text-slate-500'}`}
-                                      >
-                                        {new Intl.DateTimeFormat('vi-VN', {
-                                          hour: '2-digit',
-                                          minute: '2-digit',
-                                        }).format(new Date(message.createdAt))}
+                                        {openedAvatarMenuMessageId === message.id && (
+                                          <div
+                                            data-avatar-menu
+                                            className="absolute left-0 top-[110%] z-40 w-[220px] overflow-hidden rounded-2xl border border-cyan-100/80 bg-white/95 py-1.5 shadow-[0_26px_44px_-24px_rgba(8,145,178,0.45)] backdrop-blur dark:border-slate-700 dark:bg-[#202020]"
+                                          >
+                                            <Link
+                                              to={`/profile/${senderUid}`}
+                                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                              onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                            >
+                                              <svg
+                                                viewBox="0 0 24 24"
+                                                className="h-5 w-5 text-slate-500 dark:text-slate-400"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                                                <circle cx="12" cy="7" r="4"></circle>
+                                              </svg>
+                                              Xem trang cá nhân
+                                            </Link>
+                                            <button
+                                              type="button"
+                                              onClick={() => setOpenedAvatarMenuMessageId(null)}
+                                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[14px] font-medium text-slate-700 hover:bg-cyan-50/80 dark:text-slate-200 dark:hover:bg-slate-800/70"
+                                            >
+                                              <svg
+                                                viewBox="0 0 24 24"
+                                                className="h-5 w-5 text-slate-500 dark:text-slate-400"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line
+                                                  x1="4.93"
+                                                  y1="4.93"
+                                                  x2="19.07"
+                                                  y2="19.07"
+                                                ></line>
+                                              </svg>
+                                              Chặn
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
-                                      {deletingMessageId === message.id && (
-                                        <p
-                                          className={`mt-1 text-[11px] font-medium ${outgoing ? 'text-cyan-50/95' : 'text-slate-400'}`}
+                                    ) : (
+                                      <div className="h-10 w-10 shrink-0" />
+                                    ))}
+                                  <div
+                                    className={`flex flex-col ${outgoing ? 'items-end' : 'items-start'}`}
+                                  >
+                                    {shouldShowSenderName && (
+                                      <p className="mb-1 px-1 text-[13px] font-medium leading-5 text-slate-500 dark:text-slate-400">
+                                        {senderName}
+                                      </p>
+                                    )}
+                                    <div
+                                      className={`flex items-start gap-2 ${outgoing ? 'flex-row-reverse' : ''} relative`}
+                                    >
+                                      <div
+                                        className={`hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message-row:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 ${outgoing ? 'right-full mr-3' : 'left-full ml-3'}`}
+                                      >
+                                        <span className="text-[12px] font-medium text-slate-600 bg-slate-100/90 dark:bg-slate-800/90 dark:text-slate-300 backdrop-blur-sm px-3 py-1.5 rounded-[14px] shadow-sm">
+                                          {hoverTimeLabel}
+                                        </span>
+                                      </div>
+                                      <div
+                                        className={`max-w-[82%] rounded-[26px] px-4 py-3 shadow-sm lg:max-w-[46rem] ${outgoing ? 'bg-gradient-to-r from-surf-primary to-cyan-500 text-white' : 'border border-cyan-100/80 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'} ${
+                                          isReplyTargetHighlighted
+                                            ? 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-white dark:ring-cyan-500/80 dark:ring-offset-slate-900'
+                                            : ''
+                                        } relative ${Object.keys(message.reactions || {}).length > 0 ? 'mb-3.5' : ''}`}
+                                      >
+                                        {parsedReplyQuote && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              void jumpToReplyTarget(parsedReplyQuote, index);
+                                            }}
+                                            title="Nhấn để đến tin nhắn gốc"
+                                            className={`group/reply relative mb-2 block w-full overflow-hidden rounded-xl px-3 py-2.5 text-left transition ${
+                                              outgoing
+                                                ? 'border border-white/65 bg-white/88 text-slate-800 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.55)] hover:bg-white'
+                                                : 'border border-orange-200/70 bg-[#fff4df] text-slate-700 hover:bg-[#ffeacc] dark:border-orange-300/40 dark:bg-[#3a2a13]/80 dark:text-slate-200 dark:hover:bg-[#4b3517]'
+                                            }`}
+                                          >
+                                            <span
+                                              className={`absolute bottom-2 left-1 top-2 w-[3px] rounded-full ${
+                                                outgoing
+                                                  ? 'bg-cyan-600'
+                                                  : 'bg-orange-500 dark:bg-amber-300'
+                                              }`}
+                                            />
+                                            <div className="pl-2">
+                                              <p
+                                                className={`max-w-full truncate text-sm font-semibold transition ${
+                                                  outgoing
+                                                    ? 'text-slate-800 group-hover/reply:text-cyan-700'
+                                                    : 'text-slate-900 group-hover/reply:text-orange-700 dark:text-amber-100 dark:group-hover/reply:text-amber-50'
+                                                }`}
+                                              >
+                                                {getReplyQuoteSenderLabel(parsedReplyQuote)}
+                                              </p>
+                                              <p
+                                                className={`mt-0.5 truncate text-[13px] ${
+                                                  outgoing
+                                                    ? 'text-slate-600'
+                                                    : 'text-slate-600 dark:text-slate-300'
+                                                }`}
+                                              >
+                                                {normalizeReplySnippetDisplay(
+                                                  parsedReplyQuote.snippet
+                                                )}
+                                              </p>
+                                            </div>
+                                          </button>
+                                        )}
+
+                                        {message.type === 'image' && message.mediaUrl ? (
+                                          <img
+                                            src={optimizeImageUrl(message.mediaUrl)}
+                                            alt="image"
+                                            className="max-w-[300px] rounded-2xl cursor-pointer"
+                                            onClick={() => {
+                                              openMediaPreview(
+                                                message.mediaUrl!,
+                                                'image',
+                                                'Ảnh trong cuộc trò chuyện'
+                                              );
+                                            }}
+                                          />
+                                        ) : message.type === 'audio' && message.mediaUrl ? (
+                                          <audio
+                                            controls
+                                            src={message.mediaUrl}
+                                            className="max-w-full"
+                                          />
+                                        ) : message.type === 'file' && message.mediaUrl ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              downloadFile(
+                                                message.mediaUrl!,
+                                                message.fileName ?? 'file'
+                                              )
+                                            }
+                                            className={`flex items-center gap-2 underline ${outgoing ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`}
+                                          >
+                                            <svg
+                                              className="w-5 h-5 flex-shrink-0"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              strokeWidth={2}
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                                              />
+                                            </svg>
+                                            {message.fileName ?? 'Tệp đính kèm'}
+                                          </button>
+                                        ) : messageBodyText ? (
+                                          <SharedVideoCard
+                                            text={messageBodyText}
+                                            outgoing={outgoing}
+                                          />
+                                        ) : null}
+                                        {messageBodyText && message.type !== 'text' && (
+                                          <LinkifiedMessageText
+                                            text={messageBodyText}
+                                            outgoing={outgoing}
+                                            className="mt-1 whitespace-pre-wrap text-sm leading-6"
+                                          />
+                                        )}
+                                        <div
+                                          className={`mt-2 text-[11px] ${outgoing ? 'text-cyan-50/90' : 'text-slate-400 dark:text-slate-500'}`}
                                         >
-                                          Đang xử lý thu hồi...
-                                        </p>
-                                      )}
-                                      {renderMessageReactions(message, outgoing)}
+                                          {new Intl.DateTimeFormat('vi-VN', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          }).format(new Date(message.createdAt))}
+                                        </div>
+                                        {deletingMessageId === message.id && (
+                                          <p
+                                            className={`mt-1 text-[11px] font-medium ${outgoing ? 'text-cyan-50/95' : 'text-slate-400'}`}
+                                          >
+                                            Đang xử lý thu hồi...
+                                          </p>
+                                        )}
+                                        {renderMessageReactions(message, outgoing)}
+                                      </div>
+                                      {renderMessageActions(message, outgoing)}
                                     </div>
-                                    {renderMessageActions(message, outgoing)}
+                                    {renderSeenReceipts(receiptMembers)}
                                   </div>
-                                  {renderSeenReceipts(receiptMembers)}
                                 </div>
-                              </div>
                               </Fragment>
                             );
                           })}
                           {renderSeenReceipts(
                             activeReceiptMembersByMessageId[RECEIPT_FALLBACK_BUCKET_ID] ?? []
                           )}
-                          {activeTypingUserIds.length > 0 && (
+                          {activeTypingText && (
                             <div className="flex items-end gap-2 justify-start">
-                              <div className="rounded-2xl rounded-bl-sm bg-white px-4 py-2 text-lg font-black leading-none text-slate-500 shadow-sm ring-1 ring-cyan-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
-                                ...
+                              <div className="rounded-2xl rounded-bl-sm bg-white px-4 py-2 text-sm font-semibold leading-5 text-slate-600 shadow-sm ring-1 ring-cyan-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                                <TypingIndicator label={activeTypingText} />
                               </div>
                             </div>
                           )}
@@ -4336,7 +4480,11 @@ export default function Waves() {
                             <div className="text-center">
                               {activeConversation.type === 'group' ? (
                                 <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white">
-                                  <svg viewBox="0 0 24 24" className="h-10 w-10" fill="currentColor">
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    className="h-10 w-10"
+                                    fill="currentColor"
+                                  >
                                     <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z" />
                                   </svg>
                                 </div>
@@ -4416,6 +4564,7 @@ export default function Waves() {
                               ) : (
                                 <button
                                   type="button"
+                                  onClick={() => setShowCreateGroup(true)}
                                   className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 text-center hover:bg-cyan-100/70 dark:border-slate-700 dark:bg-slate-800/70 dark:hover:bg-slate-700/80"
                                 >
                                   <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-cyan-600 shadow-sm dark:bg-slate-900 dark:text-cyan-300">
@@ -4484,8 +4633,7 @@ export default function Waves() {
                                   <p className="mt-2 text-slate-500 dark:text-slate-400">
                                     {normalizeConversationPreview(
                                       activeConversation.lastMessagePreview
-                                    ) ||
-                                      'Chưa có tín hiệu mới trong thread này.'}
+                                    ) || 'Chưa có tín hiệu mới trong thread này.'}
                                   </p>
                                 </div>
                               </div>
@@ -4853,7 +5001,11 @@ export default function Waves() {
                         emitTypingStop(activeConversationId);
                       }}
                       onKeyDown={(event) => {
-                        if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
+                        if (
+                          event.key !== 'Enter' ||
+                          event.shiftKey ||
+                          event.nativeEvent.isComposing
+                        ) {
                           return;
                         }
 
@@ -4933,7 +5085,9 @@ export default function Waves() {
                 activePinnedMessages.map((message, index) => {
                   const senderInGroup =
                     activeConversation?.type === 'group'
-                      ? activeConversation.members?.find((member) => member.uid === message.senderId)
+                      ? activeConversation.members?.find(
+                          (member) => member.uid === message.senderId
+                        )
                       : null;
 
                   const senderAvatarUrl =
@@ -5233,10 +5387,10 @@ export default function Waves() {
             className="w-full max-w-md rounded-[28px] border border-cyan-100 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
-            {activeConversation?.type === 'group' && activeTab !== 'groups' ? (
+            {isAddingMembersToActiveGroup ? (
               <>
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                  Mời thành viên vào {activeConversation.title}
+                  Mời thành viên vào {activeConversation?.title ?? 'nhóm'}
                 </h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   Chọn bạn bè để thêm vào nhóm
@@ -5248,7 +5402,9 @@ export default function Waves() {
                   Tạo nhóm mới
                 </h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Đặt tên và chọn thành viên ban đầu
+                  {baseCreateGroupParticipantIds.length > 0 && activeConversation?.peer
+                    ? `Đặt tên, giữ ${activeConversation.peer.name} trong nhóm và chọn thêm thành viên`
+                    : 'Đặt tên và chọn thành viên ban đầu'}
                 </p>
                 <input
                   value={newGroupTitle}
@@ -5262,10 +5418,10 @@ export default function Waves() {
             <div className="mt-4 max-h-60 space-y-1 overflow-y-auto">
               {friends
                 .filter((f) => {
-                  if (activeConversation?.type === 'group' && activeTab !== 'groups') {
-                    return !activeConversation.members?.some((m) => m.uid === f.id);
+                  if (isAddingMembersToActiveGroup) {
+                    return !activeConversation?.members?.some((m) => m.uid === f.id);
                   }
-                  return true;
+                  return !baseCreateGroupParticipantIds.includes(f.id);
                 })
                 .map((friend) => {
                   const selected = selectedGroupMembers.includes(friend.id);
@@ -5320,7 +5476,7 @@ export default function Waves() {
               >
                 Hủy
               </button>
-              {activeConversation?.type === 'group' && activeTab !== 'groups' ? (
+              {isAddingMembersToActiveGroup ? (
                 <button
                   type="button"
                   disabled={selectedGroupMembers.length === 0}
@@ -5345,7 +5501,7 @@ export default function Waves() {
                   }}
                   className="rounded-2xl bg-gradient-to-r from-surf-primary to-cyan-500 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
                 >
-                  {creatingGroup ? 'Đang tạo...' : `Tạo nhóm (${selectedGroupMembers.length})`}
+                  {creatingGroup ? 'Đang tạo...' : `Tạo nhóm (${createGroupParticipantIds.length})`}
                 </button>
               )}
             </div>
@@ -5375,10 +5531,7 @@ export default function Waves() {
               </svg>
             </button>
 
-            <div
-              className="w-[min(92vw,1120px)]"
-              onClick={(event) => event.stopPropagation()}
-            >
+            <div className="w-[min(92vw,1120px)]" onClick={(event) => event.stopPropagation()}>
               <div className="mb-3 flex items-center justify-between text-white/90">
                 <p className="truncate text-sm font-medium">
                   {wavesMediaPreview.title ??

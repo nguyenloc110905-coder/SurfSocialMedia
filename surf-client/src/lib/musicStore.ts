@@ -28,16 +28,88 @@ const storeListeners = new Set<StoreListener>();
 const playListeners = new Set<PlayListener>();
 const playPlaylistListeners = new Set<PlayPlaylistListener>();
 
-function read<T>(key: string, fallback: T): T {
+function readStorage(key: string): string | null {
   try {
-    return JSON.parse(localStorage.getItem(key) ?? '') as T;
+    return localStorage.getItem(key);
   } catch {
-    return fallback;
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures so the music sidebar never breaks the app shell.
+  }
+}
+
+function removeStorage(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures so the music sidebar never breaks the app shell.
+  }
+}
+
+function readJson(key: string): unknown {
+  try {
+    const raw = readStorage(key);
+    if (!raw) return undefined;
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
   }
 }
 
 function notifyStore() {
   storeListeners.forEach((fn) => fn());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeTrack(value: unknown): TrackItem | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.title !== 'string') {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    title: value.title,
+    artist: typeof value.artist === 'string' ? value.artist : '',
+    thumbnail:
+      typeof value.thumbnail === 'string'
+        ? value.thumbnail
+        : `https://img.youtube.com/vi/${value.id}/hqdefault.jpg`,
+  };
+}
+
+function readTrackList(key: string): TrackItem[] {
+  const parsed = readJson(key);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map(normalizeTrack).filter((track): track is TrackItem => track !== null);
+}
+
+function normalizePlaylist(value: unknown): Playlist | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string') {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    tracks: Array.isArray(value.tracks)
+      ? value.tracks.map(normalizeTrack).filter((track): track is TrackItem => track !== null)
+      : [],
+  };
+}
+
+function readPlaylists(key: string): Playlist[] {
+  const parsed = readJson(key);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map(normalizePlaylist).filter((playlist): playlist is Playlist => playlist !== null);
 }
 
 // Legacy static keys (used before per-user keys were introduced)
@@ -51,9 +123,9 @@ const LEGACY_PLAYLISTS_KEY = 'surf_music_playlists';
  * so the next different user doesn't inherit it.
  */
 function migrateIfNeeded(uid: string) {
-  const migrationDone = localStorage.getItem(`surf_music_migrated_${uid}`);
+  const migrationDone = readStorage(`surf_music_migrated_${uid}`);
   if (migrationDone) return;
-  localStorage.setItem(`surf_music_migrated_${uid}`, '1');
+  writeStorage(`surf_music_migrated_${uid}`, '1');
 
   const pairs: [string, string][] = [
     [LEGACY_HISTORY_KEY,   `surf_music_history_${uid}`],
@@ -61,11 +133,11 @@ function migrateIfNeeded(uid: string) {
     [LEGACY_PLAYLISTS_KEY, `surf_music_playlists_${uid}`],
   ];
   for (const [legacyKey, newKey] of pairs) {
-    const legacyRaw = localStorage.getItem(legacyKey);
-    if (legacyRaw && !localStorage.getItem(newKey)) {
-      localStorage.setItem(newKey, legacyRaw);
+    const legacyRaw = readStorage(legacyKey);
+    if (legacyRaw && !readStorage(newKey)) {
+      writeStorage(newKey, legacyRaw);
     }
-    localStorage.removeItem(legacyKey);
+    removeStorage(legacyKey);
   }
 }
 
@@ -97,26 +169,27 @@ export const musicStore = {
   },
 
   requestPlayPlaylist(tracks: TrackItem[]) {
-    if (tracks.length > 0) playPlaylistListeners.forEach((fn) => fn(tracks));
+    const safeTracks = Array.isArray(tracks) ? tracks : [];
+    if (safeTracks.length > 0) playPlaylistListeners.forEach((fn) => fn(safeTracks));
   },
 
   // ── History ──────────────────────────────────────────────────────────────
-  getHistory(): TrackItem[] { return read(historyKey(), []); },
+  getHistory(): TrackItem[] { return readTrackList(historyKey()); },
 
   addToHistory(track: TrackItem) {
     const h = musicStore.getHistory().filter((t) => t.id !== track.id);
     h.unshift(track);
-    localStorage.setItem(historyKey(), JSON.stringify(h.slice(0, MAX_HISTORY)));
+    writeStorage(historyKey(), JSON.stringify(h.slice(0, MAX_HISTORY)));
     notifyStore();
   },
 
   clearHistory() {
-    localStorage.removeItem(historyKey());
+    removeStorage(historyKey());
     notifyStore();
   },
 
   // ── Favorites ────────────────────────────────────────────────────────────
-  getFavorites(): TrackItem[] { return read(favoritesKey(), []); },
+  getFavorites(): TrackItem[] { return readTrackList(favoritesKey()); },
 
   isFavorite(id: string): boolean {
     return musicStore.getFavorites().some((t) => t.id === id);
@@ -127,28 +200,28 @@ export const musicStore = {
     const idx = favs.findIndex((t) => t.id === track.id);
     if (idx >= 0) favs.splice(idx, 1);
     else favs.unshift(track);
-    localStorage.setItem(favoritesKey(), JSON.stringify(favs));
+    writeStorage(favoritesKey(), JSON.stringify(favs));
     notifyStore();
   },
 
   // ── Playlists ────────────────────────────────────────────────────────────
-  getPlaylists(): Playlist[] { return read(playlistsKey(), []); },
+  getPlaylists(): Playlist[] { return readPlaylists(playlistsKey()); },
 
   createPlaylist(name: string): Playlist {
     const pl: Playlist = { id: `pl_${Date.now()}`, name: name.trim(), tracks: [] };
-    localStorage.setItem(playlistsKey(), JSON.stringify([...musicStore.getPlaylists(), pl]));
+    writeStorage(playlistsKey(), JSON.stringify([...musicStore.getPlaylists(), pl]));
     notifyStore();
     return pl;
   },
 
   renamePlaylist(id: string, name: string) {
     const pls = musicStore.getPlaylists().map((p) => (p.id === id ? { ...p, name: name.trim() } : p));
-    localStorage.setItem(playlistsKey(), JSON.stringify(pls));
+    writeStorage(playlistsKey(), JSON.stringify(pls));
     notifyStore();
   },
 
   deletePlaylist(id: string) {
-    localStorage.setItem(playlistsKey(), JSON.stringify(musicStore.getPlaylists().filter((p) => p.id !== id)));
+    writeStorage(playlistsKey(), JSON.stringify(musicStore.getPlaylists().filter((p) => p.id !== id)));
     notifyStore();
   },
 
@@ -157,7 +230,7 @@ export const musicStore = {
       if (p.id !== playlistId || p.tracks.find((t) => t.id === track.id)) return p;
       return { ...p, tracks: [...p.tracks, track] };
     });
-    localStorage.setItem(playlistsKey(), JSON.stringify(pls));
+    writeStorage(playlistsKey(), JSON.stringify(pls));
     notifyStore();
   },
 
@@ -165,7 +238,7 @@ export const musicStore = {
     const pls = musicStore.getPlaylists().map((p) =>
       p.id === playlistId ? { ...p, tracks: p.tracks.filter((t) => t.id !== trackId) } : p,
     );
-    localStorage.setItem(playlistsKey(), JSON.stringify(pls));
+    writeStorage(playlistsKey(), JSON.stringify(pls));
     notifyStore();
   },
 };

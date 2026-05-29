@@ -17,7 +17,7 @@ import {
   toRealtimeMessagePayload,
 } from '../services/conversations.js';
 import {
-  emitMessageNew,
+  emitMessageNewToTargets,
   emitMessageRead,
   emitMessageUnreadCount,
 } from '../realtime/emitters/message.emitter.js';
@@ -36,12 +36,24 @@ const parseCursorSafe = (value: unknown): string | undefined => {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 
+const normalizeStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+    : [];
+
+const getGroupNameFromBody = (body: unknown): string => {
+  if (!body || typeof body !== 'object') return '';
+  const data = body as Record<string, unknown>;
+  const candidate = data.groupName ?? data.name ?? data.title;
+  return typeof candidate === 'string' ? candidate.trim() : '';
+};
+
 /**
  * @swagger
  * /api/conversations:
  *   post:
  *     tags: [Conversations]
- *     summary: Tạo hoặc lấy cuộc trò chuyện 1-1 với user khác
+ *     summary: Tạo/lấy DM hoặc tạo group chat
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -49,12 +61,19 @@ const parseCursorSafe = (value: unknown): string | undefined => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [peerUid]
  *             properties:
  *               peerUid: { type: string }
+ *               participants:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Danh sách user tham gia group, không cần bao gồm bản thân
+ *               groupName: { type: string }
+ *               name: { type: string }
+ *               title: { type: string }
  *     responses:
- *       200: { description: Conversation đã tồn tại hoặc mới tạo }
- *       400: { description: Thiếu peerUid }
+ *       200: { description: DM đã tồn tại hoặc mới tạo }
+ *       201: { description: Conversation/group mới tạo }
+ *       400: { description: Payload không hợp lệ }
  *   get:
  *     tags: [Conversations]
  *     summary: Danh sách cuộc trò chuyện
@@ -72,6 +91,36 @@ const parseCursorSafe = (value: unknown): string | undefined => {
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const actorUid = req.uid!;
+    const participants = normalizeStringArray(req.body?.participants);
+    const groupName = getGroupNameFromBody(req.body);
+
+    if (participants.length > 0 || groupName) {
+      const result = await createGroupConversation(actorUid, groupName, participants);
+
+      if (!result.ok) {
+        if (result.reason === 'invalid_title') {
+          res.status(400).json({ error: 'Group name is required' });
+          return;
+        }
+        if (result.reason === 'member_not_found') {
+          res.status(404).json({ error: 'One or more participants were not found' });
+          return;
+        }
+        if (result.reason === 'blocked') {
+          res.status(403).json({ error: 'Blocked users cannot interact', code: 'USER_BLOCKED' });
+          return;
+        }
+        res.status(400).json({ error: 'At least one other participant is required' });
+        return;
+      }
+
+      res.status(201).json({
+        created: true,
+        item: toApiConversation(result.item),
+      });
+      return;
+    }
+
     const peerUid = typeof req.body?.peerUid === 'string' ? req.body.peerUid : '';
 
     const result = await createOrGetDmConversation(actorUid, peerUid);
@@ -329,16 +378,25 @@ router.post('/group', requireAuth, async (req: AuthRequest, res) => {
   try {
     const actorUid = req.uid!;
     const { title, memberIds } = req.body as { title?: string; memberIds?: string[] };
+    const participants = normalizeStringArray(req.body?.participants);
 
     const result = await createGroupConversation(
       actorUid,
-      title ?? '',
-      Array.isArray(memberIds) ? memberIds : []
+      getGroupNameFromBody(req.body) || title || '',
+      participants.length > 0 ? participants : Array.isArray(memberIds) ? memberIds : []
     );
 
     if (!result.ok) {
       if (result.reason === 'invalid_title') {
         res.status(400).json({ error: 'Group title is required' });
+        return;
+      }
+      if (result.reason === 'member_not_found') {
+        res.status(404).json({ error: 'One or more members were not found' });
+        return;
+      }
+      if (result.reason === 'blocked') {
+        res.status(403).json({ error: 'Blocked users cannot interact', code: 'USER_BLOCKED' });
         return;
       }
       res.status(400).json({ error: 'At least one other member is required' });
@@ -424,6 +482,14 @@ router.post('/:id/members', requireAuth, async (req: AuthRequest, res) => {
         res.status(400).json({ error: 'Can only add members to group conversations' });
         return;
       }
+      if (result.reason === 'member_not_found') {
+        res.status(404).json({ error: 'One or more members were not found' });
+        return;
+      }
+      if (result.reason === 'blocked') {
+        res.status(403).json({ error: 'Blocked users cannot interact', code: 'USER_BLOCKED' });
+        return;
+      }
       res.status(403).json({ error: 'You are not a member of this conversation' });
       return;
     }
@@ -471,10 +537,7 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       }
 
       const payload = toRealtimeMessagePayload(result.item);
-      result.recipientIds.forEach((uid) => {
-        emitMessageNew(uid, payload);
-      });
-      emitMessageNew(senderId, payload);
+      emitMessageNewToTargets([senderId, ...result.recipientIds], req.params.id, payload);
 
       const recipientCounts = await Promise.all(
         result.recipientIds.map(async (uid) => ({
@@ -522,11 +585,7 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
 
     const payload = toRealtimeMessagePayload(result.item);
 
-    result.recipientIds.forEach((uid) => {
-      emitMessageNew(uid, payload);
-    });
-
-    emitMessageNew(senderId, payload);
+    emitMessageNewToTargets([senderId, ...result.recipientIds], req.params.id, payload);
 
     const recipientCounts = await Promise.all(
       result.recipientIds.map(async (uid) => ({

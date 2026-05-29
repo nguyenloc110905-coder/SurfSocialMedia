@@ -100,8 +100,8 @@ export default function Profile() {
   const initial = displayName.charAt(0).toUpperCase();
   const profileEmail = isOwnProfile ? user?.email : profile?.email;
   const photoURL = isOwnProfile
-    ? (user?.photoURL || profile?.photoURL || null)
-    : (profile?.photoURL || null);
+    ? user?.photoURL || profile?.photoURL || null
+    : profile?.photoURL || null;
   const coverImageUrl = profile?.coverImageUrl ?? null;
   const bio = profile?.bio ?? null;
   const aboutDetails = profile?.aboutDetails ?? [];
@@ -133,6 +133,7 @@ export default function Profile() {
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
     savedBy?: string[];
+    pinnedAt?: string | null;
     sharedFrom?: {
       id: string;
       authorId?: string;
@@ -245,7 +246,9 @@ export default function Profile() {
       }
     };
     socket.on('friendAccepted', handler);
-    return () => { socket.off('friendAccepted', handler); };
+    return () => {
+      socket.off('friendAccepted', handler);
+    };
   }, [uid, user]);
 
   // Load profile
@@ -395,13 +398,18 @@ export default function Profile() {
         const response = await api.get<{ clips: Clip[] }>(`/api/users/${uid}/clips`);
         if (!cancelled) setClips(response.clips || []);
       } catch {
-        if (!cancelled) { setClipsError('Không thể tải video.'); setClips([]); }
+        if (!cancelled) {
+          setClipsError('Không thể tải video.');
+          setClips([]);
+        }
       } finally {
         if (!cancelled) setClipsLoading(false);
       }
     };
     loadClips();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [uid, activeTab]);
 
   // Load saved posts (own profile only)
@@ -412,10 +420,18 @@ export default function Profile() {
     setSavedPostsError(null);
     api
       .get<{ posts: Post[] }>('/api/posts/saved')
-      .then((r) => { if (!cancelled) setSavedPosts(r.posts ?? []); })
-      .catch(() => { if (!cancelled) setSavedPostsError('Không thể tải bài đã lưu.'); })
-      .finally(() => { if (!cancelled) setSavedPostsLoading(false); });
-    return () => { cancelled = true; };
+      .then((r) => {
+        if (!cancelled) setSavedPosts(r.posts ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedPostsError('Không thể tải bài đã lưu.');
+      })
+      .finally(() => {
+        if (!cancelled) setSavedPostsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isOwnProfile, activeTab]);
 
   // Kểm tra trạng thái bạn bè khi xem trang người khác
@@ -1200,8 +1216,20 @@ export default function Profile() {
                         <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
-                          <svg className="w-4 h-4 group-hover/unfriend-btn:hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>
-                          <svg className="w-4 h-4 hidden group-hover/unfriend-btn:block" viewBox="0 0 24 24" fill="currentColor"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                          <svg
+                            className="w-4 h-4 group-hover/unfriend-btn:hidden"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                          </svg>
+                          <svg
+                            className="w-4 h-4 hidden group-hover/unfriend-btn:block"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
                         </>
                       )}
                       <span className="group-hover/unfriend-btn:hidden">Bạn bè</span>
@@ -1211,16 +1239,34 @@ export default function Profile() {
                 )}
                 {/* Unfriend confirmation modal */}
                 {showUnfriendConfirm && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowUnfriendConfirm(false)}>
-                    <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-6 w-[340px] mx-4" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                    onClick={() => setShowUnfriendConfirm(false)}
+                  >
+                    <div
+                      className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-6 w-[340px] mx-4"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex flex-col items-center text-center gap-4">
                         <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                          <svg className="w-7 h-7 text-red-500" viewBox="0 0 24 24" fill="currentColor"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                          <svg
+                            className="w-7 h-7 text-red-500"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
                         </div>
                         <div>
-                          <p className="font-bold text-gray-900 dark:text-white text-base">Hủy kết bạn?</p>
+                          <p className="font-bold text-gray-900 dark:text-white text-base">
+                            Hủy kết bạn?
+                          </p>
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            Bạn có chắc muốn hủy kết bạn với <span className="font-semibold text-gray-700 dark:text-gray-300">{profile?.displayName ?? 'người này'}</span> không?
+                            Bạn có chắc muốn hủy kết bạn với{' '}
+                            <span className="font-semibold text-gray-700 dark:text-gray-300">
+                              {profile?.displayName ?? 'người này'}
+                            </span>{' '}
+                            không?
                           </p>
                         </div>
                         <div className="flex gap-3 w-full">
@@ -1234,10 +1280,17 @@ export default function Profile() {
                           <button
                             type="button"
                             disabled={actionLoading}
-                            onClick={() => { setShowUnfriendConfirm(false); handleUnfriend(); }}
+                            onClick={() => {
+                              setShowUnfriendConfirm(false);
+                              handleUnfriend();
+                            }}
                             className="flex-1 h-10 rounded-2xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors disabled:opacity-60"
                           >
-                            {actionLoading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : 'Hủy kết bạn'}
+                            {actionLoading ? (
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                            ) : (
+                              'Hủy kết bạn'
+                            )}
                           </button>
                         </div>
                       </div>
@@ -1360,7 +1413,11 @@ export default function Profile() {
               <div className="flex gap-3 items-center">
                 <div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-semibold text-surf-primary flex-shrink-0 overflow-hidden">
                   {photoURL ? (
-                    <img src={optimizeImageUrl(photoURL)} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={optimizeImageUrl(photoURL)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     initial
                   )}
@@ -1505,8 +1562,10 @@ export default function Profile() {
                             const getTs = (p: Post): number => {
                               const c = p.createdAt;
                               if (!c) return 0;
-                              if (typeof c === 'object' && '_seconds' in c) return (c as { _seconds: number })._seconds;
-                              if (typeof c === 'object' && 'seconds' in c) return (c as { seconds: number }).seconds;
+                              if (typeof c === 'object' && '_seconds' in c)
+                                return (c as { _seconds: number })._seconds;
+                              if (typeof c === 'object' && 'seconds' in c)
+                                return (c as { seconds: number }).seconds;
                               return 0;
                             };
                             return getTs(b) - getTs(a);
@@ -1555,7 +1614,13 @@ export default function Profile() {
                               />
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
-                                  <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                  <svg
+                                    className="w-5 h-5 text-white ml-0.5"
+                                    fill="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
                                 </div>
                               </div>
                             </>
@@ -1582,8 +1647,18 @@ export default function Profile() {
                           {/* Shared post badge */}
                           {isShared && (
                             <div className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-green-600/80 backdrop-blur-sm text-white text-xs font-medium flex items-center gap-1">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                                />
                               </svg>
                               Đã chia sẻ
                             </div>
@@ -1870,8 +1945,18 @@ export default function Profile() {
                       onClick={() => setSelectedClip(null)}
                       className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
                     >
-                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="w-8 h-8"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                     <video
@@ -1893,7 +1978,8 @@ export default function Profile() {
           {activeTab === 'saved' && isOwnProfile && (
             <div className="space-y-4">
               <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
-                Bài viết đã lưu {!savedPostsLoading && savedPosts.length > 0 && `(${savedPosts.length})`}
+                Bài viết đã lưu{' '}
+                {!savedPostsLoading && savedPosts.length > 0 && `(${savedPosts.length})`}
               </h2>
               {savedPostsLoading && (
                 <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-8 text-center shadow-sm">
@@ -1908,11 +1994,25 @@ export default function Profile() {
               )}
               {!savedPostsLoading && !savedPostsError && savedPosts.length === 0 && (
                 <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
-                  <svg className="w-14 h-14 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  <svg
+                    className="w-14 h-14 mx-auto mb-4 text-gray-300 dark:text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                    />
                   </svg>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Chưa lưu bài viết nào</p>
-                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Nhấn biểu tượng lưu trên bài viết để lưu lại.</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
+                    Chưa lưu bài viết nào
+                  </p>
+                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                    Nhấn biểu tượng lưu trên bài viết để lưu lại.
+                  </p>
                 </div>
               )}
               {!savedPostsLoading && !savedPostsError && savedPosts.length > 0 && (
@@ -1923,7 +2023,9 @@ export default function Profile() {
                       post={post}
                       currentUserId={user?.uid}
                       onPostUpdated={(updated) =>
-                        setSavedPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+                        setSavedPosts((prev) =>
+                          prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+                        )
                       }
                     />
                   ))}
@@ -2410,7 +2512,11 @@ export default function Profile() {
         <div className="space-y-4">
           {coverPreviewUrl && (
             <div className="w-full aspect-video overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800">
-              <img src={optimizeImageUrl(coverPreviewUrl)} alt="Xem trước" className="w-full h-full object-cover" />
+              <img
+                src={optimizeImageUrl(coverPreviewUrl)}
+                alt="Xem trước"
+                className="w-full h-full object-cover"
+              />
             </div>
           )}
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
@@ -2452,7 +2558,12 @@ export default function Profile() {
               aria-label="Đóng"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
             <PostCard post={selectedPost} currentUserId={user?.uid} />

@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, createHmac, randomUUID } from 'crypto';
 import { Router, type Response } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { getAuth, getDb } from '../config/firebase-admin.js';
@@ -26,7 +26,10 @@ import {
   toApiMessage,
   toRealtimeMessagePayload,
 } from '../services/conversations.js';
-import { emitMessageNew, emitMessageUnreadCount } from '../realtime/emitters/message.emitter.js';
+import {
+  emitMessageNewToTargets,
+  emitMessageUnreadCount,
+} from '../realtime/emitters/message.emitter.js';
 import type { MarketplaceConversationContext } from '../types/conversation.js';
 
 const router = Router();
@@ -99,8 +102,13 @@ const MARKETPLACE_SELLER_DUPLICATE_LOOKBACK_DAYS = 30;
 const MODERATION_SETTINGS_COLLECTION = 'app_settings';
 const MODERATION_SETTINGS_DOC = 'marketplace_moderation';
 const BOOST_CAMPAIGNS_COLLECTION = 'marketplace_boost_campaigns';
+const BOOST_PAYMENT_SESSIONS_COLLECTION = 'marketplace_boost_payment_sessions';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_BOOST_PLACEMENTS = ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery'];
+const BOOST_SANDBOX_PAYMENT_PROVIDERS = ['zalopay', 'vnpay', 'momo'] as const;
+const VNPAY_SANDBOX_PAYMENT_URL = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
+const MOMO_SANDBOX_CREATE_URL = 'https://test-payment.momo.vn/v2/gateway/api/create';
+const ZALOPAY_SANDBOX_CREATE_URL = 'https://sandbox.zalopay.com.vn/v001/tpe/createorder';
 const AI_INFRASTRUCTURE_MODERATION_FLAGS = new Set([
   'missing_gemini_key',
   'invalid_gemini_key',
@@ -136,11 +144,18 @@ type BoostStatus =
   | 'none'
   | 'awaiting_moderation'
   | 'active'
+  | 'paused'
   | 'completed'
   | 'cancelled'
   | 'rejected';
 type BoostPaymentMode = 'sandbox' | 'live';
-type BoostPaymentStatus = 'none' | 'sandbox_authorized' | 'sandbox_voided' | 'paid' | 'refunded';
+type BoostPaymentStatus =
+  | 'none'
+  | 'sandbox_authorized'
+  | 'sandbox_voided'
+  | 'paid'
+  | 'refunded';
+type BoostSandboxPaymentProvider = (typeof BOOST_SANDBOX_PAYMENT_PROVIDERS)[number];
 
 interface BoostPlan {
   dailyBudget: number;
@@ -186,6 +201,7 @@ interface ListingData {
   boostEndsAt?: Date | null;
   boostPaymentMode?: BoostPaymentMode | null;
   boostPaymentStatus?: BoostPaymentStatus;
+  boostPaymentProvider?: BoostSandboxPaymentProvider | null;
   boostBudgetTotal?: number;
   boostEstimatedTax?: number;
   boostTotal?: number;
@@ -366,6 +382,7 @@ interface BoostCampaignData {
   plan: BoostPlan;
   paymentMode: BoostPaymentMode;
   paymentStatus: BoostPaymentStatus;
+  sandboxPaymentProvider: BoostSandboxPaymentProvider | null;
   sandboxPaymentId: string | null;
   budgetTotal: number;
   estimatedTax: number;
@@ -375,6 +392,27 @@ interface BoostCampaignData {
   endsAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+type BoostPaymentSessionStatus = 'pending' | 'paid' | 'failed' | 'expired';
+
+interface BoostPaymentSessionData {
+  userId: string;
+  provider: BoostSandboxPaymentProvider;
+  status: BoostPaymentSessionStatus;
+  orderId: string;
+  amount: number;
+  title: string;
+  paymentUrl: string;
+  clientReturnUrl: string;
+  consumed: boolean;
+  consumedByListingId?: string | null;
+  gatewayTransactionId?: string | null;
+  gatewayResponseCode?: string | null;
+  gatewayPayload?: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  paidAt?: Date | null;
 }
 
 function listingFromDoc(doc: QueryDocumentSnapshot<DocumentData>): ListingItem {
@@ -495,6 +533,14 @@ function isBoostActive(listing: ListingData): boolean {
   if (!listing.boostEnabled || listing.boostStatus !== 'active') return false;
   const endsAt = getTimeValue(listing.boostEndsAt);
   return !endsAt || endsAt > Date.now();
+}
+
+function getBoostResumeDeadline(listing: ListingData): number {
+  const endsAt = getTimeValue(listing.boostEndsAt);
+  if (endsAt) return endsAt;
+  const startedAt = getTimeValue(listing.boostStartedAt);
+  const durationDays = listing.boostPlan?.durationDays ?? 0;
+  return startedAt && durationDays > 0 ? startedAt + durationDays * DAY_MS : 0;
 }
 
 function getListingRank(item: ListingItem): number {
@@ -632,6 +678,282 @@ function normalizeBoostPlan(input: unknown): BoostPlan | null {
   };
 }
 
+function normalizeBoostSandboxPaymentProvider(input: unknown): BoostSandboxPaymentProvider {
+  const provider = String(input ?? '').trim().toLowerCase();
+  return BOOST_SANDBOX_PAYMENT_PROVIDERS.includes(provider as BoostSandboxPaymentProvider)
+    ? (provider as BoostSandboxPaymentProvider)
+    : 'zalopay';
+}
+
+function getRequiredEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Thiếu cấu hình ${name} cho cổng thanh toán sandbox chính chủ.`);
+  }
+  return value;
+}
+
+function hmacHex(algorithm: string, key: string, data: string) {
+  return createHmac(algorithm, key).update(data, 'utf8').digest('hex');
+}
+
+function formatGatewayDate(date: Date) {
+  const pad = (value: number) => value.toString().padStart(2, '0');
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function getServerPublicUrl(req: AuthRequest) {
+  const configured = process.env.SERVER_PUBLIC_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+}
+
+function getClientReturnUrl(req: AuthRequest, input: unknown) {
+  const candidate = typeof input === 'string' ? input.trim() : '';
+  if (/^https?:\/\//i.test(candidate)) return candidate;
+  const configured = process.env.CLIENT_PUBLIC_URL?.trim() || process.env.FRONTEND_URL?.split(',')[0]?.trim();
+  const base = (configured || req.get('origin') || 'http://localhost:5173').replace(/\/+$/, '');
+  return `${base}/sandbox/boost-payment-return`;
+}
+
+function createGatewayOrderId(provider: BoostSandboxPaymentProvider) {
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
+  return `${provider.toUpperCase()}${Date.now()}${suffix}`.slice(0, 40);
+}
+
+function createZaloPayAppTransId(orderId: string) {
+  const now = new Date();
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+  const dd = now.getDate().toString().padStart(2, '0');
+  return `${yy}${mm}${dd}_${orderId}`.slice(0, 40);
+}
+
+function toGatewayPayload(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, rawValue]) => [key, String(rawValue ?? '')])
+  );
+}
+
+async function markBoostPaymentSession(
+  orderId: string,
+  patch: Partial<BoostPaymentSessionData>
+) {
+  const db = getDb();
+  const snap = await db
+    .collection(BOOST_PAYMENT_SESSIONS_COLLECTION)
+    .where('orderId', '==', orderId)
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  const doc = snap.docs[0];
+  const update = { ...patch, updatedAt: new Date() };
+  await doc.ref.update(update);
+  return { id: doc.id, ...(doc.data() as BoostPaymentSessionData), ...update };
+}
+
+async function getBoostPaymentSession(paymentId: string) {
+  const doc = await getDb().collection(BOOST_PAYMENT_SESSIONS_COLLECTION).doc(paymentId).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...(doc.data() as BoostPaymentSessionData) };
+}
+
+function createBoostPaymentError(message: string) {
+  const error = new Error(message) as Error & { statusCode?: number };
+  error.statusCode = 400;
+  return error;
+}
+
+async function assertPaidBoostPaymentSession(
+  paymentId: unknown,
+  uid: string,
+  provider: BoostSandboxPaymentProvider,
+  expectedAmount: number
+) {
+  const id = typeof paymentId === 'string' ? paymentId.trim() : '';
+  if (!id) {
+    throw createBoostPaymentError('Vui lòng hoàn tất thanh toán sandbox chính chủ trước khi bật quảng bá.');
+  }
+  const session = await getBoostPaymentSession(id);
+  if (!session || session.userId !== uid) {
+    throw createBoostPaymentError('Không tìm thấy giao dịch thanh toán sandbox hợp lệ.');
+  }
+  if (session.provider !== provider) {
+    throw createBoostPaymentError('Cổng thanh toán đã chọn không khớp với giao dịch đã thanh toán.');
+  }
+  if (session.status !== 'paid') {
+    throw createBoostPaymentError('Giao dịch sandbox chưa được cổng thanh toán xác nhận thành công.');
+  }
+  if (session.consumed) {
+    throw createBoostPaymentError('Giao dịch sandbox này đã được dùng cho một chiến dịch khác.');
+  }
+  if (Math.round(session.amount) !== Math.round(expectedAmount)) {
+    throw createBoostPaymentError('Số tiền thanh toán sandbox không khớp với gói quảng bá.');
+  }
+  return { id, session };
+}
+
+function redirectPaymentResult(res: Response, session: BoostPaymentSessionData & { id: string }, status: string) {
+  const url = new URL(session.clientReturnUrl);
+  url.searchParams.set('paymentId', session.id);
+  url.searchParams.set('orderId', session.orderId);
+  url.searchParams.set('provider', session.provider);
+  url.searchParams.set('status', status);
+  res.redirect(url.toString());
+}
+
+function getVnpaySignedQuery(params: Record<string, string>, secret: string) {
+  const sorted = Object.keys(params)
+    .sort()
+    .reduce<Record<string, string>>((acc, key) => {
+      acc[key] = params[key];
+      return acc;
+    }, {});
+  const signData = new URLSearchParams(sorted).toString();
+  return { query: `${signData}&vnp_SecureHash=${hmacHex('sha512', secret, signData)}`, signData };
+}
+
+function verifyVnpayQuery(query: Record<string, unknown>, secret: string) {
+  const secureHash = String(query.vnp_SecureHash ?? '');
+  const params: Record<string, string> = {};
+  Object.entries(query).forEach(([key, value]) => {
+    if (key.startsWith('vnp_') && key !== 'vnp_SecureHash' && key !== 'vnp_SecureHashType') {
+      params[key] = String(value ?? '');
+    }
+  });
+  const { signData } = getVnpaySignedQuery(params, secret);
+  return secureHash.toLowerCase() === hmacHex('sha512', secret, signData).toLowerCase();
+}
+
+async function createVnpayPaymentUrl(req: AuthRequest, orderId: string, amount: number, title: string) {
+  const tmnCode = getRequiredEnv('VNPAY_TMN_CODE');
+  const hashSecret = getRequiredEnv('VNPAY_HASH_SECRET');
+  const paymentUrl = process.env.VNPAY_PAYMENT_URL?.trim() || VNPAY_SANDBOX_PAYMENT_URL;
+  const params: Record<string, string> = {
+    vnp_Version: '2.1.0',
+    vnp_Command: 'pay',
+    vnp_TmnCode: tmnCode,
+    vnp_Amount: String(Math.round(amount) * 100),
+    vnp_CurrCode: 'VND',
+    vnp_TxnRef: orderId,
+    vnp_OrderInfo: `Surf Boost ${title}`.slice(0, 255),
+    vnp_OrderType: 'other',
+    vnp_Locale: 'vn',
+    vnp_ReturnUrl: `${getServerPublicUrl(req)}/payment/marketplace/boost-payments/vnpay/return`,
+    vnp_IpAddr: req.ip || '127.0.0.1',
+    vnp_CreateDate: formatGatewayDate(new Date()),
+  };
+  const { query } = getVnpaySignedQuery(params, hashSecret);
+  return `${paymentUrl}?${query}`;
+}
+
+async function createMomoPaymentUrl(req: AuthRequest, orderId: string, amount: number, title: string) {
+  const partnerCode = getRequiredEnv('MOMO_PARTNER_CODE');
+  const accessKey = getRequiredEnv('MOMO_ACCESS_KEY');
+  const secretKey = getRequiredEnv('MOMO_SECRET_KEY');
+  const endpoint = process.env.MOMO_CREATE_URL?.trim() || MOMO_SANDBOX_CREATE_URL;
+  const requestId = orderId;
+  const requestType = process.env.MOMO_REQUEST_TYPE?.trim() || 'captureWallet';
+  const redirectUrl = `${getServerPublicUrl(req)}/payment/marketplace/boost-payments/momo/return`;
+  const ipnUrl = `${getServerPublicUrl(req)}/payment/marketplace/boost-payments/momo/ipn`;
+  const extraData = '';
+  const orderInfo = `Surf Boost ${title}`.slice(0, 255);
+  const rawSignature =
+    `accessKey=${accessKey}&amount=${Math.round(amount)}&extraData=${extraData}&ipnUrl=${ipnUrl}` +
+    `&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${partnerCode}&redirectUrl=${redirectUrl}` +
+    `&requestId=${requestId}&requestType=${requestType}`;
+  const body = {
+    partnerCode,
+    accessKey,
+    requestId,
+    amount: String(Math.round(amount)),
+    orderId,
+    orderInfo,
+    redirectUrl,
+    ipnUrl,
+    extraData,
+    requestType,
+    signature: hmacHex('sha256', secretKey, rawSignature),
+    lang: 'vi',
+  };
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify(body),
+  });
+  const data = (await response.json()) as { payUrl?: string; resultCode?: number; message?: string };
+  if (!response.ok || !data.payUrl) {
+    throw new Error(data.message || 'MoMo sandbox không trả về payUrl.');
+  }
+  return data.payUrl;
+}
+
+function verifyMomoResultPayload(payload: Record<string, unknown>) {
+  const signature = String(payload.signature ?? '');
+  if (!signature) return false;
+  const accessKey = getRequiredEnv('MOMO_ACCESS_KEY');
+  const secretKey = getRequiredEnv('MOMO_SECRET_KEY');
+  const data = toGatewayPayload(payload);
+  const rawSignature =
+    `accessKey=${accessKey}&amount=${data.amount ?? ''}&extraData=${data.extraData ?? ''}` +
+    `&message=${data.message ?? ''}&orderId=${data.orderId ?? ''}&orderInfo=${data.orderInfo ?? ''}` +
+    `&orderType=${data.orderType ?? ''}&partnerCode=${data.partnerCode ?? ''}&payType=${data.payType ?? ''}` +
+    `&requestId=${data.requestId ?? ''}&responseTime=${data.responseTime ?? ''}` +
+    `&resultCode=${data.resultCode ?? ''}&transId=${data.transId ?? ''}`;
+  return signature.toLowerCase() === hmacHex('sha256', secretKey, rawSignature).toLowerCase();
+}
+
+async function createZaloPayPaymentUrl(req: AuthRequest, orderId: string, amount: number, title: string, uid: string) {
+  const appId = getRequiredEnv('ZALOPAY_APP_ID');
+  const key1 = getRequiredEnv('ZALOPAY_KEY1');
+  const endpoint = process.env.ZALOPAY_CREATE_ORDER_URL?.trim() || ZALOPAY_SANDBOX_CREATE_URL;
+  const appTransId = createZaloPayAppTransId(orderId);
+  const appTime = Date.now();
+  const embedData = JSON.stringify({
+    redirecturl: `${getServerPublicUrl(req)}/payment/marketplace/boost-payments/zalopay/return`,
+  });
+  const item = JSON.stringify([{ itemid: orderId, itemname: 'Surf Boost', itemprice: Math.round(amount), itemquantity: 1 }]);
+  const description = `Surf Boost ${title}`.slice(0, 100);
+  const macInput = `${appId}|${appTransId}|${uid}|${Math.round(amount)}|${appTime}|${embedData}|${item}`;
+  const form = new URLSearchParams({
+    appid: appId,
+    apptransid: appTransId,
+    appuser: uid,
+    apptime: String(appTime),
+    amount: String(Math.round(amount)),
+    embeddata: embedData,
+    item,
+    description,
+    bankcode: '',
+    mac: hmacHex('sha256', key1, macInput),
+  });
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+  });
+  const data = (await response.json()) as { orderurl?: string; returncode?: number; returnmessage?: string };
+  if (!response.ok || !data.orderurl || data.returncode !== 1) {
+    throw new Error(data.returnmessage || 'ZaloPay sandbox không trả về orderurl.');
+  }
+  return { paymentUrl: data.orderurl, gatewayOrderId: appTransId };
+}
+
+function verifyZaloPayRedirectPayload(payload: Record<string, unknown>) {
+  const checksum = String(payload.checksum ?? '');
+  if (!checksum) return false;
+  const callbackKey = process.env.ZALOPAY_CALLBACK_KEY?.trim() || getRequiredEnv('ZALOPAY_KEY2');
+  const data = toGatewayPayload(payload);
+  const checksumData = `${data.appid ?? ''}|${data.apptransid ?? ''}|${data.pmcid ?? ''}|${data.bankcode ?? ''}|${data.amount ?? ''}|${data.discountamount ?? ''}|${data.status ?? ''}`;
+  return checksum.toLowerCase() === hmacHex('sha256', callbackKey, checksumData).toLowerCase();
+}
+
+function verifyZaloPayCallbackPayload(data: string, mac: string) {
+  if (!data || !mac) return false;
+  const callbackKey = process.env.ZALOPAY_CALLBACK_KEY?.trim() || getRequiredEnv('ZALOPAY_KEY2');
+  return mac.toLowerCase() === hmacHex('sha256', callbackKey, data).toLowerCase();
+}
+
 function createBoostMetrics(): BoostMetrics {
   return { impressions: 0, clicks: 0, saves: 0, spent: 0 };
 }
@@ -644,6 +966,11 @@ function getBoostTotals(plan: BoostPlan) {
 
 async function activateBoostIfEligible(listingId: string, listing: ListingData) {
   if (!listing.boostEnabled || !listing.boostPlan || listing.status !== 'active') return;
+  if (
+    listing.boostPaymentStatus !== 'sandbox_authorized' &&
+    listing.boostPaymentStatus !== 'paid'
+  )
+    return;
 
   const db = getDb();
   const campaignId = listing.boostCampaignId;
@@ -713,6 +1040,48 @@ async function cancelBoostCampaign(
         : (listing.boostPaymentStatus ?? 'none'),
     boostScore: 0,
   });
+}
+
+async function pauseBoostCampaign(listingId: string, listing: ListingData) {
+  if (!listing.boostCampaignId) return null;
+  const db = getDb();
+  const now = new Date();
+  const update = {
+    boostStatus: 'paused' as BoostStatus,
+    boostScore: 0,
+    updatedAt: now,
+  };
+
+  await Promise.all([
+    db.collection('marketplace').doc(listingId).update(update),
+    db.collection(BOOST_CAMPAIGNS_COLLECTION).doc(listing.boostCampaignId).update({
+      status: 'paused',
+      updatedAt: now,
+    }),
+  ]);
+  await invalidateMarketplaceListingCaches({ ...listing, ...update });
+  return update;
+}
+
+async function resumeBoostCampaign(listingId: string, listing: ListingData) {
+  if (!listing.boostCampaignId || !listing.boostPlan) return null;
+  const db = getDb();
+  const now = new Date();
+  const update = {
+    boostStatus: 'active' as BoostStatus,
+    boostScore: listing.boostPlan.dailyBudget,
+    updatedAt: now,
+  };
+
+  await Promise.all([
+    db.collection('marketplace').doc(listingId).update(update),
+    db.collection(BOOST_CAMPAIGNS_COLLECTION).doc(listing.boostCampaignId).update({
+      status: 'active',
+      updatedAt: now,
+    }),
+  ]);
+  await invalidateMarketplaceListingCaches({ ...listing, ...update });
+  return update;
 }
 
 async function flushMarketplaceMetricBuffer() {
@@ -1167,6 +1536,232 @@ async function getModerationSettings(db: Firestore) {
   };
 }
 
+router.post('/boost-payments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const provider = normalizeBoostSandboxPaymentProvider(req.body?.provider);
+    const amount = Math.round(Number(req.body?.amount) || 0);
+    const title = String(req.body?.title ?? 'Surf Boost').trim() || 'Surf Boost';
+    if (!Number.isFinite(amount) || amount < 1000) {
+      res.status(400).json({ error: 'Số tiền thanh toán sandbox không hợp lệ' });
+      return;
+    }
+
+    const db = getDb();
+    const docRef = db.collection(BOOST_PAYMENT_SESSIONS_COLLECTION).doc();
+    let orderId = createGatewayOrderId(provider);
+    let paymentUrl = '';
+
+    if (provider === 'vnpay') {
+      paymentUrl = await createVnpayPaymentUrl(req, orderId, amount, title);
+    } else if (provider === 'momo') {
+      paymentUrl = await createMomoPaymentUrl(req, orderId, amount, title);
+    } else {
+      const zaloPayOrder = await createZaloPayPaymentUrl(req, orderId, amount, title, req.uid!);
+      orderId = zaloPayOrder.gatewayOrderId;
+      paymentUrl = zaloPayOrder.paymentUrl;
+    }
+
+    const session: BoostPaymentSessionData = {
+      userId: req.uid!,
+      provider,
+      status: 'pending',
+      orderId,
+      amount,
+      title,
+      paymentUrl,
+      clientReturnUrl: getClientReturnUrl(req, req.body?.clientReturnUrl),
+      consumed: false,
+      consumedByListingId: null,
+      gatewayTransactionId: null,
+      gatewayResponseCode: null,
+      gatewayPayload: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paidAt: null,
+    };
+    await docRef.set(session);
+    res.status(201).json({
+      paymentId: docRef.id,
+      provider,
+      orderId,
+      amount,
+      status: session.status,
+      paymentUrl,
+    });
+  } catch (e) {
+    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+  }
+});
+
+router.get('/boost-payments/:paymentId/status', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const session = await getBoostPaymentSession(req.params.paymentId);
+    if (!session || session.userId !== req.uid) {
+      res.status(404).json({ error: 'Không tìm thấy giao dịch thanh toán sandbox' });
+      return;
+    }
+    res.json({
+      paymentId: session.id,
+      provider: session.provider,
+      orderId: session.orderId,
+      amount: session.amount,
+      status: session.status,
+      consumed: session.consumed,
+      paymentUrl: session.paymentUrl,
+      gatewayResponseCode: session.gatewayResponseCode ?? null,
+    });
+  } catch (e) {
+    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+  }
+});
+
+router.get('/boost-payments/vnpay/return', async (req, res) => {
+  try {
+    const orderId = String(req.query.vnp_TxnRef ?? '');
+    const valid = verifyVnpayQuery(req.query, getRequiredEnv('VNPAY_HASH_SECRET'));
+    const paid =
+      valid &&
+      String(req.query.vnp_ResponseCode ?? '') === '00' &&
+      String(req.query.vnp_TransactionStatus ?? '') === '00';
+    const updated = await markBoostPaymentSession(orderId, {
+      status: paid ? 'paid' : 'failed',
+      paidAt: paid ? new Date() : null,
+      gatewayTransactionId: String(req.query.vnp_TransactionNo ?? ''),
+      gatewayResponseCode: String(req.query.vnp_ResponseCode ?? ''),
+      gatewayPayload: toGatewayPayload(req.query),
+    });
+    if (!updated) {
+      res.status(404).send('Không tìm thấy giao dịch Surf Boost.');
+      return;
+    }
+    redirectPaymentResult(res, updated, paid ? 'success' : 'failed');
+  } catch (e) {
+    res.status(500).send((e as Error).message);
+  }
+});
+
+router.get('/boost-payments/vnpay/ipn', async (req, res) => {
+  try {
+    const orderId = String(req.query.vnp_TxnRef ?? '');
+    const valid = verifyVnpayQuery(req.query, getRequiredEnv('VNPAY_HASH_SECRET'));
+    if (!valid) {
+      res.json({ RspCode: '97', Message: 'Invalid Checksum' });
+      return;
+    }
+    const session = await markBoostPaymentSession(orderId, {
+      status:
+        String(req.query.vnp_ResponseCode ?? '') === '00' &&
+        String(req.query.vnp_TransactionStatus ?? '') === '00'
+          ? 'paid'
+          : 'failed',
+      paidAt:
+        String(req.query.vnp_ResponseCode ?? '') === '00' &&
+        String(req.query.vnp_TransactionStatus ?? '') === '00'
+          ? new Date()
+          : null,
+      gatewayTransactionId: String(req.query.vnp_TransactionNo ?? ''),
+      gatewayResponseCode: String(req.query.vnp_ResponseCode ?? ''),
+      gatewayPayload: toGatewayPayload(req.query),
+    });
+    if (!session) {
+      res.json({ RspCode: '01', Message: 'Order not found' });
+      return;
+    }
+    res.json({ RspCode: '00', Message: 'Confirm Success' });
+  } catch (e) {
+    res.json({ RspCode: '99', Message: (e as Error).message });
+  }
+});
+
+router.get('/boost-payments/momo/return', async (req, res) => {
+  try {
+    const payload = req.query as Record<string, unknown>;
+    const orderId = String(payload.orderId ?? '');
+    const valid = verifyMomoResultPayload(payload);
+    const paid = valid && String(payload.resultCode ?? '') === '0';
+    const updated = await markBoostPaymentSession(orderId, {
+      status: paid ? 'paid' : 'failed',
+      paidAt: paid ? new Date() : null,
+      gatewayTransactionId: String(payload.transId ?? ''),
+      gatewayResponseCode: String(payload.resultCode ?? ''),
+      gatewayPayload: toGatewayPayload(payload),
+    });
+    if (!updated) {
+      res.status(404).send('Không tìm thấy giao dịch Surf Boost.');
+      return;
+    }
+    redirectPaymentResult(res, updated, paid ? 'success' : 'failed');
+  } catch (e) {
+    res.status(500).send((e as Error).message);
+  }
+});
+
+router.post('/boost-payments/momo/ipn', async (req, res) => {
+  try {
+    const payload = req.body as Record<string, unknown>;
+    const valid = verifyMomoResultPayload(payload);
+    if (valid) {
+      const paid = String(payload.resultCode ?? '') === '0';
+      await markBoostPaymentSession(String(payload.orderId ?? ''), {
+        status: paid ? 'paid' : 'failed',
+        paidAt: paid ? new Date() : null,
+        gatewayTransactionId: String(payload.transId ?? ''),
+        gatewayResponseCode: String(payload.resultCode ?? ''),
+        gatewayPayload: toGatewayPayload(payload),
+      });
+    }
+    res.json({ resultCode: valid ? 0 : 1, message: valid ? 'success' : 'invalid signature' });
+  } catch (e) {
+    res.status(500).json({ resultCode: 1, message: (e as Error).message });
+  }
+});
+
+router.get('/boost-payments/zalopay/return', async (req, res) => {
+  try {
+    const payload = req.query as Record<string, unknown>;
+    const valid = verifyZaloPayRedirectPayload(payload);
+    const paid = valid && String(payload.status ?? '') === '1';
+    const updated = await markBoostPaymentSession(String(payload.apptransid ?? ''), {
+      status: paid ? 'paid' : 'failed',
+      paidAt: paid ? new Date() : null,
+      gatewayTransactionId: String(payload.zptransid ?? ''),
+      gatewayResponseCode: String(payload.status ?? ''),
+      gatewayPayload: toGatewayPayload(payload),
+    });
+    if (!updated) {
+      res.status(404).send('Không tìm thấy giao dịch Surf Boost.');
+      return;
+    }
+    redirectPaymentResult(res, updated, paid ? 'success' : 'failed');
+  } catch (e) {
+    res.status(500).send((e as Error).message);
+  }
+});
+
+router.post('/boost-payments/zalopay/callback', async (req, res) => {
+  try {
+    const data = String(req.body?.data ?? '');
+    const mac = String(req.body?.mac ?? '');
+    const valid = verifyZaloPayCallbackPayload(data, mac);
+    if (!valid) {
+      res.json({ returncode: -1, returnmessage: 'invalid mac' });
+      return;
+    }
+    const parsed = JSON.parse(data) as Record<string, unknown>;
+    const orderId = String(parsed.apptransid ?? parsed.app_trans_id ?? '');
+    await markBoostPaymentSession(orderId, {
+      status: 'paid',
+      paidAt: new Date(),
+      gatewayTransactionId: String(parsed.zptransid ?? parsed.zp_trans_id ?? ''),
+      gatewayResponseCode: '1',
+      gatewayPayload: toGatewayPayload(parsed),
+    });
+    res.json({ returncode: 1, returnmessage: 'success' });
+  } catch (e) {
+    res.status(500).json({ returncode: 0, returnmessage: (e as Error).message });
+  }
+});
+
 // ── POST /api/marketplace — Đăng tin bán ─────────────────────────────────────
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -1191,6 +1786,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       hideFromFriends = false,
       boostEnabled = false,
       boostPlan = null,
+      boostPaymentProvider = null,
+      boostPaymentId = null,
     } = req.body;
 
     if (!title?.trim()) {
@@ -1239,6 +1836,9 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     );
     const requestedBoostPlan = Boolean(boostEnabled) ? normalizeBoostPlan(boostPlan) : null;
     const listingBoostEnabled = Boolean(requestedBoostPlan?.dailyBudget);
+    const sandboxPaymentProvider = listingBoostEnabled
+      ? normalizeBoostSandboxPaymentProvider(boostPaymentProvider)
+      : null;
     const boostTotals = requestedBoostPlan ? getBoostTotals(requestedBoostPlan) : null;
     const moderationSettings = await getModerationSettings(db);
     const moderationReason =
@@ -1252,6 +1852,15 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const boostCampaignRef = listingBoostEnabled
       ? db.collection(BOOST_CAMPAIGNS_COLLECTION).doc()
       : null;
+    const paidBoostPayment =
+      listingBoostEnabled && boostTotals
+        ? await assertPaidBoostPaymentSession(
+            boostPaymentId,
+            req.uid!,
+            sandboxPaymentProvider!,
+            boostTotals.total
+          )
+        : null;
     const listing: ListingData = {
       sellerId: req.uid!,
       sellerDisplayName: user?.displayName ?? 'Ẩn danh',
@@ -1291,7 +1900,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       boostStartedAt: null,
       boostEndsAt: null,
       boostPaymentMode: listingBoostEnabled ? 'sandbox' : null,
-      boostPaymentStatus: listingBoostEnabled ? 'sandbox_authorized' : 'none',
+      boostPaymentStatus: listingBoostEnabled ? 'paid' : 'none',
+      boostPaymentProvider: sandboxPaymentProvider,
       boostBudgetTotal: boostTotals?.budgetTotal ?? 0,
       boostEstimatedTax: boostTotals?.estimatedTax ?? 0,
       boostTotal: boostTotals?.total ?? 0,
@@ -1320,8 +1930,9 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
         status: 'awaiting_moderation',
         plan: requestedBoostPlan,
         paymentMode: 'sandbox',
-        paymentStatus: 'sandbox_authorized',
-        sandboxPaymentId: `sandbox_${docRef.id}_${Date.now()}`,
+        paymentStatus: 'paid',
+        sandboxPaymentProvider,
+        sandboxPaymentId: paidBoostPayment?.id ?? null,
         budgetTotal: boostTotals.budgetTotal,
         estimatedTax: boostTotals.estimatedTax,
         total: boostTotals.total,
@@ -1333,6 +1944,15 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       };
       writes.push(boostCampaignRef.set(campaign));
     }
+    if (paidBoostPayment) {
+      writes.push(
+        db.collection(BOOST_PAYMENT_SESSIONS_COLLECTION).doc(paidBoostPayment.id).update({
+          consumed: true,
+          consumedByListingId: docRef.id,
+          updatedAt: new Date(),
+        })
+      );
+    }
     await Promise.all(writes);
     await invalidateMarketplaceUserCache(req.uid);
     res.status(201).json({ id: docRef.id, ...listing });
@@ -1341,7 +1961,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       enqueueMarketplaceAiModeration(docRef.id, listing);
     }
   } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
+    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
   }
 });
 
@@ -1425,7 +2045,7 @@ router.get('/my', requireAuth, async (req: AuthRequest, res) => {
         views: acc.views + (item.viewCount ?? 0),
         saves: acc.saves + (item.savedBy?.length ?? 0),
         activeBoosts:
-          acc.activeBoosts + (item.boostEnabled && item.boostStatus === 'active' ? 1 : 0),
+          acc.activeBoosts + (isBoostActive(item) ? 1 : 0),
         boostImpressions: acc.boostImpressions + (item.boostMetrics?.impressions ?? 0),
         boostSpent: acc.boostSpent + (item.boostMetrics?.spent ?? 0),
       }),
@@ -1988,6 +2608,15 @@ router.post('/:id/boost', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const boostTotals = getBoostTotals(requestedBoostPlan);
+    const sandboxPaymentProvider = normalizeBoostSandboxPaymentProvider(
+      req.body?.boostPaymentProvider ?? req.body?.sandboxPaymentProvider
+    );
+    const paidBoostPayment = await assertPaidBoostPaymentSession(
+      req.body?.boostPaymentId,
+      req.uid!,
+      sandboxPaymentProvider,
+      boostTotals.total
+    );
     const now = new Date();
     const boostCampaignRef = db.collection(BOOST_CAMPAIGNS_COLLECTION).doc();
     const listingUpdate = {
@@ -1998,7 +2627,8 @@ router.post('/:id/boost', requireAuth, async (req: AuthRequest, res) => {
       boostStartedAt: null,
       boostEndsAt: null,
       boostPaymentMode: 'sandbox' as BoostPaymentMode,
-      boostPaymentStatus: 'sandbox_authorized' as BoostPaymentStatus,
+      boostPaymentStatus: 'paid' as BoostPaymentStatus,
+      boostPaymentProvider: sandboxPaymentProvider,
       boostBudgetTotal: boostTotals.budgetTotal,
       boostEstimatedTax: boostTotals.estimatedTax,
       boostTotal: boostTotals.total,
@@ -2012,8 +2642,9 @@ router.post('/:id/boost', requireAuth, async (req: AuthRequest, res) => {
       status: 'awaiting_moderation',
       plan: requestedBoostPlan,
       paymentMode: 'sandbox',
-      paymentStatus: 'sandbox_authorized',
-      sandboxPaymentId: `sandbox_${req.params.id}_${Date.now()}`,
+      paymentStatus: 'paid',
+      sandboxPaymentProvider,
+      sandboxPaymentId: paidBoostPayment.id,
       budgetTotal: boostTotals.budgetTotal,
       estimatedTax: boostTotals.estimatedTax,
       total: boostTotals.total,
@@ -2024,13 +2655,97 @@ router.post('/:id/boost', requireAuth, async (req: AuthRequest, res) => {
       updatedAt: now,
     };
 
-    await Promise.all([ref.update(listingUpdate), boostCampaignRef.set(campaign)]);
+    await Promise.all([
+      ref.update(listingUpdate),
+      boostCampaignRef.set(campaign),
+      db.collection(BOOST_PAYMENT_SESSIONS_COLLECTION).doc(paidBoostPayment.id).update({
+        consumed: true,
+        consumedByListingId: req.params.id,
+        updatedAt: now,
+      }),
+    ]);
     await activateBoostIfEligible(req.params.id, { ...listing, ...listingUpdate });
     const updated = await ref.get();
     await invalidateMarketplaceListingCaches(updated.data() as ListingData);
     res.json({ id: updated.id, ...updated.data() });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.patch('/:id/boost/pause', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const ref = db.collection('marketplace').doc(req.params.id);
+    const doc = await ref.get();
+
+    if (!doc.exists || doc.data()?.status === 'deleted') {
+      res.status(404).json({ error: 'Không tìm thấy tin đăng' });
+      return;
+    }
+    if (doc.data()?.sellerId !== req.uid) {
+      res.status(403).json({ error: 'Không có quyền ngưng quảng bá tin này' });
+      return;
+    }
+
+    const listing = doc.data() as ListingData;
+    if (!isBoostActive(listing)) {
+      res.status(400).json({ error: 'Chỉ có thể ngưng chiến dịch đang quảng bá' });
+      return;
+    }
+    if (!listing.boostCampaignId) {
+      res.status(400).json({ error: 'Không tìm thấy chiến dịch quảng bá' });
+      return;
+    }
+
+    await pauseBoostCampaign(req.params.id, listing);
+    const updated = await ref.get();
+    res.json({ id: updated.id, ...updated.data() });
+  } catch (e) {
+    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+  }
+});
+
+router.patch('/:id/boost/resume', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const ref = db.collection('marketplace').doc(req.params.id);
+    const doc = await ref.get();
+
+    if (!doc.exists || doc.data()?.status === 'deleted') {
+      res.status(404).json({ error: 'Không tìm thấy tin đăng' });
+      return;
+    }
+    if (doc.data()?.sellerId !== req.uid) {
+      res.status(403).json({ error: 'Không có quyền bật lại quảng bá tin này' });
+      return;
+    }
+
+    const listing = doc.data() as ListingData;
+    if (listing.status !== 'active') {
+      res.status(400).json({ error: 'Chỉ có thể bật lại quảng bá cho tin đang hoạt động' });
+      return;
+    }
+    if (listing.boostStatus !== 'paused' || !listing.boostEnabled) {
+      res.status(400).json({ error: 'Chiến dịch quảng bá chưa ở trạng thái tạm ngưng' });
+      return;
+    }
+    if (!listing.boostCampaignId || !listing.boostPlan) {
+      res.status(400).json({ error: 'Không tìm thấy chiến dịch quảng bá' });
+      return;
+    }
+
+    const resumeDeadline = getBoostResumeDeadline(listing);
+    if (!resumeDeadline || resumeDeadline <= Date.now()) {
+      res.status(400).json({ error: 'Chiến dịch quảng bá đã hết hạn nên không thể bật lại' });
+      return;
+    }
+
+    await resumeBoostCampaign(req.params.id, listing);
+    const updated = await ref.get();
+    res.json({ id: updated.id, ...updated.data() });
+  } catch (e) {
+    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
   }
 });
 
@@ -2195,8 +2910,11 @@ router.post('/:id/contact', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(messageResult.item);
-    messageResult.recipientIds.forEach((uid) => emitMessageNew(uid, payload));
-    emitMessageNew(req.uid!, payload);
+    emitMessageNewToTargets(
+      [req.uid!, ...messageResult.recipientIds],
+      conversationResult.item.id,
+      payload
+    );
     const recipientCounts = await Promise.all(
       messageResult.recipientIds.map(async (uid) => ({
         uid,
