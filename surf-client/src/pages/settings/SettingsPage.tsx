@@ -19,6 +19,7 @@ import ReportsPanel from './ReportsPanel';
 import PrivacySettingsPanel from './PrivacySettingsPanel';
 import AppearancePanel from './AppearancePanel';
 import ActiveSessionsPanel from './ActiveSessionsPanel';
+import NotificationPreferencesPanel from './NotificationPreferencesPanel';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
