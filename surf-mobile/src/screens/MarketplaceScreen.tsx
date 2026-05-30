@@ -26,9 +26,13 @@ import {
   type Category,
 } from '@/stores/marketplaceStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useLanguage, useT, type I18nKey } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Marketplace'>;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showHeader?: boolean;
 };
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -64,34 +68,35 @@ const LIGHT = {
 };
 
 // ── Category definitions ───────────────────────────────────────────────────────
-const CATEGORIES: { key: Category; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'all',         label: 'Tất cả',    icon: 'grid-outline' },
-  { key: 'electronics', label: 'Điện tử',   icon: 'phone-portrait-outline' },
-  { key: 'clothing',    label: 'Thời trang', icon: 'shirt-outline' },
-  { key: 'vehicles',   label: 'Xe cộ',      icon: 'car-outline' },
-  { key: 'property',   label: 'Bất động sản', icon: 'business-outline' },
-  { key: 'home',       label: 'Gia dụng',   icon: 'home-outline' },
-  { key: 'sports',     label: 'Thể thao',   icon: 'football-outline' },
-  { key: 'other',      label: 'Khác',       icon: 'ellipsis-horizontal-outline' },
+const CATEGORIES: { key: Category; labelKey: I18nKey; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'all', labelKey: 'market_category_all', icon: 'grid-outline' },
+  { key: 'electronics', labelKey: 'market_category_electronics', icon: 'phone-portrait-outline' },
+  { key: 'clothing', labelKey: 'market_category_clothing', icon: 'shirt-outline' },
+  { key: 'vehicles', labelKey: 'market_category_vehicles', icon: 'car-outline' },
+  { key: 'property', labelKey: 'market_category_property', icon: 'business-outline' },
+  { key: 'home', labelKey: 'market_category_home', icon: 'home-outline' },
+  { key: 'sports', labelKey: 'market_category_sports', icon: 'football-outline' },
+  { key: 'other', labelKey: 'market_category_other', icon: 'ellipsis-horizontal-outline' },
 ];
 
-const CONDITION_LABELS: Record<string, string> = {
-  new: 'Mới',
-  like_new: 'Như mới',
-  good: 'Tốt',
-  fair: 'Khá',
+const CONDITION_LABEL_KEYS: Record<string, I18nKey> = {
+  new: 'market_condition_new',
+  like_new: 'market_condition_like_new',
+  good: 'market_condition_good',
+  fair: 'market_condition_fair',
 };
 
 const { width: SW } = Dimensions.get('window');
 const CARD_W = (SW - 36) / 2;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function formatPrice(price: number): string {
-  if (price === 0) return 'Miễn phí';
-  if (price >= 1_000_000_000) return `${(price / 1_000_000_000).toFixed(1)} tỷ`;
-  if (price >= 1_000_000) return `${(price / 1_000_000).toFixed(1)} triệu`;
+function formatPrice(price: number, language: string, t: ReturnType<typeof useT>): string {
+  if (price === 0) return t('free');
+  if (price >= 1_000_000_000) return t('price_billion', { value: (price / 1_000_000_000).toFixed(1) });
+  if (price >= 1_000_000) return t('price_million', { value: (price / 1_000_000).toFixed(1) });
   if (price >= 1_000) return `${(price / 1_000).toFixed(0)}k`;
-  return price.toLocaleString('vi-VN') + ' đ';
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  return t('price_currency', { value: price.toLocaleString(locale) });
 }
 
 // ── Skeleton card ──────────────────────────────────────────────────────────────
@@ -127,12 +132,16 @@ function ListingCard({
   onPress,
   userId,
   onSave,
+  t,
+  language,
 }: {
   item: Listing;
   C: typeof DARK;
   onPress: () => void;
   userId?: string;
   onSave: (id: string) => Promise<void>;
+  t: ReturnType<typeof useT>;
+  language: string;
 }) {
   const isSaved = item.savedBy?.includes(userId ?? '');
   const imgUri = item.mediaUrls?.[0];
@@ -171,7 +180,9 @@ function ListingCard({
         {/* Condition badge */}
         {isNew && (
           <View style={[s.condBadge, { backgroundColor: C.green }]}>
-            <Text style={s.condBadgeText}>{CONDITION_LABELS[item.condition]}</Text>
+            <Text style={s.condBadgeText}>
+              {t(CONDITION_LABEL_KEYS[item.condition] ?? 'market_condition_good')}
+            </Text>
           </View>
         )}
       </View>
@@ -180,7 +191,7 @@ function ListingCard({
       <View style={{ padding: 9 }}>
         {/* Price */}
         <Text style={[s.price, { color: item.price === 0 ? C.green : C.accent }]} numberOfLines={1}>
-          {formatPrice(item.price)}
+          {formatPrice(item.price, language, t)}
         </Text>
         {/* Title */}
         <Text style={[s.cardTitle, { color: C.text }]} numberOfLines={2}>
@@ -201,10 +212,13 @@ function ListingCard({
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
-export default function MarketplaceScreen({ navigation }: Props) {
+export default function MarketplaceScreen({ navigation, resetSignal = 0, safeTop = true, showHeader = true }: Props) {
+  const t = useT();
+  const language = useLanguage();
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const user = useAuthStore((s) => s.user);
+  const listRef = useRef<FlatList<Listing>>(null);
 
   const {
     listings,
@@ -238,6 +252,11 @@ export default function MarketplaceScreen({ navigation }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [resetSignal]);
+
   // Debounced search
   const handleSearchChange = useCallback((q: string) => {
     setSearchQuery(q);
@@ -252,9 +271,9 @@ export default function MarketplaceScreen({ navigation }: Props) {
     try {
       await toggleSave(id);
     } catch (e) {
-      Alert.alert('Lỗi', (e as Error).message ?? 'Không thể lưu tin đăng.');
+      Alert.alert(t('error'), (e as Error).message ?? t('listing_update_error'));
     }
-  }, [toggleSave]);
+  }, [t, toggleSave]);
 
   const handleEndReached = useCallback(() => {
     if (isSearchMode && searchQuery.trim()) return;
@@ -267,17 +286,17 @@ export default function MarketplaceScreen({ navigation }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
 
       {/* ── Header ── */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
+      {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
         {isSearchMode ? (
           <View style={[s.searchBar, { backgroundColor: C.input, borderColor: C.border }]}>
             <Ionicons name="search" size={16} color={C.subtext} />
             <TextInput
               ref={searchRef}
               style={[s.searchInput, { color: C.text }]}
-              placeholder="Tìm kiếm sản phẩm..."
+              placeholder={t('market_search_placeholder')}
               placeholderTextColor={C.placeholder}
               value={searchQuery}
               onChangeText={handleSearchChange}
@@ -291,7 +310,7 @@ export default function MarketplaceScreen({ navigation }: Props) {
             )}
           </View>
         ) : (
-          <Text style={[s.headerTitle, { color: C.text }]}>Chợ</Text>
+          <Text style={[s.headerTitle, { color: C.text }]}>{t('market_title')}</Text>
         )}
 
         <View style={s.headerActions}>
@@ -317,7 +336,7 @@ export default function MarketplaceScreen({ navigation }: Props) {
             <Ionicons name="storefront-outline" size={20} color={C.text} />
           </TouchableOpacity>
         </View>
-      </View>
+      </View>}
 
       {/* ── Category pills ── */}
       <ScrollView
@@ -351,7 +370,7 @@ export default function MarketplaceScreen({ navigation }: Props) {
                 style={{ marginRight: 4 }}
               />
               <Text style={[s.pillLabel, { color: isActive ? '#fff' : C.text }]}>
-                {cat.label}
+                {t(cat.labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -372,27 +391,28 @@ export default function MarketplaceScreen({ navigation }: Props) {
       ) : error && displayedListings.length === 0 && !contentLoading ? (
         <View style={s.empty}>
           <Ionicons name="warning-outline" size={56} color={C.red} />
-          <Text style={[s.emptyTitle, { color: C.text }]}>Không thể tải marketplace</Text>
+          <Text style={[s.emptyTitle, { color: C.text }]}>{t('market_load_error')}</Text>
           <Text style={[s.emptySub, { color: C.subtext }]}>{error}</Text>
           <TouchableOpacity
             style={[s.retryBtn, { backgroundColor: C.accent }]}
             onPress={() => isShowingSearch ? search(searchQuery) : fetchListings(true)}
           >
-            <Text style={s.retryText}>Thử lại</Text>
+            <Text style={s.retryText}>{t('retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : displayedListings.length === 0 && !contentLoading ? (
         <View style={s.empty}>
           <Ionicons name="storefront-outline" size={56} color={C.subtext} />
           <Text style={[s.emptyTitle, { color: C.text }]}>
-            {isSearchMode ? 'Không tìm thấy kết quả' : 'Chưa có sản phẩm'}
+            {isSearchMode ? t('market_no_results') : t('market_empty')}
           </Text>
           <Text style={[s.emptySub, { color: C.subtext }]}>
-            {isSearchMode ? 'Thử từ khóa khác' : 'Hãy là người đăng tin đầu tiên!'}
+            {isSearchMode ? t('market_no_results_sub') : t('market_empty_sub')}
           </Text>
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={displayedListings}
           keyExtractor={(item) => item.id}
           numColumns={2}
@@ -405,6 +425,8 @@ export default function MarketplaceScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('MarketplaceDetail', { listingId: item.id })}
               userId={user?.uid}
               onSave={handleSave}
+              t={t}
+              language={language}
             />
           )}
           refreshControl={
@@ -509,7 +531,7 @@ const s = StyleSheet.create({
 
   // Empty
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
-  emptyTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center', tracking: -0.5 },
+  emptyTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center', letterSpacing: -0.5 },
   emptySub: { fontSize: 14, textAlign: 'center', opacity: 0.8 },
   retryBtn: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 18, marginTop: 4 },
   retryText: { color: '#fff', fontSize: 14, fontWeight: '700' },

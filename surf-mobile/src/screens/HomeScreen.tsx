@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,10 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useFeedStore } from '@/stores/feedStore';
+import { useAuthStore } from '@/stores/authStore';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
   onFeedPress?: () => void;
+  onFriendsPress?: () => void;
 };
 
 // ── Dimensions ───────────────────────────────────────────────────────────────
@@ -74,11 +76,21 @@ function timeAgo(raw: any): string {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function HomeScreen({ navigation, onFeedPress }: Props) {
+export default function HomeScreen({ navigation, onFeedPress, onFriendsPress }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const posts = useFeedStore((s) => s.posts);
   const loading = useFeedStore((s) => s.loading);
+  
+  const user = useAuthStore((s) => s.user);
+  
+  // Watch user state - if it becomes null, Navigation will auto-handle logout
+  useEffect(() => {
+    if (user === null) {
+      console.log('👤 User logged out - Navigation will redirect to Login');
+    }
+  }, [user]);
+  
   // Ưu tiên bài có ảnh, fallback về bài đầu tiên
   const isImgUrl = (u: string) => !u.match(/\/video\/upload\//i) && !u.match(/\.(mp4|mov|webm|m4v)(\?|$)/i);
   const postWithImg = posts.find(p => p.mediaUrls?.some(isImgUrl)) ?? null;
@@ -90,18 +102,6 @@ export default function HomeScreen({ navigation, onFeedPress }: Props) {
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]}>
-
-      {/* ── Header ── */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
-        <TouchableOpacity hitSlop={HIT}>
-          <Ionicons name="menu-outline" size={24} color={C.text} />
-        </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: C.text }]}>Surf</Text>
-        <TouchableOpacity hitSlop={HIT}>
-          <Ionicons name="search-outline" size={24} color={C.text} />
-        </TouchableOpacity>
-      </View>
-
       {/* ── Stories — chỉ hiện khi có story ── */}
       {stories.length > 0 && (
         <View style={[s.storiesWrap, { backgroundColor: C.card, borderBottomColor: C.border }]}>
@@ -223,12 +223,16 @@ export default function HomeScreen({ navigation, onFeedPress }: Props) {
           </View>
 
           {/* Đề xuất kết bạn — chỉ tiêu đề, không có mock row */}
-          <View style={[s.card, s.rightCardMid, { backgroundColor: C.card, borderColor: C.border }]}>
+          <TouchableOpacity
+            style={[s.card, s.rightCardMid, { backgroundColor: C.card, borderColor: C.border }]}
+            onPress={onFriendsPress}
+            activeOpacity={0.85}
+          >
             <Text style={[s.sectionTitle, { color: C.text }]}>Đề xuất kết bạn</Text>
             <View style={s.emptySection}>
               <Ionicons name="people-outline" size={22} color={C.placeholder} />
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Placeholder card */}
           <View style={[s.card, s.rightCardBot, { backgroundColor: C.card2, borderColor: C.border }]} />
@@ -271,17 +275,6 @@ function ActionItem({ icon, color, count = 0 }: { icon: string; color: string; c
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1 },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', letterSpacing: 1 },
 
   // Stories
   storiesWrap: { borderBottomWidth: 1, paddingVertical: 10 },
@@ -363,3 +356,4 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 });
+

@@ -80,6 +80,7 @@ export type ApiConversationListItem = {
   unreadCount: number;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
+  muted: boolean;
 };
 
 export type SendTextMessageResult =
@@ -1004,6 +1005,9 @@ const buildConversationListItemsFromDetails = async (
   const unreadCountByConversation = new Map(
     details.map((detail) => [detail.item.id, detail.unreadCount])
   );
+  const mutedByConversation = new Map(
+    details.map((detail) => [detail.item.id, detail.muted ?? false])
+  );
 
   const allMemberIds = Array.from(
     new Set(details.flatMap((detail) => detail.memberIds).filter((id) => id !== userId))
@@ -1072,6 +1076,7 @@ const buildConversationListItemsFromDetails = async (
         unreadCount: unreadCountByConversation.get(doc.id) ?? 0,
         lastMessagePreview: groupPreview,
         lastMessageAt,
+        muted: mutedByConversation.get(doc.id) ?? false,
       };
     }
 
@@ -1085,6 +1090,7 @@ const buildConversationListItemsFromDetails = async (
       unreadCount: unreadCountByConversation.get(doc.id) ?? 0,
       lastMessagePreview,
       lastMessageAt,
+      muted: mutedByConversation.get(doc.id) ?? false,
     };
   });
 };

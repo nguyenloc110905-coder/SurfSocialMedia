@@ -12,6 +12,7 @@ function getApiBase(): string {
 }
 
 const API_BASE = getApiBase();
+export const apiBaseUrl = API_BASE;
 
 type RequestOptions = {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
@@ -36,6 +37,9 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
     method: options.method,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
+  }).catch((err) => {
+    const message = err instanceof Error ? err.message : 'Network request failed';
+    throw new Error(`${message} (${url})`);
   });
 
   if (!res.ok) {
@@ -63,6 +67,8 @@ export const api = {
     request<T>(path, { method: 'GET', ...opts }),
   post: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
     request<T>(path, { method: 'POST', body, ...opts }),
+  put: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
+    request<T>(path, { method: 'PUT', body, ...opts }),
   patch: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
     request<T>(path, { method: 'PATCH', body, ...opts }),
   delete: <T>(path: string, opts?: Partial<RequestOptions>) =>

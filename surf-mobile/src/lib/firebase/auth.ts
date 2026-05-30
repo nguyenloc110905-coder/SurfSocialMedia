@@ -1,7 +1,7 @@
 import {
   initializeAuth,
   getAuth,
-  // @ts-ignore — chỉ available trong React Native bundler, không thấy trong Node
+  // @ts-ignore - available in the React Native Firebase Auth bundle.
   getReactNativePersistence,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -10,13 +10,17 @@ import {
   onAuthStateChanged,
   updateProfile,
   GoogleAuthProvider,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   signInWithCredential,
   User,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { app } from './config';
 
-// initializeAuth một lần, fallback getAuth nếu đã init rồi
+export const AUTH_PERSIST_MODE_KEY = 'firebase_persist_mode';
+export type AuthPersistMode = 'local' | 'session';
+
 let auth: ReturnType<typeof getAuth>;
 try {
   auth = initializeAuth(app, {
@@ -27,8 +31,28 @@ try {
 }
 export { auth };
 
+export async function setAuthPersistence(rememberMe: boolean): Promise<void> {
+  // React Native Firebase Auth uses durable AsyncStorage persistence.
+  // Store the user's preference so bootstrap can decide whether to restore
+  // the first hydrated Firebase user or treat it as a one-session login.
+  await AsyncStorage.setItem(AUTH_PERSIST_MODE_KEY, rememberMe ? 'local' : 'session');
+}
+
+export async function getAuthPersistMode(): Promise<AuthPersistMode | null> {
+  const mode = await AsyncStorage.getItem(AUTH_PERSIST_MODE_KEY);
+  return mode === 'local' || mode === 'session' ? mode : null;
+}
+
+export async function clearAuthPersistencePreference(): Promise<void> {
+  await AsyncStorage.removeItem(AUTH_PERSIST_MODE_KEY);
+}
+
 export async function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);
+}
+
+export function getCurrentUser() {
+  return auth.currentUser;
 }
 
 export async function signUp(email: string, password: string, displayName?: string) {
@@ -40,8 +64,6 @@ export async function signUp(email: string, password: string, displayName?: stri
 }
 
 export async function signInWithGoogle() {
-  // Google Sign-In trên mobile cần native SDK (expo-auth-session hoặc @react-native-google-signin)
-  // Tạm thời throw lỗi thân thiện để tránh crash
   throw new Error('Đăng nhập Google sẽ được hỗ trợ sớm trên mobile.');
 }
 
@@ -50,8 +72,15 @@ export async function signInWithGoogleCredential(idToken: string) {
   return signInWithCredential(auth, credential);
 }
 
-export function sendPasswordResetEmail(email: string) {
-  return fbSendPasswordResetEmail(auth, email);
+export function sendPasswordResetEmail(email: string, actionCodeSettings?: any) {
+  return fbSendPasswordResetEmail(auth, email, actionCodeSettings);
+}
+
+export async function reauthenticate(password: string) {
+  const u = auth.currentUser;
+  if (!u?.email) throw new Error('Chưa đăng nhập');
+  const credential = EmailAuthProvider.credential(u.email, password);
+  return reauthenticateWithCredential(u, credential);
 }
 
 export async function signOut() {

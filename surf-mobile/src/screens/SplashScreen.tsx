@@ -1,9 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Image, Animated, useColorScheme, StyleSheet } from 'react-native';
+import { View, Animated, StyleSheet } from 'react-native';
 
 export default function SplashScreen() {
-  const scheme = useColorScheme();
-  const isDark = scheme !== 'light';
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -15,7 +13,7 @@ export default function SplashScreen() {
   }, []);
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: '#0c1929' }]}>
       <Animated.Image
         source={require('../../assets/SurfLogo.png')}
         style={[styles.logo, { opacity: fadeAnim }]}

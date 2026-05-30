@@ -2,8 +2,10 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useT } from '@/lib/i18n';
 
 export default function AIScreen({ navigation }: any) {
+  const t = useT();
   const isDark = useColorScheme() !== 'light';
   const bg = isDark ? '#0a0a0a' : '#fff';
   const text = isDark ? '#f0f0f0' : '#111';
@@ -23,9 +25,9 @@ export default function AIScreen({ navigation }: any) {
 
       <View style={styles.center}>
         <Ionicons name="sparkles-outline" size={64} color={accent} />
-        <Text style={[styles.heading, { color: text }]}>Sắp ra mắt</Text>
+        <Text style={[styles.heading, { color: text }]}>{t('ai_coming_soon')}</Text>
         <Text style={[styles.sub, { color: subtext }]}>
-          Trợ lý AI của Surf đang được phát triển
+          {t('ai_subtitle')}
         </Text>
       </View>
     </SafeAreaView>

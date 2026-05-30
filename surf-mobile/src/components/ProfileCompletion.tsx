@@ -2,23 +2,25 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { type UserProfile } from '@/stores/userStore';
+import { useT } from '@/lib/i18n';
 
 interface ProfileCompletionProps {
   profile: UserProfile | null;
 }
 
 export default function ProfileCompletion({ profile }: ProfileCompletionProps) {
+  const t = useT();
   const [dismissed, setDismissed] = useState(false);
 
   const { percent, missingFields } = useMemo(() => {
     if (!profile) return { percent: 0, missingFields: [] };
 
     const checks = [
-      { id: 'avatar', label: 'Ảnh đại diện', isCompleted: !!profile.photoURL },
-      { id: 'cover', label: 'Ảnh bìa', isCompleted: !!profile.coverImageUrl },
-      { id: 'bio', label: 'Tiểu sử', isCompleted: !!profile.bio },
-      { id: 'location', label: 'Nơi sống/Quê', isCompleted: !!(profile.currentCity || profile.hometown) },
-      { id: 'work_edu', label: 'Công việc/Học vấn', isCompleted: !!((profile.work && profile.work.length > 0) || (profile.education && profile.education.length > 0)) },
+      { id: 'avatar', label: t('profile_field_avatar'), isCompleted: !!profile.photoURL },
+      { id: 'cover', label: t('profile_field_cover'), isCompleted: !!profile.coverImageUrl },
+      { id: 'bio', label: t('profile_field_bio'), isCompleted: !!profile.bio },
+      { id: 'location', label: t('profile_field_location'), isCompleted: !!(profile.currentCity || profile.hometown) },
+      { id: 'work_edu', label: t('profile_field_work_edu'), isCompleted: !!((profile.work && profile.work.length > 0) || (profile.education && profile.education.length > 0)) },
     ];
 
     const completed = checks.filter(c => c.isCompleted).length;
@@ -26,7 +28,7 @@ export default function ProfileCompletion({ profile }: ProfileCompletionProps) {
     const missingFields = checks.filter(c => !c.isCompleted);
 
     return { percent, missingFields };
-  }, [profile]);
+  }, [profile, t]);
 
   if (!profile || percent === 100 || dismissed) {
     return null;
@@ -42,8 +44,8 @@ export default function ProfileCompletion({ profile }: ProfileCompletionProps) {
         <Ionicons name="close" size={20} color="#94a3b8" />
       </TouchableOpacity>
       
-      <Text style={styles.title}>Hoàn thiện hồ sơ</Text>
-      <Text style={styles.subtitle}>Giúp mọi người hiểu rõ hơn về bạn.</Text>
+      <Text style={styles.title}>{t('profile_completion_title')}</Text>
+      <Text style={styles.subtitle}>{t('profile_completion_subtitle')}</Text>
 
       <View style={styles.progressContainer}>
         <View style={styles.progressBarBg}>
@@ -56,7 +58,7 @@ export default function ProfileCompletion({ profile }: ProfileCompletionProps) {
         <View style={styles.tagsContainer}>
           {missingFields.map(field => (
             <View key={field.id} style={styles.tag}>
-              <Text style={styles.tagText}>+ Thêm {field.label.toLowerCase()}</Text>
+              <Text style={styles.tagText}>{t('profile_add_field', { field: field.label.toLowerCase() })}</Text>
             </View>
           ))}
         </View>

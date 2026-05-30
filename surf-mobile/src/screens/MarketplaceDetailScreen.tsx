@@ -20,6 +20,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '@/navigation';
 import { useMarketplaceStore } from '@/stores/marketplaceStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useLanguage, useT, type I18nKey } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MarketplaceDetail'>;
@@ -38,22 +39,31 @@ const LIGHT = {
   green: '#16a34a', red: '#dc2626', pill: '#e0f2fe',
 };
 
-const CONDITION_LABELS: Record<string, string> = {
-  new: 'Mới 100%', like_new: 'Như mới', good: 'Tốt', fair: 'Khá',
+const CONDITION_LABEL_KEYS: Record<string, I18nKey> = {
+  new: 'market_condition_new_full',
+  like_new: 'market_condition_like_new',
+  good: 'market_condition_good',
+  fair: 'market_condition_fair',
 };
-const CATEGORY_LABELS: Record<string, string> = {
-  electronics: 'Điện tử', clothing: 'Thời trang', vehicles: 'Xe cộ',
-  home: 'Gia dụng', sports: 'Thể thao', other: 'Khác',
+const CATEGORY_LABEL_KEYS: Record<string, I18nKey> = {
+  electronics: 'market_category_electronics',
+  clothing: 'market_category_clothing',
+  vehicles: 'market_category_vehicles',
+  property: 'market_category_property',
+  home: 'market_category_home',
+  sports: 'market_category_sports',
+  other: 'market_category_other',
 };
 
-function formatPrice(price: number): string {
-  if (price === 0) return 'Miễn phí';
-  if (price >= 1_000_000_000) return `${(price / 1_000_000_000).toFixed(1)} tỷ đồng`;
-  if (price >= 1_000_000) return `${(price / 1_000_000).toFixed(1)} triệu đồng`;
-  return price.toLocaleString('vi-VN') + ' đồng';
+function formatPrice(price: number, language: string, t: ReturnType<typeof useT>): string {
+  if (price === 0) return t('free');
+  if (price >= 1_000_000_000) return t('price_billion_full', { value: (price / 1_000_000_000).toFixed(1) });
+  if (price >= 1_000_000) return t('price_million_full', { value: (price / 1_000_000).toFixed(1) });
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  return t('price_currency_full', { value: price.toLocaleString(locale) });
 }
 
-function timeAgo(raw: any): string {
+function timeAgo(raw: any, t: ReturnType<typeof useT>): string {
   let ms = 0;
   if (!raw) return '';
   if (typeof raw === 'number') ms = raw * 1000;
@@ -61,15 +71,17 @@ function timeAgo(raw: any): string {
   else if (raw._seconds) ms = raw._seconds * 1000;
   else if (raw.seconds) ms = raw.seconds * 1000;
   const diff = Math.floor((Date.now() - ms) / 1000);
-  if (diff < 60) return 'vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
-  return `${Math.floor(diff / 86400)} ngày trước`;
+  if (diff < 60) return t('post_just_now');
+  if (diff < 3600) return t('post_minutes_ago', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t('post_hours_ago', { count: Math.floor(diff / 3600) });
+  return t('post_days_ago', { count: Math.floor(diff / 86400) });
 }
 
 const { width: SW } = Dimensions.get('window');
 
 export default function MarketplaceDetailScreen({ navigation, route }: Props) {
+  const t = useT();
+  const language = useLanguage();
   const { listingId } = route.params;
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
@@ -93,7 +105,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
     try {
       await toggleSave(detailListing.id);
     } catch (e) {
-      Alert.alert('Lỗi', (e as Error).message ?? 'Không thể lưu tin đăng.');
+      Alert.alert(t('error'), (e as Error).message ?? t('listing_update_error'));
     } finally {
       setActionLoading(false);
     }
@@ -103,7 +115,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
     if (!detailListing) return;
     await Share.share({
       title: detailListing.title,
-      message: `${detailListing.title} — ${formatPrice(detailListing.price)}`,
+      message: `${detailListing.title} — ${formatPrice(detailListing.price, language, t)}`,
     });
   };
 
@@ -112,16 +124,16 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
 
   const confirmMarkSold = () => {
     if (!detailListing) return;
-    Alert.alert('Đánh dấu đã bán', 'Tin này sẽ không còn hiển thị trong chợ. Tiếp tục?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('mark_sold'), t('mark_sold_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Đã bán',
+        text: t('sold'),
         onPress: async () => {
           setActionLoading(true);
           try {
             await markAsSold(detailListing.id);
           } catch (e) {
-            Alert.alert('Lỗi', (e as Error).message ?? 'Không thể cập nhật tin đăng.');
+            Alert.alert(t('error'), (e as Error).message ?? t('listing_update_error'));
           } finally {
             setActionLoading(false);
           }
@@ -132,10 +144,10 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
 
   const confirmDelete = () => {
     if (!detailListing) return;
-    Alert.alert('Xóa tin đăng', 'Bạn có chắc muốn xóa tin đăng này không?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(t('delete_listing'), t('delete_listing_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Xóa',
+        text: t('delete'),
         style: 'destructive',
         onPress: async () => {
           setActionLoading(true);
@@ -143,7 +155,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
             await deleteListing(detailListing.id);
             navigation.goBack();
           } catch (e) {
-            Alert.alert('Lỗi', (e as Error).message ?? 'Không thể xóa tin đăng.');
+            Alert.alert(t('error'), (e as Error).message ?? t('listing_delete_error'));
           } finally {
             setActionLoading(false);
           }
@@ -164,10 +176,10 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
           ) : (
             <>
               <Ionicons name="warning-outline" size={52} color={C.red} />
-              <Text style={[s.emptyTitle, { color: C.text }]}>Không thể tải tin đăng</Text>
-              <Text style={[s.emptySub, { color: C.subtext }]}>{error ?? 'Tin đăng không tồn tại hoặc đã bị xóa.'}</Text>
+              <Text style={[s.emptyTitle, { color: C.text }]}>{t('market_listing_load_error')}</Text>
+              <Text style={[s.emptySub, { color: C.subtext }]}>{error ?? t('market_listing_missing')}</Text>
               <TouchableOpacity style={[s.retryBtn, { backgroundColor: C.accent }]} onPress={() => fetchDetail(listingId)}>
-                <Text style={s.retryText}>Thử lại</Text>
+                <Text style={s.retryText}>{t('retry')}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -233,7 +245,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
               ) : (
                 <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
                   <Ionicons name="image-outline" size={56} color={C.subtext} />
-                  <Text style={{ color: C.subtext, marginTop: 8 }}>Chưa có ảnh</Text>
+                  <Text style={{ color: C.subtext, marginTop: 8 }}>{t('market_no_image')}</Text>
                 </View>
               )}
             </View>
@@ -257,7 +269,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
 
           {/* Price */}
           <Text style={[s.price, { color: detailListing.price === 0 ? C.green : C.accent }]}>
-            {formatPrice(detailListing.price)}
+            {formatPrice(detailListing.price, language, t)}
           </Text>
 
           {/* Title */}
@@ -267,17 +279,21 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
           <View style={[s.metaRow, { marginTop: 4 }]}>
             <View style={[s.badge, { backgroundColor: C.pill }]}>
               <Text style={[s.badgeText, { color: C.accent }]}>
-                {CATEGORY_LABELS[detailListing.category] ?? detailListing.category}
+                {CATEGORY_LABEL_KEYS[detailListing.category]
+                  ? t(CATEGORY_LABEL_KEYS[detailListing.category])
+                  : detailListing.category}
               </Text>
             </View>
             <View style={[s.badge, { backgroundColor: C.pill }]}>
               <Text style={[s.badgeText, { color: C.accent }]}>
-                {CONDITION_LABELS[detailListing.condition] ?? detailListing.condition}
+                {CONDITION_LABEL_KEYS[detailListing.condition]
+                  ? t(CONDITION_LABEL_KEYS[detailListing.condition])
+                  : detailListing.condition}
               </Text>
             </View>
             {detailListing.status === 'sold' && (
               <View style={[s.badge, { backgroundColor: '#fef2f2' }]}>
-                <Text style={[s.badgeText, { color: C.red }]}>Đã bán</Text>
+                <Text style={[s.badgeText, { color: C.red }]}>{t('sold')}</Text>
               </View>
             )}
           </View>
@@ -292,11 +308,11 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
             ) : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="time-outline" size={13} color={C.subtext} />
-              <Text style={{ color: C.subtext, fontSize: 13 }}>{timeAgo(detailListing.createdAt)}</Text>
+              <Text style={{ color: C.subtext, fontSize: 13 }}>{timeAgo(detailListing.createdAt, t)}</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="eye-outline" size={13} color={C.subtext} />
-              <Text style={{ color: C.subtext, fontSize: 13 }}>{detailListing.viewCount ?? 0} lượt xem</Text>
+              <Text style={{ color: C.subtext, fontSize: 13 }}>{t('views_count', { count: detailListing.viewCount ?? 0 })}</Text>
             </View>
           </View>
 
@@ -304,16 +320,16 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
           <View style={[s.divider, { backgroundColor: C.border }]} />
 
           {/* Description */}
-          <Text style={[s.sectionLabel, { color: C.text }]}>Mô tả sản phẩm</Text>
+          <Text style={[s.sectionLabel, { color: C.text }]}>{t('market_description')}</Text>
           <Text style={[s.desc, { color: C.subtext }]}>
-            {detailListing.description || 'Người bán chưa thêm mô tả.'}
+            {detailListing.description || t('market_no_description')}
           </Text>
 
           {/* Divider */}
           <View style={[s.divider, { backgroundColor: C.border, marginTop: 8 }]} />
 
           {/* Seller card */}
-          <Text style={[s.sectionLabel, { color: C.text }]}>Người bán</Text>
+          <Text style={[s.sectionLabel, { color: C.text }]}>{t('market_seller')}</Text>
           <View style={[s.sellerCard, { backgroundColor: C.card, borderColor: C.border }]}>
             {detailListing.sellerPhotoURL ? (
               <Image source={{ uri: detailListing.sellerPhotoURL }} style={s.sellerAvatar} />
@@ -324,13 +340,13 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
             )}
             <View style={{ flex: 1 }}>
               <Text style={[s.sellerName, { color: C.text }]}>{detailListing.sellerDisplayName}</Text>
-              <Text style={{ color: C.subtext, fontSize: 12 }}>Thành viên Surf</Text>
+              <Text style={{ color: C.subtext, fontSize: 12 }}>{t('market_surf_member')}</Text>
             </View>
             <TouchableOpacity
               style={[s.profileBtn, { borderColor: C.border }]}
               onPress={() => navigation.navigate('Profile', { userId: detailListing.sellerId })}
             >
-              <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600' }}>Xem trang</Text>
+              <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600' }}>{t('view_profile')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -344,7 +360,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
                   disabled={actionLoading}
                 >
                   <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                  <Text style={s.ownerBtnText}>Đánh dấu đã bán</Text>
+                  <Text style={s.ownerBtnText}>{t('mark_sold')}</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
@@ -353,7 +369,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
                 disabled={actionLoading}
               >
                 <Ionicons name="trash-outline" size={18} color="#fff" />
-                <Text style={s.ownerBtnText}>Xóa tin</Text>
+                <Text style={s.ownerBtnText}>{t('delete')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -368,7 +384,7 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
             onPress={() => navigation.navigate('Messages')}
           >
             <Ionicons name="chatbubble-outline" size={20} color="#fff" />
-            <Text style={s.contactBtnText}>Nhắn tin người bán</Text>
+            <Text style={s.contactBtnText}>{t('market_message_seller')}</Text>
           </TouchableOpacity>
         </View>
       )}

@@ -373,20 +373,42 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
       displayName,
       bio,
       photoURL,
+      coverImageUrl,
+      currentCity,
+      hometown,
+      birthday,
+      relationship,
       email,
       defaultPostPrivacy,
       notificationPrefs,
       friendRequestPrivacy,
       privacySettings,
+      work,
+      education,
+      gender,
+      customGender,
+      website,
+      phone,
     } = req.body as {
       displayName?: unknown;
       bio?: unknown;
       photoURL?: unknown;
+      coverImageUrl?: unknown;
+      currentCity?: unknown;
+      hometown?: unknown;
+      birthday?: unknown;
+      relationship?: unknown;
       email?: unknown;
       defaultPostPrivacy?: unknown;
       notificationPrefs?: unknown;
       friendRequestPrivacy?: unknown;
       privacySettings?: unknown;
+      work?: unknown;
+      education?: unknown;
+      gender?: unknown;
+      customGender?: unknown;
+      website?: unknown;
+      phone?: unknown;
     };
 
     if (defaultPostPrivacy !== undefined && !isDefaultPostPrivacy(defaultPostPrivacy)) {
@@ -420,8 +442,20 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (displayName !== undefined) data.displayName = displayName;
     if (bio !== undefined) data.bio = bio;
     if (photoURL !== undefined) data.photoURL = photoURL;
+    if (coverImageUrl !== undefined) data.coverImageUrl = coverImageUrl;
+    if (currentCity !== undefined) data.currentCity = currentCity;
+    if (hometown !== undefined) data.hometown = hometown;
+    if (birthday !== undefined) data.birthday = birthday;
+    if (relationship !== undefined) data.relationship = relationship;
     if (defaultPostPrivacy !== undefined) data.defaultPostPrivacy = defaultPostPrivacy;
     if (friendRequestPrivacy !== undefined) data.friendRequestPrivacy = friendRequestPrivacy;
+    if (work !== undefined) data.work = work;
+    if (education !== undefined) data.education = education;
+    if (gender !== undefined) data.gender = gender;
+    if (customGender !== undefined) data.customGender = customGender;
+    if (website !== undefined) data.website = website;
+    if (phone !== undefined) data.phone = phone;
+    if (coverImageUrl !== undefined) data.coverImageUrl = coverImageUrl;
     if (notificationPrefsPatch !== undefined) {
       const currentPrefs = normalizeNotificationPrefs(existing.notificationPrefs);
       data.notificationPrefs = {
