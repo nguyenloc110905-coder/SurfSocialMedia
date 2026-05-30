@@ -22,6 +22,7 @@ import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
 import { auth, reauthenticate } from '@/lib/firebase/auth';
 import { useT, type I18nKey } from '@/lib/i18n';
+import { clearAllCache } from '@/lib/cache';
 import { useAuthStore } from '@/stores/authStore';
 import {
   type LanguageCode,
@@ -482,6 +483,28 @@ export default function SettingsScreen({ navigation }: Props) {
             desc={t('data_saver_desc')}
             value={prefs.reduceDataUsage}
             onValueChange={(value) => updateLocalPref('reduceDataUsage', value)}
+          />
+        </Section>
+
+        <Section title="Lưu trữ" C={C}>
+          <SettingsRow
+            C={C}
+            icon="trash-outline"
+            title="Xóa cache"
+            desc="Xóa dữ liệu cache để giải phóng bộ nhớ"
+            onPress={() => {
+              Alert.alert('Xóa cache', 'Bạn có chắc muốn xóa toàn bộ cache? Dữ liệu offline sẽ bị mất.', [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                  text: 'Xóa',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await clearAllCache();
+                    Alert.alert('Đã xóa', 'Cache đã được xóa thành công.');
+                  },
+                },
+              ]);
+            }}
           />
         </Section>
 
