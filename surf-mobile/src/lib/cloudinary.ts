@@ -14,6 +14,8 @@ type UploadableAsset = {
   fileName?: string | null;
   mimeType?: string | null;
   type?: 'image' | 'video' | 'livePhoto' | 'pairedVideo' | null;
+  width?: number | null;
+  height?: number | null;
 };
 
 type CloudinaryUploadResponse = {
@@ -32,6 +34,12 @@ function fileNameFor(asset: UploadableAsset, kind: 'image' | 'video') {
   if (asset.fileName) return asset.fileName;
   const extension = kind === 'video' ? 'mp4' : 'jpg';
   return `surf-upload-${Date.now()}.${extension}`;
+}
+
+function withMediaSize(url: string, asset: UploadableAsset) {
+  if (!asset.width || !asset.height) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}mw=${Math.round(asset.width)}&mh=${Math.round(asset.height)}`;
 }
 
 async function uploadAsset(asset: UploadableAsset, kind: 'image' | 'video', options: UploadOptions = {}) {
@@ -62,7 +70,7 @@ async function uploadAsset(asset: UploadableAsset, kind: 'image' | 'video', opti
     throw new Error(data.error?.message || `Cloudinary upload failed (${res.status})`);
   }
 
-  return data.secure_url;
+  return withMediaSize(data.secure_url, asset);
 }
 
 export function uploadImage(asset: UploadableAsset, options?: UploadOptions) {

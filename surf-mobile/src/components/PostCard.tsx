@@ -65,7 +65,11 @@ export type PostCardProps = {
 };
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const MEDIA_W = SW - 24;
+const MEDIA_W = SW;
+const SHARED_MEDIA_W = MEDIA_W - 28;
+
+type MediaOrientation = 'portrait' | 'landscape' | 'square';
+type MediaSize = { width: number; height: number };
 
 const DARK = {
   bg: '#0f172a', card: '#1e293b', card2: '#253347',
@@ -123,6 +127,68 @@ function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false): string 
   return url
     .replace('/video/upload/', `/image/upload/${transform}/`)
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+
+function mediaOrientationForSize(width: number, height: number): MediaOrientation {
+  if (!width || !height) return 'square';
+  const ratio = width / height;
+  if (ratio < 0.88) return 'portrait';
+  if (ratio > 1.12) return 'landscape';
+  return 'square';
+}
+
+function mediaSizeFromUrl(url?: string | null): MediaSize | null {
+  if (!url) return null;
+  const match = url.match(/[?&]mw=(\d+(?:\.\d+)?)&mh=(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? { width, height }
+    : null;
+}
+
+function mediaHeightForOrientation(orientation: MediaOrientation, displayWidth = MEDIA_W): number {
+  if (orientation === 'portrait') return displayWidth * 5 / 4;
+  if (orientation === 'landscape') return displayWidth / 1.91;
+  return displayWidth;
+}
+
+function useResponsiveMediaBox(
+  sourceUri: string | null,
+  fallbackOrientation: MediaOrientation = 'square',
+  displayWidth = MEDIA_W,
+  metadataUrl?: string | null
+) {
+  const metadataSize = useMemo(() => mediaSizeFromUrl(metadataUrl ?? sourceUri), [metadataUrl, sourceUri]);
+  const metadataOrientation = metadataSize
+    ? mediaOrientationForSize(metadataSize.width, metadataSize.height)
+    : fallbackOrientation;
+  const [orientation, setOrientation] = useState<MediaOrientation>(metadataOrientation);
+
+  useEffect(() => {
+    let active = true;
+    setOrientation(metadataOrientation);
+    if (!sourceUri) return () => { active = false; };
+    if (metadataSize) return () => { active = false; };
+
+    Image.getSize(
+      sourceUri,
+      (width, imageHeight) => {
+        if (active) setOrientation(mediaOrientationForSize(width, imageHeight));
+      },
+      () => {
+        if (active) setOrientation(metadataOrientation);
+      }
+    );
+
+    return () => { active = false; };
+  }, [metadataOrientation, metadataSize, sourceUri]);
+
+  return useMemo(
+    () => ({ width: displayWidth, height: mediaHeightForOrientation(orientation, displayWidth), alignSelf: 'center' as const }),
+    [displayWidth, orientation]
+  );
 }
 
 function fmtCount(n: number): string {
@@ -331,11 +397,16 @@ const iv = StyleSheet.create({
 });
 
 // ── VideoPlaceholder ──────────────────────────────────────────────────────────
-function VideoPlaceholder() {
+function VideoPlaceholder({ url }: { url?: string }) {
   const scheme = useColorScheme();
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const bg = scheme === 'dark' ? '#1a2535' : '#d1d5db';
+  const thumbnail = url ? cloudinaryVideoThumbnail(url, reduceDataUsage) : null;
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', MEDIA_W, url);
   return (
-    <View style={[s.videoContainer, { backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
+    <View style={[s.videoContainer, mediaStyle, { backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
+      {thumbnail ? <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      <View style={s.videoPlaceholderOverlay} />
       <Ionicons name="play-circle-outline" size={52} color="rgba(255,255,255,0.55)" />
     </View>
   );
@@ -348,6 +419,7 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', MEDIA_W, url);
   const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
 
   useEffect(() => {
@@ -373,13 +445,13 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
   };
 
   return (
-    <View style={s.videoContainer}>
+    <View style={[s.videoContainer, mediaStyle]}>
       <VideoView
         player={player}
-        style={s.videoArea}
+        style={StyleSheet.absoluteFill}
         fullscreenOptions={{ enable: true }}
         allowsPictureInPicture={false}
-        contentFit="contain"
+        contentFit="cover"
       />
       {buffering && thumbnail && (
         <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -407,13 +479,11 @@ function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) 
     if (isVideoUrl(urls[0])) {
       return isVisible
         ? <VideoMediaItem key={`${urls[0]}:${reduceDataUsage}`} url={urls[0]} isVisible />
-        : <VideoPlaceholder />;
+        : <VideoPlaceholder url={urls[0]} />;
     }
     return (
       <>
-        <TouchableOpacity onPress={() => setViewerIndex(0)} activeOpacity={0.92}>
-          <FeedImage uri={urls[0]} style={s.mediaArea} />
-        </TouchableOpacity>
+        <SingleImageMedia uri={urls[0]} onPress={() => setViewerIndex(0)} />
         {viewerIndex !== null && (
           <ImageViewer urls={urls} initialIndex={viewerIndex} onClose={() => setViewerIndex(null)} />
         )}
@@ -1086,25 +1156,75 @@ const rs = StyleSheet.create({
 // ── EmbedVideoItem ─────────────────────────────────────────────────────────
 function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean }) {
   const [buffering, setBuffering] = useState(true);
+  const muted = useMediaPlaybackStore((state) => state.videosMuted);
+  const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = false; });
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', SHARED_MEDIA_W, url);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
   useEffect(() => {
     const sub = player.addListener('statusChange', (e: { status: string }) => setBuffering(e.status === 'idle' || e.status === 'loading'));
     return () => { try { player.pause(); } catch {} sub.remove(); };
   }, [player]);
   useEffect(() => { try { isVisible ? player.play() : player.pause(); } catch {} }, [isVisible, player]);
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
   return (
-    <View style={ev.wrap}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" />
+    <View style={[ev.wrap, mediaStyle]}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture={false}
+      />
       {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
       {buffering && <View style={ev.loader}><ActivityIndicator color="#fff" size="small" /></View>}
+      <TouchableOpacity style={s.muteBtn} onPress={() => setVideosMuted(!muted)}>
+        <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={15} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SingleImageMedia({ uri, onPress }: { uri: string; onPress: () => void }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(sourceUri, 'square', MEDIA_W, uri);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
+      <FeedImage uri={uri} style={mediaStyle} resizeMode="cover" />
+    </TouchableOpacity>
+  );
+}
+
+function SharedImageMedia({ uri }: { uri: string }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(sourceUri, 'square', SHARED_MEDIA_W, uri);
+
+  return <FeedImage uri={uri} style={mediaStyle} resizeMode="cover" />;
+}
+
+function EmbedVideoPlaceholder({ url }: { url: string }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', SHARED_MEDIA_W, url);
+  return (
+    <View style={[ev.wrap, mediaStyle]}>
+      {thumbnail ? <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      <View style={ev.placeholderOverlay}>
+        <Ionicons name="play-circle-outline" size={42} color="rgba(255,255,255,0.72)" />
+      </View>
     </View>
   );
 }
 const ev = StyleSheet.create({
-  wrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
+  wrap: { alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden' },
   loader: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+  placeholderOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.18)' },
 });
 
 // ── SharedPostEmbed ─────────────────────────────────────────────────────────
@@ -1127,8 +1247,12 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
           <Text style={[se.author, { color: C.text }]} numberOfLines={1}>{sf.authorDisplayName}</Text>
         </View>
         {text ? <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text> : null}
-        {hasVideo && !firstMedia && <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible={isVisible} />}
-        {firstMedia && <FeedImage uri={firstMedia} style={se.media} resizeMode="cover" />}
+        {hasVideo && !firstMedia && (
+          isVisible
+            ? <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible />
+            : <EmbedVideoPlaceholder url={firstVideo} />
+        )}
+        {firstMedia && <SharedImageMedia uri={firstMedia} />}
       </View>
     </View>
   );
@@ -1225,7 +1349,7 @@ const sm = StyleSheet.create({
 });
 
 // ── PostCard ──────────────────────────────────────────────────────────────────
-export default function PostCard({ post, isVisible, navigation }: PostCardProps) {
+function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const scheme = useColorScheme();
   const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
@@ -1529,6 +1653,8 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   );
 }
 
+export default React.memo(PostCard);
+
 const s = StyleSheet.create({
   card: { borderRadius: 14, borderWidth: 1, marginBottom: 12, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
@@ -1540,9 +1666,9 @@ const s = StyleSheet.create({
   contentWrap: { paddingHorizontal: 12, paddingBottom: 8 },
   contentText: { fontSize: 14, lineHeight: 21 },
   seeMore: { fontSize: 14, fontWeight: '600' },
-  mediaArea: { width: MEDIA_W, height: MEDIA_W * 0.5625, alignSelf: 'center' },
-  videoContainer: { width: MEDIA_W, maxHeight: MEDIA_W, minHeight: MEDIA_W * 0.5625, alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
-  videoArea: { width: MEDIA_W, height: MEDIA_W },
+  mediaArea: { width: MEDIA_W, height: MEDIA_W / 1.91, alignSelf: 'center' },
+  videoContainer: { alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
+  videoPlaceholderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)' },
   muteBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, padding: 6 },
   videoBuffering: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1 },

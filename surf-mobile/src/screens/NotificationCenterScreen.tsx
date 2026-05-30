@@ -26,9 +26,11 @@ import PostCard from '@/components/PostCard';
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showHeader?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type NotificationResponse = {
@@ -173,7 +175,15 @@ function NotificationAvatar({ item, C }: { item: NotificationItem; C: typeof DAR
   );
 }
 
-export default function NotificationCenterScreen({ navigation, isActive = true, resetSignal = 0, safeTop = true, showHeader = true }: Props) {
+export default function NotificationCenterScreen({
+  navigation,
+  isActive = true,
+  scrollTopSignal = 0,
+  resetSignal = 0,
+  safeTop = true,
+  showHeader = true,
+  onScrollPositionChange,
+}: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const listRef = useRef<FlatList<NotificationItem>>(null);
@@ -218,7 +228,14 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
   useEffect(() => {
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
-  }, [resetSignal]);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   useEffect(() => {
     if (!isActive || !user) return;
@@ -329,6 +346,10 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
     );
   };
 
+  const handleScroll = (event: any) => {
+    onScrollPositionChange?.(Math.max(0, event.nativeEvent.contentOffset.y) < 12);
+  };
+
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
@@ -390,6 +411,8 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
           data={visibleItems}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

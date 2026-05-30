@@ -15,6 +15,7 @@ import SettingsScreen from '@/screens/SettingsScreen';
 import EditProfileScreen from '@/screens/EditProfileScreen';
 import ProfilePhotoPickerScreen from '@/screens/ProfilePhotoPickerScreen';
 import CreatePostScreen from '@/screens/CreatePostScreen';
+import CreateMomentScreen from '@/screens/CreateMomentScreen';
 import CreateClipScreen from '@/screens/CreateClipScreen';
 import MarketplaceScreen from '@/screens/MarketplaceScreen';
 import MarketplaceDetailScreen from '@/screens/MarketplaceDetailScreen';
@@ -40,6 +41,7 @@ export type RootStackParamList = {
   EditProfile: undefined;
   ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
   CreatePost: { groupId?: string; groupName?: string } | undefined;
+  CreateMoment: undefined;
   CreateClip: undefined;
   Marketplace: undefined;
   MarketplaceDetail: { listingId: string };
@@ -106,6 +108,11 @@ export default function Navigation() {
             <Stack.Screen
               name="CreatePost"
               component={CreatePostScreen}
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="CreateMoment"
+              component={CreateMomentScreen}
               options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
             />
             <Stack.Screen

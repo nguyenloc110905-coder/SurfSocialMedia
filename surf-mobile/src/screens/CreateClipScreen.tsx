@@ -173,7 +173,7 @@ function ClipPreview({
         style={StyleSheet.absoluteFill}
         contentFit={contentFit}
         nativeControls={showControls}
-        allowsFullscreen={showControls}
+        fullscreenOptions={{ enable: showControls }}
         allowsPictureInPicture={false}
       />
       {overlays.map((overlay) => (

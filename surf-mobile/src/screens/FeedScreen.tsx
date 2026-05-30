@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   useColorScheme,
   Dimensions,
   ActivityIndicator,
+  type ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,16 +21,22 @@ import { useAuthStore } from '@/stores/authStore';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import PostCard from '@/components/PostCard';
+import MomentsBar from '@/components/MomentsBar';
 import { useT } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Feed'>;
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   onCreatePost?: () => void;
+  headerComponent?: React.ReactElement | null;
+  onFloatingHeaderChange?: (visible: boolean, immediate?: boolean) => void;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 type Post = FeedPost;
+type FeedListItem = string | Post;
 
 const { width: SW } = Dimensions.get('window');
 const MEDIA_W = SW - 24;
@@ -79,12 +86,33 @@ function SkeletonCard({ C }: { C: typeof DARK }) {
 }
 
 const SKELETON_KEYS = ['sk1', 'sk2', 'sk3', 'sk4', 'sk5'];
-
-export default function FeedScreen({ navigation, isActive = true, resetSignal = 0, safeTop = true, onCreatePost }: Props) {
+const FLOATING_HEADER_REVEAL_Y = 220;
+const FLOATING_HEADER_SHOW_DISTANCE = 44;
+const FLOATING_HEADER_HIDE_DISTANCE = 24;
+const PROGRAMMATIC_SCROLL_SUPPRESS_MS = 900;
+export default function FeedScreen({
+  navigation,
+  isActive = true,
+  scrollTopSignal = 0,
+  resetSignal = 0,
+  safeTop = true,
+  onCreatePost,
+  headerComponent,
+  onFloatingHeaderChange,
+  onScrollPositionChange,
+}: Props) {
   const scheme = useColorScheme();
   const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const listRef = useRef<FlatList<string | Post>>(null);
+  const lastScrollYRef = useRef(0);
+  const pullIntentRef = useRef(0);
+  const floatingHeaderVisibleRef = useRef(false);
+  const suppressFloatingHeaderRef = useRef(false);
+  const suppressFloatingHeaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastScrollTopSignalRef = useRef(0);
+  const lastResetSignalRef = useRef(0);
+  const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(new Set());
   const user = useAuthStore((state) => state.user);
   const reactionPickerActive = useGestureStore((s) => s.reactionPickerActive);
 
@@ -100,10 +128,80 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
 
   useEffect(() => { fetchFeed(); }, [fetchFeed]);
 
-  useEffect(() => {
-    if (!resetSignal) return;
+  const setFloatingHeader = useCallback((visible: boolean, immediate = false) => {
+    if (floatingHeaderVisibleRef.current === visible && !immediate) return;
+    floatingHeaderVisibleRef.current = visible;
+    pullIntentRef.current = 0;
+    onFloatingHeaderChange?.(visible, immediate);
+  }, [onFloatingHeaderChange]);
+
+  const handleScroll = useCallback((event: any) => {
+    const y = Math.max(0, event.nativeEvent.contentOffset.y);
+    const dy = y - lastScrollYRef.current;
+
+    if (suppressFloatingHeaderRef.current) {
+      setFloatingHeader(false, true);
+      pullIntentRef.current = 0;
+      onScrollPositionChange?.(y < 12);
+      if (y < FLOATING_HEADER_REVEAL_Y) {
+        suppressFloatingHeaderRef.current = false;
+        if (suppressFloatingHeaderTimerRef.current) {
+          clearTimeout(suppressFloatingHeaderTimerRef.current);
+          suppressFloatingHeaderTimerRef.current = null;
+        }
+      }
+      lastScrollYRef.current = y;
+      return;
+    }
+
+    if (y < FLOATING_HEADER_REVEAL_Y) {
+      setFloatingHeader(false, true);
+      pullIntentRef.current = 0;
+    } else if (dy < -3) {
+      pullIntentRef.current = Math.min(0, pullIntentRef.current) + dy;
+      if (pullIntentRef.current < -FLOATING_HEADER_SHOW_DISTANCE) setFloatingHeader(true);
+    } else if (dy > 3) {
+      pullIntentRef.current = Math.max(0, pullIntentRef.current) + dy;
+      if (pullIntentRef.current > FLOATING_HEADER_HIDE_DISTANCE) setFloatingHeader(false);
+    } else {
+      pullIntentRef.current *= 0.75;
+    }
+
+    onScrollPositionChange?.(y < 12);
+    lastScrollYRef.current = y;
+  }, [onScrollPositionChange, setFloatingHeader]);
+
+  const scrollToTopFromTabPress = useCallback(() => {
+    suppressFloatingHeaderRef.current = true;
+    if (suppressFloatingHeaderTimerRef.current) clearTimeout(suppressFloatingHeaderTimerRef.current);
+    suppressFloatingHeaderTimerRef.current = setTimeout(() => {
+      suppressFloatingHeaderRef.current = false;
+      suppressFloatingHeaderTimerRef.current = null;
+    }, PROGRAMMATIC_SCROLL_SUPPRESS_MS);
+    setFloatingHeader(false, true);
+    onScrollPositionChange?.(true);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
-  }, [resetSignal]);
+  }, [onScrollPositionChange, setFloatingHeader]);
+
+  useEffect(() => {
+    if (!scrollTopSignal || scrollTopSignal === lastScrollTopSignalRef.current) return;
+    lastScrollTopSignalRef.current = scrollTopSignal;
+    scrollToTopFromTabPress();
+  }, [scrollTopSignal, scrollToTopFromTabPress]);
+
+  useEffect(() => {
+    if (!resetSignal || resetSignal === lastResetSignalRef.current) return;
+    lastResetSignalRef.current = resetSignal;
+    scrollToTopFromTabPress();
+  }, [resetSignal, scrollToTopFromTabPress]);
+
+  useEffect(() => () => {
+    if (suppressFloatingHeaderTimerRef.current) clearTimeout(suppressFloatingHeaderTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) setVisiblePostIds(new Set());
+  }, [isActive]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -111,14 +209,46 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
   }, [fetchFeed, setRefreshing]);
 
   const isFirstLoad = loading && posts.length === 0;
+  const listData = useMemo<FeedListItem[]>(
+    () => (isFirstLoad ? SKELETON_KEYS : posts),
+    [isFirstLoad, posts]
+  );
   const displayName = user?.displayName || user?.email || t('user_fallback');
   const initial = displayName.charAt(0).toUpperCase();
-  const openCreatePost = () => {
+  const openCreatePost = useCallback(() => {
     if (onCreatePost) onCreatePost();
     else navigation.navigate('CreatePost' as never);
-  };
+  }, [navigation, onCreatePost]);
 
-  const composer = (
+  const renderItem = useCallback(({ item }: { item: FeedListItem }) =>
+    typeof item === 'string'
+      ? <SkeletonCard C={C} />
+      : <PostCard post={item} isVisible={isActive && visiblePostIds.has(item.id)} navigation={navigation} />,
+  [C, isActive, navigation, visiblePostIds]);
+
+  const keyExtractor = useCallback((item: FeedListItem) =>
+    typeof item === 'string' ? item : item.id,
+  []);
+
+  const handleEndReached = useCallback(() => {
+    if (!isFirstLoad && !loadingMore) fetchMore();
+  }, [fetchMore, isFirstLoad, loadingMore]);
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 65,
+    minimumViewTime: 120,
+  }).current;
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const ids = new Set<string>();
+    viewableItems.forEach((token) => {
+      const item = token.item as FeedListItem;
+      if (token.isViewable && item && typeof item !== 'string') ids.add(item.id);
+    });
+    setVisiblePostIds(ids);
+  }).current;
+
+  const composer = useMemo(() => (
     <View style={[s.composer, { backgroundColor: C.card, borderBottomColor: C.border }]}>
       <TouchableOpacity
         style={s.composerAvatar}
@@ -150,25 +280,80 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
         <Ionicons name="image-outline" size={26} color="#22c55e" />
       </TouchableOpacity>
     </View>
-  );
+  ), [C, initial, navigation, openCreatePost, scheme, t, user?.photoURL, user?.uid]);
+
+  const listHeader = useMemo(() => (
+    <>
+      {headerComponent}
+      {composer}
+      <MomentsBar navigation={navigation} />
+    </>
+  ), [composer, headerComponent, navigation]);
+
+  const listFooter = useMemo(() => {
+    if (loadingMore && !isFirstLoad) {
+      return <View style={s.footerLoading}><ActivityIndicator color={C.accent} /></View>;
+    }
+
+    if (!isFirstLoad && posts.length > 0 && !hasMore) {
+      return (
+        <View style={s.caughtUpWrap}>
+          <Ionicons name="checkmark-circle-outline" size={28} color={C.subtext} />
+          <Text style={{ color: C.subtext, fontSize: 13 }}>{t('feed_all_caught_up')}</Text>
+        </View>
+      );
+    }
+
+    return null;
+  }, [C.accent, C.subtext, hasMore, isFirstLoad, loadingMore, posts.length, t]);
+
+  const listEmpty = useMemo(() => {
+    if (isFirstLoad) return null;
+
+    if (error) {
+      return (
+        <View style={s.emptyWrap}>
+          <Ionicons name="cloud-offline-outline" size={52} color={C.subtext} />
+          <Text style={[s.emptyTitle, { color: C.text }]}>{t('feed_load_error')}</Text>
+          <Text style={[s.emptySub, { color: C.subtext }]}>{error}</Text>
+          <TouchableOpacity style={[s.retryBtn, { borderColor: C.accent }]} onPress={() => fetchFeed(true)}>
+            <Text style={[s.retryText, { color: C.accent }]}>{t('retry')}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={s.emptyWrap}>
+        <Ionicons name="newspaper-outline" size={52} color={C.subtext} />
+        <Text style={[s.emptyTitle, { color: C.text }]}>{t('feed_empty_title')}</Text>
+        <Text style={[s.emptySub, { color: C.subtext }]}>{t('feed_empty_subtitle')}</Text>
+      </View>
+    );
+  }, [C.accent, C.subtext, C.text, error, fetchFeed, isFirstLoad, t]);
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       <FlatList
         ref={listRef}
-        data={(isFirstLoad ? SKELETON_KEYS : posts) as (string | Post)[]}
-        keyExtractor={(item) => (typeof item === 'string' ? item : (item as Post).id)}
-        renderItem={({ item }) =>
-          typeof item === 'string'
-            ? <SkeletonCard C={C} />
-            : <PostCard post={item as Post} isVisible={false} navigation={navigation} />
-        }
-        ListHeaderComponent={composer}
-        extraData={`${isActive}:${isFirstLoad}`}
+        data={listData}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={listHeader}
+        extraData={`${isActive}:${isFirstLoad}:${Array.from(visiblePostIds).join(',')}`}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
         scrollEnabled={!isFirstLoad && !reactionPickerActive}
-        onEndReached={() => { if (!isFirstLoad) fetchMore(); }}
+        removeClippedSubviews
+        initialNumToRender={5}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        updateCellsBatchingPeriod={80}
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onEndReached={handleEndReached}
         onEndReachedThreshold={0.4}
         refreshControl={
           isFirstLoad ? undefined : (
@@ -180,36 +365,8 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
             />
           )
         }
-        ListFooterComponent={
-          loadingMore && !isFirstLoad
-            ? <View style={{ paddingVertical: 20 }}><ActivityIndicator color={C.accent} /></View>
-            : !isFirstLoad && posts.length > 0 && !hasMore
-            ? (
-                <View style={{ alignItems: 'center', paddingVertical: 24, gap: 6 }}>
-                  <Ionicons name="checkmark-circle-outline" size={28} color={C.subtext} />
-                  <Text style={{ color: C.subtext, fontSize: 13 }}>{t('feed_all_caught_up')}</Text>
-                </View>
-              )
-            : null
-        }
-        ListEmptyComponent={
-          isFirstLoad ? null : error ? (
-            <View style={s.emptyWrap}>
-              <Ionicons name="cloud-offline-outline" size={52} color={C.subtext} />
-              <Text style={[s.emptyTitle, { color: C.text }]}>{t('feed_load_error')}</Text>
-              <Text style={[s.emptySub, { color: C.subtext }]}>{error}</Text>
-              <TouchableOpacity style={[s.retryBtn, { borderColor: C.accent }]} onPress={() => fetchFeed(true)}>
-                <Text style={[s.retryText, { color: C.accent }]}>{t('retry')}</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={s.emptyWrap}>
-              <Ionicons name="newspaper-outline" size={52} color={C.subtext} />
-              <Text style={[s.emptyTitle, { color: C.text }]}>{t('feed_empty_title')}</Text>
-              <Text style={[s.emptySub, { color: C.subtext }]}>{t('feed_empty_subtitle')}</Text>
-            </View>
-          )
-        }
+        ListFooterComponent={listFooter}
+        ListEmptyComponent={listEmpty}
       />
     </SafeAreaView>
   );
@@ -264,6 +421,8 @@ const s = StyleSheet.create({
   skLine: { height: 12, borderRadius: 6, marginBottom: 2 },
   mediaArea: { width: MEDIA_W, height: MEDIA_W * 0.5625, alignSelf: 'center' },
   actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1 },
+  footerLoading: { paddingVertical: 20 },
+  caughtUpWrap: { alignItems: 'center', paddingVertical: 24, gap: 6 },
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '600' },
   emptySub: { fontSize: 14, textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },

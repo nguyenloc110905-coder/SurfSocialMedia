@@ -404,7 +404,7 @@ function VideoItem({
           style={StyleSheet.absoluteFill}
           contentFit={contentFit}
           nativeControls={false}
-          allowsFullscreen={false}
+          fullscreenOptions={{ enable: false }}
           allowsPictureInPicture={false}
         />
         {(item.textOverlays ?? []).map((overlay, idx) => {
@@ -562,18 +562,22 @@ function VideoItem({
 
 type ShortVideoScreenProps = {
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showTitle?: boolean;
   onFullscreenChange?: (enabled: boolean) => void;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 export default function ShortVideoScreen({
   isActive = true,
+  scrollTopSignal = 0,
   resetSignal = 0,
   safeTop = true,
   showTitle = true,
   onFullscreenChange,
+  onScrollPositionChange,
 }: ShortVideoScreenProps) {
   const user = useAuthStore((state) => state.user);
   const t = useT();
@@ -596,6 +600,11 @@ export default function ShortVideoScreen({
   const [commentSending, setCommentSending] = useState(false);
   const [landscapeLocked, setLandscapeLocked] = useState(false);
   const viewedRef = useRef<Set<string>>(new Set());
+  const scrollPositionChangeRef = useRef(onScrollPositionChange);
+
+  useEffect(() => {
+    scrollPositionChangeRef.current = onScrollPositionChange;
+  }, [onScrollPositionChange]);
 
   useEffect(() => {
     ScreenOrientation.unlockAsync().catch(() => {});
@@ -620,7 +629,15 @@ export default function ShortVideoScreen({
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     setActiveIndex(0);
-  }, [resetSignal]);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setActiveIndex(0);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   const load = useCallback(async (mode: 'initial' | 'refresh' | 'more' = 'initial') => {
     if (mode === 'more') setLoadingMore(true);
@@ -673,7 +690,10 @@ export default function ShortVideoScreen({
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((token) => token.isViewable && typeof token.index === 'number');
-    if (typeof first?.index === 'number') setActiveIndex(first.index);
+    if (typeof first?.index === 'number') {
+      setActiveIndex(first.index);
+      scrollPositionChangeRef.current?.(first.index === 0);
+    }
   }).current;
 
   const onLayout = (event: LayoutChangeEvent) => {

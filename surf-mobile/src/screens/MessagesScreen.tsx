@@ -21,10 +21,17 @@ import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { useMessageStore } from '@/stores/messageStore';
 import { useLanguage, useT, type I18nKey } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Messages'>;
+  scrollTopSignal?: number;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showHeader?: boolean;
+  showBackButton?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type ConversationItem = {
@@ -199,13 +206,23 @@ function SwipeableConvRow({
 
 // ── Screen ─────────────────────────────────────────────────────────────────
 
-export default function MessagesScreen({ navigation }: Props) {
+export default function MessagesScreen({
+  navigation,
+  scrollTopSignal = 0,
+  resetSignal = 0,
+  safeTop = true,
+  showHeader = true,
+  showBackButton = true,
+  onScrollPositionChange,
+}: Props) {
   const scheme = useColorScheme();
   const t = useT();
   const language = useLanguage();
   const locale = language === 'en' ? 'en-US' : 'vi-VN';
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
+  const setUnreadMessages = useMessageStore((state) => state.setUnreadConversations);
+  const listRef = useRef<FlatList<ConversationItem>>(null);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -214,13 +231,21 @@ export default function MessagesScreen({ navigation }: Props) {
   const load = useCallback(async () => {
     try {
       const data = await api.get<{ items: ConversationItem[] }>('/api/conversations?limit=30');
-      setConversations((data.items ?? []).filter((c): c is ConversationItem => c != null && typeof c.id === 'string'));
+      const items = (data.items ?? []).filter((c): c is ConversationItem => c != null && typeof c.id === 'string');
+      setConversations(items);
+      setUnreadMessages(items.filter((c) => (c.unreadCount ?? 0) > 0).length);
     } catch { /* ignore */ } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setUnreadMessages]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   // ── Real-time: update conversation list on new messages ─────────────────────
 
@@ -252,10 +277,17 @@ export default function MessagesScreen({ navigation }: Props) {
         })
       );
     };
+    const onMessageUnreadCount = (payload: { count?: number }) => {
+      if (typeof payload?.count === 'number') setUnreadMessages(payload.count);
+    };
 
     socket.on('message:new', onMessageNew);
-    return () => { socket.off('message:new', onMessageNew); };
-  }, [user?.uid]);
+    socket.on('message:unread-count', onMessageUnreadCount);
+    return () => {
+      socket.off('message:new', onMessageNew);
+      socket.off('message:unread-count', onMessageUnreadCount);
+    };
+  }, [setUnreadMessages, user?.uid]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -277,6 +309,11 @@ export default function MessagesScreen({ navigation }: Props) {
     : conversations;
 
   const openConv = (conv: ConversationItem) => {
+    setConversations(prev => {
+      const next = prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c);
+      setUnreadMessages(next.filter((c) => (c.unreadCount ?? 0) > 0).length);
+      return next;
+    });
     navigation.navigate('Chat', {
       conversationId: conv.id,
       title: getConvTitle(conv),
@@ -311,18 +348,28 @@ export default function MessagesScreen({ navigation }: Props) {
     );
   };
 
+  const handleScroll = (event: any) => {
+    onScrollPositionChange?.(Math.max(0, event.nativeEvent.contentOffset.y) < 12);
+  };
+
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {/* Header */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="arrow-back" size={24} color={C.text} />
-        </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: C.text }]}>{t('messages_title')}</Text>
-        <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="create-outline" size={24} color={C.text} />
-        </TouchableOpacity>
-      </View>
+      {showHeader && (
+        <View style={[s.header, { borderBottomColor: C.border }]}>
+          {showBackButton ? (
+            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="arrow-back" size={24} color={C.text} />
+            </TouchableOpacity>
+          ) : (
+            <View style={s.headerIconSpace} />
+          )}
+          <Text style={[s.headerTitle, { color: C.text }]}>{t('messages_title')}</Text>
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="create-outline" size={24} color={C.text} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Search */}
       <View style={[s.searchWrap, { backgroundColor: C.bg }]}>
@@ -350,9 +397,12 @@ export default function MessagesScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={filtered}
           keyExtractor={i => i.id}
           renderItem={renderItem}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} colors={[C.accent]} />}
           showsVerticalScrollIndicator={false}
         />
@@ -368,6 +418,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1,
   },
   headerTitle: { fontSize: 18, fontWeight: '700' },
+  headerIconSpace: { width: 24, height: 24 },
   searchWrap: { paddingHorizontal: 12, paddingVertical: 8 },
   searchBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
