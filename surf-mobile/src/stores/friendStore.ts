@@ -20,14 +20,18 @@ type IncomingResponse = { requests?: Array<{ id?: string; fromUid?: string; name
 type OutgoingResponse = { sent?: Array<{ id?: string; toUid?: string; name?: string; avatarUrl?: string | null }> };
 type SuggestionsResponse = { suggestions?: Array<Partial<FriendPerson>> };
 
+type FindByPhonesResponse = { users?: Array<{ id?: string; name?: string; avatarUrl?: string | null }> };
+
 type FriendState = {
   friends: FriendPerson[];
   incomingRequests: FriendRequestItem[];
   outgoingRequests: FriendRequestItem[];
   suggestions: FriendPerson[];
+  contactMatches: FriendPerson[];
   loading: boolean;
   requestsLoading: boolean;
   suggestionsLoading: boolean;
+  contactSyncing: boolean;
   refreshing: boolean;
   actionById: Record<string, boolean>;
   error: string | null;
@@ -36,6 +40,7 @@ type FriendState = {
   fetchSuggestions: () => Promise<void>;
   fetchAll: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  fetchContactMatches: (phones: string[]) => Promise<void>;
   acceptRequest: (requestId: string) => Promise<void>;
   rejectRequest: (requestId: string) => Promise<void>;
   cancelRequest: (requestId: string) => Promise<void>;
@@ -84,9 +89,11 @@ export const useFriendStore = create<FriendState>((set, get) => ({
   incomingRequests: [],
   outgoingRequests: [],
   suggestions: [],
+  contactMatches: [],
   loading: false,
   requestsLoading: false,
   suggestionsLoading: false,
+  contactSyncing: false,
   refreshing: false,
   actionById: {},
   error: null,
@@ -153,6 +160,27 @@ export const useFriendStore = create<FriendState>((set, get) => ({
       await get().fetchAll();
     } finally {
       set({ refreshing: false });
+    }
+  },
+
+  fetchContactMatches: async (phones) => {
+    set({ contactSyncing: true });
+    try {
+      const data = await api.post<FindByPhonesResponse>('/api/users/find-by-phones', { phones });
+      const contactMatches = (data.users ?? [])
+        .filter((u): u is { id: string; name?: string; avatarUrl?: string | null } => typeof u.id === 'string')
+        .map((u) => ({
+          id: u.id,
+          name: u.name ?? 'Người dùng',
+          avatarUrl: u.avatarUrl ?? null,
+          mutualCount: 0,
+        }))
+        .filter((u) => !get().friends.some((f) => f.id === u.id));
+      set({ contactMatches });
+    } catch {
+      set({ contactMatches: [] });
+    } finally {
+      set({ contactSyncing: false });
     }
   },
 

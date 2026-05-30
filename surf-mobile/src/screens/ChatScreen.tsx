@@ -25,6 +25,7 @@ import { api } from '@/lib/api';
 import { uploadImage } from '@/lib/cloudinary';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { useLanguage, useT } from '@/lib/i18n';
+import { messagesCache, type CachedMessage } from '@/lib/cache';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ function TypingDots({ C }: { C: typeof DARK }) {
 
 export default function ChatScreen({ navigation, route }: Props) {
   const { conversationId, title, peerUid, peerAvatar } = route.params;
+  console.log('=== CHAT SCREEN RENDER ===', conversationId);
   const scheme = useColorScheme();
   const t = useT();
   const language = useLanguage();
@@ -126,7 +128,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   const { user } = useAuthStore();
 
   const [messages, setMessages] = useState<ApiMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [draft, setDraft] = useState('');
@@ -143,22 +145,71 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   const loadMessages = useCallback(async (silent = false) => {
     try {
-      if (!silent) setLoading(true);
-      const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
-        `/api/conversations/${conversationId}/messages?limit=30`
-      );
-      const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string').reverse();
-      setMessages(items);
-      setNextCursor(data.nextCursor ?? null);
-
-      if (items.length > 0) {
-        const newest = items[0];
-        if (newest.id !== lastMessageIdRef.current) {
-          lastMessageIdRef.current = newest.id;
-          markRead(newest.id, newest.createdAt);
-        }
+      // Load from cache first
+      console.log('📦 Loading messages from cache for conversation:', conversationId);
+      const cached = await messagesCache.getMessages(conversationId);
+      console.log('📦 Cached messages:', cached?.length || 0);
+      
+      let hasCache = false;
+      if (cached && cached.length > 0) {
+        const cachedMessages = cached.map((m) => ({
+          id: m.id,
+          conversationId: m.conversationId,
+          senderId: m.senderId,
+          type: m.mediaUrl ? 'image' : 'text',
+          text: m.text,
+          mediaUrl: m.mediaUrl,
+          createdAt: m.createdAt,
+        })) as ApiMessage[];
+        setMessages(cachedMessages);
+        hasCache = true;
+        setLoading(false); // Stop loading immediately when cache loaded
+      } else {
+        if (!silent) setLoading(true); // Only show loading if no cache
       }
-    } catch { /* ignore */ } finally {
+
+      // Fetch from API (only if online)
+      try {
+        const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
+          `/api/conversations/${conversationId}/messages?limit=30`
+        );
+        const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string').reverse();
+        setMessages(items);
+        setNextCursor(data.nextCursor ?? null);
+
+        // Update cache with fresh data
+        const cachedMessages: CachedMessage[] = items.map((m) => ({
+          id: m.id,
+          conversationId: m.conversationId,
+          senderId: m.senderId,
+          text: m.text,
+          mediaUrl: m.mediaUrl || null,
+          createdAt: m.createdAt,
+          senderName: '', // Will be filled from user data if needed
+          senderAvatarUrl: null,
+        }));
+        await messagesCache.setMessages(conversationId, cachedMessages);
+        console.log('💾 Cached', items.length, 'messages');
+
+        if (items.length > 0) {
+          const newest = items[0];
+          if (newest.id !== lastMessageIdRef.current) {
+            lastMessageIdRef.current = newest.id;
+            markRead(newest.id, newest.createdAt);
+          }
+        }
+      } catch (apiError) {
+        console.log('❌ API error (offline?):', apiError);
+        // If offline and we have cache, keep showing cached data
+        if (hasCache) {
+          console.log('✅ Using cached data, offline mode');
+          return;
+        }
+        throw apiError;
+      }
+    } catch (e) {
+      console.log('❌ Load messages error:', e);
+    } finally {
       setLoading(false);
     }
   }, [conversationId]);
@@ -207,7 +258,23 @@ export default function ChatScreen({ navigation, route }: Props) {
       setMessages(prev => {
         const existingIds = new Set(prev.filter(m => m != null).map(m => m.id));
         const fresh = items.filter(m => !existingIds.has(m.id));
-        return fresh.length > 0 ? [...fresh, ...prev] : prev;
+        if (fresh.length > 0) {
+          // Cache new messages
+          fresh.forEach(async (m) => {
+            await messagesCache.addMessage(conversationId, {
+              id: m.id,
+              conversationId: m.conversationId,
+              senderId: m.senderId,
+              text: m.text,
+              mediaUrl: m.mediaUrl || null,
+              createdAt: m.createdAt,
+              senderName: '',
+              senderAvatarUrl: null,
+            });
+          });
+          return [...fresh, ...prev];
+        }
+        return prev;
       });
       markRead(newest.id, newest.createdAt);
     } catch { /* ignore */ }

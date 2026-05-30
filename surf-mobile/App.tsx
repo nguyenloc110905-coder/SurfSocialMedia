@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import NetInfo from '@react-native-community/netinfo';
 import Navigation from './src/navigation';
 import { useAuthStore } from './src/stores/authStore';
 import { useFeedStore } from './src/stores/feedStore';
@@ -76,6 +77,20 @@ export default function App() {
   // Prefetch feed ngay khi auth xong — chạy song song với navigation render
   useEffect(() => {
     if (user) fetchFeed();
+  }, [user, fetchFeed]);
+
+  // Sync when coming back online
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable) {
+        console.log('🌐 Back online, syncing feed...');
+        fetchFeed(true);
+      }
+    });
+
+    return () => unsubscribe();
   }, [user, fetchFeed]);
 
   useEffect(() => {

@@ -566,6 +566,65 @@ router.get('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
+/** POST /api/users/find-by-phones */
+router.post('/find-by-phones', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const { phones } = req.body as { phones?: unknown };
+    if (!Array.isArray(phones)) {
+      res.status(400).json({ error: 'phones must be an array' });
+      return;
+    }
+
+    const normalized = (phones as unknown[])
+      .filter((p): p is string => typeof p === 'string')
+      .map((p) => p.replace(/\D/g, ''))
+      .filter((p) => p.length >= 7 && p.length <= 15)
+      .flatMap((p) => {
+        const variants: string[] = [p];
+        if (p.startsWith('0') && p.length === 10) variants.push('84' + p.slice(1));
+        if (p.startsWith('84') && p.length === 11) variants.push('0' + p.slice(2));
+        return variants;
+      });
+
+    const unique = [...new Set(normalized)];
+    if (unique.length === 0) {
+      res.json({ users: [] });
+      return;
+    }
+
+    const db = getDb();
+    const friendSnap = await db
+      .collection('friends')
+      .where('userId', '==', uid)
+      .get();
+    const friendIds = new Set(friendSnap.docs.map((d) => d.data().friendId as string));
+
+    const seen = new Set<string>();
+    const users: { id: string; name: string; avatarUrl: string | null }[] = [];
+
+    const CHUNK = 10;
+    for (let i = 0; i < unique.length; i += CHUNK) {
+      const chunk = unique.slice(i, i + CHUNK);
+      const snap = await db.collection('users').where('phone', 'in', chunk).get();
+      snap.docs.forEach((doc) => {
+        if (doc.id === uid || friendIds.has(doc.id) || seen.has(doc.id)) return;
+        seen.add(doc.id);
+        const data = doc.data();
+        users.push({
+          id: doc.id,
+          name: (data.displayName as string) || (data.name as string) || 'Người dùng',
+          avatarUrl: (data.photoURL as string) || null,
+        });
+      });
+    }
+
+    res.json({ users });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 /** PUT /api/users/me/fcm-token */
 router.put('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
   try {
