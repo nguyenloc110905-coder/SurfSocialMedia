@@ -8,6 +8,7 @@ import {
   type Category,
   type Condition,
   type ListingAvailability,
+  type BoostSandboxPaymentProvider,
   type MarketplaceModerationMode,
   type MarketplaceModerationSettings,
   type MyListingsFilter,
@@ -74,35 +75,70 @@ const BOOST_BUDGET_OPTIONS = [
   { dailyBudget: 110000, reach: '0 - 1.216', durationDays: 3 },
   { dailyBudget: 140000, reach: '0 - 1.298', durationDays: 3 },
 ] as const;
+const BOOST_DAY_MS = 24 * 60 * 60 * 1000;
 
-const SANDBOX_PAYMENT_TEST_CARDS = [
+const BOOST_SANDBOX_PAYMENT_METHODS = [
   {
-    label: 'Thanh toán thành công',
-    status: 'Success',
-    helper: 'Dùng card này để hoàn tất sandbox.',
-    name: 'Surf Sandbox Buyer',
-    number: '4242 4242 4242 4242',
-    expiry: '12/34',
-    cvv: '123',
-    succeeds: true,
-    failureMessage: '',
+    key: 'zalopay',
+    label: 'ZaloPay Sandbox',
+    badge: 'ZLP',
+    accentClass: 'border-blue-400/30 bg-blue-500/15 text-blue-200',
+    helper: 'Mở cổng ZaloPay sandbox chính chủ qua payment URL do server tạo.',
+    testAccount: 'Dùng tài khoản test theo cấu hình sandbox ZaloPay.',
   },
   {
-    label: 'Thẻ bị từ chối',
-    status: 'Declined',
-    helper: 'Dùng để test thông báo lỗi thanh toán.',
-    name: 'Surf Declined Buyer',
-    number: '4000 0000 0000 0002',
-    expiry: '12/34',
-    cvv: '123',
-    succeeds: false,
-    failureMessage: 'Thẻ sandbox này bị từ chối. Hãy dùng thẻ thành công 4242 4242 4242 4242.',
+    key: 'vnpay',
+    label: 'VNPAY Sandbox',
+    badge: 'VNPAY',
+    accentClass: 'border-sky-400/30 bg-sky-500/15 text-sky-200',
+    helper: 'Mở https://sandbox.vnpayment.vn/paymentv2/vpcpay.html với chữ ký VNPAY sandbox.',
+    testAccount: 'Dùng thẻ/tài khoản test do VNPAY sandbox cung cấp.',
   },
-] as const;
+  {
+    key: 'momo',
+    label: 'MoMo Sandbox',
+    badge: 'MoMo',
+    accentClass: 'border-pink-400/30 bg-pink-500/15 text-pink-200',
+    helper: 'Mở payUrl từ MoMo test-payment sandbox qua API create.',
+    testAccount: 'Dùng tài khoản test theo cấu hình sandbox MoMo.',
+  },
+] as const satisfies readonly {
+  key: BoostSandboxPaymentProvider;
+  label: string;
+  badge: string;
+  accentClass: string;
+  helper: string;
+  testAccount: string;
+}[];
 
 type CreateStep = 'listing' | 'boost';
-type PaymentStep = 'method' | 'card';
-type PaymentMethod = 'card' | 'visa' | 'momo' | 'vnpay';
+type SandboxPaymentTarget = 'create' | 'boost';
+type PendingSandboxPayment = {
+  target: SandboxPaymentTarget;
+  provider: BoostSandboxPaymentProvider;
+  paymentId: string;
+  orderId: string;
+  checkoutUrl: string;
+};
+type OfficialBoostPaymentSession = {
+  paymentId: string;
+  provider: BoostSandboxPaymentProvider;
+  orderId: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'failed' | 'expired';
+  paymentUrl: string;
+  consumed?: boolean;
+};
+type SandboxPaymentResult = {
+  type?: string;
+  status?: string;
+  provider?: string;
+  orderId?: string;
+  paymentId?: string;
+};
+
+const SURF_BOOST_SANDBOX_PAYMENT_CHANNEL = 'surf-boost-sandbox-payment';
+const SURF_BOOST_SANDBOX_PAYMENT_RESULT_TYPE = 'surf-boost-sandbox-payment';
 type MarketplaceConversationContext = {
   kind: 'marketplace';
   listingId: string;
@@ -211,19 +247,22 @@ function formatPrice(price: number) {
   return price.toLocaleString('vi-VN') + ' ₫';
 }
 
-function normalizeSandboxCardNumber(value: string) {
-  return value.replace(/\D/g, '');
+function getBoostSandboxPaymentMethod(provider: BoostSandboxPaymentProvider | null | undefined) {
+  return (
+    BOOST_SANDBOX_PAYMENT_METHODS.find((method) => method.key === provider) ??
+    BOOST_SANDBOX_PAYMENT_METHODS[0]
+  );
 }
 
-function getSandboxCardValidationError(card: { name: string; number: string; expiry: string; cvv: string }) {
-  if (!card.name.trim()) return 'Nhập tên trên thẻ sandbox để tiếp tục.';
-  const testCard = SANDBOX_PAYMENT_TEST_CARDS.find((item) => normalizeSandboxCardNumber(item.number) === normalizeSandboxCardNumber(card.number));
-  if (!testCard) return 'Số thẻ sandbox không hợp lệ. Dùng thẻ test trong khung Dữ liệu test sandbox.';
-  if (!testCard.succeeds) return testCard.failureMessage;
-  if (card.expiry.trim() !== testCard.expiry || card.cvv.trim() !== testCard.cvv) {
-    return `Với thẻ ${testCard.number}, hạn dùng phải là ${testCard.expiry} và CVV là ${testCard.cvv}.`;
-  }
-  return '';
+function isSandboxPaymentSuccessPayload(value: unknown): value is SandboxPaymentResult {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as SandboxPaymentResult;
+  return (
+    payload.type === SURF_BOOST_SANDBOX_PAYMENT_RESULT_TYPE &&
+    payload.status === 'success' &&
+    typeof payload.provider === 'string' &&
+    typeof payload.orderId === 'string'
+  );
 }
 
 function getListingTimeValue(value: unknown): number {
@@ -264,13 +303,38 @@ function getSellerListingStatusText(listing: Listing) {
   return 'Còn hàng';
 }
 
+function getListingBoostDeadlineValue(listing: Listing) {
+  const endsAt = getListingTimeValue(listing.boostEndsAt);
+  if (endsAt) return endsAt;
+  const startedAt = getListingTimeValue(listing.boostStartedAt);
+  const durationDays = listing.boostPlan?.durationDays ?? 0;
+  return startedAt && durationDays > 0 ? startedAt + durationDays * BOOST_DAY_MS : 0;
+}
+
 function isListingBoostActive(listing: Listing) {
-  return listing.boostEnabled && listing.boostStatus === 'active';
+  const deadline = getListingBoostDeadlineValue(listing);
+  return Boolean(listing.boostEnabled && listing.boostStatus === 'active' && (!deadline || deadline > Date.now()));
+}
+
+function canResumeListingBoost(listing: Listing) {
+  const deadline = getListingBoostDeadlineValue(listing);
+  return Boolean(listing.status === 'active' && listing.boostEnabled && listing.boostStatus === 'paused' && deadline > Date.now());
+}
+
+function getBoostRemainingText(listing: Listing) {
+  const deadline = getListingBoostDeadlineValue(listing);
+  if (!deadline) return 'Không rõ hạn';
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) return 'Đã hết hạn';
+  const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
+  if (remainingHours < 24) return `Còn ${remainingHours} giờ`;
+  return `Còn ${Math.ceil(remainingHours / 24)} ngày`;
 }
 
 function getBoostStatusText(listing: Listing) {
   if (!listing.boostEnabled) return 'Chưa quảng bá';
-  if (listing.boostStatus === 'active') return 'Đang quảng bá';
+  if (listing.boostStatus === 'active') return isListingBoostActive(listing) ? 'Đang quảng bá' : 'Boost đã hết hạn';
+  if (listing.boostStatus === 'paused') return `Đã ngưng quảng bá · ${getBoostRemainingText(listing)}`;
   if (listing.boostStatus === 'awaiting_moderation') return 'Chờ duyệt để chạy Boost';
   if (listing.boostStatus === 'completed') return 'Boost đã hoàn tất';
   if (listing.boostStatus === 'cancelled') return 'Boost đã hủy';
@@ -645,6 +709,8 @@ export default function MarketPage() {
     toggleSave,
     createListing,
     boostListing,
+    pauseBoost,
+    resumeBoost,
     updateListing,
     deleteListing,
     markAsSold,
@@ -714,16 +780,17 @@ export default function MarketPage() {
   const [isCreateDetailsOpen, setIsCreateDetailsOpen] = useState(false);
   const [boostDailyBudget, setBoostDailyBudget] = useState<number>(BOOST_BUDGET_OPTIONS[0].dailyBudget);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [paymentStep, setPaymentStep] = useState<PaymentStep>('method');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
+  const [paymentMethod, setPaymentMethod] = useState<BoostSandboxPaymentProvider>('zalopay');
   const [paymentError, setPaymentError] = useState('');
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [boostingListing, setBoostingListing] = useState<Listing | null>(null);
   const [isBoostPaymentModalOpen, setIsBoostPaymentModalOpen] = useState(false);
-  const [boostPaymentStep, setBoostPaymentStep] = useState<PaymentStep>('method');
-  const [boostPaymentMethod, setBoostPaymentMethod] = useState<PaymentMethod>('card');
+  const [boostPaymentMethod, setBoostPaymentMethod] = useState<BoostSandboxPaymentProvider>('zalopay');
   const [boostPaymentError, setBoostPaymentError] = useState('');
   const [boostSubmitting, setBoostSubmitting] = useState(false);
+  const [paymentLaunching, setPaymentLaunching] = useState(false);
+  const [boostPaymentLaunching, setBoostPaymentLaunching] = useState(false);
+  const [pendingSandboxPayment, setPendingSandboxPayment] = useState<PendingSandboxPayment | null>(null);
   const [sellerMessageDraft, setSellerMessageDraft] = useState('Mặt hàng này còn chứ?');
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -731,51 +798,55 @@ export default function MarketPage() {
   const [reportCategory, setReportCategory] = useState('');
   const [reportDetails, setReportDetails] = useState('');
   const [marketToast, setMarketToast] = useState('');
-  const [billingCard, setBillingCard] = useState({
-    name: '',
-    number: '',
-    expiry: '',
-    cvv: '',
-  });
-  const applySandboxTestCard = (card: (typeof SANDBOX_PAYMENT_TEST_CARDS)[number]) => {
-    setBillingCard({
-      name: card.name,
-      number: card.number,
-      expiry: card.expiry,
-      cvv: card.cvv,
-    });
+  const startSandboxPaymentSession = (provider: BoostSandboxPaymentProvider) => {
+    setPendingSandboxPayment(null);
   };
-  const renderSandboxTestCards = () => (
-    <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-black text-sky-100">Dữ liệu test sandbox</div>
-          <div className="mt-1 text-[11px] font-medium text-slate-400">Nhấn Điền để tự nhập nhanh vào form thanh toán.</div>
-        </div>
-        <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-300">Không trừ tiền thật</span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {SANDBOX_PAYMENT_TEST_CARDS.map((card) => (
-          <div key={card.number} className="rounded-lg border border-white/[0.08] bg-[#18191a] p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-black text-white">{card.label}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${card.succeeds ? 'bg-emerald-400/10 text-emerald-300' : 'bg-red-400/10 text-red-300'}`}>{card.status}</span>
-                </div>
-                <div className="mt-1 font-mono text-[11px] text-slate-300">{card.number}</div>
-                <div className="mt-1 text-[11px] text-slate-400">Tên: {card.name} · HSD: {card.expiry} · CVV: {card.cvv}</div>
-                <div className="mt-1 text-[11px] text-slate-500">{card.helper}</div>
-              </div>
-              <button type="button" onClick={() => applySandboxTestCard(card)} className="shrink-0 rounded-md bg-[#2d88ff] px-3 py-1.5 text-xs font-black text-white hover:bg-[#1877f2]">
-                Điền
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+  const selectCreatePaymentMethod = (provider: BoostSandboxPaymentProvider) => {
+    setPaymentMethod(provider);
+    setPaymentError('');
+    startSandboxPaymentSession(provider);
+  };
+  const selectBoostPaymentMethod = (provider: BoostSandboxPaymentProvider) => {
+    setBoostPaymentMethod(provider);
+    setBoostPaymentError('');
+    startSandboxPaymentSession(provider);
+  };
+  const renderBoostSandboxPaymentMethods = (
+    selectedProvider: BoostSandboxPaymentProvider,
+    onSelect: (provider: BoostSandboxPaymentProvider) => void
+  ) => (
+    <div className="space-y-2">
+      {BOOST_SANDBOX_PAYMENT_METHODS.map((method) => (
+        <label
+          key={method.key}
+          className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+            selectedProvider === method.key
+              ? 'border-[#2d88ff] bg-[#2d88ff]/10'
+              : 'border-white/[0.08] bg-[#18191a] hover:bg-white/[0.04]'
+          }`}
+        >
+          <span className={`mt-0.5 rounded-md border px-2 py-1 text-[10px] font-black ${method.accentClass}`}>
+            {method.badge}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-black text-white">{method.label}</span>
+            <span className="mt-1 block text-xs leading-relaxed text-slate-400">{method.helper}</span>
+            <span className="mt-1 block truncate text-[11px] font-semibold text-slate-500">
+              Tài khoản test: {method.testAccount}
+            </span>
+          </span>
+          <input
+            type="radio"
+            checked={selectedProvider === method.key}
+            onChange={() => onSelect(method.key)}
+            className="mt-1 h-4 w-4 accent-[#2d88ff]"
+            aria-label={method.label}
+          />
+        </label>
+      ))}
     </div>
   );
+
   const geoCache = useRef(new Map<string, MapCenter>());
   const listingsLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const myListingsLoadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -1031,6 +1102,7 @@ export default function MarketPage() {
       if (e.key !== 'Escape') return;
       if (isPaymentModalOpen) {
         setIsPaymentModalOpen(false);
+        setPendingSandboxPayment((current) => current?.target === 'create' ? null : current);
         return;
       }
       if (isCreateMapOpen) {
@@ -1248,6 +1320,55 @@ export default function MarketPage() {
     }
   };
 
+  const handlePauseSellerBoost = async (listing: Listing) => {
+    setOpenListingMenuId(null);
+    if (!isListingBoostActive(listing)) return;
+    setListingActionId(listing.id);
+    try {
+      const updated = await pauseBoost(listing.id);
+      syncLocalListing(updated);
+      showMarketToast('Đã ngưng quảng bá. Tin quảng bá đã được gỡ khỏi các vị trí hiển thị.');
+    } catch (err) {
+      window.alert((err as Error).message || 'Không thể ngưng quảng bá');
+    } finally {
+      setListingActionId(null);
+    }
+  };
+
+  const handleResumeSellerBoost = async (listing: Listing) => {
+    setOpenListingMenuId(null);
+    if (!canResumeListingBoost(listing)) return;
+    setListingActionId(listing.id);
+    try {
+      const updated = await resumeBoost(listing.id);
+      syncLocalListing(updated);
+      showMarketToast('Đã bật lại quảng bá trong thời hạn chiến dịch.');
+    } catch (err) {
+      window.alert((err as Error).message || 'Không thể bật lại quảng bá');
+    } finally {
+      setListingActionId(null);
+    }
+  };
+
+  const handleSellerBoostAction = (listing: Listing) => {
+    if (isListingBoostActive(listing)) {
+      void handlePauseSellerBoost(listing);
+      return;
+    }
+    if (canResumeListingBoost(listing)) {
+      void handleResumeSellerBoost(listing);
+      return;
+    }
+    openBoostSellerListing(listing);
+  };
+
+  const getSellerBoostActionLabel = (listing: Listing) => {
+    if (listingActionId === listing.id) return 'Đang cập nhật...';
+    if (isListingBoostActive(listing)) return 'Ngưng quảng bá';
+    if (canResumeListingBoost(listing)) return `Bật lại quảng bá · ${getBoostRemainingText(listing)}`;
+    return listing.boostStatus === 'paused' ? 'Quảng bá lại' : 'Quảng bá bài niêm yết';
+  };
+
   const openEditSellerListing = (listing: Listing) => {
     setOpenListingMenuId(null);
     setEditingListing(listing);
@@ -1459,7 +1580,7 @@ export default function MarketPage() {
   const closeCreateListingModal = () => {
     setIsCreateMapOpen(false);
     setIsPaymentModalOpen(false);
-    setPaymentStep('method');
+    setPendingSandboxPayment((current) => current?.target === 'create' ? null : current);
     setPaymentError('');
     setCreateStep('listing');
     setIsCreateModalOpen(false);
@@ -1476,9 +1597,9 @@ export default function MarketPage() {
     setIsCreateDetailsOpen(false);
     setBoostDailyBudget(BOOST_BUDGET_OPTIONS[0].dailyBudget);
     setIsPaymentModalOpen(false);
-    setPaymentStep('method');
+    setPaymentMethod('zalopay');
     setPaymentError('');
-    setBillingCard({ name: '', number: '', expiry: '', cvv: '' });
+    startSandboxPaymentSession('zalopay');
   };
 
   const toggleMeetingPreference = (key: string) => {
@@ -1490,7 +1611,7 @@ export default function MarketPage() {
     }));
   };
 
-  const submitCreateListing = async (withBoost: boolean) => {
+  const submitCreateListing = async (withBoost: boolean, boostPaymentId?: string) => {
     if (!matchesLocationSuggestion(newListing.location.trim(), selectedCreateLocation)) {
       setCreateLocationError('Vui lòng chọn một địa chỉ hợp lệ trong danh sách gợi ý.');
       setIsCreateLocationFocused(true);
@@ -1522,6 +1643,8 @@ export default function MarketPage() {
               placements: ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery'],
             }
           : null,
+        boostPaymentProvider: withBoost ? paymentMethod : null,
+        boostPaymentId: withBoost ? boostPaymentId ?? null : null,
       });
       closeCreateListingModal();
       setActiveTab('my');
@@ -1547,46 +1670,90 @@ export default function MarketPage() {
     }
     if (newListing.boostEnabled && createStep === 'boost') {
       setIsPaymentModalOpen(true);
-      setPaymentStep('method');
       setPaymentError('');
+      startSandboxPaymentSession(paymentMethod);
       return;
     }
     await submitCreateListing(false);
   };
 
+  const openSandboxPaymentWindow = async (target: SandboxPaymentTarget) => {
+    const provider = target === 'create' ? paymentMethod : boostPaymentMethod;
+    const title = target === 'create' ? createPreviewTitle : boostPreviewTitle;
+    const existing = pendingSandboxPayment?.target === target && pendingSandboxPayment.provider === provider
+      ? pendingSandboxPayment
+      : null;
+    let checkoutUrl = existing?.checkoutUrl;
+    let session = existing;
+
+    try {
+      if (!checkoutUrl) {
+        if (target === 'create') setPaymentLaunching(true);
+        else setBoostPaymentLaunching(true);
+        const created = await api.post<OfficialBoostPaymentSession>('/api/marketplace/boost-payments', {
+          provider,
+          amount: boostTotal,
+          title,
+          clientReturnUrl: `${window.location.origin}/sandbox/boost-payment-return`,
+        });
+        checkoutUrl = created.paymentUrl;
+        session = {
+          target,
+          provider,
+          paymentId: created.paymentId,
+          orderId: created.orderId,
+          checkoutUrl,
+        };
+        setPendingSandboxPayment(session);
+      }
+    } catch (err) {
+      const message = (err as Error).message || 'Không thể tạo giao dịch sandbox chính chủ.';
+      if (target === 'create') setPaymentError(message);
+      else setBoostPaymentError(message);
+      return;
+    } finally {
+      if (target === 'create') setPaymentLaunching(false);
+      else setBoostPaymentLaunching(false);
+    }
+
+    const opened = window.open(checkoutUrl, '_blank');
+    if (!opened) {
+      const message = 'Trình duyệt đang chặn tab sandbox. Hãy cho phép popup rồi thử lại.';
+      if (target === 'create') setPaymentError(message);
+      else setBoostPaymentError(message);
+      return;
+    }
+  };
+
   const handleContinuePayment = () => {
     setPaymentError('');
-    if (paymentStep === 'method') {
-      setPaymentStep('card');
-      return;
-    }
-    const sandboxError = getSandboxCardValidationError(billingCard);
-    if (sandboxError) {
-      setPaymentError(sandboxError);
-      return;
-    }
-    void submitCreateListing(true);
+    void openSandboxPaymentWindow('create');
+  };
+
+  const closeCreatePaymentModal = () => {
+    setIsPaymentModalOpen(false);
+    setPendingSandboxPayment((current) => current?.target === 'create' ? null : current);
   };
 
   const openBoostSellerListing = (listing: Listing) => {
     setBoostingListing(listing);
     setBoostDailyBudget(listing.boostPlan?.dailyBudget ?? BOOST_BUDGET_OPTIONS[0].dailyBudget);
     setIsBoostPaymentModalOpen(false);
-    setBoostPaymentStep('method');
-    setBoostPaymentMethod('card');
+    const provider = listing.boostPaymentProvider ?? 'zalopay';
+    setBoostPaymentMethod(provider);
+    startSandboxPaymentSession(provider);
     setBoostPaymentError('');
-    setBillingCard({ name: '', number: '', expiry: '', cvv: '' });
   };
 
   const closeBoostSellerListing = () => {
     if (boostSubmitting) return;
     setBoostingListing(null);
     setIsBoostPaymentModalOpen(false);
-    setBoostPaymentStep('method');
+    setPendingSandboxPayment((current) => current?.target === 'boost' ? null : current);
     setBoostPaymentError('');
   };
 
-  const submitBoostSellerListing = async () => {
+  const submitBoostSellerListing = async (boostPaymentId?: string) => {
     if (!boostingListing || boostSubmitting) return;
     setBoostSubmitting(true);
     setBoostPaymentError('');
@@ -1597,6 +1764,8 @@ export default function MarketPage() {
           durationDays: selectedBoostOption.durationDays,
           placements: ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery'],
         },
+        boostPaymentProvider: boostPaymentMethod,
+        boostPaymentId,
       });
       setBoostingListing(null);
       setIsBoostPaymentModalOpen(false);
@@ -1611,17 +1780,110 @@ export default function MarketPage() {
 
   const handleContinueBoostPayment = () => {
     setBoostPaymentError('');
-    if (boostPaymentStep === 'method') {
-      setBoostPaymentStep('card');
-      return;
-    }
-    const sandboxError = getSandboxCardValidationError(billingCard);
-    if (sandboxError) {
-      setBoostPaymentError(sandboxError);
-      return;
-    }
-    void submitBoostSellerListing();
+    void openSandboxPaymentWindow('boost');
   };
+
+  const closeBoostPaymentModal = () => {
+    setIsBoostPaymentModalOpen(false);
+    setPendingSandboxPayment((current) => current?.target === 'boost' ? null : current);
+  };
+
+  useEffect(() => {
+    if (!pendingSandboxPayment) return;
+
+    let disposed = false;
+
+    const completePaidSession = async () => {
+      try {
+        const session = await api.get<OfficialBoostPaymentSession>(
+          `/api/marketplace/boost-payments/${pendingSandboxPayment.paymentId}/status`
+        );
+        if (disposed) return;
+        if (session.status === 'paid') {
+          window.localStorage.removeItem(SURF_BOOST_SANDBOX_PAYMENT_CHANNEL);
+          setPendingSandboxPayment(null);
+
+          if (pendingSandboxPayment.target === 'create') {
+            setPaymentError('');
+            void submitCreateListing(true, pendingSandboxPayment.paymentId);
+            return;
+          }
+
+          setBoostPaymentError('');
+          void submitBoostSellerListing(pendingSandboxPayment.paymentId);
+          return;
+        }
+
+        if (session.status === 'failed' || session.status === 'expired') {
+          setPendingSandboxPayment(null);
+          const message = 'Cổng thanh toán sandbox chưa xác nhận thành công giao dịch này.';
+          if (pendingSandboxPayment.target === 'create') setPaymentError(message);
+          else setBoostPaymentError(message);
+        }
+      } catch (err) {
+        const message = (err as Error).message || 'Không kiểm tra được trạng thái thanh toán sandbox.';
+        if (pendingSandboxPayment.target === 'create') setPaymentError(message);
+        else setBoostPaymentError(message);
+      }
+    };
+
+    const finishSandboxPayment = (value: unknown) => {
+      if (!isSandboxPaymentSuccessPayload(value)) return;
+      if (
+        value.paymentId !== pendingSandboxPayment.paymentId ||
+        value.orderId !== pendingSandboxPayment.orderId ||
+        value.provider !== pendingSandboxPayment.provider
+      ) {
+        return;
+      }
+
+      void completePaidSession();
+    };
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      finishSandboxPayment(event.data);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== SURF_BOOST_SANDBOX_PAYMENT_CHANNEL || !event.newValue) return;
+      try {
+        finishSandboxPayment(JSON.parse(event.newValue));
+      } catch {
+        // Ignore malformed cross-tab sandbox messages.
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
+
+    let channel: BroadcastChannel | null = null;
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel(SURF_BOOST_SANDBOX_PAYMENT_CHANNEL);
+      channel.onmessage = (event) => finishSandboxPayment(event.data);
+    }
+
+    const cachedResult = window.localStorage.getItem(SURF_BOOST_SANDBOX_PAYMENT_CHANNEL);
+    if (cachedResult) {
+      try {
+        finishSandboxPayment(JSON.parse(cachedResult));
+      } catch {
+        window.localStorage.removeItem(SURF_BOOST_SANDBOX_PAYMENT_CHANNEL);
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void completePaidSession();
+    }, 2500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+      channel?.close();
+    };
+  }, [pendingSandboxPayment, submitBoostSellerListing, submitCreateListing]);
 
   const handleCloseDetail = () => {
     setIsDetailModalOpen(false);
@@ -1803,6 +2065,8 @@ export default function MarketPage() {
     const isSalePending = item.status === 'active' && item.saleStatus === 'pending';
     const isActionLoading = listingActionId === item.id;
     const boostIsActive = isListingBoostActive(item);
+    const boostCanResume = canResumeListingBoost(item);
+    const boostPaymentLabel = getBoostSandboxPaymentMethod(item.boostPaymentProvider).label;
     const isAiSystemAttention = isAttention && isAiInfrastructureModerationIssue(item);
 
     return (
@@ -1843,7 +2107,7 @@ export default function MarketPage() {
                     {boostStatusText}
                   </span>
                   {item.boostPaymentMode === 'sandbox' && (
-                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-200">Sandbox</span>
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-200">{boostPaymentLabel}</span>
                   )}
                   <span className="text-slate-500">{item.boostMetrics?.impressions ?? 0} impressions · {item.boostMetrics?.clicks ?? 0} clicks</span>
                 </div>
@@ -1891,14 +2155,14 @@ export default function MarketPage() {
                   ) : (
                     <button
                       type="button"
-                      disabled={item.status !== 'active' || isListingBoostActive(item)}
-                      onClick={() => openBoostSellerListing(item)}
+                      disabled={item.status !== 'active' || isActionLoading}
+                      onClick={() => handleSellerBoostAction(item)}
                       className="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-[#3a3d42] px-3 text-xs font-black text-white transition hover:bg-[#4a4e55] disabled:cursor-not-allowed disabled:bg-[#2d333a] disabled:text-slate-500 sm:flex-none"
                     >
                       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                      {isListingBoostActive(item) ? 'Đang quảng bá' : 'Quảng bá bài niêm yết'}
+                      {getSellerBoostActionLabel(item)}
                     </button>
                   )}
                 </>
@@ -1937,6 +2201,18 @@ export default function MarketPage() {
                       <button type="button" onClick={() => handleMarkSellerListingAvailable(item)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/[0.08]">
                         <span className="text-base leading-none">✓</span>
                         Đánh dấu là còn hàng
+                      </button>
+                    )}
+                    {boostIsActive && (
+                      <button type="button" onClick={() => handlePauseSellerBoost(item)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/[0.08]">
+                        <span className="text-base leading-none">Ⅱ</span>
+                        Ngưng quảng bá
+                      </button>
+                    )}
+                    {boostCanResume && (
+                      <button type="button" onClick={() => handleResumeSellerBoost(item)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/[0.08]">
+                        <span className="text-base leading-none">▶</span>
+                        Bật lại quảng bá
                       </button>
                     )}
                     <button type="button" onClick={() => { setOpenListingMenuId(null); openDetail(item); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/[0.08]">
@@ -3211,11 +3487,17 @@ export default function MarketPage() {
                     <div className="mb-3 flex items-center justify-between">
                       <div>
                         <div className="text-sm font-black text-white">Phương thức thanh toán</div>
-                        <p className="mt-1 text-xs text-slate-400">Bạn có thể nhấn Đăng để thêm hoặc chọn phương thức thanh toán.</p>
+                        <p className="mt-1 text-xs text-slate-400">Chọn cổng thanh toán sandbox cho chiến dịch quảng bá.</p>
                       </div>
-                      <button type="button" onClick={() => { setIsPaymentModalOpen(true); setPaymentStep('method'); setPaymentError(''); }} className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white">Thêm</button>
+                      <button type="button" onClick={() => { setIsPaymentModalOpen(true); setPaymentError(''); startSandboxPaymentSession(paymentMethod); }} className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white">Chọn</button>
                     </div>
-                    <div className="flex gap-1 text-lg">💳 🟦 🟥 🟨 🟪</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-md border px-2 py-1 text-[10px] font-black ${getBoostSandboxPaymentMethod(paymentMethod).accentClass}`}>
+                        {getBoostSandboxPaymentMethod(paymentMethod).badge}
+                      </span>
+                      <span className="text-xs font-bold text-slate-300">{getBoostSandboxPaymentMethod(paymentMethod).label}</span>
+                      <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-300">Sandbox</span>
+                    </div>
                   </section>
                 </div>
 
@@ -3265,62 +3547,30 @@ export default function MarketPage() {
           )}
           {isPaymentModalOpen && (
             <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/70" aria-hidden onClick={() => setIsPaymentModalOpen(false)} />
-              <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl bg-[#242526] text-white shadow-2xl">
+              <div className="absolute inset-0 bg-black/70" aria-hidden onClick={closeCreatePaymentModal} />
+              <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[#242526] text-white shadow-2xl">
                 <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-                  <button type="button" onClick={() => paymentStep === 'card' ? setPaymentStep('method') : setIsPaymentModalOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">←</button>
-                  <h3 className="text-sm font-black">{paymentStep === 'method' ? 'Thêm thông tin thanh toán' : 'Thẻ tín dụng hoặc thẻ ghi nợ'}</h3>
-                  <button type="button" onClick={() => setIsPaymentModalOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">×</button>
+                  <button type="button" onClick={closeCreatePaymentModal} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">←</button>
+                  <h3 className="text-sm font-black">Thanh toán sandbox Surf Boost</h3>
+                  <button type="button" onClick={closeCreatePaymentModal} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">×</button>
                 </div>
-                <div className="space-y-4 p-4">
+                <div className="space-y-4 overflow-y-auto p-4">
                   {paymentError && <div className="rounded-lg bg-red-500/15 px-3 py-3 text-sm font-bold text-red-300">● {paymentError}</div>}
-                  {paymentStep === 'method' ? (
-                    <>
-                      <div>
-                        <div className="text-sm font-black text-white">Thông tin thuế và thông tin doanh nghiệp</div>
-                        <div className="mt-1 text-xs text-slate-400">Không bắt buộc · Thêm mã số thuế hoặc địa chỉ</div>
-                      </div>
-                      <div className="border-t border-white/[0.08] pt-3">
-                        <div className="mb-2 text-sm font-black text-white">Chọn phương thức thanh toán</div>
-                        {[
-                          { key: 'card' as const, label: 'Thẻ tín dụng/thẻ ghi nợ 💳' },
-                          { key: 'visa' as const, label: 'VietQR 🏦' },
-                          { key: 'momo' as const, label: 'Ví điện tử MoMo 🟪' },
-                          { key: 'vnpay' as const, label: 'VNPAY 🟦' },
-                        ].map((method) => (
-                          <label key={method.key} className="flex cursor-pointer items-center justify-between rounded-lg px-2 py-2 hover:bg-white/[0.04]">
-                            <span className="text-sm font-semibold text-slate-200">{method.label}</span>
-                            <input type="radio" checked={paymentMethod === method.key} onChange={() => setPaymentMethod(method.key)} className="h-4 w-4 accent-[#2d88ff]" />
-                          </label>
-                        ))}
-                      </div>
-                      <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-300">
-                        <input type="checkbox" className="h-4 w-4 accent-[#2d88ff]" />
-                        Tôi có một khoản tín dụng quảng cáo còn nhận.
-                      </label>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        <div className="mb-2 text-sm font-black text-white">Thông tin thẻ</div>
-                        <div className="space-y-2">
-                          <input value={billingCard.name} onChange={(e) => setBillingCard({ ...billingCard, name: e.target.value })} placeholder="Tên trên thẻ" className="w-full rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                          <input value={billingCard.number} onChange={(e) => setBillingCard({ ...billingCard, number: e.target.value })} placeholder="Số thẻ" inputMode="numeric" className="w-full rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input value={billingCard.expiry} onChange={(e) => setBillingCard({ ...billingCard, expiry: e.target.value })} placeholder="MM/YY" className="rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                            <input value={billingCard.cvv} onChange={(e) => setBillingCard({ ...billingCard, cvv: e.target.value })} placeholder="CVV" className="rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                          </div>
-                        </div>
-                      </div>
-                      {renderSandboxTestCards()}
-                      <p className="text-center text-[11px] font-medium text-slate-500">Phương thức thanh toán của bạn được lưu trữ an toàn.</p>
-                    </>
+                  <div>
+                    <div className="text-sm font-black text-white">Chọn cổng thanh toán sandbox</div>
+                    <div className="mt-1 text-xs text-slate-400">Nhấn xác nhận để mở tab sandbox chính chủ của cổng thanh toán. Surf Market chỉ bật quảng bá sau khi API xác nhận giao dịch thành công.</div>
+                  </div>
+                  {renderBoostSandboxPaymentMethods(paymentMethod, selectCreatePaymentMethod)}
+                  {pendingSandboxPayment?.target === 'create' && (
+                    <div className="rounded-xl border border-sky-400/20 bg-sky-500/10 p-3 text-xs leading-relaxed text-sky-100">
+                      Đang chờ API xác nhận từ {getBoostSandboxPaymentMethod(pendingSandboxPayment.provider).label}. Mã đơn hàng: <span className="font-black">{pendingSandboxPayment.orderId}</span>.
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
-                  <button type="button" onClick={() => submitCreateListing(false)} className="text-xs font-black text-slate-300 hover:text-white">Đăng không quảng bá</button>
-                  <button type="button" onClick={handleContinuePayment} className="rounded-lg bg-[#2d88ff] px-5 py-2 text-sm font-black text-white hover:bg-[#1877f2]">
-                    {paymentStep === 'method' ? 'Tiếp' : 'Lưu'}
+                  <button type="button" onClick={() => { setPendingSandboxPayment((current) => current?.target === 'create' ? null : current); void submitCreateListing(false); }} className="text-xs font-black text-slate-300 hover:text-white">Đăng không quảng bá</button>
+                  <button type="button" onClick={handleContinuePayment} disabled={createSubmitting || paymentLaunching} className="rounded-lg bg-[#2d88ff] px-5 py-2 text-sm font-black text-white hover:bg-[#1877f2] disabled:bg-white/20 disabled:text-slate-500">
+                    {createSubmitting ? 'Đang đăng...' : paymentLaunching ? 'Đang tạo giao dịch...' : pendingSandboxPayment?.target === 'create' ? 'Mở lại tab sandbox' : 'Xác nhận'}
                   </button>
                 </div>
               </div>
@@ -3335,8 +3585,8 @@ export default function MarketPage() {
             onSubmit={(e) => {
               e.preventDefault();
               setIsBoostPaymentModalOpen(true);
-              setBoostPaymentStep('method');
               setBoostPaymentError('');
+              startSandboxPaymentSession(boostPaymentMethod);
             }}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#18191a]"
           >
@@ -3395,12 +3645,15 @@ export default function MarketPage() {
                   <div className="mb-3 flex items-center justify-between">
                     <div>
                       <div className="text-sm font-black text-white">Phương thức thanh toán</div>
-                      <p className="mt-1 text-xs text-slate-400">Bạn có thể nhấn Quảng bá để thêm hoặc chọn phương thức thanh toán sandbox.</p>
+                      <p className="mt-1 text-xs text-slate-400">Chọn cổng sandbox dùng để mô phỏng thanh toán quảng bá.</p>
                     </div>
-                    <button type="button" onClick={() => { setIsBoostPaymentModalOpen(true); setBoostPaymentStep('method'); setBoostPaymentError(''); }} className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white">Thêm</button>
+                    <button type="button" onClick={() => { setIsBoostPaymentModalOpen(true); setBoostPaymentError(''); startSandboxPaymentSession(boostPaymentMethod); }} className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white">Chọn</button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1 text-lg">💳 🟦 🟥 🟨 🟪</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-md border px-2 py-1 text-[10px] font-black ${getBoostSandboxPaymentMethod(boostPaymentMethod).accentClass}`}>
+                      {getBoostSandboxPaymentMethod(boostPaymentMethod).badge}
+                    </span>
+                    <span className="text-xs font-bold text-slate-300">{getBoostSandboxPaymentMethod(boostPaymentMethod).label}</span>
                     <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-300">Sandbox</span>
                   </div>
                 </section>
@@ -3454,62 +3707,30 @@ export default function MarketPage() {
 
           {isBoostPaymentModalOpen && (
             <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/70" aria-hidden onClick={() => setIsBoostPaymentModalOpen(false)} />
-              <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl bg-[#242526] text-white shadow-2xl">
+              <div className="absolute inset-0 bg-black/70" aria-hidden onClick={closeBoostPaymentModal} />
+              <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[#242526] text-white shadow-2xl">
                 <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-                  <button type="button" onClick={() => boostPaymentStep === 'card' ? setBoostPaymentStep('method') : setIsBoostPaymentModalOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">←</button>
-                  <h3 className="text-sm font-black">{boostPaymentStep === 'method' ? 'Thêm thông tin thanh toán' : 'Thẻ tín dụng hoặc thẻ ghi nợ'}</h3>
-                  <button type="button" onClick={() => setIsBoostPaymentModalOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">×</button>
+                  <button type="button" onClick={closeBoostPaymentModal} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">←</button>
+                  <h3 className="text-sm font-black">Thanh toán sandbox Surf Boost</h3>
+                  <button type="button" onClick={closeBoostPaymentModal} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08]">×</button>
                 </div>
-                <div className="space-y-4 p-4">
+                <div className="space-y-4 overflow-y-auto p-4">
                   {boostPaymentError && <div className="rounded-lg bg-red-500/15 px-3 py-3 text-sm font-bold text-red-300">● {boostPaymentError}</div>}
-                  {boostPaymentStep === 'method' ? (
-                    <>
-                      <div>
-                        <div className="text-sm font-black text-white">Thông tin thuế và thông tin doanh nghiệp</div>
-                        <div className="mt-1 text-xs text-slate-400">Không bắt buộc · Sandbox không phát sinh giao dịch thật</div>
-                      </div>
-                      <div className="border-t border-white/[0.08] pt-3">
-                        <div className="mb-2 text-sm font-black text-white">Chọn phương thức thanh toán</div>
-                        {[
-                          { key: 'card' as const, label: 'Thẻ tín dụng/thẻ ghi nợ 💳' },
-                          { key: 'visa' as const, label: 'VietQR 🏦' },
-                          { key: 'momo' as const, label: 'Ví điện tử MoMo 🟪' },
-                          { key: 'vnpay' as const, label: 'VNPAY 🟦' },
-                        ].map((method) => (
-                          <label key={method.key} className="flex cursor-pointer items-center justify-between rounded-lg px-2 py-2 hover:bg-white/[0.04]">
-                            <span className="text-sm font-semibold text-slate-200">{method.label}</span>
-                            <input type="radio" checked={boostPaymentMethod === method.key} onChange={() => setBoostPaymentMethod(method.key)} className="h-4 w-4 accent-[#2d88ff]" />
-                          </label>
-                        ))}
-                      </div>
-                      <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-300">
-                        <input type="checkbox" className="h-4 w-4 accent-[#2d88ff]" />
-                        Tôi có một khoản tín dụng quảng cáo còn nhận.
-                      </label>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        <div className="mb-2 text-sm font-black text-white">Thông tin thẻ</div>
-                        <div className="space-y-2">
-                          <input value={billingCard.name} onChange={(e) => setBillingCard({ ...billingCard, name: e.target.value })} placeholder="Tên trên thẻ" className="w-full rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                          <input value={billingCard.number} onChange={(e) => setBillingCard({ ...billingCard, number: e.target.value })} placeholder="Số thẻ" inputMode="numeric" className="w-full rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input value={billingCard.expiry} onChange={(e) => setBillingCard({ ...billingCard, expiry: e.target.value })} placeholder="MM/YY" className="rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                            <input value={billingCard.cvv} onChange={(e) => setBillingCard({ ...billingCard, cvv: e.target.value })} placeholder="CVV" className="rounded-lg border border-[#3e4042] bg-[#18191a] px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#2d88ff]" />
-                          </div>
-                        </div>
-                      </div>
-                      {renderSandboxTestCards()}
-                      <p className="text-center text-[11px] font-medium text-slate-500">Phương thức thanh toán được mô phỏng ở chế độ sandbox.</p>
-                    </>
+                  <div>
+                    <div className="text-sm font-black text-white">Chọn cổng thanh toán sandbox</div>
+                    <div className="mt-1 text-xs text-slate-400">Nhấn xác nhận để mở tab sandbox chính chủ của cổng thanh toán. Tin chỉ được quảng bá sau khi API xác nhận giao dịch thành công.</div>
+                  </div>
+                  {renderBoostSandboxPaymentMethods(boostPaymentMethod, selectBoostPaymentMethod)}
+                  {pendingSandboxPayment?.target === 'boost' && (
+                    <div className="rounded-xl border border-sky-400/20 bg-sky-500/10 p-3 text-xs leading-relaxed text-sky-100">
+                      Đang chờ API xác nhận từ {getBoostSandboxPaymentMethod(pendingSandboxPayment.provider).label}. Mã đơn hàng: <span className="font-black">{pendingSandboxPayment.orderId}</span>.
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
                   <button type="button" onClick={closeBoostSellerListing} disabled={boostSubmitting} className="text-xs font-black text-slate-300 hover:text-white disabled:opacity-50">Để sau</button>
-                  <button type="button" onClick={handleContinueBoostPayment} disabled={boostSubmitting} className="rounded-lg bg-[#2d88ff] px-5 py-2 text-sm font-black text-white hover:bg-[#1877f2] disabled:bg-white/20 disabled:text-slate-500">
-                    {boostSubmitting ? 'Đang kích hoạt...' : boostPaymentStep === 'method' ? 'Tiếp' : 'Lưu'}
+                  <button type="button" onClick={handleContinueBoostPayment} disabled={boostSubmitting || boostPaymentLaunching} className="rounded-lg bg-[#2d88ff] px-5 py-2 text-sm font-black text-white hover:bg-[#1877f2] disabled:bg-white/20 disabled:text-slate-500">
+                    {boostSubmitting ? 'Đang kích hoạt...' : boostPaymentLaunching ? 'Đang tạo giao dịch...' : pendingSandboxPayment?.target === 'boost' ? 'Mở lại tab sandbox' : 'Xác nhận'}
                   </button>
                 </div>
               </div>
@@ -3624,7 +3845,7 @@ export default function MarketPage() {
                 ) : (
                   <button type="button" onClick={() => handleMarkSellerListingSold(messagesListing)} disabled={messagesListing.status !== 'active'} className="w-full rounded-md bg-[#2d88ff] py-2 text-xs font-black text-white disabled:bg-white/10 disabled:text-slate-500">✓ Đánh dấu là hết hàng</button>
                 )}
-                <button type="button" className="w-full rounded-md bg-[#3a3b3c] py-2 text-xs font-black text-white">↗ Quảng bá bài niêm yết</button>
+                <button type="button" onClick={() => handleSellerBoostAction(messagesListing)} disabled={messagesListing.status !== 'active' || listingActionId === messagesListing.id} className="w-full rounded-md bg-[#3a3b3c] py-2 text-xs font-black text-white disabled:bg-white/10 disabled:text-slate-500">↗ {getSellerBoostActionLabel(messagesListing)}</button>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/[0.08] pt-3 text-center text-[11px] font-black text-slate-200">
                 <button type="button" onClick={() => openEditSellerListing(messagesListing)} className="rounded-lg p-2 hover:bg-white/[0.06]"><div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-[#4a4b4d]">✎</div>Chỉnh sửa bài niêm yết</button>
@@ -3836,10 +4057,11 @@ export default function MarketPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => openBoostSellerListing(selectedListing)}
-                        className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white transition hover:bg-white/15"
+                        onClick={() => handleSellerBoostAction(selectedListing)}
+                        disabled={selectedListing.status !== 'active' || listingActionId === selectedListing.id}
+                        className="w-full rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Quảng bá bài niêm yết
+                        {getSellerBoostActionLabel(selectedListing)}
                       </button>
                     </div>
                   ) : (
@@ -4490,10 +4712,11 @@ export default function MarketPage() {
                       )}
                       <button
                         type="button"
-                        onClick={() => openBoostSellerListing(selectedListing)}
-                        className="market-detail-control w-full rounded-lg border bg-white/[0.12] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.18]"
+                        onClick={() => handleSellerBoostAction(selectedListing)}
+                        disabled={selectedListing.status !== 'active' || listingActionId === selectedListing.id}
+                        className="market-detail-control w-full rounded-lg border bg-white/[0.12] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.18] disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Quảng bá bài niêm yết
+                        {getSellerBoostActionLabel(selectedListing)}
                       </button>
                     </div>
                   ) : (

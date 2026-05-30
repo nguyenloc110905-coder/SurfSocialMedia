@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { AccessToken } from 'livekit-server-sdk';
 import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
@@ -22,14 +23,27 @@ type LiveStreamDoc = {
   hostPhotoURL: string | null;
   title: string;
   status: LiveStreamStatus;
-  provider: 'daily';
-  transport: 'daily' | 'socket-webrtc';
+  provider: 'daily' | 'livekit';
+  transport: 'daily' | 'socket-webrtc' | 'livekit';
   providerRoomName: string | null;
   providerRoomUrl: string | null;
   viewerCount: number;
   reactionCounts: Record<string, number>;
   startedAt: Date;
   endedAt?: Date | null;
+};
+
+type LiveProviderRoom = {
+  provider: 'daily' | 'livekit';
+  transport: 'daily' | 'socket-webrtc' | 'livekit';
+  roomName: string | null;
+  roomUrl: string | null;
+};
+
+type LiveKitLiveTokenRequestBody = {
+  role?: 'broadcaster' | 'viewer';
+  participantName?: string;
+  clientId?: string;
 };
 
 type DailyRoomResponse = {
@@ -221,6 +235,15 @@ const toSafeRoomName = (value: string): string =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
 
+const toSafeParticipantIdentity = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+
 const mapLiveStream = (id: string, data: Record<string, unknown>): LiveStreamDoc => ({
   id,
   hostId: (data.hostId as string) ?? '',
@@ -228,8 +251,9 @@ const mapLiveStream = (id: string, data: Record<string, unknown>): LiveStreamDoc
   hostPhotoURL: (data.hostPhotoURL as string | null | undefined) ?? null,
   title: (data.title as string) ?? 'Surf Live',
   status: data.status === 'ended' ? 'ended' : 'live',
-  provider: 'daily',
-  transport: data.transport === 'daily' ? 'daily' : 'socket-webrtc',
+  provider: data.provider === 'livekit' || data.transport === 'livekit' ? 'livekit' : 'daily',
+  transport:
+    data.transport === 'livekit' || data.transport === 'daily' ? data.transport : 'socket-webrtc',
   providerRoomName: (data.providerRoomName as string | null | undefined) ?? null,
   providerRoomUrl: (data.providerRoomUrl as string | null | undefined) ?? null,
   viewerCount: typeof data.viewerCount === 'number' ? data.viewerCount : 0,
@@ -801,6 +825,56 @@ const maybeCreateDailyRoom = async (
   return { transport: 'daily', roomName: data.name, roomUrl: data.url };
 };
 
+const hasLiveKitConfig = (): boolean =>
+  Boolean(
+    process.env.LIVEKIT_URL?.trim() &&
+    process.env.LIVEKIT_API_KEY?.trim() &&
+    process.env.LIVEKIT_API_SECRET?.trim()
+  );
+
+const resolveLiveProviderRoom = async (roomName: string): Promise<LiveProviderRoom> => {
+  if (hasLiveKitConfig()) {
+    return {
+      provider: 'livekit',
+      transport: 'livekit',
+      roomName,
+      roomUrl: null,
+    };
+  }
+
+  const dailyRoom = await maybeCreateDailyRoom(roomName);
+  return {
+    provider: 'daily',
+    transport: dailyRoom.transport,
+    roomName: dailyRoom.roomName,
+    roomUrl: dailyRoom.roomUrl,
+  };
+};
+
+const resolveParticipantName = (
+  req: AuthRequest,
+  body: LiveKitLiveTokenRequestBody,
+  fallbackName: string
+): string => {
+  const requestedName =
+    typeof body.participantName === 'string' ? body.participantName.trim().slice(0, 120) : '';
+  if (requestedName) return requestedName;
+
+  const headerName = req.headers['x-surf-user-name']?.toString().trim().slice(0, 120);
+  if (headerName) return headerName;
+
+  return fallbackName;
+};
+
+const getLiveKitConfig = () => {
+  const serverUrl = process.env.LIVEKIT_URL?.trim();
+  const apiKey = process.env.LIVEKIT_API_KEY?.trim();
+  const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
+
+  if (!serverUrl || !apiKey || !apiSecret) return null;
+  return { serverUrl, apiKey, apiSecret };
+};
+
 const parseLimit = (value: unknown, fallback: number, max: number): number =>
   Math.min(Math.max(Number(value) || fallback, 1), max);
 
@@ -972,6 +1046,88 @@ router.get('/youtube', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+router.post('/:id/livekit-token', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid;
+    if (!uid) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const body = (req.body ?? {}) as LiveKitLiveTokenRequestBody;
+    const role = body.role === 'broadcaster' ? 'broadcaster' : 'viewer';
+    const streamId = req.params.id.trim();
+
+    let stream = await getCachedLiveStream<ApiLiveStream>(streamId);
+    if (!stream) {
+      const doc = await db().collection('live_streams').doc(streamId).get();
+      if (!doc.exists) {
+        res.status(404).json({ error: 'Live stream not found' });
+        return;
+      }
+
+      stream = toApiLiveStream(mapLiveStream(doc.id, doc.data() ?? {}));
+      await setCachedLiveStream(stream.id, stream);
+    }
+
+    if (stream.status !== 'live') {
+      res.status(409).json({ error: 'Live stream has ended' });
+      return;
+    }
+
+    if (role === 'broadcaster' && stream.hostId !== uid) {
+      res.status(403).json({ error: 'Only the host can broadcast this live stream' });
+      return;
+    }
+
+    const liveKitConfig = getLiveKitConfig();
+    if (!liveKitConfig) {
+      res.status(503).json({ error: 'LiveKit is not configured' });
+      return;
+    }
+
+    const roomName = stream.providerRoomName || toSafeRoomName(`surf-live-${stream.id}`);
+    const clientId =
+      typeof body.clientId === 'string' && body.clientId.trim()
+        ? body.clientId.trim()
+        : `${Date.now()}-${Math.random()}`;
+    const identity =
+      toSafeParticipantIdentity(`${uid}-${clientId}`) || toSafeParticipantIdentity(uid);
+    const participantName = resolveParticipantName(req, body, stream.hostName || 'Surf user');
+
+    const token = new AccessToken(liveKitConfig.apiKey, liveKitConfig.apiSecret, {
+      identity,
+      name: participantName,
+      ttl: process.env.LIVEKIT_TOKEN_TTL || '6h',
+      metadata: JSON.stringify({
+        role,
+        streamId: stream.id,
+        userId: uid,
+        hostId: stream.hostId,
+      }),
+    });
+
+    token.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: role === 'broadcaster',
+      canSubscribe: true,
+      canPublishData: true,
+    });
+
+    const jwt = await token.toJwt();
+
+    res.json({
+      provider: 'livekit',
+      roomName,
+      serverUrl: liveKitConfig.serverUrl,
+      token: jwt,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to create LiveKit token' });
+  }
+});
+
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const cached = await getCachedLiveStream<ApiLiveStream>(req.params.id);
@@ -1009,8 +1165,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const hostPhotoURL = (hostData.photoURL as string | null | undefined) ?? null;
 
     const ref = db().collection('live_streams').doc();
-    const roomSlug = toSafeRoomName(`surf-${hostId}-${ref.id}`);
-    const providerRoom = await maybeCreateDailyRoom(roomSlug);
+    const roomSlug = toSafeRoomName(`surf-live-${hostId}-${ref.id}`);
+    const providerRoom = await resolveLiveProviderRoom(roomSlug);
 
     await ref.set({
       hostId,
@@ -1018,7 +1174,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       hostPhotoURL,
       title,
       status: 'live',
-      provider: 'daily',
+      provider: providerRoom.provider,
       transport: providerRoom.transport,
       providerRoomName: providerRoom.roomName,
       providerRoomUrl: providerRoom.roomUrl,

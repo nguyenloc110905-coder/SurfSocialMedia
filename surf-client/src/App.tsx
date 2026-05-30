@@ -26,10 +26,12 @@ import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
 import HashtagPage from './pages/HashtagPage';
 import HelpSupportPage from './pages/HelpSupportPage';
+import AdminSupportPage from './pages/AdminSupportPage';
 import { useMessageSound } from './hooks/useMessageSound';
 import { useSessionHeartbeat } from './hooks/useSessionHeartbeat';
 import PolicyPage from './pages/PolicyPage';
 import NetworkStatusToast from './components/ui/NetworkStatusToast';
+import BoostPaymentReturnPage from './pages/BoostPaymentReturnPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -118,6 +120,7 @@ export default function App() {
         <Route path="/register" element={<AuthPage />} />
         {/* / là trang xuất phát = form đăng nhập; /login, /register dùng chung AuthPage */}
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/sandbox/boost-payment-return" element={<BoostPaymentReturnPage />} />
         <Route
           path="/onboarding"
           element={
@@ -158,6 +161,7 @@ export default function App() {
           <Route path="live/:streamId" element={<LivePage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="help-support" element={<HelpSupportPage />} />
+          <Route path="admin/support" element={<AdminSupportPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route

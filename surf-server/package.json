@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@google/genai": "^1.48.0",
+    "@sentry/node": "^10.53.1",
+    "@sentry/profiling-node": "^10.53.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

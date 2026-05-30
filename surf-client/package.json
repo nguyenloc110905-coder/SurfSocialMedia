@@ -13,6 +13,7 @@
   "dependencies": {
     "@livekit/components-react": "^2.9.20",
     "@livekit/components-styles": "^1.2.0",
+    "@sentry/react": "^10.53.1",
     "date-fns": "^4.1.0",
     "firebase": "^10.7.1",
     "leaflet": "^1.9.4",
@@ -23,6 +24,7 @@
     "react-mentions": "^4.4.10",
     "react-router-dom": "^6.21.1",
     "socket.io-client": "^4.8.3",
+    "util-deprecate": "^1.0.2",
     "zustand": "^4.4.7"
   },
   "devDependencies": {

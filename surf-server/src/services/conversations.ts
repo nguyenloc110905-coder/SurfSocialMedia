@@ -2,9 +2,16 @@ import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 import { hasBlockRelation } from '../middleware/auth.js';
 import { conversationMemberRepository } from '../repositories/conversation-member.repository.js';
-import { conversationRepository, type ConversationListDetail } from '../repositories/conversation.repository.js';
+import {
+  conversationRepository,
+  type ConversationListDetail,
+} from '../repositories/conversation.repository.js';
 import { buildMessagePreview, messageRepository } from '../repositories/message.repository.js';
-import { buildDmPairKey, ConservationDoc, type MarketplaceConversationContext } from '../types/conversation.js';
+import {
+  buildDmPairKey,
+  ConservationDoc,
+  type MarketplaceConversationContext,
+} from '../types/conversation.js';
 import type {
   CreateCallLogInput,
   MessageDoc,
@@ -51,6 +58,7 @@ export type RealtimeConversationPatch = {
 };
 
 export type RealtimeMessagePayload = {
+  conversationId: string;
   message: ApiMessage;
   conversation: RealtimeConversationPatch;
 };
@@ -184,6 +192,7 @@ export const toRealtimeMessagePayload = (item: MessageDoc): RealtimeMessagePaylo
         : (previewMap[item.type] ?? '📎 Tệp');
 
   return {
+    conversationId: item.conversationId,
     message,
     conversation: {
       id: item.conversationId,
@@ -878,7 +887,10 @@ export const listReadReceiptsForConversation = async (
 
 export type CreateGroupResult =
   | { ok: true; item: ConservationDoc }
-  | { ok: false; reason: 'invalid_title' | 'too_few_members' };
+  | {
+      ok: false;
+      reason: 'invalid_title' | 'too_few_members' | 'member_not_found' | 'blocked';
+    };
 
 export const createGroupConversation = async (
   actorUid: string,
@@ -888,8 +900,22 @@ export const createGroupConversation = async (
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return { ok: false, reason: 'invalid_title' };
 
-  const uniqueMembers = Array.from(new Set([actorUid, ...memberUids]));
+  const normalizedMemberUids = memberUids
+    .map((uid) => uid.trim())
+    .filter((uid) => uid && uid !== actorUid);
+  const uniqueMembers = Array.from(new Set([actorUid, ...normalizedMemberUids]));
   if (uniqueMembers.length < 2) return { ok: false, reason: 'too_few_members' };
+
+  const invitedMemberIds = uniqueMembers.filter((uid) => uid !== actorUid);
+  const memberExistsChecks = await Promise.all(invitedMemberIds.map((uid) => userExists(uid)));
+  if (memberExistsChecks.some((exists) => !exists)) {
+    return { ok: false, reason: 'member_not_found' };
+  }
+
+  const blockedChecks = await Promise.all(
+    invitedMemberIds.map((uid) => hasBlockRelation(actorUid, uid))
+  );
+  if (blockedChecks.some(Boolean)) return { ok: false, reason: 'blocked' };
 
   const item = await conversationRepository.createGroup(actorUid, trimmedTitle, uniqueMembers);
   await conversationMemberRepository.ensureMembers(item.id, uniqueMembers);
@@ -898,7 +924,10 @@ export const createGroupConversation = async (
 
 export type AddMembersResult =
   | { ok: true; addedIds: string[] }
-  | { ok: false; reason: 'not_found' | 'forbidden' | 'not_group' };
+  | {
+      ok: false;
+      reason: 'not_found' | 'forbidden' | 'not_group' | 'member_not_found' | 'blocked';
+    };
 
 export const addMembersToGroup = async (
   actorUid: string,
@@ -912,8 +941,18 @@ export const addMembersToGroup = async (
   const memberIds = await extractParticipantIds(conversationId);
   if (!memberIds.includes(actorUid)) return { ok: false, reason: 'forbidden' };
 
-  const toAdd = newMemberIds.filter((id) => !memberIds.includes(id));
+  const toAdd = Array.from(
+    new Set(newMemberIds.map((id) => id.trim()).filter((id) => id && !memberIds.includes(id)))
+  );
   if (toAdd.length === 0) return { ok: true, addedIds: [] };
+
+  const existsChecks = await Promise.all(toAdd.map((id) => userExists(id)));
+  if (existsChecks.some((exists) => !exists)) {
+    return { ok: false, reason: 'member_not_found' };
+  }
+
+  const blockedChecks = await Promise.all(toAdd.map((id) => hasBlockRelation(actorUid, id)));
+  if (blockedChecks.some(Boolean)) return { ok: false, reason: 'blocked' };
 
   await conversationRepository.addMembers(conversationId, toAdd);
   await conversationMemberRepository.ensureMembers(conversationId, toAdd);

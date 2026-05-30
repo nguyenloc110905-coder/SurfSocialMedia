@@ -250,12 +250,25 @@ function FeedVideo({
             {/* Rewind 5s */}
             <button
               className="text-white hover:text-white/70 transition-colors"
-              onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.max(0, el.currentTime - 5); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const el = videoRef.current;
+                if (el) el.currentTime = Math.max(0, el.currentTime - 5);
+              }}
               title={t('video_rewind')}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                <text x="8.5" y="14.5" fontSize="5.5" fontWeight="bold" fill="currentColor" textAnchor="middle">5</text>
+                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                <text
+                  x="8.5"
+                  y="14.5"
+                  fontSize="5.5"
+                  fontWeight="bold"
+                  fill="currentColor"
+                  textAnchor="middle"
+                >
+                  5
+                </text>
               </svg>
             </button>
             {/* Play / Pause */}
@@ -276,12 +289,25 @@ function FeedVideo({
             {/* Forward 5s */}
             <button
               className="text-white hover:text-white/70 transition-colors"
-              onClick={(e) => { e.stopPropagation(); const el = videoRef.current; if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const el = videoRef.current;
+                if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5);
+              }}
               title={t('video_forward')}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
-                <text x="15.5" y="14.5" fontSize="5.5" fontWeight="bold" fill="currentColor" textAnchor="middle">5</text>
+                <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z" />
+                <text
+                  x="15.5"
+                  y="14.5"
+                  fontSize="5.5"
+                  fontWeight="bold"
+                  fill="currentColor"
+                  textAnchor="middle"
+                >
+                  5
+                </text>
               </svg>
             </button>
             {/* Mute */}
@@ -376,18 +402,19 @@ function UserPresenceAvatar({
           <span className={fallbackTextClassName}>{initial}</span>
         </div>
       )}
-      {uid && (
-        <PresenceBadge
-          uid={uid}
-          size={presenceSize}
-          showOfflineLabel={showOfflineLabel}
-        />
-      )}
+      {uid && <PresenceBadge uid={uid} size={presenceSize} showOfflineLabel={showOfflineLabel} />}
     </span>
   );
 }
 
-export default function PostCard({ post, currentUserId, onPostUpdated, onPostCreated, defaultOpenComments, showPinOption = false }: PostCardProps) {
+export default function PostCard({
+  post,
+  currentUserId,
+  onPostUpdated,
+  onPostCreated,
+  defaultOpenComments,
+  showPinOption = false,
+}: PostCardProps) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const t = useT();
@@ -403,19 +430,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
   const [isLiked, setIsLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
   const [reactionsMap, setReactionsMap] = useState<Record<string, string>>(post.reactions ?? {});
-  const dominantReaction = useMemo(() => {
-    const vals = Object.values(reactionsMap);
-    if (!vals.length) return '❤️';
-    const freq: Record<string, number> = {};
-    for (const v of vals) freq[v] = (freq[v] ?? 0) + 1;
-    return Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
-  }, [reactionsMap]);
   const [showComments, setShowComments] = useState(defaultOpenComments ?? false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareCaption, setShareCaption] = useState('');
   const [shareReaction, setShareReaction] = useState<string | null>(null);
-  const [showShareReactionPicker, setShowShareReactionPicker] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const [isPinned, setIsPinned] = useState(!!post.pinnedAt);
@@ -446,10 +465,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
   const [editingText, setEditingText] = useState('');
   const [showReactorsModal, setShowReactorsModal] = useState(false);
   const [reactorFilter, setReactorFilter] = useState<string | null>(null); // null = all
-  const [reactors, setReactors] = useState<{ uid: string; displayName: string; photoURL: string | null; reaction: string }[]>([]);
+  const [reactors, setReactors] = useState<
+    { uid: string; displayName: string; photoURL: string | null; reaction: string }[]
+  >([]);
   const [loadingReactors, setLoadingReactors] = useState(false);
-  const [commentReactorsModal, setCommentReactorsModal] = useState<{ commentId: string; reactions: Record<string, string> } | null>(null);
-  const [commentReactors, setCommentReactors] = useState<{ uid: string; displayName: string; photoURL: string | null; reaction: string }[]>([]);
+  const [commentReactorsModal, setCommentReactorsModal] = useState<{
+    commentId: string;
+    reactions: Record<string, string>;
+  } | null>(null);
+  const [commentReactors, setCommentReactors] = useState<
+    { uid: string; displayName: string; photoURL: string | null; reaction: string }[]
+  >([]);
   const [loadingCommentReactors, setLoadingCommentReactors] = useState(false);
   const [commentReactorFilter, setCommentReactorFilter] = useState<string | null>(null);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
@@ -532,9 +558,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
   const loadComments = useCallback(async () => {
     try {
       setLoadingComments(true);
-      const response = await api.get<{ comments: Comment[]; nextCursor: string | null; total: number }>(
-        `/api/comments/${post.id}?limit=20`
-      );
+      const response = await api.get<{
+        comments: Comment[];
+        nextCursor: string | null;
+        total: number;
+      }>(`/api/comments/${post.id}?limit=20`);
       setComments(response.comments || []);
       setNextCursor(response.nextCursor ?? null);
       setCommentCount(response.total ?? response.comments?.length ?? 0);
@@ -570,25 +598,29 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     if (commentCount > 0) {
       void (async () => {
         try {
-          const res = await api.get<{ comments: Comment[]; nextCursor: string | null; total: number }>(
-            `/api/comments/${post.id}?limit=3`
-          );
+          const res = await api.get<{
+            comments: Comment[];
+            nextCursor: string | null;
+            total: number;
+          }>(`/api/comments/${post.id}?limit=3`);
           setPreviewComments((res.comments || []).slice(0, 3));
         } catch {
           // silently fail
         }
       })();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id]);
 
   const loadMoreComments = useCallback(async () => {
     if (!nextCursor || loadingMoreComments) return;
     try {
       setLoadingMoreComments(true);
-      const response = await api.get<{ comments: Comment[]; nextCursor: string | null; total: number }>(
-        `/api/comments/${post.id}?limit=20&after=${nextCursor}`
-      );
+      const response = await api.get<{
+        comments: Comment[];
+        nextCursor: string | null;
+        total: number;
+      }>(`/api/comments/${post.id}?limit=20&after=${nextCursor}`);
       const newComments = response.comments || [];
       setComments((prev) => [...prev, ...newComments]);
       setNextCursor(response.nextCursor ?? null);
@@ -614,7 +646,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     const socket = getSocket();
     socket.emit('post:join', post.id);
 
-    const handleReacted = (data: { postId: string; likeCount: number; reactions: Record<string, string> }) => {
+    const handleReacted = (data: {
+      postId: string;
+      likeCount: number;
+      reactions: Record<string, string>;
+    }) => {
       if (data.postId !== post.id) return;
       setLikeCount(data.likeCount);
       setReactionsMap(data.reactions ?? {});
@@ -625,7 +661,6 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
       socket.off('post:reacted', handleReacted);
       socket.emit('post:leave', post.id);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id]);
 
   // RT-4: join post room and listen for new comments in real-time
@@ -701,7 +736,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
   const top3Reactions = useMemo(() => {
     const freq: Record<string, number> = {};
     for (const v of Object.values(reactionsMap)) freq[v] = (freq[v] ?? 0) + 1;
-    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([emoji]) => emoji);
+    return Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([emoji]) => emoji);
   }, [reactionsMap]);
 
   const openReactorsModal = async () => {
@@ -709,7 +747,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     setReactorFilter(null);
     setLoadingReactors(true);
     try {
-      type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
+      type Reactor = {
+        uid: string;
+        displayName: string;
+        photoURL: string | null;
+        reaction: string;
+      };
       const data = (await api.get<Reactor[]>(`/api/posts/${post.id}/reactions`)) as Reactor[];
       setReactors(data);
     } catch (e) {
@@ -724,7 +767,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     setCommentReactorFilter(null);
     setLoadingCommentReactors(true);
     try {
-      type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
+      type Reactor = {
+        uid: string;
+        displayName: string;
+        photoURL: string | null;
+        reaction: string;
+      };
       const data = await api.get<Reactor[]>(`/api/comments/${post.id}/${commentId}/reactions`);
       setCommentReactors(data);
     } catch (e) {
@@ -750,9 +798,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     try {
       await api.patch(`/api/comments/${post.id}/${commentId}`, { content: trimmed });
       setComments((prev) =>
-        prev.map((c) =>
-          c.id === commentId ? { ...c, content: trimmed, isEdited: true } : c
-        )
+        prev.map((c) => (c.id === commentId ? { ...c, content: trimmed, isEdited: true } : c))
       );
       setEditingCommentId(null);
       setEditingText('');
@@ -780,7 +826,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
           likeCount: Math.max(0, c.likeCount + delta),
           reactions: newLiked
             ? { ...(c.reactions ?? {}), [currentUserId ?? '']: emoji }
-            : Object.fromEntries(Object.entries(c.reactions ?? {}).filter(([k]) => k !== currentUserId)),
+            : Object.fromEntries(
+                Object.entries(c.reactions ?? {}).filter(([k]) => k !== currentUserId)
+              ),
         };
       })
     );
@@ -810,7 +858,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     setSubmittingReply(parentId);
     try {
       const mentions = extractMentions(markup);
-      await api.post<Comment>(`/api/comments/${post.id}`, { content: markup.trim(), mentions, parentId });
+      await api.post<Comment>(`/api/comments/${post.id}`, {
+        content: markup.trim(),
+        mentions,
+        parentId,
+      });
       // Do NOT push to state here — the socket 'comment:new' event will add it (deduped)
       setReplyTexts((prev) => ({ ...prev, [parentId]: '' }));
       setReplyingToId(null);
@@ -826,18 +878,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
   const handleVote = async (optionId: string) => {
     if (!currentUserId || votingOptionId || !pollData) return;
     setVotingOptionId(optionId);
-    
+
     // optimistic update
-    const newOptions = pollData.options.map(opt => ({
+    const newOptions = pollData.options.map((opt) => ({
       ...opt,
-      votes: opt.votes.filter(v => v !== currentUserId).concat(opt.id === optionId ? [currentUserId] : [])
+      votes: opt.votes
+        .filter((v) => v !== currentUserId)
+        .concat(opt.id === optionId ? [currentUserId] : []),
     }));
     setPollData({ ...pollData, options: newOptions });
 
     try {
       await api.post(`/api/posts/${post.id}/poll/${optionId}`);
     } catch {
-      // revert on failure 
+      // revert on failure
       setPollData(post.poll);
     } finally {
       setVotingOptionId(null);
@@ -848,10 +902,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
 
   const repliesMap = useMemo(() => {
     const map: Record<string, Comment[]> = {};
-    comments.filter((c) => c.parentId).forEach((c) => {
-      if (!map[c.parentId!]) map[c.parentId!] = [];
-      map[c.parentId!].push(c);
-    });
+    comments
+      .filter((c) => c.parentId)
+      .forEach((c) => {
+        if (!map[c.parentId!]) map[c.parentId!] = [];
+        map[c.parentId!].push(c);
+      });
     return map;
   }, [comments]);
 
@@ -975,8 +1031,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     setLikeCount((c) => (newLiked ? c + 1 : c - 1));
     setReactionsMap((prev) => {
       const next = { ...prev };
-      if (newLiked) { next[currentUserId ?? ''] = '❤️'; }
-      else { delete next[currentUserId ?? '']; }
+      if (newLiked) {
+        next[currentUserId ?? ''] = '❤️';
+      } else {
+        delete next[currentUserId ?? ''];
+      }
       return next;
     });
     try {
@@ -1003,8 +1062,11 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
     // Optimistically update reactionsMap so top3Reactions rerenders immediately
     setReactionsMap((prev) => {
       const next = { ...prev };
-      if (newLiked) { next[currentUserId ?? ''] = emoji; }
-      else { delete next[currentUserId ?? '']; }
+      if (newLiked) {
+        next[currentUserId ?? ''] = emoji;
+      } else {
+        delete next[currentUserId ?? ''];
+      }
       return next;
     });
     try {
@@ -1085,11 +1147,13 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
       const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
 
       if (reportingCommentId) {
-        await api.post(`/api/comments/${post.id}/${reportingCommentId}/report`, { reason: reasonText });
+        await api.post(`/api/comments/${post.id}/${reportingCommentId}/report`, {
+          reason: reasonText,
+        });
       } else {
         await api.post(`/api/posts/${post.id}/report`, { reason: reasonText });
       }
-      
+
       setShowReportModal(false);
       setReportReason('');
       setReportDetails('');
@@ -1097,7 +1161,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
       setReportToast(t('post_report_toast_ok'));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '';
-      setReportToast(msg.includes('đã báo cáo') ? t('post_report_toast_dup') : t('post_report_toast_err'));
+      setReportToast(
+        msg.includes('đã báo cáo') ? t('post_report_toast_dup') : t('post_report_toast_err')
+      );
     } finally {
       setReportSubmitting(false);
       setTimeout(() => setReportToast(null), 3000);
@@ -1210,13 +1276,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
-              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{t('post_share_title')}</h3>
+              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                {t('post_share_title')}
+              </h3>
               <button
                 onClick={() => setShowShareModal(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -1289,7 +1362,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     fallbackTextClassName="text-xs font-bold text-white"
                     presenceSize="sm"
                   />
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{post.authorDisplayName}</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    {post.authorDisplayName}
+                  </span>
                 </div>
                 {post.content && (
                   <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">
@@ -1300,9 +1375,20 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
               {post.mediaUrls?.length > 0 && (
                 <div className="overflow-hidden" style={{ maxHeight: '160px' }}>
                   {isVideoUrl(renderedMediaUrls[0]) ? (
-                    <video src={renderedMediaUrls[0]} className="w-full object-cover" style={{ maxHeight: '160px' }} muted playsInline />
+                    <video
+                      src={renderedMediaUrls[0]}
+                      className="w-full object-cover"
+                      style={{ maxHeight: '160px' }}
+                      muted
+                      playsInline
+                    />
                   ) : (
-                    <img src={renderedMediaUrls[0]} alt="Preview" className="w-full object-cover" style={{ maxHeight: '160px' }} />
+                    <img
+                      src={renderedMediaUrls[0]}
+                      alt="Preview"
+                      className="w-full object-cover"
+                      style={{ maxHeight: '160px' }}
+                    />
                   )}
                 </div>
               )}
@@ -1315,7 +1401,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
                 </svg>
                 {t('post_copy_link_short')}
               </button>
@@ -1339,8 +1430,8 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            {t('post_trash_desc')}{' '}
-            <span className="font-semibold">{t('post_trash_days')}</span> {t('post_trash_permanent')}
+            {t('post_trash_desc')} <span className="font-semibold">{t('post_trash_days')}</span>{' '}
+            {t('post_trash_permanent')}
           </p>
           <div className="flex gap-2 justify-end">
             <button
@@ -1364,14 +1455,28 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-4">
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white">{reportingCommentId ? t('post_report_title') + ' bình luận' : t('post_report_title')}</h2>
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">
+                {reportingCommentId
+                  ? t('post_report_title') + ' bình luận'
+                  : t('post_report_title')}
+              </h2>
               <button
                 type="button"
-                onClick={() => { setShowReportModal(false); setReportReason(''); setReportDetails(''); setReportingCommentId(null); }}
+                onClick={() => {
+                  setShowReportModal(false);
+                  setReportReason('');
+                  setReportDetails('');
+                  setReportingCommentId(null);
+                }}
                 className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-white"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.5}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -1381,7 +1486,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
               </div>
               <div className="mb-4 max-h-[250px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
                 {REPORT_CATEGORIES.map((category) => (
-                  <label key={category.key} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3 hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <label
+                    key={category.key}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
                     <input
                       type="radio"
                       name="reportReason"
@@ -1390,13 +1498,17 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       onChange={(e) => setReportReason(e.target.value)}
                       className="h-4 w-4 rounded-full border-slate-300 dark:border-slate-600 bg-transparent text-cyan-500 focus:ring-2 focus:ring-cyan-500 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-slate-900"
                     />
-                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{category.label}</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      {category.label}
+                    </span>
                   </label>
                 ))}
               </div>
               {reportReason && (
                 <div className="mb-6">
-                  <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">Chi tiết bổ sung (không bắt buộc)</label>
+                  <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">
+                    Chi tiết bổ sung (không bắt buộc)
+                  </label>
                   <textarea
                     value={reportDetails}
                     onChange={(e) => setReportDetails(e.target.value)}
@@ -1408,7 +1520,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => { setShowReportModal(false); setReportReason(''); setReportDetails(''); setReportingCommentId(null); }}
+                  onClick={() => {
+                    setShowReportModal(false);
+                    setReportReason('');
+                    setReportDetails('');
+                    setReportingCommentId(null);
+                  }}
                   className="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   {t('post_cancel')}
@@ -1462,7 +1579,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
         {/* Pinned post indicator */}
         {isPinned && !showComments && (
           <div className="flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold text-cyan-600 dark:text-cyan-400">
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/></svg>
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z" />
+            </svg>
             {t('post_pinned')}
           </div>
         )}
@@ -1497,9 +1616,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                   className="grid gap-0.5"
                   style={{ gridTemplateColumns: '2fr 1fr', height: '360px' }}
                 >
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[0].originalIndex)}>
+                  <div
+                    className="overflow-hidden cursor-pointer"
+                    onClick={() => openLightbox(displayMedia[0].originalIndex)}
+                  >
                     {isVideoUrl(displayMedia[0].url) ? (
-                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
+                      <FeedVideo
+                        src={displayMedia[0].url}
+                        onExpand={() => openLightbox(displayMedia[0].originalIndex)}
+                      />
                     ) : (
                       <img
                         src={displayMedia[0].url}
@@ -1508,9 +1633,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[1].originalIndex)}>
+                  <div
+                    className="overflow-hidden cursor-pointer"
+                    onClick={() => openLightbox(displayMedia[1].originalIndex)}
+                  >
                     {isVideoUrl(displayMedia[1].url) ? (
-                      <FeedVideo src={displayMedia[1].url} onExpand={() => openLightbox(displayMedia[1].originalIndex)} />
+                      <FeedVideo
+                        src={displayMedia[1].url}
+                        onExpand={() => openLightbox(displayMedia[1].originalIndex)}
+                      />
                     ) : (
                       <img
                         src={displayMedia[1].url}
@@ -1530,7 +1661,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   >
                     {isVideoUrl(displayMedia[0].url) ? (
-                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
+                      <FeedVideo
+                        src={displayMedia[0].url}
+                        onExpand={() => openLightbox(displayMedia[0].originalIndex)}
+                      />
                     ) : (
                       <img
                         src={displayMedia[0].url}
@@ -1539,9 +1673,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[1].originalIndex)}>
+                  <div
+                    className="overflow-hidden cursor-pointer"
+                    onClick={() => openLightbox(displayMedia[1].originalIndex)}
+                  >
                     {isVideoUrl(displayMedia[1].url) ? (
-                      <FeedVideo src={displayMedia[1].url} onExpand={() => openLightbox(displayMedia[1].originalIndex)} />
+                      <FeedVideo
+                        src={displayMedia[1].url}
+                        onExpand={() => openLightbox(displayMedia[1].originalIndex)}
+                      />
                     ) : (
                       <img
                         src={displayMedia[1].url}
@@ -1550,9 +1690,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       />
                     )}
                   </div>
-                  <div className="overflow-hidden cursor-pointer" onClick={() => openLightbox(displayMedia[2].originalIndex)}>
+                  <div
+                    className="overflow-hidden cursor-pointer"
+                    onClick={() => openLightbox(displayMedia[2].originalIndex)}
+                  >
                     {isVideoUrl(displayMedia[2].url) ? (
-                      <FeedVideo src={displayMedia[2].url} onExpand={() => openLightbox(displayMedia[2].originalIndex)} />
+                      <FeedVideo
+                        src={displayMedia[2].url}
+                        onExpand={() => openLightbox(displayMedia[2].originalIndex)}
+                      />
                     ) : (
                       <img
                         src={displayMedia[2].url}
@@ -1574,7 +1720,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     onClick={() => openLightbox(displayMedia[0].originalIndex)}
                   >
                     {isVideoUrl(displayMedia[0].url) ? (
-                      <FeedVideo src={displayMedia[0].url} onExpand={() => openLightbox(displayMedia[0].originalIndex)} />
+                      <FeedVideo
+                        src={displayMedia[0].url}
+                        onExpand={() => openLightbox(displayMedia[0].originalIndex)}
+                      />
                     ) : (
                       <img
                         src={displayMedia[0].url}
@@ -1789,11 +1938,24 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     )}
                     {currentUserId !== post.authorId && (
                       <button
-                        onClick={() => { setShowReportModal(true); setShowOptions(false); }}
+                        onClick={() => {
+                          setShowReportModal(true);
+                          setShowOptions(false);
+                        }}
                         className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                          />
                         </svg>
                         {t('post_report_title')}
                       </button>
@@ -1909,17 +2071,22 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
             <div className="flex items-start gap-3 mb-4">
               {post.group ? (
                 // --- Group Post Header (Facebook style) ---
-                <div className="relative flex-shrink-0 mt-0.5 mr-1" onClick={() => navigate(`/feed/groups/${post.group!.id}`)}>
+                <div
+                  className="relative flex-shrink-0 mt-0.5 mr-1"
+                  onClick={() => navigate(`/feed/groups/${post.group!.id}`)}
+                >
                   {/* Group Cover */}
                   {post.group.coverImageUrl ? (
-                    <img 
-                      src={post.group.coverImageUrl} 
-                      alt={post.group.name} 
+                    <img
+                      src={post.group.coverImageUrl}
+                      alt={post.group.name}
                       className="w-11 h-11 rounded-lg object-cover cursor-pointer hover:opacity-90 ring-1 ring-black/5 dark:ring-white/10"
                     />
                   ) : (
                     <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center cursor-pointer hover:opacity-90 ring-1 ring-black/5 dark:ring-white/10">
-                      <span className="text-lg font-bold text-white">{post.group.name[0].toUpperCase()}</span>
+                      <span className="text-lg font-bold text-white">
+                        {post.group.name[0].toUpperCase()}
+                      </span>
                     </div>
                   )}
                   {/* Overlaid Author Avatar */}
@@ -1927,22 +2094,28 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 bg-slate-200 dark:bg-slate-700 flex items-center justify-center shadow-md">
                       <span className="text-[10px]">🕵️</span>
                     </div>
+                  ) : post.authorPhotoURL ? (
+                    <img
+                      src={post.authorPhotoURL}
+                      className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 object-cover cursor-pointer hover:opacity-90 shadow-md"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goToProfile(post.authorId);
+                      }}
+                      alt={post.authorDisplayName}
+                    />
                   ) : (
-                    post.authorPhotoURL ? (
-                      <img 
-                        src={post.authorPhotoURL} 
-                        className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 object-cover cursor-pointer hover:opacity-90 shadow-md"
-                        onClick={(e) => { e.stopPropagation(); goToProfile(post.authorId); }}
-                        alt={post.authorDisplayName}
-                      />
-                    ) : (
-                      <div 
-                        className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-90 shadow-md"
-                        onClick={(e) => { e.stopPropagation(); goToProfile(post.authorId); }}
-                      >
-                        <span className="text-[10px] font-bold text-white uppercase">{(post.authorDisplayName || 'U')[0]}</span>
-                      </div>
-                    )
+                    <div
+                      className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full ring-2 ring-white dark:ring-slate-800 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-90 shadow-md"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goToProfile(post.authorId);
+                      }}
+                    >
+                      <span className="text-[10px] font-bold text-white uppercase">
+                        {(post.authorDisplayName || 'U')[0]}
+                      </span>
+                    </div>
                   )}
                 </div>
               ) : post.isAnonymous ? (
@@ -1985,13 +2158,16 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                         onClick={() => goToProfile(post.authorId)}
                         className={`font-semibold ${!post.isAnonymous ? 'hover:underline cursor-pointer text-gray-700 dark:text-gray-300' : 'text-gray-500'}`}
                       >
-                        {post.isAnonymous 
-                          ? (currentUserId === post.authorId ? t('post_anon_you') : t('post_anon_user')) 
+                        {post.isAnonymous
+                          ? currentUserId === post.authorId
+                            ? t('post_anon_you')
+                            : t('post_anon_user')
                           : post.authorDisplayName}
                       </span>
                       {post.sharedFrom && (
                         <span className="text-gray-600 dark:text-gray-400">
-                          {' '}{t('post_shared_from')}{' '}
+                          {' '}
+                          {t('post_shared_from')}{' '}
                           <span
                             onClick={() => goToProfile(post.sharedFrom!.authorId)}
                             className="font-semibold text-gray-700 dark:text-gray-300 hover:underline cursor-pointer"
@@ -2007,13 +2183,16 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                         onClick={() => goToProfile(post.authorId)}
                         className={`inline font-bold text-gray-900 dark:text-gray-100 ${post.isAnonymous ? '' : 'hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors'}`}
                       >
-                        {post.isAnonymous 
-                          ? (currentUserId === post.authorId ? t('post_anon_you') : t('post_anon_user')) 
+                        {post.isAnonymous
+                          ? currentUserId === post.authorId
+                            ? t('post_anon_you')
+                            : t('post_anon_user')
                           : post.authorDisplayName}
                       </h3>
                       {post.sharedFrom && (
                         <span className="text-gray-600 dark:text-gray-400">
-                          {' '}{t('post_shared_from')}{' '}
+                          {' '}
+                          {t('post_shared_from')}{' '}
                           <span
                             onClick={() => goToProfile(post.sharedFrom!.authorId)}
                             className="font-bold text-gray-900 dark:text-gray-100 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
@@ -2128,10 +2307,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     )}
                     {showPinOption && currentUserId === post.authorId && (
                       <button
-                        onClick={() => { void handlePinToggle(); setShowOptions(false); }}
+                        onClick={() => {
+                          void handlePinToggle();
+                          setShowOptions(false);
+                        }}
                         className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700/50 flex items-center gap-3"
                       >
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/></svg>
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z" />
+                        </svg>
                         {t(isPinned ? 'post_unpin' : 'post_pin')}
                       </button>
                     )}
@@ -2161,11 +2345,24 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     )}
                     {currentUserId !== post.authorId && (
                       <button
-                        onClick={() => { setShowReportModal(true); setShowOptions(false); }}
+                        onClick={() => {
+                          setShowReportModal(true);
+                          setShowOptions(false);
+                        }}
                         className="w-full px-4 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                          />
                         </svg>
                         {t('post_report_title')}
                       </button>
@@ -2198,25 +2395,36 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
             {pollData && pollData.options && (
               <div className="mb-4">
                 {pollData.options.map((opt) => {
-                  const totalVotes = pollData.options.reduce((sum, o) => sum + (o.votes?.length || 0), 0);
+                  const totalVotes = pollData.options.reduce(
+                    (sum, o) => sum + (o.votes?.length || 0),
+                    0
+                  );
                   const myVote = opt.votes?.includes(currentUserId || '');
-                  const percent = totalVotes > 0 ? ((opt.votes?.length || 0) / totalVotes) * 100 : 0;
-                  
+                  const percent =
+                    totalVotes > 0 ? ((opt.votes?.length || 0) / totalVotes) * 100 : 0;
+
                   return (
-                    <button 
-                       key={opt.id} 
-                       onClick={() => handleVote(opt.id)} 
-                       disabled={votingOptionId === opt.id}
-                       className="relative w-full text-left p-3 border border-gray-200 dark:border-slate-700 rounded-xl mb-2 overflow-hidden flex justify-between items-center group transition"
+                    <button
+                      key={opt.id}
+                      onClick={() => handleVote(opt.id)}
+                      disabled={votingOptionId === opt.id}
+                      className="relative w-full text-left p-3 border border-gray-200 dark:border-slate-700 rounded-xl mb-2 overflow-hidden flex justify-between items-center group transition"
                     >
-                       <div className="absolute top-0 left-0 bottom-0 bg-cyan-100 dark:bg-cyan-900/30 transition-all z-0" style={{ width: `${percent}%` }} />
-                       <span className="relative z-10 font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                         <div className={`w-4 h-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${myVote ? 'border-cyan-500 bg-cyan-500' : 'border-gray-300 dark:border-slate-600'}`}>
-                           {myVote && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                         </div>
-                         {opt.text}
-                       </span>
-                       <span className="relative z-10 text-xs text-slate-500 font-bold">{opt.votes?.length || 0} {t('post_votes')}</span>
+                      <div
+                        className="absolute top-0 left-0 bottom-0 bg-cyan-100 dark:bg-cyan-900/30 transition-all z-0"
+                        style={{ width: `${percent}%` }}
+                      />
+                      <span className="relative z-10 font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <div
+                          className={`w-4 h-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${myVote ? 'border-cyan-500 bg-cyan-500' : 'border-gray-300 dark:border-slate-600'}`}
+                        >
+                          {myVote && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                        {opt.text}
+                      </span>
+                      <span className="relative z-10 text-xs text-slate-500 font-bold">
+                        {opt.votes?.length || 0} {t('post_votes')}
+                      </span>
                     </button>
                   );
                 })}
@@ -2230,7 +2438,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                   <div className="flex items-center gap-2 mb-2">
                     {post.sharedFrom.authorPhotoURL ? (
                       <img
-                          src={optimizeImageUrl(post.sharedFrom.authorPhotoURL)}
+                        src={optimizeImageUrl(post.sharedFrom.authorPhotoURL)}
                         alt={post.sharedFrom.authorDisplayName}
                         className="w-8 h-8 rounded-full object-cover"
                       />
@@ -2267,9 +2475,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                 </div>
                 {post.sharedFrom.mediaUrls?.length > 0 && (
                   <div className="overflow-hidden max-h-56">
-                      {isVideoUrl(sharedRenderedMediaUrls[0]) ? (
+                    {isVideoUrl(sharedRenderedMediaUrls[0]) ? (
                       <video
-                          src={sharedRenderedMediaUrls[0]}
+                        src={sharedRenderedMediaUrls[0]}
                         className="w-full object-cover"
                         style={{ maxHeight: '224px' }}
                         muted
@@ -2277,7 +2485,7 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       />
                     ) : (
                       <img
-                          src={sharedRenderedMediaUrls[0]}
+                        src={sharedRenderedMediaUrls[0]}
                         alt="Shared media"
                         className="w-full object-cover"
                         style={{ maxHeight: '224px' }}
@@ -2429,7 +2637,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     onClick={openReactorsModal}
                     className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
                   >
-                    {top3Reactions.map((e) => <span key={e}>{e}</span>)}
+                    {top3Reactions.map((e) => (
+                      <span key={e}>{e}</span>
+                    ))}
                     <span className="font-medium">{likeCount}</span>
                   </button>
                 )}
@@ -2443,7 +2653,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     </button>
                   )}
                   {shareCount > 0 && (
-                    <span>{shareCount} {t('post_shares_label')}</span>
+                    <span>
+                      {shareCount} {t('post_shares_label')}
+                    </span>
                   )}
                 </div>
               </div>
@@ -2522,13 +2734,19 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                   />
                 </svg>
-                <span>{t('post_comment_btn')}{commentCount > 0 ? ` (${commentCount})` : ''}</span>
+                <span>
+                  {t('post_comment_btn')}
+                  {commentCount > 0 ? ` (${commentCount})` : ''}
+                </span>
               </button>
 
               {/* Share */}
               <div className="relative flex-1" ref={shareRef}>
                 <button
-                  onClick={() => { setShowShareModal(true); setShowShareMenu(false); }}
+                  onClick={() => {
+                    setShowShareModal(true);
+                    setShowShareMenu(false);
+                  }}
                   className="group w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-medium text-xs text-gray-700 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-600 dark:hover:text-green-400 border border-gray-200 dark:border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2539,7 +2757,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
                     />
                   </svg>
-                  <span>{t('post_share_btn')}{shareCount > 0 ? ` (${shareCount})` : ''}</span>
+                  <span>
+                    {t('post_share_btn')}
+                    {shareCount > 0 ? ` (${shareCount})` : ''}
+                  </span>
                 </button>
               </div>
 
@@ -2582,7 +2803,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2 flex-1 min-w-0 cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-700/60 transition-colors"
                       onClick={() => setShowComments(true)}
                     >
-                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{comment.authorDisplayName}</span>
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                        {comment.authorDisplayName}
+                      </span>
                       <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5 break-words">
                         {renderCommentContent(comment.content)}
                         {comment.mediaUrl && (
@@ -2597,9 +2820,19 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                             const vals = Object.values(comment.reactions ?? {});
                             const freq: Record<string, number> = {};
                             for (const v of vals) freq[v] = (freq[v] ?? 0) + 1;
-                            const top3 = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+                            const top3 = Object.entries(freq)
+                              .sort((a, b) => b[1] - a[1])
+                              .slice(0, 3)
+                              .map(([e]) => e);
                             if (top3.length === 0) top3.push('❤️');
-                            return <>{top3.map((e) => <span key={e}>{e}</span>)} {comment.likeCount}</>;
+                            return (
+                              <>
+                                {top3.map((e) => (
+                                  <span key={e}>{e}</span>
+                                ))}{' '}
+                                {comment.likeCount}
+                              </>
+                            );
                           })()}
                         </span>
                       )}
@@ -2655,7 +2888,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 onChange={(e) => setEditingText(e.target.value)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') void handleEditComment(comment.id);
-                                  if (e.key === 'Escape') { setEditingCommentId(null); setEditingText(''); }
+                                  if (e.key === 'Escape') {
+                                    setEditingCommentId(null);
+                                    setEditingText('');
+                                  }
                                 }}
                                 className="flex-1 bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-2 text-sm text-gray-800 dark:text-gray-200 outline-none"
                               />
@@ -2666,7 +2902,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 {t('post_send')}
                               </button>
                               <button
-                                onClick={() => { setEditingCommentId(null); setEditingText(''); }}
+                                onClick={() => {
+                                  setEditingCommentId(null);
+                                  setEditingText('');
+                                }}
                                 className="text-xs text-gray-400 hover:underline"
                               >
                                 {t('post_cancel')}
@@ -2685,14 +2924,24 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 {comment.mediaUrl && (
                                   <div className="mt-2">
                                     {isVideoUrl(comment.mediaUrl) ? (
-                                      <video src={comment.mediaUrl} controls className="max-h-40 rounded-lg" />
+                                      <video
+                                        src={comment.mediaUrl}
+                                        controls
+                                        className="max-h-40 rounded-lg"
+                                      />
                                     ) : (
-                                      <img src={optimizeImageUrl(comment.mediaUrl)} alt="media" className="max-h-40 rounded-lg object-contain bg-black/5" />
+                                      <img
+                                        src={optimizeImageUrl(comment.mediaUrl)}
+                                        alt="media"
+                                        className="max-h-40 rounded-lg object-contain bg-black/5"
+                                      />
                                     )}
                                   </div>
                                 )}
                                 {comment.isEdited && (
-                                  <span className="ml-1 text-xs text-gray-400 font-normal">• {t('post_editing')}</span>
+                                  <span className="ml-1 text-xs text-gray-400 font-normal">
+                                    • {t('post_editing')}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -2702,11 +2951,15 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                             <div className="relative">
                               <button
                                 onMouseEnter={() => {
-                                  if (commentReactionHideTimeout.current) clearTimeout(commentReactionHideTimeout.current);
+                                  if (commentReactionHideTimeout.current)
+                                    clearTimeout(commentReactionHideTimeout.current);
                                   setCommentReactionPicker(comment.id);
                                 }}
                                 onMouseLeave={() => {
-                                  commentReactionHideTimeout.current = setTimeout(() => setCommentReactionPicker(null), 300);
+                                  commentReactionHideTimeout.current = setTimeout(
+                                    () => setCommentReactionPicker(null),
+                                    300
+                                  );
                                 }}
                                 onClick={() => handleLikeComment(comment.id)}
                                 className={`hover:underline ${commentLikes[comment.id] ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-600 dark:text-gray-400'}`}
@@ -2719,18 +2972,25 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 <div
                                   className="absolute bottom-full left-0 mb-1 z-30"
                                   onMouseEnter={() => {
-                                    if (commentReactionHideTimeout.current) clearTimeout(commentReactionHideTimeout.current);
+                                    if (commentReactionHideTimeout.current)
+                                      clearTimeout(commentReactionHideTimeout.current);
                                     setCommentReactionPicker(comment.id);
                                   }}
                                   onMouseLeave={() => {
-                                    commentReactionHideTimeout.current = setTimeout(() => setCommentReactionPicker(null), 300);
+                                    commentReactionHideTimeout.current = setTimeout(
+                                      () => setCommentReactionPicker(null),
+                                      300
+                                    );
                                   }}
                                 >
                                   <div className="bg-white dark:bg-slate-800 rounded-full shadow-2xl border border-gray-200 dark:border-slate-700 p-1.5 flex gap-0.5">
                                     {['❤️', '🌊', '😂', '😮', '😢', '👍'].map((emoji) => (
                                       <button
                                         key={emoji}
-                                        onClick={(e) => { e.stopPropagation(); void handleReactComment(comment.id, emoji); }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void handleReactComment(comment.id, emoji);
+                                        }}
                                         className="w-8 h-8 flex items-center justify-center text-lg transition-all hover:scale-150 hover:-translate-y-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"
                                       >
                                         {emoji}
@@ -2745,7 +3005,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                               onClick={() => {
                                 setReplyingToId(replyingToId === comment.id ? null : comment.id);
                                 if (replyingToId !== comment.id) {
-                                  setReplyTexts((p) => ({ ...p, [comment.id]: `@[${comment.authorDisplayName}](${comment.authorId}) ` }));
+                                  setReplyTexts((p) => ({
+                                    ...p,
+                                    [comment.id]: `@[${comment.authorDisplayName}](${comment.authorId}) `,
+                                  }));
                                 }
                               }}
                             >
@@ -2756,23 +3019,38 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                             </span>
                             {comment.likeCount > 0 && (
                               <button
-                                onClick={() => void openCommentReactorsModal(comment.id, comment.reactions ?? {})}
+                                onClick={() =>
+                                  void openCommentReactorsModal(comment.id, comment.reactions ?? {})
+                                }
                                 className="text-gray-500 font-normal flex items-center gap-0.5 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
                               >
                                 {(() => {
                                   const reactionVals = Object.values(comment.reactions ?? {});
                                   const freq: Record<string, number> = {};
                                   for (const v of reactionVals) freq[v] = (freq[v] ?? 0) + 1;
-                                  const top3 = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+                                  const top3 = Object.entries(freq)
+                                    .sort((a, b) => b[1] - a[1])
+                                    .slice(0, 3)
+                                    .map(([e]) => e);
                                   if (top3.length === 0) top3.push('❤️');
-                                  return <>{top3.map((e) => <span key={e}>{e}</span>)} {comment.likeCount}</>;
+                                  return (
+                                    <>
+                                      {top3.map((e) => (
+                                        <span key={e}>{e}</span>
+                                      ))}{' '}
+                                      {comment.likeCount}
+                                    </>
+                                  );
                                 })()}
                               </button>
                             )}
                             {currentUserId === comment.authorId && (
                               <>
                                 <button
-                                  onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.content); }}
+                                  onClick={() => {
+                                    setEditingCommentId(comment.id);
+                                    setEditingText(comment.content);
+                                  }}
                                   className="text-gray-400 hover:text-cyan-600 hover:underline"
                                 >
                                   {t('post_edit')}
@@ -2787,7 +3065,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                             )}
                             {currentUserId !== comment.authorId && (
                               <button
-                                onClick={() => { setReportingCommentId(comment.id); setShowReportModal(true); }}
+                                onClick={() => {
+                                  setReportingCommentId(comment.id);
+                                  setShowReportModal(true);
+                                }}
                                 className="text-gray-400 hover:text-red-500 hover:underline ml-auto"
                               >
                                 Báo cáo
@@ -2799,62 +3080,94 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                             <div className="mt-2 ml-10 space-y-2">
                               {repliesMap[comment.id]?.length > 0 && (
                                 <button
-                                  onClick={() => setExpandedReplies((p) => ({ ...p, [comment.id]: !p[comment.id] }))}
+                                  onClick={() =>
+                                    setExpandedReplies((p) => ({
+                                      ...p,
+                                      [comment.id]: !p[comment.id],
+                                    }))
+                                  }
                                   className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-1 hover:underline"
                                 >
-                                  <svg className={`w-3.5 h-3.5 transition-transform ${expandedReplies[comment.id] ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-                                  {expandedReplies[comment.id] ? t('post_hide_replies') : `${t('post_view_replies')} ${repliesMap[comment.id].length} ${t('post_replies_label')}`}
+                                  <svg
+                                    className={`w-3.5 h-3.5 transition-transform ${expandedReplies[comment.id] ? 'rotate-90' : ''}`}
+                                    fill="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                                  </svg>
+                                  {expandedReplies[comment.id]
+                                    ? t('post_hide_replies')
+                                    : `${t('post_view_replies')} ${repliesMap[comment.id].length} ${t('post_replies_label')}`}
                                 </button>
                               )}
-                              {expandedReplies[comment.id] && repliesMap[comment.id]?.map((reply) => (
-                                <div key={reply.id} className="flex gap-2">
-                                  <div
-                                    className="cursor-pointer"
-                                    onClick={() => goToProfile(reply.authorId)}
-                                  >
-                                    <UserPresenceAvatar
-                                      uid={reply.authorId}
-                                      name={reply.authorDisplayName}
-                                      photoURL={reply.authorPhotoURL}
-                                      imgClassName="w-6 h-6 rounded-full flex-shrink-0 object-cover"
-                                      fallbackClassName="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
-                                      fallbackTextClassName="text-[10px] font-bold text-white"
-                                      presenceSize="sm"
-                                    />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-1.5">
-                                      <div className="font-semibold text-xs text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit" onClick={() => goToProfile(reply.authorId)}>
-                                        {reply.authorDisplayName}
-                                      </div>
-                                      <div className="text-xs text-gray-800 dark:text-gray-200 mt-0.5">{renderCommentContent(reply.content)}</div>
+                              {expandedReplies[comment.id] &&
+                                repliesMap[comment.id]?.map((reply) => (
+                                  <div key={reply.id} className="flex gap-2">
+                                    <div
+                                      className="cursor-pointer"
+                                      onClick={() => goToProfile(reply.authorId)}
+                                    >
+                                      <UserPresenceAvatar
+                                        uid={reply.authorId}
+                                        name={reply.authorDisplayName}
+                                        photoURL={reply.authorPhotoURL}
+                                        imgClassName="w-6 h-6 rounded-full flex-shrink-0 object-cover"
+                                        fallbackClassName="w-6 h-6 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"
+                                        fallbackTextClassName="text-[10px] font-bold text-white"
+                                        presenceSize="sm"
+                                      />
                                     </div>
-                                    <div className="flex items-center gap-3 mt-0.5 px-2 text-[11px] font-semibold text-gray-500">
-                                      <span>{reply.createdAt && formatTime(reply.createdAt)}</span>
-                                      <button
-                                        className="text-gray-600 dark:text-gray-400 hover:underline"
-                                        onClick={() => {
-                                          setReplyingToId(comment.id);
-                                          setReplyTexts((p) => ({ ...p, [comment.id]: `@[${reply.authorDisplayName}](${reply.authorId}) ` }));
-                                        }}
-                                      >
-                                        {t('post_reply')}
-                                      </button>
-                                      {currentUserId === reply.authorId && (
-                                        <button onClick={() => handleDeleteComment(reply.id)} className="hover:text-red-500 hover:underline ml-auto">{t('post_delete_comment')}</button>
-                                      )}
-                                      {currentUserId !== reply.authorId && (
-                                        <button
-                                          onClick={() => { setReportingCommentId(reply.id); setShowReportModal(true); }}
-                                          className="text-gray-400 hover:text-red-500 hover:underline ml-auto"
+                                    <div className="flex-1 min-w-0">
+                                      <div className="bg-gray-100 dark:bg-slate-800/60 rounded-2xl px-3 py-1.5">
+                                        <div
+                                          className="font-semibold text-xs text-gray-900 dark:text-gray-100 cursor-pointer hover:underline w-fit"
+                                          onClick={() => goToProfile(reply.authorId)}
                                         >
-                                          Báo cáo
+                                          {reply.authorDisplayName}
+                                        </div>
+                                        <div className="text-xs text-gray-800 dark:text-gray-200 mt-0.5">
+                                          {renderCommentContent(reply.content)}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3 mt-0.5 px-2 text-[11px] font-semibold text-gray-500">
+                                        <span>
+                                          {reply.createdAt && formatTime(reply.createdAt)}
+                                        </span>
+                                        <button
+                                          className="text-gray-600 dark:text-gray-400 hover:underline"
+                                          onClick={() => {
+                                            setReplyingToId(comment.id);
+                                            setReplyTexts((p) => ({
+                                              ...p,
+                                              [comment.id]: `@[${reply.authorDisplayName}](${reply.authorId}) `,
+                                            }));
+                                          }}
+                                        >
+                                          {t('post_reply')}
                                         </button>
-                                      )}
+                                        {currentUserId === reply.authorId && (
+                                          <button
+                                            onClick={() => handleDeleteComment(reply.id)}
+                                            className="hover:text-red-500 hover:underline ml-auto"
+                                          >
+                                            {t('post_delete_comment')}
+                                          </button>
+                                        )}
+                                        {currentUserId !== reply.authorId && (
+                                          <button
+                                            onClick={() => {
+                                              setReportingCommentId(reply.id);
+                                              setShowReportModal(true);
+                                            }}
+                                            className="text-gray-400 hover:text-red-500 hover:underline ml-auto"
+                                          >
+                                            Báo cáo
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))}
+                                ))}
                               {replyingToId === comment.id && (
                                 <div className="flex gap-2 items-center">
                                   <UserPresenceAvatar
@@ -2870,8 +3183,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                     <MentionCommentInput
                                       autoFocus
                                       value={replyTexts[comment.id] ?? ''}
-                                      onChange={(v) => setReplyTexts((p) => ({ ...p, [comment.id]: v }))}
-                                      onKeyDown={(e) => { if (e.key === 'Escape') setReplyingToId(null); }}
+                                      onChange={(v) =>
+                                        setReplyTexts((p) => ({ ...p, [comment.id]: v }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') setReplyingToId(null);
+                                      }}
                                       onSubmit={() => void handleSubmitReply(comment.id)}
                                       placeholder={`${t('post_reply')} ${comment.authorDisplayName}...`}
                                       disabled={submittingReply === comment.id}
@@ -2879,13 +3196,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                     />
                                     <button
                                       onClick={() => void handleSubmitReply(comment.id)}
-                                      disabled={!markupToPlain(replyTexts[comment.id] ?? '').trim() || submittingReply === comment.id}
+                                      disabled={
+                                        !markupToPlain(replyTexts[comment.id] ?? '').trim() ||
+                                        submittingReply === comment.id
+                                      }
                                       className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-600 disabled:opacity-40"
                                     >
-                                      {submittingReply === comment.id
-                                        ? <span className="w-3.5 h-3.5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin inline-block" />
-                                        : <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-                                      }
+                                      {submittingReply === comment.id ? (
+                                        <span className="w-3.5 h-3.5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin inline-block" />
+                                      ) : (
+                                        <svg
+                                          className="w-4 h-4"
+                                          fill="currentColor"
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                                        </svg>
+                                      )}
                                     </button>
                                   </div>
                                 </div>
@@ -2924,19 +3251,49 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                   <div className="flex-1 relative">
                     {commentError && (
                       <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/50 rounded-xl text-sm text-red-600 dark:text-red-400">
-                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                        <svg
+                          className="w-4 h-4 shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                          />
+                        </svg>
                         <span className="flex-1">{commentError}</span>
-                        <button type="button" onClick={() => setCommentError(null)} className="shrink-0 hover:text-red-700">×</button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentError(null)}
+                          className="shrink-0 hover:text-red-700"
+                        >
+                          ×
+                        </button>
                       </div>
                     )}
                     {commentMediaFile && (
                       <div className="mb-2 relative inline-block">
                         {commentMediaFile.type.startsWith('video/') ? (
-                          <video src={URL.createObjectURL(commentMediaFile)} className="h-24 rounded-lg object-cover" />
+                          <video
+                            src={URL.createObjectURL(commentMediaFile)}
+                            className="h-24 rounded-lg object-cover"
+                          />
                         ) : (
-                          <img src={URL.createObjectURL(commentMediaFile)} alt="preview" className="h-24 rounded-lg object-cover" />
+                          <img
+                            src={URL.createObjectURL(commentMediaFile)}
+                            alt="preview"
+                            className="h-24 rounded-lg object-cover"
+                          />
                         )}
-                        <button onClick={() => setCommentMediaFile(null)} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow z-10">✕</button>
+                        <button
+                          onClick={() => setCommentMediaFile(null)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow z-10"
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
                     <MentionCommentInput
@@ -2950,17 +3307,35 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                       <label className="cursor-pointer p-1.5 rounded-full text-gray-400 hover:text-cyan-600 transition-colors">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          />
                         </svg>
-                        <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => {
-                          if (e.target.files?.[0]) setCommentMediaFile(e.target.files[0]);
-                          e.target.value = '';
-                        }} />
+                        <input
+                          type="file"
+                          accept="image/*,video/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) setCommentMediaFile(e.target.files[0]);
+                            e.target.value = '';
+                          }}
+                        />
                       </label>
                       <button
                         onClick={handleSubmitComment}
-                        disabled={(!markupToPlain(commentText).trim() && !commentMediaFile) || submittingComment}
+                        disabled={
+                          (!markupToPlain(commentText).trim() && !commentMediaFile) ||
+                          submittingComment
+                        }
                         className="p-1.5 rounded-full text-cyan-600 hover:text-cyan-700 transition-colors disabled:opacity-50"
                       >
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -3275,7 +3650,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
               >
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex-shrink-0">
-                  <span className="font-semibold text-gray-900 dark:text-gray-100">{t('post_comments_header')}</span>
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">
+                    {t('post_comments_header')}
+                  </span>
                   <button
                     className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
                     onClick={() => setLightboxCommentOpen(false)}
@@ -3366,7 +3743,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 onChange={(e) => setEditingText(e.target.value)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') void handleEditComment(comment.id);
-                                  if (e.key === 'Escape') { setEditingCommentId(null); setEditingText(''); }
+                                  if (e.key === 'Escape') {
+                                    setEditingCommentId(null);
+                                    setEditingText('');
+                                  }
                                 }}
                                 className="flex-1 bg-gray-100 dark:bg-slate-800 rounded-2xl px-3 py-2 text-sm text-gray-800 dark:text-gray-200 outline-none"
                               />
@@ -3377,7 +3757,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 {t('post_send')}
                               </button>
                               <button
-                                onClick={() => { setEditingCommentId(null); setEditingText(''); }}
+                                onClick={() => {
+                                  setEditingCommentId(null);
+                                  setEditingText('');
+                                }}
                                 className="text-xs text-gray-400 hover:underline"
                               >
                                 {t('post_cancel')}
@@ -3393,14 +3776,24 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                                 {comment.mediaUrl && (
                                   <div className="mt-2">
                                     {isVideoUrl(comment.mediaUrl) ? (
-                                      <video src={comment.mediaUrl} controls className="max-h-40 rounded-lg" />
+                                      <video
+                                        src={comment.mediaUrl}
+                                        controls
+                                        className="max-h-40 rounded-lg"
+                                      />
                                     ) : (
-                                      <img src={optimizeImageUrl(comment.mediaUrl)} alt="media" className="max-h-40 rounded-lg object-contain bg-black/5" />
+                                      <img
+                                        src={optimizeImageUrl(comment.mediaUrl)}
+                                        alt="media"
+                                        className="max-h-40 rounded-lg object-contain bg-black/5"
+                                      />
                                     )}
                                   </div>
                                 )}
                                 {comment.isEdited && (
-                                  <span className="ml-1 text-xs text-gray-400 font-normal">• {t('post_editing')}</span>
+                                  <span className="ml-1 text-xs text-gray-400 font-normal">
+                                    • {t('post_editing')}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -3423,7 +3816,10 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                             {currentUserId === comment.authorId && (
                               <>
                                 <button
-                                  onClick={() => { setEditingCommentId(comment.id); setEditingText(comment.content); }}
+                                  onClick={() => {
+                                    setEditingCommentId(comment.id);
+                                    setEditingText(comment.content);
+                                  }}
                                   className="text-gray-400 hover:text-cyan-600"
                                 >
                                   {t('post_edit')}
@@ -3463,11 +3859,23 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       {commentMediaFile && (
                         <div className="mb-2 relative inline-block">
                           {commentMediaFile.type.startsWith('video/') ? (
-                            <video src={URL.createObjectURL(commentMediaFile)} className="h-20 rounded-lg object-cover" />
+                            <video
+                              src={URL.createObjectURL(commentMediaFile)}
+                              className="h-20 rounded-lg object-cover"
+                            />
                           ) : (
-                            <img src={URL.createObjectURL(commentMediaFile)} alt="preview" className="h-20 rounded-lg object-cover" />
+                            <img
+                              src={URL.createObjectURL(commentMediaFile)}
+                              alt="preview"
+                              className="h-20 rounded-lg object-cover"
+                            />
                           )}
-                          <button onClick={() => setCommentMediaFile(null)} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow z-10">✕</button>
+                          <button
+                            onClick={() => setCommentMediaFile(null)}
+                            className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow z-10"
+                          >
+                            ✕
+                          </button>
                         </div>
                       )}
                       <MentionCommentInput
@@ -3480,17 +3888,35 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                       />
                       <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
                         <label className="cursor-pointer p-1 rounded-full text-gray-400 hover:text-cyan-600 transition-colors">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            />
                           </svg>
-                          <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => {
-                            if (e.target.files?.[0]) setCommentMediaFile(e.target.files[0]);
-                            e.target.value = '';
-                          }} />
+                          <input
+                            type="file"
+                            accept="image/*,video/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) setCommentMediaFile(e.target.files[0]);
+                              e.target.value = '';
+                            }}
+                          />
                         </label>
                         <button
                           onClick={() => void handleSubmitComment()}
-                          disabled={(!markupToPlain(commentText).trim() && !commentMediaFile) || submittingComment}
+                          disabled={
+                            (!markupToPlain(commentText).trim() && !commentMediaFile) ||
+                            submittingComment
+                          }
                           className="p-1 text-cyan-600 hover:text-cyan-700 disabled:opacity-40 transition-colors"
                         >
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -3562,7 +3988,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
             {/* List */}
             <div className="max-h-72 overflow-y-auto px-4 pb-4">
               {loadingReactors ? (
-                <div className="py-8 text-center text-gray-400 text-sm">{t('post_loading_reactors')}</div>
+                <div className="py-8 text-center text-gray-400 text-sm">
+                  {t('post_loading_reactors')}
+                </div>
               ) : (
                 reactors
                   .filter((r) => reactorFilter === null || r.reaction === reactorFilter)
@@ -3577,7 +4005,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                         fallbackTextClassName="text-sm font-bold text-white"
                         presenceSize="sm"
                       />
-                      <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{r.displayName}</span>
+                      <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {r.displayName}
+                      </span>
                       <span className="text-lg">{r.reaction}</span>
                     </div>
                   ))
@@ -3599,7 +4029,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-200 dark:border-slate-700">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">{t('post_comment_reactions_title')}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                {t('post_comment_reactions_title')}
+              </h3>
               <button
                 onClick={() => setCommentReactorsModal(null)}
                 className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500"
@@ -3610,8 +4042,12 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
             {/* Top emoji filter tabs */}
             {(() => {
               const freq: Record<string, number> = {};
-              for (const v of Object.values(commentReactorsModal.reactions)) freq[v] = (freq[v] ?? 0) + 1;
-              const topEmojis = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e]) => e);
+              for (const v of Object.values(commentReactorsModal.reactions))
+                freq[v] = (freq[v] ?? 0) + 1;
+              const topEmojis = Object.entries(freq)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([e]) => e);
               const total = Object.keys(commentReactorsModal.reactions).length;
               return (
                 <div className="flex gap-1 px-4 pt-3 pb-2">
@@ -3645,10 +4081,14 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
             {/* List */}
             <div className="max-h-72 overflow-y-auto px-4 pb-4">
               {loadingCommentReactors ? (
-                <div className="py-8 text-center text-gray-400 text-sm">{t('post_loading_reactors')}</div>
+                <div className="py-8 text-center text-gray-400 text-sm">
+                  {t('post_loading_reactors')}
+                </div>
               ) : (
                 commentReactors
-                  .filter((r) => commentReactorFilter === null || r.reaction === commentReactorFilter)
+                  .filter(
+                    (r) => commentReactorFilter === null || r.reaction === commentReactorFilter
+                  )
                   .map((r) => (
                     <div key={r.uid} className="flex items-center gap-3 py-2.5">
                       <UserPresenceAvatar
@@ -3660,7 +4100,9 @@ export default function PostCard({ post, currentUserId, onPostUpdated, onPostCre
                         fallbackTextClassName="text-sm font-bold text-white"
                         presenceSize="sm"
                       />
-                      <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{r.displayName}</span>
+                      <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {r.displayName}
+                      </span>
                       <span className="text-lg">{r.reaction}</span>
                     </div>
                   ))

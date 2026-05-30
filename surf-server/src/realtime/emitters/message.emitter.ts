@@ -5,6 +5,26 @@ export const emitMessageNew = (userId: string, payload: unknown) => {
   getIo().to(userRoom(userId)).emit('message:new', payload);
 };
 
+export const emitMessageNewToConversation = (conversationId: string, payload: unknown) => {
+  getIo().to(conversationRoom(conversationId)).emit('message:new', payload);
+};
+
+export const emitMessageNewToTargets = (
+  userIds: string[],
+  conversationId: string,
+  payload: unknown
+) => {
+  const io = getIo();
+  const targets = Array.from(new Set(userIds.filter(Boolean)));
+  let operator = io.to(conversationRoom(conversationId));
+
+  targets.forEach((userId) => {
+    operator = operator.to(userRoom(userId));
+  });
+
+  operator.emit('message:new', payload);
+};
+
 export const emitMessageUnreadCount = (userId: string, count: number) => {
   getIo().to(userRoom(userId)).emit('message:unread-count', { count });
 };

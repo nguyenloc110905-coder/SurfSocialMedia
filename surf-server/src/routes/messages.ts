@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
 import {
-  emitMessageNew,
   emitMessageReactionUpdated,
   emitMessageRecalled,
   emitMessageRead,
   emitMessageSelfHidden,
+  emitMessageNewToTargets,
   emitMessageUnreadCount,
   emitMessageUpdated,
 } from '../realtime/emitters/message.emitter.js';
@@ -268,16 +268,15 @@ router.post('/:id/forward', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(result.item);
+    emitMessageNewToTargets([uid, ...result.recipientIds], result.conversationId, payload);
 
     await Promise.all(
       result.recipientIds.map(async (recipientId) => {
-        emitMessageNew(recipientId, payload);
         const unreadCount = await getUnreadConversationCount(recipientId);
         emitMessageUnreadCount(recipientId, unreadCount);
       })
     );
 
-    emitMessageNew(uid, payload);
     const senderUnreadCount = await getUnreadConversationCount(uid);
     emitMessageUnreadCount(uid, senderUnreadCount);
 

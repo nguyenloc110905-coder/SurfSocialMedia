@@ -16,6 +16,56 @@ interface Friend {
   avatarUrl?: string;
 }
 
+type ConversationSummary = {
+  id: string;
+  type?: 'dm' | 'group';
+  marketplace?: unknown;
+  peer: { uid: string } | null;
+  unreadCount: number;
+};
+
+type YoutubeVideo = {
+  id: string;
+  title: string;
+  channel: string;
+  thumbnail: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeYoutubeVideo(value: unknown): YoutubeVideo | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.title !== 'string' ||
+    typeof value.channel !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    title: value.title,
+    channel: value.channel,
+    thumbnail:
+      typeof value.thumbnail === 'string'
+        ? value.thumbnail
+        : `https://img.youtube.com/vi/${value.id}/mqdefault.jpg`,
+  };
+}
+
+function readYoutubeHistory(): YoutubeVideo[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('surf_yt_history') ?? '[]') as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeYoutubeVideo).filter((video): video is YoutubeVideo => video !== null);
+  } catch {
+    return [];
+  }
+}
+
 function FriendAvatar({ avatarUrl, name, textSize = 'text-sm' }: { avatarUrl?: string; name: string; textSize?: string }) {
   const [imgError, setImgError] = useState(false);
   return avatarUrl && !imgError ? (
@@ -83,13 +133,11 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
 
   // YouTube panel state
   const [ytQuery, setYtQuery] = useState('');
-  const [ytResults, setYtResults] = useState<Array<{ id: string; title: string; channel: string; thumbnail: string }>>([]);
+  const [ytResults, setYtResults] = useState<YoutubeVideo[]>([]);
   const [ytSearching, setYtSearching] = useState(false);
   const [ytActiveId, setYtActiveId] = useState<string | null>(null);
-  const [ytActiveInfo, setYtActiveInfo] = useState<{ id: string; title: string; channel: string; thumbnail: string } | null>(null);
-  const [ytHistory, setYtHistory] = useState<Array<{ id: string; title: string; channel: string; thumbnail: string }>>(() => {
-    try { return JSON.parse(localStorage.getItem('surf_yt_history') ?? '[]'); } catch { return []; }
-  });
+  const [ytActiveInfo, setYtActiveInfo] = useState<YoutubeVideo | null>(null);
+  const [ytHistory, setYtHistory] = useState<YoutubeVideo[]>(readYoutubeHistory);
 
   // Music panel state
   const [, rerender] = useState(0);
@@ -104,18 +152,19 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
   useEffect(() => {
     api
       .get<{ friends: Friend[] }>('/api/friends')
-      .then((data) => setFriends(data.friends ?? []))
+      .then((data) => setFriends(Array.isArray(data.friends) ? data.friends : []))
       .catch(() => {});
   }, []);
 
   // Load initial unread counts from conversations
   useEffect(() => {
     api
-      .get<{ items: Array<{ id: string; peer: { uid: string } | null; unreadCount: number }> }>('/api/conversations?limit=50')
+      .get<{ items: ConversationSummary[] }>('/api/conversations?limit=50')
       .then((data) => {
         const map: Record<string, number> = {};
-        for (const conv of data.items ?? []) {
-          if (conv.peer && conv.unreadCount > 0) {
+        const items = Array.isArray(data.items) ? data.items : [];
+        for (const conv of items) {
+          if (conv.type !== 'group' && !conv.marketplace && conv.peer && conv.unreadCount > 0) {
             map[conv.peer.uid] = (map[conv.peer.uid] ?? 0) + conv.unreadCount;
           }
         }
@@ -129,7 +178,9 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
     const socket = getSocket();
     const handler = (payload: { conversationId: string; message: { senderId: string } }) => {
       const senderId = payload.message?.senderId;
-      if (!senderId || senderId === currentUser?.uid) return;
+      if (!senderId || senderId === currentUser?.uid || payload.conversationId.startsWith('market_')) {
+        return;
+      }
       setUnreadByFriend((prev) => ({ ...prev, [senderId]: (prev[senderId] ?? 0) + 1 }));
     };
     socket.on('message:new', handler);
@@ -193,20 +244,28 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
     ? friends.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
     : friends;
 
-  const addYtHistory = (v: { id: string; title: string; channel: string; thumbnail: string }) => {
+  const addYtHistory = (v: YoutubeVideo) => {
     setYtHistory((prev) => {
       const next = [v, ...prev.filter((h) => h.id !== v.id)].slice(0, 30);
-      localStorage.setItem('surf_yt_history', JSON.stringify(next));
+      try {
+        localStorage.setItem('surf_yt_history', JSON.stringify(next));
+      } catch {
+        // Keep playback working even when browser storage is unavailable.
+      }
       return next;
     });
   };
 
   const clearYtHistory = () => {
-    localStorage.removeItem('surf_yt_history');
+    try {
+      localStorage.removeItem('surf_yt_history');
+    } catch {
+      // Keep the panel usable even when browser storage is unavailable.
+    }
     setYtHistory([]);
   };
 
-  const playYtVideo = (v: { id: string; title: string; channel: string; thumbnail: string }) => {
+  const playYtVideo = (v: YoutubeVideo) => {
     setYtActiveId(v.id);
     setYtActiveInfo(v);
     setYtQuery('');
@@ -214,9 +273,12 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
     addYtHistory(v);
   };
 
-  const history = musicStore.getHistory();
-  const favorites = musicStore.getFavorites();
-  const playlists = musicStore.getPlaylists();
+  const rawHistory: unknown = musicStore.getHistory();
+  const rawFavorites: unknown = musicStore.getFavorites();
+  const rawPlaylists: unknown = musicStore.getPlaylists();
+  const history = Array.isArray(rawHistory) ? (rawHistory as TrackItem[]) : [];
+  const favorites = Array.isArray(rawFavorites) ? (rawFavorites as TrackItem[]) : [];
+  const playlists = Array.isArray(rawPlaylists) ? (rawPlaylists as Playlist[]) : [];
   const tracks = activeTab === 'history' ? history : favorites;
 
   return (

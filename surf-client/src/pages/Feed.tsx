@@ -18,8 +18,31 @@ function formatListingPrice(price: number, free: string) {
   return price.toLocaleString('vi-VN') + ' ₫';
 }
 
+function getListingTimeValue(value: unknown): number {
+  if (!value) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return new Date(value).getTime() || 0;
+  if (typeof value === 'object') {
+    const raw = value as { toDate?: () => Date; _seconds?: number; seconds?: number };
+    if (typeof raw.toDate === 'function') return raw.toDate().getTime();
+    const seconds = typeof raw._seconds === 'number' ? raw._seconds : raw.seconds;
+    return typeof seconds === 'number' ? seconds * 1000 : 0;
+  }
+  return 0;
+}
+
+function isBoostStillInWindow(listing: Listing) {
+  const endsAt = getListingTimeValue(listing.boostEndsAt);
+  return !endsAt || endsAt > Date.now();
+}
+
 function isFeedBoostListing(listing: Listing) {
-  return listing.boostEnabled && listing.boostStatus === 'active' && listing.boostPlan?.placements?.includes('surf_feed');
+  return (
+    listing.boostEnabled &&
+    listing.boostStatus === 'active' &&
+    isBoostStillInWindow(listing) &&
+    listing.boostPlan?.placements?.includes('surf_feed')
+  );
 }
 
 function FeedBoostPlacement({ listing, onOpen }: { listing: Listing; onOpen: (listing: Listing) => void }) {
