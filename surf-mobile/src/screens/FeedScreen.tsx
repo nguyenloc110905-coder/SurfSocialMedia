@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -87,6 +87,7 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
   const listRef = useRef<FlatList<string | Post>>(null);
   const user = useAuthStore((state) => state.user);
   const reactionPickerActive = useGestureStore((s) => s.reactionPickerActive);
+  const [activePostId, setActivePostId] = useState<string | null>(null);
 
   const posts         = useFeedStore((s) => s.posts);
   const loading       = useFeedStore((s) => s.loading);
@@ -109,6 +110,18 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
     setRefreshing(true);
     fetchFeed(true);
   }, [fetchFeed, setRefreshing]);
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 65, minimumViewTime: 120 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item: string | Post; isViewable?: boolean }> }) => {
+    const visiblePosts = viewableItems
+      .filter(({ item, isViewable }) => isViewable && typeof item !== 'string')
+      .map(({ item }) => item as Post);
+    const postWithVideo = visiblePosts.find((post) =>
+      post.mediaUrls?.some((url) => /\/video\/upload\/|\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url)) ||
+      post.sharedFrom?.mediaUrls?.some((url) => /\/video\/upload\/|\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url))
+    );
+    setActivePostId((postWithVideo ?? visiblePosts[0] ?? null)?.id ?? null);
+  }).current;
 
   const isFirstLoad = loading && posts.length === 0;
   const displayName = user?.displayName || user?.email || t('user_fallback');
@@ -161,10 +174,12 @@ export default function FeedScreen({ navigation, isActive = true, resetSignal = 
         renderItem={({ item }) =>
           typeof item === 'string'
             ? <SkeletonCard C={C} />
-            : <PostCard post={item as Post} isVisible={false} navigation={navigation} />
+            : <PostCard post={item as Post} isVisible={isActive && activePostId === (item as Post).id} navigation={navigation} />
         }
         ListHeaderComponent={composer}
-        extraData={`${isActive}:${isFirstLoad}`}
+        extraData={`${isActive}:${isFirstLoad}:${activePostId ?? ''}`}
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
         scrollEnabled={!isFirstLoad && !reactionPickerActive}

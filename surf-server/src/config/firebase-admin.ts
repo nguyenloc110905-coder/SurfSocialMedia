@@ -11,7 +11,6 @@ function initFirebaseAdmin() {
   if (admin.apps.length > 0) {
     _auth = admin.auth();
     _db = admin.firestore();
-    console.log('✅ Firebase Admin already initialized');
     return;
   }
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
   View,
   Text,
@@ -14,6 +15,7 @@ import {
   Share,
   Platform,
   ActivityIndicator,
+  Alert,
   StyleSheet,
   useColorScheme,
   Dimensions,
@@ -28,6 +30,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/lib/api';
+import { isVideoAsset, uploadImage, uploadVideo } from '@/lib/cloudinary';
 import { gestureState, setReactionPickerActive } from '@/lib/gestureState';
 import { useT, type I18nKey } from '@/lib/i18n';
 
@@ -82,6 +85,55 @@ const FEELING_STR: Record<string, string> = {
   happy: '😊', excited: '🎉', sad: '😢', angry: '😠', loved: '❤️', grateful: '🙏',
 };
 
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'inappropriate', label: 'Nội dung không phù hợp' },
+  { key: 'misinformation', label: 'Thông tin sai lệch' },
+  { key: 'hate_speech', label: 'Ngôn từ thù ghét' },
+  { key: 'harassment', label: 'Quấy rối' },
+  { key: 'violence', label: 'Bạo lực' },
+  { key: 'copyright', label: 'Vi phạm bản quyền' },
+  { key: 'other', label: 'Lý do khác' },
+] as const;
+
+type ReportReason = (typeof REPORT_CATEGORIES)[number]['key'];
+type PostPrivacy = NonNullable<FeedPost['privacy']>;
+type PickedAsset = ImagePicker.ImagePickerAsset;
+
+const PRIVACY_OPTIONS: Array<{ value: PostPrivacy; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { value: 'public', label: 'Công khai', icon: 'globe-outline' },
+  { value: 'friends', label: 'Bạn bè', icon: 'people-outline' },
+  { value: 'only-me', label: 'Chỉ mình tôi', icon: 'lock-closed-outline' },
+  { value: 'custom', label: 'Tùy chỉnh', icon: 'options-outline' },
+];
+
+const FEELING_OPTIONS = [
+  { emoji: '😊', label: 'Vui vẻ' },
+  { emoji: '😍', label: 'Yêu thích' },
+  { emoji: '😎', label: 'Ngầu' },
+  { emoji: '😢', label: 'Buồn' },
+  { emoji: '😡', label: 'Giận dữ' },
+  { emoji: '🥳', label: 'Hào hứng' },
+  { emoji: '😴', label: 'Mệt mỏi' },
+  { emoji: '🤔', label: 'Suy nghĩ' },
+  { emoji: '🥰', label: 'Biết ơn' },
+  { emoji: '😤', label: 'Tự hào' },
+];
+
+async function ensureLibraryPermission() {
+  const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+  if (current.granted) return true;
+  const next = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  return next.granted;
+}
+
+async function ensureCameraPermission() {
+  const current = await ImagePicker.getCameraPermissionsAsync();
+  if (current.granted) return true;
+  const next = await ImagePicker.requestCameraPermissionsAsync();
+  return next.granted;
+}
+
 function timeAgo(raw: Post['createdAt'], t: (key: I18nKey, params?: Record<string, string | number>) => string): string {
   let ms = 0;
   if (!raw) return '';
@@ -123,6 +175,11 @@ function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false): string 
   return url
     .replace('/video/upload/', `/image/upload/${transform}/`)
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+
+function mediaHeightForAspect(aspectRatio: number): number {
+  if (aspectRatio < 0.85) return Math.min(SH * 0.76, MEDIA_W * 1.58);
+  return Math.min(SH * 0.62, MEDIA_W / Math.max(0.9, Math.min(1.78, aspectRatio)));
 }
 
 function fmtCount(n: number): string {
@@ -331,11 +388,38 @@ const iv = StyleSheet.create({
 });
 
 // ── VideoPlaceholder ──────────────────────────────────────────────────────────
-function VideoPlaceholder() {
+function VideoPlaceholder({ url }: { url?: string }) {
   const scheme = useColorScheme();
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const bg = scheme === 'dark' ? '#1a2535' : '#d1d5db';
+  const thumbnail = url ? cloudinaryVideoThumbnail(url, reduceDataUsage) : null;
+  const [height, setHeight] = useState(MEDIA_W * 0.5625);
+
+  useEffect(() => {
+    if (!thumbnail) {
+      setHeight(MEDIA_W * 0.5625);
+      return;
+    }
+    let alive = true;
+    Image.getSize(
+      thumbnail,
+      (width, imgHeight) => {
+        if (!alive || !width || !imgHeight) return;
+        setHeight(mediaHeightForAspect(width / imgHeight));
+      },
+      () => {
+        if (alive) setHeight(MEDIA_W * 0.5625);
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [thumbnail]);
+
   return (
-    <View style={[s.videoContainer, { backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
+    <View style={[s.videoContainer, { height, backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
+      {thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+      {thumbnail && <View style={s.videoDim} />}
       <Ionicons name="play-circle-outline" size={52} color="rgba(255,255,255,0.55)" />
     </View>
   );
@@ -344,11 +428,39 @@ function VideoPlaceholder() {
 // ── VideoMediaItem ────────────────────────────────────────────────────────────
 function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean }) {
   const [buffering, setBuffering] = useState(true);
+  const [height, setHeight] = useState(MEDIA_W * 0.5625);
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
   const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
+
+  useEffect(() => {
+    if (!thumbnail) {
+      setHeight(MEDIA_W * 0.5625);
+      return;
+    }
+    let alive = true;
+    Image.getSize(
+      thumbnail,
+      (width, imgHeight) => {
+        if (!alive || !width || !imgHeight) return;
+        const aspect = width / imgHeight;
+        setVideoAspectRatio(aspect);
+        setHeight(mediaHeightForAspect(aspect));
+      },
+      () => {
+        if (alive) {
+          setVideoAspectRatio(16 / 9);
+          setHeight(MEDIA_W * 0.5625);
+        }
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [thumbnail]);
 
   useEffect(() => {
     const sub = player.addListener('statusChange', (payload: { status: string }) => {
@@ -373,13 +485,14 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
   };
 
   return (
-    <View style={s.videoContainer}>
+    <View style={[s.videoContainer, { height }]}>
       <VideoView
         player={player}
         style={s.videoArea}
+        nativeControls
         fullscreenOptions={{ enable: true }}
         allowsPictureInPicture={false}
-        contentFit="contain"
+        contentFit={videoAspectRatio < 0.85 ? 'cover' : 'contain'}
       />
       {buffering && thumbnail && (
         <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -407,13 +520,11 @@ function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) 
     if (isVideoUrl(urls[0])) {
       return isVisible
         ? <VideoMediaItem key={`${urls[0]}:${reduceDataUsage}`} url={urls[0]} isVisible />
-        : <VideoPlaceholder />;
+        : <VideoPlaceholder url={urls[0]} />;
     }
     return (
       <>
-        <TouchableOpacity onPress={() => setViewerIndex(0)} activeOpacity={0.92}>
-          <FeedImage uri={urls[0]} style={s.mediaArea} />
-        </TouchableOpacity>
+        <SingleImageMedia uri={urls[0]} onPress={() => setViewerIndex(0)} />
         {viewerIndex !== null && (
           <ImageViewer urls={urls} initialIndex={viewerIndex} onClose={() => setViewerIndex(null)} />
         )}
@@ -439,7 +550,7 @@ function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) 
   let grid: React.ReactElement;
   if (count === 2) {
     grid = (
-      <View style={[mg.row, { height: H2 * 0.7 }]}>
+      <View style={[mg.row, { height: H2 * 0.82 }]}>
         <Tile url={showUrls[0]} idx={0} style={[mg.half, { marginRight: 1 }]} />
         <Tile url={showUrls[1]} idx={1} style={[mg.half, { marginLeft: 1 }]} />
       </View>
@@ -489,9 +600,9 @@ const mg = StyleSheet.create({
   twoThirds: { flex: 2 },
   oneThird: { flex: 1 },
   halfHeight: { flex: 1 },
-  grid2x2: { flexDirection: 'row', flexWrap: 'wrap', height: (MEDIA_W - 2) * 0.65 },
+  grid2x2: { flexDirection: 'row', flexWrap: 'wrap', height: (MEDIA_W - 2) * 0.78 },
   quadrant: {
-    width: (MEDIA_W - 2) / 2 - 1, height: ((MEDIA_W - 2) * 0.65 - 2) / 2,
+    width: (MEDIA_W - 2) / 2 - 1, height: ((MEDIA_W - 2) * 0.78 - 2) / 2,
     margin: 0.5, overflow: 'hidden',
   },
   playOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.25)' },
@@ -1086,9 +1197,30 @@ const rs = StyleSheet.create({
 // ── EmbedVideoItem ─────────────────────────────────────────────────────────
 function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean }) {
   const [buffering, setBuffering] = useState(true);
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
   const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = false; });
+  useEffect(() => {
+    if (!thumbnail) {
+      setVideoAspectRatio(16 / 9);
+      return;
+    }
+    let alive = true;
+    Image.getSize(
+      thumbnail,
+      (width, height) => {
+        if (!alive || !width || !height) return;
+        setVideoAspectRatio(width / height);
+      },
+      () => {
+        if (alive) setVideoAspectRatio(16 / 9);
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [thumbnail]);
   useEffect(() => {
     const sub = player.addListener('statusChange', (e: { status: string }) => setBuffering(e.status === 'idle' || e.status === 'loading'));
     return () => { try { player.pause(); } catch {} sub.remove(); };
@@ -1096,7 +1228,14 @@ function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean })
   useEffect(() => { try { isVisible ? player.play() : player.pause(); } catch {} }, [isVisible, player]);
   return (
     <View style={ev.wrap}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" />
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit={videoAspectRatio < 0.85 ? 'cover' : 'contain'}
+        nativeControls
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture={false}
+      />
       {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
       {buffering && <View style={ev.loader}><ActivityIndicator color="#fff" size="small" /></View>}
     </View>
@@ -1108,7 +1247,12 @@ const ev = StyleSheet.create({
 });
 
 // ── SharedPostEmbed ─────────────────────────────────────────────────────────
-function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sharedFrom']>; C: typeof LIGHT; isVisible?: boolean }) {
+function SharedPostEmbed({ sf, C, isVisible = true, onPress }: {
+  sf: NonNullable<Post['sharedFrom']>;
+  C: typeof LIGHT;
+  isVisible?: boolean;
+  onPress?: () => void;
+}) {
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const text = parseMentions(sf.content ?? '');
   const firstMedia = sf.mediaUrls?.find(u => u && !isVideoUrl(u));
@@ -1117,7 +1261,7 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
   return (
     <View style={[se.wrap, { borderColor: C.border, borderLeftColor: C.accent }]}>
       <View style={[se.inner, { backgroundColor: C.card2 }]}>
-        <View style={se.header}>
+        <TouchableOpacity style={se.header} activeOpacity={0.86} onPress={onPress} disabled={!onPress}>
           {sf.authorPhotoURL
             ? <Image source={{ uri: sf.authorPhotoURL }} style={se.avatar} />
             : <View style={[se.avatar, { backgroundColor: C.placeholder, alignItems: 'center', justifyContent: 'center' }]}>
@@ -1125,12 +1269,50 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
               </View>
           }
           <Text style={[se.author, { color: C.text }]} numberOfLines={1}>{sf.authorDisplayName}</Text>
-        </View>
-        {text ? <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text> : null}
+          {onPress && <Ionicons name="open-outline" size={15} color={C.subtext} />}
+        </TouchableOpacity>
+        {text ? (
+          <TouchableOpacity activeOpacity={0.86} onPress={onPress} disabled={!onPress}>
+            <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text>
+          </TouchableOpacity>
+        ) : null}
         {hasVideo && !firstMedia && <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible={isVisible} />}
-        {firstMedia && <FeedImage uri={firstMedia} style={se.media} resizeMode="cover" />}
+        {firstMedia && (
+          <TouchableOpacity activeOpacity={0.86} onPress={onPress} disabled={!onPress}>
+            <FeedImage uri={firstMedia} style={se.media} resizeMode="cover" />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
+  );
+}
+
+function SingleImageMedia({ uri, onPress }: { uri: string; onPress: () => void }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
+  const [aspectRatio, setAspectRatio] = useState(1);
+
+  useEffect(() => {
+    let alive = true;
+    Image.getSize(
+      sourceUri,
+      (width, height) => {
+        if (!alive || !width || !height) return;
+        setAspectRatio(Math.max(0.72, Math.min(1.55, width / height)));
+      },
+      () => {
+        if (alive) setAspectRatio(1);
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [sourceUri]);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
+      <FeedImage uri={uri} style={[s.singleMedia, { aspectRatio }]} resizeMode="cover" />
+    </TouchableOpacity>
   );
 }
 
@@ -1236,6 +1418,7 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   const [liked, setLiked] = useState(uid ? (post.likedBy?.includes(uid) ?? false) : false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(uid ? (post.reactions?.[uid] ?? null) : null);
   const [saved, setSaved] = useState(uid ? (post.savedBy?.includes(uid) ?? false) : false);
+  const [currentPrivacy, setCurrentPrivacy] = useState<PostPrivacy>(post.privacy ?? 'public');
   const [reactionsMap, setReactionsMap] = useState<Record<string, string>>(post.reactions ?? {});
   const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [commentCount, setCommentCount] = useState(post.replyCount ?? 0);
@@ -1259,11 +1442,164 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   const handleSave = async () => {
     if (!uid) return;
     const next = !saved;
+    const previousSavedBy = post.savedBy ?? [];
     setSaved(next);
+    updatePost({
+      id: post.id,
+      savedBy: next
+        ? Array.from(new Set([...previousSavedBy, uid]))
+        : previousSavedBy.filter((id) => id !== uid),
+    });
     try {
       if (next) await api.post(`/api/posts/${post.id}/save`, {});
       else await api.delete(`/api/posts/${post.id}/save`);
-    } catch { setSaved(!next); }
+    } catch {
+      setSaved(!next);
+      updatePost({ id: post.id, savedBy: previousSavedBy });
+    }
+  };
+
+  
+  const [showOptions, setShowOptions] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState<ReportReason | ''>('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportToast, setReportToast] = useState<string | null>(null);
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editContent, setEditContent] = useState(post.content || '');
+  const [editPrivacy, setEditPrivacy] = useState<PostPrivacy>(post.privacy ?? 'public');
+  const [editFeeling, setEditFeeling] = useState(post.feeling || '');
+  const [editLocation, setEditLocation] = useState(post.location || '');
+  const [editExistingMedia, setEditExistingMedia] = useState<string[]>(post.mediaUrls ?? []);
+  const [editNewAssets, setEditNewAssets] = useState<PickedAsset[]>([]);
+  const [editUploadProgress, setEditUploadProgress] = useState(0);
+  const [showEditPrivacyModal, setShowEditPrivacyModal] = useState(false);
+  const [showEditFeelingPicker, setShowEditFeelingPicker] = useState(false);
+  const [showEditLocationInput, setShowEditLocationInput] = useState(Boolean(post.location));
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const isAuthor = uid === post.authorId;
+
+  useEffect(() => {
+    setCurrentPrivacy(post.privacy ?? 'public');
+  }, [post.privacy]);
+
+  const openEditPost = () => {
+    setEditContent(post.content || '');
+    setEditPrivacy(post.privacy ?? 'public');
+    setEditFeeling(post.feeling || '');
+    setEditLocation(post.location || '');
+    setEditExistingMedia(post.mediaUrls ?? []);
+    setEditNewAssets([]);
+    setEditUploadProgress(0);
+    setShowEditFeelingPicker(false);
+    setShowEditLocationInput(Boolean(post.location));
+    setShowEditModal(true);
+  };
+
+  const pickEditMedia = async () => {
+    const granted = await ensureLibraryPermission();
+    if (!granted) {
+      Alert.alert('Quyền truy cập', 'Cần quyền truy cập thư viện ảnh để chọn media.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsMultipleSelection: true,
+      selectionLimit: Math.max(1, 10 - editExistingMedia.length - editNewAssets.length),
+      quality: 0.85,
+    });
+    if (!result.canceled) {
+      setEditNewAssets((prev) => [...prev, ...result.assets].slice(0, Math.max(0, 10 - editExistingMedia.length)));
+    }
+  };
+
+  const captureEditMedia = async () => {
+    const granted = await ensureCameraPermission();
+    if (!granted) {
+      Alert.alert('Quyền truy cập', 'Cần quyền truy cập camera để chụp ảnh.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      quality: 0.85,
+    });
+    if (!result.canceled) {
+      setEditNewAssets((prev) => [...prev, ...result.assets].slice(0, Math.max(0, 10 - editExistingMedia.length)));
+    }
+  };
+
+  const handleReport = async () => {
+    if (!reportReason || reportSubmitting) return;
+    setReportSubmitting(true);
+    try {
+      await api.post('/api/posts/' + post.id + '/report', {
+        reason: reportReason,
+        details: reportDetails.trim() || undefined,
+      });
+      setShowReportModal(false);
+      setReportReason('');
+      setReportDetails('');
+      setReportToast('Đã gửi báo cáo');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '';
+      setReportToast(msg.includes('đã báo cáo') ? 'Đã báo cáo bài viết này rồi' : 'Không thể gửi báo cáo');
+    } finally {
+      setReportSubmitting(false);
+      setTimeout(() => setReportToast(null), 3000);
+    }
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editContent.trim() && editExistingMedia.length === 0 && editNewAssets.length === 0) return;
+    setIsEditing(true);
+    setEditUploadProgress(0);
+    try {
+      const uploadedMedia: string[] = [];
+      for (let i = 0; i < editNewAssets.length; i++) {
+        const asset = editNewAssets[i];
+        const url = isVideoAsset(asset)
+          ? await uploadVideo(asset, { folder: 'surf/posts/videos' })
+          : await uploadImage(asset, { folder: 'surf/posts' });
+        uploadedMedia.push(url);
+        setEditUploadProgress(Math.round(((i + 1) / editNewAssets.length) * 100));
+      }
+      const updated = await api.patch<FeedPost>('/api/posts/' + post.id, {
+        content: editContent.trim(),
+        mediaUrls: [...editExistingMedia, ...uploadedMedia],
+        feeling: editFeeling || null,
+        location: editLocation.trim() || null,
+        taggedFriends: post.taggedFriends ?? [],
+        privacy: editPrivacy,
+      });
+      setCurrentPrivacy(updated.privacy ?? editPrivacy);
+      updatePost(updated);
+      setShowEditModal(false);
+    } catch {
+      Alert.alert(t('error'), 'Không thể chỉnh sửa bài viết.');
+    } finally {
+      setIsEditing(false);
+      setEditUploadProgress(0);
+    }
+  };
+
+  const handlePrivacySubmit = async (newPrivacy: PostPrivacy) => {
+    const previousPrivacy = currentPrivacy;
+    setCurrentPrivacy(newPrivacy);
+    updatePost({ id: post.id, privacy: newPrivacy });
+    setShowPrivacyModal(false);
+    try {
+      const updated = await api.patch<FeedPost>('/api/posts/' + post.id, { privacy: newPrivacy });
+      setCurrentPrivacy(updated.privacy ?? newPrivacy);
+      updatePost(updated);
+    } catch {
+      setCurrentPrivacy(previousPrivacy);
+      updatePost({ id: post.id, privacy: previousPrivacy });
+      Alert.alert(t('error'), 'Không thể cập nhật quyền riêng tư.');
+    }
   };
 
   const MAX_CHARS = 150;
@@ -1382,6 +1718,7 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   };
 
   const feelingStr = post.feeling ? (FEELING_STR[post.feeling] ?? '') + post.feeling : null;
+  const postHasPlayableVideo = post.mediaUrls?.some(isVideoUrl) ?? false;
 
   return (
     <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -1426,10 +1763,10 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
                   <Text style={[s.metaText, { color: C.subtext }]} numberOfLines={1}>{post.location}</Text></>
               : null}
             {post.isEdited && <Text style={[s.metaText, { color: C.subtext }]}>· {t('post_edited')}</Text>}
-            <Ionicons name={privacyIcon(post.privacy)} size={11} color={C.subtext} />
+            <Ionicons name={privacyIcon(currentPrivacy)} size={11} color={C.subtext} />
           </View>
         </View>
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => setShowOptions(true)}>
           <Ionicons name="ellipsis-horizontal" size={18} color={C.subtext} />
         </TouchableOpacity>
       </View>
@@ -1454,7 +1791,14 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
       )}
 
       {/* Shared post embed */}
-      {post.sharedFrom && <SharedPostEmbed sf={post.sharedFrom} C={C} isVisible={isVisible} />}
+      {post.sharedFrom && (
+        <SharedPostEmbed
+          sf={post.sharedFrom}
+          C={C}
+          isVisible={isVisible && !postHasPlayableVideo}
+          onPress={() => navigation.navigate('NotificationPost', { postId: post.sharedFrom!.id })}
+        />
+      )}
 
       {/* Reactions summary */}
       {Object.keys(reactionsMap).length > 0 && (
@@ -1499,9 +1843,6 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
             onClose={() => setShowShareModal(false)}
           />
         )}
-        <TouchableOpacity style={s.actionBtn} onPress={handleSave}>
-          <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={21} color={saved ? C.accent : C.subtext} />
-        </TouchableOpacity>
       </View>
 
       <ReactionPickerOverlay
@@ -1525,6 +1866,299 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
           }}
         />
       )}
+
+      <Modal visible={showOptions} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowOptions(false)}>
+        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowOptions(false)} />
+        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
+          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
+          <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); void handleSave(); }}>
+            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? C.accent : C.text} />
+            <Text style={[s.sheetActionText, { color: C.text }]}>{saved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}</Text>
+          </TouchableOpacity>
+          {isAuthor && (
+            <>
+              <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); openEditPost(); }}>
+                <Ionicons name="create-outline" size={22} color={C.text} />
+                <Text style={[s.sheetActionText, { color: C.text }]}>Chỉnh sửa bài viết</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); setShowPrivacyModal(true); }}>
+                <Ionicons name={privacyIcon(currentPrivacy)} size={22} color={C.text} />
+                <Text style={[s.sheetActionText, { color: C.text }]}>Quyền riêng tư</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          {!isAuthor && (
+            <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); setShowReportModal(true); }}>
+              <Ionicons name="flag-outline" size={22} color="#ef4444" />
+              <Text style={[s.sheetActionText, { color: '#ef4444' }]}>Báo cáo bài viết</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
+
+      <Modal visible={showEditModal} transparent={false} statusBarTranslucent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
+        <View style={[s.fullModal, { backgroundColor: C.bg }]}>
+          <View style={[s.modalHeader, { borderBottomColor: C.border, backgroundColor: C.card }]}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <Ionicons name="close" size={24} color={C.text} />
+            </TouchableOpacity>
+            <Text style={[s.modalTitle, { color: C.text }]}>Chỉnh sửa bài viết</Text>
+            <TouchableOpacity
+              onPress={handleEditSubmit}
+              disabled={isEditing || (!editContent.trim() && editExistingMedia.length === 0 && editNewAssets.length === 0)}
+            >
+              <Text style={[s.modalSaveBtn, { color: editContent.trim() || editExistingMedia.length || editNewAssets.length ? C.accent : C.subtext }]}>
+                {isEditing ? t('loading') : t('save')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {isEditing && editNewAssets.length > 0 && (
+            <View style={[s.progressBar, { backgroundColor: C.border }]}>
+              <View style={[s.progressFill, { backgroundColor: C.accent, width: `${editUploadProgress}%` as any }]} />
+            </View>
+          )}
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 18 }}>
+            <View style={s.editAuthorRow}>
+              {post.authorPhotoURL ? (
+                <Image source={{ uri: post.authorPhotoURL }} style={s.editAvatar} />
+              ) : (
+                <View style={[s.editAvatar, { backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }]}>
+                  <Text style={s.editAvatarText}>{(post.authorDisplayName || 'U')[0].toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[s.authorName, { color: C.text }]} numberOfLines={2}>
+                  {post.authorDisplayName}
+                  {editFeeling ? <Text style={{ color: C.subtext, fontWeight: '400' }}> đang cảm thấy {editFeeling}</Text> : null}
+                  {editLocation ? <Text style={{ color: C.subtext, fontWeight: '400' }}> tại 📍{editLocation}</Text> : null}
+                </Text>
+                <TouchableOpacity style={[s.editPrivacyBtn, { borderColor: C.border }]} onPress={() => setShowEditPrivacyModal(true)}>
+                  <Ionicons name={privacyIcon(editPrivacy)} size={13} color={C.accent} />
+                  <Text style={[s.editPrivacyText, { color: C.accent }]}>{PRIVACY_OPTIONS.find((option) => option.value === editPrivacy)?.label}</Text>
+                  <Ionicons name="caret-down" size={11} color={C.accent} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TextInput
+              value={editContent}
+              onChangeText={setEditContent}
+              multiline
+              autoFocus
+              placeholder={t('feed_composer_placeholder')}
+              placeholderTextColor={C.subtext}
+              style={[s.editComposerInput, { color: C.text }]}
+            />
+
+            {post.sharedFrom && (
+              <SharedPostEmbed
+                sf={post.sharedFrom}
+                C={C}
+                isVisible={false}
+                onPress={() => navigation.navigate('NotificationPost', { postId: post.sharedFrom!.id })}
+              />
+            )}
+
+            {(editExistingMedia.length > 0 || editNewAssets.length > 0) && (
+              <View style={s.editMediaGrid}>
+                {editExistingMedia.map((url) => (
+                  <View key={url} style={[s.editMediaTile, { backgroundColor: C.inputBg }]}>
+                    {isVideoUrl(url) ? (
+                      <View style={s.editVideoTile}>
+                        <Ionicons name="play-circle" size={34} color="#fff" />
+                        <Text style={s.editVideoLabel}>Video</Text>
+                      </View>
+                    ) : (
+                      <Image source={{ uri: url }} style={s.editMediaImage} />
+                    )}
+                    <TouchableOpacity style={s.removeMediaBtn} onPress={() => setEditExistingMedia((prev) => prev.filter((item) => item !== url))}>
+                      <Ionicons name="close" size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {editNewAssets.map((asset) => (
+                  <View key={asset.uri} style={[s.editMediaTile, { backgroundColor: C.inputBg }]}>
+                    {isVideoAsset(asset) ? (
+                      <View style={s.editVideoTile}>
+                        <Ionicons name="play-circle" size={34} color="#fff" />
+                        <Text style={s.editVideoLabel} numberOfLines={1}>{asset.fileName || 'Video'}</Text>
+                      </View>
+                    ) : (
+                      <Image source={{ uri: asset.uri }} style={s.editMediaImage} />
+                    )}
+                    <TouchableOpacity style={s.removeMediaBtn} onPress={() => setEditNewAssets((prev) => prev.filter((item) => item.uri !== asset.uri))}>
+                      <Ionicons name="close" size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {showEditLocationInput && (
+              <View style={[s.editLocationRow, { borderColor: C.border, backgroundColor: C.inputBg }]}>
+                <Ionicons name="location-outline" size={18} color={C.accent} />
+                <TextInput
+                  style={[s.editLocationInput, { color: C.text }]}
+                  placeholder="Nhập vị trí..."
+                  placeholderTextColor={C.subtext}
+                  value={editLocation}
+                  onChangeText={setEditLocation}
+                  returnKeyType="done"
+                />
+                {editLocation ? (
+                  <TouchableOpacity onPress={() => setEditLocation('')}>
+                    <Ionicons name="close-circle" size={18} color={C.subtext} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            )}
+
+            {showEditFeelingPicker && (
+              <View style={[s.editFeelingGrid, { borderTopColor: C.border }]}>
+                {FEELING_OPTIONS.map((feelingOption) => {
+                  const value = `${feelingOption.emoji} ${feelingOption.label}`;
+                  const selected = editFeeling === value;
+                  return (
+                    <TouchableOpacity
+                      key={value}
+                      style={[s.editFeelingChip, { backgroundColor: selected ? `${C.accent}33` : C.inputBg, borderColor: selected ? C.accent : C.border }]}
+                      onPress={() => {
+                        setEditFeeling((prev) => (prev === value ? '' : value));
+                        setShowEditFeelingPicker(false);
+                      }}
+                    >
+                      <Text style={s.editFeelingEmoji}>{feelingOption.emoji}</Text>
+                      <Text style={[s.editFeelingLabel, { color: C.text }]}>{feelingOption.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={[s.editActionBar, { borderTopColor: C.border, backgroundColor: C.card }]}>
+            <TouchableOpacity style={s.editActionBtn} onPress={pickEditMedia}>
+              <Ionicons name="images-outline" size={24} color="#22c55e" />
+              <Text style={[s.editActionLabel, { color: C.subtext }]}>Ảnh/Video</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.editActionBtn} onPress={captureEditMedia}>
+              <Ionicons name="camera-outline" size={24} color="#f59e0b" />
+              <Text style={[s.editActionLabel, { color: C.subtext }]}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.editActionBtn} onPress={() => { setShowEditFeelingPicker((value) => !value); setShowEditLocationInput(false); }}>
+              <Ionicons name="happy-outline" size={24} color="#a855f7" />
+              <Text style={[s.editActionLabel, { color: C.subtext }]}>Cảm xúc</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.editActionBtn} onPress={() => { setShowEditLocationInput((value) => !value); setShowEditFeelingPicker(false); }}>
+              <Ionicons name="location-outline" size={24} color="#ef4444" />
+              <Text style={[s.editActionLabel, { color: C.subtext }]}>Vị trí</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showEditPrivacyModal} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowEditPrivacyModal(false)}>
+        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowEditPrivacyModal(false)} />
+        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
+          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
+          <Text style={[s.sheetTitle, { color: C.text }]}>Quyền riêng tư</Text>
+          {PRIVACY_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={s.sheetAction}
+              onPress={() => {
+                setEditPrivacy(option.value);
+                setShowEditPrivacyModal(false);
+              }}
+            >
+              <Ionicons name={option.icon} size={22} color={C.text} />
+              <Text style={[s.sheetActionText, { color: C.text }]}>{option.label}</Text>
+              {editPrivacy === option.value && <Ionicons name="checkmark" size={20} color={C.accent} style={{ marginLeft: 'auto' }} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
+
+      {/* Legacy edit modal removed. */}
+      {false && <Modal visible={false} transparent statusBarTranslucent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
+        <View style={[s.fullModal, { backgroundColor: C.bg }]}>
+          <View style={[s.modalHeader, { borderBottomColor: C.border }]}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <Ionicons name="close" size={24} color={C.text} />
+            </TouchableOpacity>
+            <Text style={[s.modalTitle, { color: C.text }]}>Chỉnh sửa bài viết</Text>
+            <TouchableOpacity onPress={handleEditSubmit} disabled={isEditing || !editContent.trim()}>
+              <Text style={[s.modalSaveBtn, { color: editContent.trim() ? C.accent : C.subtext }]}>
+                {isEditing ? t('loading') : t('save')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16 }}>
+            <TextInput
+              value={editContent}
+              onChangeText={setEditContent}
+              multiline
+              autoFocus
+              placeholder={t('feed_composer_placeholder')}
+              placeholderTextColor={C.subtext}
+              style={[s.editInput, { backgroundColor: C.inputBg, color: C.text }]}
+            />
+          </ScrollView>
+        </View>
+      </Modal>}
+
+      <Modal visible={showPrivacyModal} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowPrivacyModal(false)}>
+        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowPrivacyModal(false)} />
+        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
+          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
+          <Text style={[s.sheetTitle, { color: C.text }]}>Quyền riêng tư</Text>
+          {PRIVACY_OPTIONS.map((option) => (
+            <TouchableOpacity key={option.value} style={s.sheetAction} onPress={() => void handlePrivacySubmit(option.value)}>
+              <Ionicons name={option.icon} size={22} color={C.text} />
+              <Text style={[s.sheetActionText, { color: C.text }]}>{option.label}</Text>
+              {currentPrivacy === option.value && <Ionicons name="checkmark" size={20} color={C.accent} style={{ marginLeft: 'auto' }} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
+
+      <Modal visible={showReportModal} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowReportModal(false)}>
+        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowReportModal(false)} />
+        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
+          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
+          <Text style={[s.sheetTitle, { color: C.text }]}>Báo cáo bài viết</Text>
+          <Text style={[s.sheetSubtitle, { color: C.subtext }]}>Chọn lý do để đội ngũ Surf xem xét bài viết này.</Text>
+          <ScrollView style={{ maxHeight: SH * 0.42 }} showsVerticalScrollIndicator={false}>
+            {REPORT_CATEGORIES.map((category) => (
+              <TouchableOpacity key={category.key} style={s.sheetAction} onPress={() => setReportReason(category.key)}>
+                <Ionicons name={reportReason === category.key ? 'radio-button-on' : 'radio-button-off'} size={22} color={reportReason === category.key ? C.accent : C.subtext} />
+                <Text style={[s.sheetActionText, { color: C.text }]}>{category.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <TextInput
+            value={reportDetails}
+            onChangeText={setReportDetails}
+            multiline
+            placeholder="Chi tiết bổ sung (không bắt buộc)"
+            placeholderTextColor={C.subtext}
+            style={[s.reportInput, { backgroundColor: C.inputBg, color: C.text }]}
+          />
+          <TouchableOpacity
+            style={[s.submitBtn, { backgroundColor: reportReason ? C.accent : C.border, marginHorizontal: 0, marginBottom: 8 }]}
+            disabled={!reportReason || reportSubmitting}
+            onPress={() => void handleReport()}
+          >
+            <Text style={s.submitText}>{reportSubmitting ? t('loading') : 'Gửi báo cáo'}</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {reportToast && (
+        <View style={s.toast}>
+          <Text style={s.toastText}>{reportToast}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1541,9 +2175,11 @@ const s = StyleSheet.create({
   contentText: { fontSize: 14, lineHeight: 21 },
   seeMore: { fontSize: 14, fontWeight: '600' },
   mediaArea: { width: MEDIA_W, height: MEDIA_W * 0.5625, alignSelf: 'center' },
-  videoContainer: { width: MEDIA_W, maxHeight: MEDIA_W, minHeight: MEDIA_W * 0.5625, alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
-  videoArea: { width: MEDIA_W, height: MEDIA_W },
+  singleMedia: { width: MEDIA_W, alignSelf: 'center', borderRadius: 4 },
+  videoContainer: { width: MEDIA_W, minHeight: MEDIA_W * 0.5625, alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
+  videoArea: { ...StyleSheet.absoluteFillObject },
   muteBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, padding: 6 },
+  videoDim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.28)' },
   videoBuffering: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1 },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 },
@@ -1552,4 +2188,45 @@ const s = StyleSheet.create({
   reactionsBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth },
   reactionsEmoji: { fontSize: 14 },
   reactionsCount: { fontSize: 12, fontWeight: '500' },
+  modalScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.08)' },
+  actionSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, paddingBottom: 24, paddingHorizontal: 16 },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginVertical: 12 },
+  sheetTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
+  sheetSubtitle: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  sheetAction: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
+  sheetActionText: { fontSize: 16, fontWeight: '500' },
+  fullModal: { flex: 1 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, height: 56, borderBottomWidth: 1, marginTop: 40 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold' },
+  modalSaveBtn: { fontSize: 16, fontWeight: 'bold' },
+  editInput: { fontSize: 16, padding: 12, borderRadius: 8, minHeight: 120, textAlignVertical: 'top' },
+  progressBar: { height: 3, width: '100%' },
+  progressFill: { height: 3 },
+  editAuthorRow: { flexDirection: 'row', padding: 16, alignItems: 'center' },
+  editAvatar: { width: 46, height: 46, borderRadius: 23 },
+  editAvatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  editPrivacyBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', gap: 4, marginTop: 5 },
+  editPrivacyText: { fontSize: 12, fontWeight: '600' },
+  editComposerInput: { minHeight: 120, paddingHorizontal: 16, fontSize: 18, lineHeight: 26, textAlignVertical: 'top' },
+  editMediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, marginTop: 8 },
+  editMediaTile: { width: '48.5%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden' },
+  editMediaImage: { width: '100%', height: '100%' },
+  editVideoTile: { flex: 1, backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  editVideoLabel: { color: '#fff', fontSize: 11, maxWidth: '90%', textAlign: 'center' },
+  removeMediaBtn: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.75)', alignItems: 'center', justifyContent: 'center' },
+  editLocationRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
+  editLocationInput: { flex: 1, fontSize: 15 },
+  editFeelingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 16, borderTopWidth: 1 },
+  editFeelingChip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, gap: 5 },
+  editFeelingEmoji: { fontSize: 16 },
+  editFeelingLabel: { fontSize: 13, fontWeight: '500' },
+  editActionBar: { flexDirection: 'row', borderTopWidth: 1, paddingVertical: 10, paddingHorizontal: 8 },
+  editActionBtn: { flex: 1, alignItems: 'center', gap: 3 },
+  editActionLabel: { fontSize: 11 },
+  reportInput: { marginTop: 8, marginBottom: 12, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, minHeight: 72, textAlignVertical: 'top' },
+  submitBtn: { paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
+  submitText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  toast: { position: 'absolute', left: 16, right: 16, bottom: 14, borderRadius: 999, backgroundColor: 'rgba(15,23,42,0.92)', paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center' },
+  toastText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });
+
