@@ -86,6 +86,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       groupId,
       isAnonymous = false,
       poll,
+      allowedUserIds = [],
     } = req.body;
 
     if (!content?.trim() && mediaUrls.length === 0) {
@@ -157,6 +158,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       location: location || null,
       taggedFriends: Array.isArray(taggedFriends) ? taggedFriends : [],
       privacy: privacy || 'public',
+      allowedUserIds: Array.isArray(allowedUserIds) ? allowedUserIds : [],
       parentId: parentId || null,
       groupId: groupId || null,
       createdAt: now,
@@ -779,7 +781,7 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
       res.status(404).json({ error: 'Post not found or forbidden' });
       return;
     }
-    const { content, mediaUrls, privacy, feeling, location, taggedFriends } = req.body;
+    const { content, mediaUrls, privacy, feeling, location, taggedFriends, allowedUserIds } = req.body;
     const update: Record<string, unknown> = {
       updatedAt: new Date(),
       isEdited: true,
@@ -791,6 +793,7 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
       update.hasVideo = detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []);
     }
     if (privacy !== undefined) update.privacy = privacy;
+    if (allowedUserIds !== undefined) update.allowedUserIds = allowedUserIds;
     if (feeling !== undefined) update.feeling = feeling ?? null;
     if (location !== undefined) update.location = location ?? null;
     if (taggedFriends !== undefined) update.taggedFriends = taggedFriends;

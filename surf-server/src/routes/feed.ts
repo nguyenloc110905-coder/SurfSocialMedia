@@ -165,6 +165,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
           if (!visibleAuthors.has(authorId)) return false;
           if (authorPostsSetting === 'only-me') return false;
           if (authorPostsSetting === 'friends' && !isFriendAuthor) return false;
+          if (privacy === 'custom') {
+            const allowed = Array.isArray(p.allowedUserIds) ? p.allowedUserIds : [];
+            return allowed.includes(uid);
+          }
           if (isFriendAuthor) return privacy === 'public' || privacy === 'friends';
           return privacy === 'public'; // chỉ follow
         });
@@ -178,7 +182,12 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       if (authorPostsSetting === 'only-me') return false;
       const isFriendAuthor = friendIds.includes(p.authorId);
       if (authorPostsSetting === 'friends' && !isFriendAuthor) return false;
-      return (p.privacy ?? 'public') === 'public'; // chỉ lấy public
+      const privacy = p.privacy ?? 'public';
+      if (privacy === 'custom') {
+        const allowed = Array.isArray(p.allowedUserIds) ? p.allowedUserIds : [];
+        return allowed.includes(uid);
+      }
+      return privacy === 'public'; // chỉ lấy public
     });
     // Đánh dấu bài khám phá để client có thể hiện label "Khám phá"
     discoverPosts.forEach((p) => {

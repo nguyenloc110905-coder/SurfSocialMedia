@@ -1127,7 +1127,11 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
           const privacy = p.privacy ?? 'public';
           if (privacy === 'only-me') return false;
           if (privacy === 'friends') return isFriend;
-          return true; // public / custom → ai cũng thấy
+          if (privacy === 'custom') {
+            const allowed = Array.isArray(p.allowedUserIds) ? p.allowedUserIds : [];
+            return allowed.includes(viewerUid);
+          }
+          return true; // public
         });
       }
     }

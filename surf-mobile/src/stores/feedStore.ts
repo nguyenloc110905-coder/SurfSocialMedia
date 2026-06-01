@@ -30,6 +30,7 @@ export type FeedPost = {
   location?: string;
   taggedFriends?: Array<{ uid: string; displayName: string }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
+  allowedUserIds?: string[];
   isEdited?: boolean;
   _discover?: boolean;
 };
