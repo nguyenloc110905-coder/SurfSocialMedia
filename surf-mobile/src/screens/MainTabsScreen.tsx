@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   BackHandler,
   Easing,
@@ -16,25 +17,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
+import { api } from '@/lib/api';
+import { connectSocket, getSocket } from '@/lib/socket';
+import { useAuthStore } from '@/stores/authStore';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { gestureState } from '@/lib/gestureState';
-import { useNotificationStore } from '@/stores/notificationStore';
+import { useNotificationStore, type NotificationItem, type RealtimeMessagePayload } from '@/stores/notificationStore';
 import { useFriendStore } from '@/stores/friendStore';
+import { useMessageStore } from '@/stores/messageStore';
 import Sidebar from '@/components/Sidebar';
 import { useT, type I18nKey } from '@/lib/i18n';
 
 import HomeScreen from './HomeScreen';
 import FeedScreen from './FeedScreen';
 import ShortVideoScreen from './ShortVideoScreen';
-import MarketplaceScreen from './MarketplaceScreen';
+import MessagesScreen from './MessagesScreen';
 import NotificationCenterScreen from './NotificationCenterScreen';
 import FriendsScreen from './FriendsScreen';
 import ProfileScreen from './ProfileScreen';
 
-type Tab = 'home' | 'feed' | 'video' | 'friends' | 'marketplace' | 'notifications' | 'profile';
+type Tab = 'home' | 'feed' | 'video' | 'friends' | 'messages' | 'notifications' | 'profile';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+};
+
+type CountResponse = {
+  count?: number;
 };
 
 const DARK = {
@@ -44,6 +53,7 @@ const DARK = {
   text: '#e2e8f0',
   subtext: '#64748b',
   accent: '#0ea5e9',
+  danger: '#ef4444',
 };
 
 const LIGHT = {
@@ -53,6 +63,7 @@ const LIGHT = {
   text: '#1f2937',
   subtext: '#94a3b8',
   accent: '#0ea5e9',
+  danger: '#ef4444',
 };
 
 type TabDef = {
@@ -66,19 +77,21 @@ const TABS: TabDef[] = [
   { key: 'feed', icon: 'home-outline', iconActive: 'home', labelKey: 'nav_feed' },
   { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', labelKey: 'nav_surf_clips' },
   { key: 'friends', icon: 'people-outline', iconActive: 'people', labelKey: 'nav_friends' },
-  { key: 'marketplace', icon: 'storefront-outline', iconActive: 'storefront', labelKey: 'nav_market' },
+  { key: 'messages', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', labelKey: 'nav_messages' },
   { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', labelKey: 'nav_notifications' },
   { key: 'profile', icon: 'person-circle-outline', iconActive: 'person-circle', labelKey: 'nav_profile' },
 ];
 
-const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'marketplace', 'notifications', 'profile'];
+const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'messages', 'notifications', 'profile'];
 const TOP_TAB_COUNT = TABS.length;
 const TAB_PRESS_TRANSITION_MS = 240;
+const FEED_BRAND_HEADER_H = 44;
+const FEED_TAB_HEADER_H = 46;
 
 const TAB_TITLE_KEYS: Record<Exclude<Tab, 'home' | 'feed'>, I18nKey> = {
   video: 'nav_surf_clips',
   friends: 'nav_friends',
-  marketplace: 'nav_market',
+  messages: 'nav_messages',
   notifications: 'nav_notifications',
   profile: 'nav_profile',
 };
@@ -89,6 +102,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const C = scheme === 'dark' ? DARK : LIGHT;
   const isFocused = useIsFocused();
   const { width } = useWindowDimensions();
+  const user = useAuthStore((state) => state.user);
 
   const [active, setActive] = useState<Tab>('home');
   const [clipsFullscreen, setClipsFullscreen] = useState(false);
@@ -97,23 +111,46 @@ export default function MainTabsScreen({ navigation }: Props) {
     from: Tab;
     to: Tab;
     direction: 1 | -1;
-    mode: 'tap' | 'drag' | 'back';
+    mode: 'tap' | 'drag' | 'back' | 'fade';
     trackHistory: boolean;
   } | null>(null);
   const [reloadingTab, setReloadingTab] = useState<Tab | null>(null);
+  const [feedFloatingHeaderVisible, setFeedFloatingHeaderVisible] = useState(false);
+  const [tabAtTop, setTabAtTop] = useState<Record<Tab, boolean>>({
+    home: true,
+    feed: true,
+    video: true,
+    friends: true,
+    messages: true,
+    notifications: true,
+    profile: true,
+  });
   const [visited] = useState<Set<Tab>>(new Set<Tab>(['home']));
+  const [scrollTopSignals, setScrollTopSignals] = useState<Record<Tab, number>>({
+    home: 0,
+    feed: 0,
+    video: 0,
+    friends: 0,
+    messages: 0,
+    notifications: 0,
+    profile: 0,
+  });
   const [resetSignals, setResetSignals] = useState<Record<Tab, number>>({
     home: 0,
     feed: 0,
     video: 0,
     friends: 0,
-    marketplace: 0,
+    messages: 0,
     notifications: 0,
     profile: 0,
   });
-  const unreadNotifications = useNotificationStore((state) =>
-    state.items.filter((item) => !(item.read ?? item.isRead)).length
-  );
+  const unreadNotifications = useNotificationStore((state) => state.unreadCount);
+  const setNotificationUnreadCount = useNotificationStore((state) => state.setUnreadCount);
+  const upsertNotification = useNotificationStore((state) => state.upsertNotification);
+  const markNotificationRead = useNotificationStore((state) => state.markItemRead);
+  const markAllNotificationsRead = useNotificationStore((state) => state.markAllRead);
+  const unreadMessages = useMessageStore((state) => state.unreadConversations);
+  const setUnreadMessages = useMessageStore((state) => state.setUnreadConversations);
   const incomingFriendRequests = useFriendStore((state) => state.incomingRequests.length);
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
 
@@ -122,6 +159,9 @@ export default function MainTabsScreen({ navigation }: Props) {
   const tabSlideX = useRef(new Animated.Value(0)).current;
   const indicatorProgress = useRef(new Animated.Value(0)).current;
   const reloadDrop = useRef(new Animated.Value(0)).current;
+  const feedHeaderCollapse = useRef(new Animated.Value(0)).current;
+  const feedChromeCollapse = useRef(new Animated.Value(0)).current;
+  const feedFloatingHeader = useRef(new Animated.Value(1)).current;
   const tabTransitionRef = useRef<typeof tabTransition>(null);
 
   const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
@@ -132,6 +172,35 @@ export default function MainTabsScreen({ navigation }: Props) {
   const compactTitle = visualActive !== 'home' && visualActive !== 'feed' ? t(TAB_TITLE_KEYS[visualActive]) : '';
   const activeTopTabIndex = TABS.findIndex((tab) => tab.key === visualActive);
   const indicatorWidth = tabBarWidth > 0 ? tabBarWidth / TOP_TAB_COUNT : 0;
+  const isFeedChromeSurface = !!tabTransition && tabTransition.from === 'feed' && tabTransition.to !== 'feed';
+
+  const setFeedBrandHeaderVisible = useCallback((visible: boolean) => {
+    Animated.timing(feedHeaderCollapse, {
+      toValue: visible ? 0 : 1,
+      duration: visible ? 230 : 260,
+      easing: visible ? Easing.out(Easing.back(1.15)) : Easing.inOut(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [feedHeaderCollapse]);
+
+  const setFeedFloatingHeaderShown = useCallback((visible: boolean, immediate = false) => {
+    if (immediate) {
+      feedFloatingHeader.stopAnimation();
+      feedFloatingHeader.setValue(visible ? 0 : 1);
+      setFeedFloatingHeaderVisible(visible);
+      return;
+    }
+
+    if (visible) setFeedFloatingHeaderVisible(true);
+    Animated.timing(feedFloatingHeader, {
+      toValue: visible ? 0 : 1,
+      duration: visible ? 190 : 150,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished && !visible) setFeedFloatingHeaderVisible(false);
+    });
+  }, [feedFloatingHeader]);
 
   const setTransition = useCallback((next: typeof tabTransition) => {
     tabTransitionRef.current = next;
@@ -143,6 +212,15 @@ export default function MainTabsScreen({ navigation }: Props) {
     if (history[history.length - 1] !== tab) {
       tabHistoryRef.current = [...history, tab];
     }
+  }, []);
+
+  const updateTabAtTop = useCallback((tab: Tab, atTop: boolean) => {
+    setTabAtTop((current) => (current[tab] === atTop ? current : { ...current, [tab]: atTop }));
+  }, []);
+
+  const scrollCurrentTabToTop = useCallback((tab: Tab) => {
+    setTabAtTop((current) => ({ ...current, [tab]: true }));
+    setScrollTopSignals((signals) => ({ ...signals, [tab]: signals[tab] + 1 }));
   }, []);
 
   const reloadCurrentTab = useCallback((tab: Tab) => {
@@ -182,33 +260,37 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const activateTab = useCallback((
     tab: Tab,
-    source: 'tap' | 'back' = 'tap',
+    source: 'tap' | 'back' | 'fade' = 'tap',
     trackHistory = true
   ) => {
     const current = activeRef.current;
 
     visited.add(tab);
     if (tab === current) {
-      reloadCurrentTab(tab);
+      if (tabAtTop[tab]) reloadCurrentTab(tab);
+      else scrollCurrentTabToTop(tab);
       return;
     }
 
     const currentIndex = TAB_ORDER.indexOf(current);
     const nextIndex = TAB_ORDER.indexOf(tab);
     const direction: 1 | -1 = nextIndex > currentIndex ? 1 : -1;
+    const isHomeFeedTransition =
+      (current === 'home' && tab === 'feed') || (current === 'feed' && tab === 'home');
+    const mode = isHomeFeedTransition ? 'fade' : source;
 
     tabSlideX.stopAnimation();
     indicatorProgress.stopAnimation();
     tabSlideX.setValue(0);
-    setTransition({ from: current, to: tab, direction, mode: source, trackHistory });
-  }, [indicatorProgress, reloadCurrentTab, setTransition, tabSlideX, visited]);
+    setTransition({ from: current, to: tab, direction, mode, trackHistory });
+  }, [indicatorProgress, reloadCurrentTab, scrollCurrentTabToTop, setTransition, tabAtTop, tabSlideX, visited]);
 
   const handleTab = useCallback((tab: Tab) => {
     activateTab(tab, 'tap');
   }, [activateTab]);
 
-  const handleHome = useCallback(() => {
-    activateTab('home', 'tap');
+  const handleSurfPress = useCallback(() => {
+    activateTab(activeRef.current === 'home' ? 'feed' : 'home', 'fade');
   }, [activateTab]);
 
   const getAdjacentTab = useCallback((direction: 1 | -1) => {
@@ -252,6 +334,12 @@ export default function MainTabsScreen({ navigation }: Props) {
   const panResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => {
       if (sidebarOpen || hideClipsChrome || gestureState.reactionPickerActive) return false;
+      const direction: 1 | -1 = gesture.dx < 0 ? 1 : -1;
+      const target = getAdjacentTab(direction);
+      const current = activeRef.current;
+      if ((current === 'home' && target === 'feed') || (current === 'feed' && target === 'home')) {
+        return false;
+      }
       return Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35;
     },
     onPanResponderGrant: () => {
@@ -263,6 +351,10 @@ export default function MainTabsScreen({ navigation }: Props) {
       if (!target) return;
 
       const current = activeRef.current;
+      if ((current === 'home' && target === 'feed') || (current === 'feed' && target === 'home')) {
+        return;
+      }
+
       const currentIndex = TAB_ORDER.indexOf(current);
       const targetIndex = TAB_ORDER.indexOf(target);
       const currentTransition = tabTransitionRef.current;
@@ -297,6 +389,26 @@ export default function MainTabsScreen({ navigation }: Props) {
   }, [visualActive]);
 
   useEffect(() => {
+    if (tabTransition?.from === 'feed' && tabTransition.to !== 'feed') {
+      setFeedFloatingHeaderShown(false, true);
+      feedChromeCollapse.stopAnimation();
+      feedChromeCollapse.setValue(0);
+      feedHeaderCollapse.stopAnimation();
+      feedHeaderCollapse.setValue(0);
+      setFeedBrandHeaderVisible(false);
+      return;
+    }
+
+    if (tabTransition?.to === 'feed') {
+      setFeedFloatingHeaderShown(false, true);
+      feedHeaderCollapse.stopAnimation();
+      feedHeaderCollapse.setValue(0);
+      feedChromeCollapse.stopAnimation();
+      feedChromeCollapse.setValue(0);
+    }
+  }, [feedChromeCollapse, feedHeaderCollapse, setFeedBrandHeaderVisible, setFeedFloatingHeaderShown, tabTransition]);
+
+  useEffect(() => {
     activeRef.current = active;
   }, [active]);
 
@@ -304,11 +416,12 @@ export default function MainTabsScreen({ navigation }: Props) {
     if (!tabTransition || tabTransition.mode === 'drag') return;
 
     const targetTopIndex = TABS.findIndex((tab) => tab.key === tabTransition.to);
+    const isFadeTransition = tabTransition.mode === 'fade';
     const animations = [
       Animated.timing(tabSlideX, {
-        toValue: -tabTransition.direction * width,
-        duration: TAB_PRESS_TRANSITION_MS,
-        easing: Easing.out(Easing.cubic),
+        toValue: isFadeTransition ? 1 : -tabTransition.direction * width,
+        duration: isFadeTransition ? 180 : TAB_PRESS_TRANSITION_MS,
+        easing: isFadeTransition ? Easing.out(Easing.quad) : Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ];
@@ -373,22 +486,146 @@ export default function MainTabsScreen({ navigation }: Props) {
     return () => subscription.remove();
   }, [activateTab, closeSidebar, sidebarOpen]);
 
+  const refreshUnreadCounts = useCallback(async () => {
+    if (!user?.uid) return;
+
+    try {
+      const [notificationData, messageData] = await Promise.all([
+        api.get<CountResponse>('/api/notifications/unread-count'),
+        api.get<CountResponse>('/api/conversations/unread-count'),
+      ]);
+
+      if (typeof notificationData.count === 'number') {
+        setNotificationUnreadCount(notificationData.count);
+      }
+      if (typeof messageData.count === 'number') {
+        setUnreadMessages(messageData.count);
+      }
+    } catch {
+      // The center screens still reconcile their lists; badge refresh is best effort.
+    }
+  }, [setNotificationUnreadCount, setUnreadMessages, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !isFocused) return;
+    refreshUnreadCounts();
+  }, [isFocused, refreshUnreadCounts, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    connectSocket(user.uid);
+    const socket = getSocket();
+
+    const onNotificationNew = (payload: NotificationItem) => {
+      if (payload?.id) upsertNotification(payload);
+      refreshUnreadCounts();
+    };
+    const onNotificationUnreadCount = (payload: CountResponse) => {
+      if (typeof payload?.count === 'number') setNotificationUnreadCount(payload.count);
+    };
+    const onNotificationRead = ({ id }: { id?: string }) => {
+      if (id) markNotificationRead(id);
+      refreshUnreadCounts();
+    };
+    const onNotificationReadAll = () => {
+      markAllNotificationsRead();
+      setNotificationUnreadCount(0);
+    };
+    const onMessageNew = (payload: RealtimeMessagePayload & { muted?: boolean }) => {
+      if (payload?.message?.senderId !== user.uid && !payload?.muted) {
+        refreshUnreadCounts();
+      }
+    };
+    const onMessageUnreadCount = (payload: CountResponse) => {
+      if (typeof payload?.count === 'number') setUnreadMessages(payload.count);
+    };
+
+    socket.on('notification:new', onNotificationNew);
+    socket.on('notification:unread-count', onNotificationUnreadCount);
+    socket.on('notification:read', onNotificationRead);
+    socket.on('notification:read-all', onNotificationReadAll);
+    socket.on('message:new', onMessageNew);
+    socket.on('message:unread-count', onMessageUnreadCount);
+
+    refreshUnreadCounts();
+
+    return () => {
+      socket.off('notification:new', onNotificationNew);
+      socket.off('notification:unread-count', onNotificationUnreadCount);
+      socket.off('notification:read', onNotificationRead);
+      socket.off('notification:read-all', onNotificationReadAll);
+      socket.off('message:new', onMessageNew);
+      socket.off('message:unread-count', onMessageUnreadCount);
+    };
+  }, [
+    markAllNotificationsRead,
+    markNotificationRead,
+    refreshUnreadCounts,
+    setNotificationUnreadCount,
+    setUnreadMessages,
+    upsertNotification,
+    user?.uid,
+  ]);
+
   const handleClipsFullscreenChange = useCallback((enabled: boolean) => {
     setClipsFullscreen(enabled);
   }, []);
 
   const shouldRenderTab = useCallback((tab: Tab) => {
+    if (tab === 'video') {
+      return tab === active || tab === tabTransition?.from || tab === tabTransition?.to;
+    }
     return visited.has(tab) || tab === tabTransition?.from || tab === tabTransition?.to;
   }, [active, tabTransition, visited]);
 
   const sceneStyleFor = useCallback((tab: Tab) => {
+    const sceneSurface = { backgroundColor: tab === 'video' ? '#000' : C.bg };
+
     if (!tabTransition) {
-      return tab === active ? [s.sceneLayer, s.sceneVisible] : [s.sceneLayer, s.sceneHidden];
+      return tab === active
+        ? [s.sceneLayer, sceneSurface, s.sceneVisible]
+        : [s.sceneLayer, sceneSurface, s.sceneHidden];
+    }
+
+    if (tabTransition.mode === 'fade') {
+      if (tab === tabTransition.from) {
+        return [
+          s.sceneLayer,
+          sceneSurface,
+          s.sceneVisible,
+          {
+            zIndex: 1,
+            opacity: tabSlideX.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+              extrapolate: 'clamp',
+            }),
+          },
+        ];
+      }
+
+      if (tab === tabTransition.to) {
+        return [
+          s.sceneLayer,
+          sceneSurface,
+          s.sceneVisible,
+          {
+            zIndex: 2,
+            opacity: tabSlideX.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 1],
+              extrapolate: 'clamp',
+            }),
+          },
+        ];
+      }
     }
 
     if (tab === tabTransition.from) {
       return [
         s.sceneLayer,
+        sceneSurface,
         s.sceneVisible,
         {
           zIndex: 1,
@@ -400,6 +637,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     if (tab === tabTransition.to) {
       return [
         s.sceneLayer,
+        sceneSurface,
         s.sceneVisible,
         {
           zIndex: 2,
@@ -418,8 +656,8 @@ export default function MainTabsScreen({ navigation }: Props) {
       ];
     }
 
-    return [s.sceneLayer, s.sceneHidden];
-  }, [active, tabSlideX, tabTransition, width]);
+    return [s.sceneLayer, sceneSurface, s.sceneHidden];
+  }, [C.bg, active, tabSlideX, tabTransition, width]);
 
   const renderTopTabs = (floating = false) => (
     <View
@@ -450,10 +688,43 @@ export default function MainTabsScreen({ navigation }: Props) {
           ]}
         />
       )}
+      {reloadingTab && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            s.reloadDrop,
+            {
+              opacity: reloadDrop.interpolate({
+                inputRange: [0, 0.18, 1.45, 2],
+                outputRange: [0, 1, 1, 0],
+                extrapolate: 'clamp',
+              }),
+              transform: [
+                {
+                  translateY: reloadDrop.interpolate({
+                    inputRange: [0, 1, 2],
+                    outputRange: [-12, 10, 20],
+                    extrapolate: 'clamp',
+                  }),
+                },
+                {
+                  rotate: reloadDrop.interpolate({
+                    inputRange: [0, 2],
+                    outputRange: ['0deg', '280deg'],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={[s.reloadBubble, { backgroundColor: floating ? 'rgba(15,23,42,0.72)' : C.bg }]}>
+            <ActivityIndicator size="small" color={floating ? '#fff' : C.accent} />
+          </View>
+        </Animated.View>
+      )}
       {TABS.map((tab) => {
         const isActive = visualActive === tab.key;
         const color = floating ? '#fff' : isActive ? C.accent : C.subtext;
-        const showReload = reloadingTab === tab.key;
         return (
           <TouchableOpacity
             key={tab.key}
@@ -469,50 +740,18 @@ export default function MainTabsScreen({ navigation }: Props) {
                 color={color}
                 style={floating ? s.floatingIconShadow : undefined}
               />
-            {showReload && (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  s.reloadDrop,
-                  {
-                    opacity: reloadDrop.interpolate({
-                      inputRange: [0, 0.18, 1.45, 2],
-                      outputRange: [0, 1, 1, 0],
-                      extrapolate: 'clamp',
-                    }),
-                    transform: [
-                      {
-                        translateY: reloadDrop.interpolate({
-                          inputRange: [0, 1, 2],
-                          outputRange: [-18, 2, 18],
-                          extrapolate: 'clamp',
-                        }),
-                      },
-                      {
-                        rotate: reloadDrop.interpolate({
-                          inputRange: [0, 2],
-                          outputRange: ['0deg', '280deg'],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="reload"
-                  size={18}
-                  color={floating ? '#fff' : C.accent}
-                  style={floating ? s.floatingIconShadow : undefined}
-                />
-              </Animated.View>
+            {tab.key === 'messages' && unreadMessages > 0 && (
+              <View style={[s.topBadge, { backgroundColor: C.danger }]}>
+                <Text style={s.badgeText}>{unreadMessages > 99 ? '99+' : unreadMessages}</Text>
+              </View>
             )}
             {tab.key === 'notifications' && unreadNotifications > 0 && (
-              <View style={[s.topBadge, { backgroundColor: C.accent }]}>
+              <View style={[s.topBadge, { backgroundColor: C.danger }]}>
                 <Text style={s.badgeText}>{unreadNotifications > 99 ? '99+' : unreadNotifications}</Text>
               </View>
             )}
             {tab.key === 'friends' && incomingFriendRequests > 0 && (
-              <View style={[s.topBadge, { backgroundColor: C.accent }]}>
+              <View style={[s.topBadge, { backgroundColor: C.danger }]}>
                 <Text style={s.badgeText}>{incomingFriendRequests > 99 ? '99+' : incomingFriendRequests}</Text>
               </View>
             )}
@@ -549,11 +788,23 @@ export default function MainTabsScreen({ navigation }: Props) {
     </View>
   );
 
-  const renderCompactHeader = (tab: Exclude<Tab, 'home' | 'feed' | 'video'>) => {
+  const renderCompactHeader = (
+    tab: Exclude<Tab, 'home' | 'feed' | 'video'>,
+    options: { mergeWithSubHeader?: boolean } = {}
+  ) => {
     const title = t(TAB_TITLE_KEYS[tab]);
 
     return (
-      <View style={[s.compactHeader, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
+      <View
+        style={[
+          s.compactHeader,
+          {
+            backgroundColor: C.bg,
+            borderBottomColor: C.border,
+            borderBottomWidth: options.mergeWithSubHeader ? 0 : 1,
+          },
+        ]}
+      >
         <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel={t('open_menu')}>
           <Ionicons name="menu-outline" size={24} color={C.text} />
         </TouchableOpacity>
@@ -570,39 +821,166 @@ export default function MainTabsScreen({ navigation }: Props) {
     );
   };
 
+  const feedBrandHeader = (
+    <Animated.View
+      style={[
+        s.feedBrandHeaderClip,
+        {
+          height: feedHeaderCollapse.interpolate({
+            inputRange: [0, 1],
+            outputRange: [FEED_BRAND_HEADER_H, 0],
+            extrapolate: 'clamp',
+          }),
+          opacity: feedHeaderCollapse.interpolate({
+            inputRange: [0, 0.45, 1],
+            outputRange: [1, 0.72, 0],
+            extrapolate: 'clamp',
+          }),
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          s.header,
+          {
+            backgroundColor: C.bg,
+            transform: [
+              {
+                translateY: feedHeaderCollapse.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -(FEED_BRAND_HEADER_H + 10)],
+                  extrapolate: 'clamp',
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <View style={s.headerBrand}>
+          <TouchableOpacity
+            hitSlop={HIT}
+            onPress={toggleSidebar}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel={t('open_menu')}
+            style={s.menuBrandBtn}
+          >
+            <Ionicons name="menu-outline" size={25} color={C.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            hitSlop={HIT}
+            onPress={handleSurfPress}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel={t('back_home')}
+            style={s.brandTextBtn}
+          >
+            <Text style={s.headerTitle}>Surf</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={s.headerActions}>
+          <TouchableOpacity
+            hitSlop={HIT}
+            onPress={() => navigation.navigate('CreatePost')}
+            accessibilityRole="button"
+            accessibilityLabel={t('create_post')}
+          >
+            <Ionicons name="add-circle-outline" size={26} color={C.text} />
+          </TouchableOpacity>
+          <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel={t('search')} onPress={() => navigation.navigate('Search')}>
+            <Ionicons name="search-outline" size={24} color={C.text} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </Animated.View>
+  );
+
+  const feedListHeader = (
+    <>
+      <View style={[s.header, { backgroundColor: C.bg }]}>
+        <View style={s.headerBrand}>
+          <TouchableOpacity
+            hitSlop={HIT}
+            onPress={toggleSidebar}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel={t('open_menu')}
+            style={s.menuBrandBtn}
+          >
+            <Ionicons name="menu-outline" size={25} color={C.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            hitSlop={HIT}
+            onPress={handleSurfPress}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel={t('back_home')}
+            style={s.brandTextBtn}
+          >
+            <Text style={s.headerTitle}>Surf</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={s.headerActions}>
+          <TouchableOpacity
+            hitSlop={HIT}
+            onPress={() => navigation.navigate('CreatePost')}
+            accessibilityRole="button"
+            accessibilityLabel={t('create_post')}
+          >
+            <Ionicons name="add-circle-outline" size={26} color={C.text} />
+          </TouchableOpacity>
+          <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel={t('search')} onPress={() => navigation.navigate('Search')}>
+            <Ionicons name="search-outline" size={24} color={C.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      {renderTopTabs()}
+    </>
+  );
+
+  const surfBrandButton = (
+    <TouchableOpacity
+      hitSlop={HIT}
+      onPress={handleSurfPress}
+      activeOpacity={0.78}
+      accessibilityRole="button"
+      accessibilityLabel={visualActive === 'home' ? t('nav_feed') : t('back_home')}
+      style={s.brandTextBtn}
+    >
+      <Text style={s.headerTitle}>Surf</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: hideClipsChrome ? '#000' : C.bg }} edges={hideClipsChrome ? [] : ['top']}>
       {!hideClipsChrome && (isFeedSurface ? (
         <>
-          <View style={[s.header, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
-            <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar}>
-              <Ionicons name="menu-outline" size={24} color={C.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              hitSlop={HIT}
-              onPress={handleHome}
-              activeOpacity={0.75}
-              accessibilityRole="button"
-              accessibilityLabel={t('back_home')}
-              style={[s.headerBrand, visualActive === 'home' && { borderBottomColor: C.accent }]}
-            >
-              <Text style={[s.headerTitle, { color: visualActive === 'home' ? C.accent : C.text }]}>Surf</Text>
-            </TouchableOpacity>
-            <View style={s.headerActions}>
-              <TouchableOpacity
-                hitSlop={HIT}
-                onPress={() => navigation.navigate('CreatePost')}
-                accessibilityRole="button"
-                accessibilityLabel={t('create_post')}
-              >
-                <Ionicons name="add-circle-outline" size={28} color={C.text} />
-              </TouchableOpacity>
-              <TouchableOpacity hitSlop={HIT} accessibilityRole="button" accessibilityLabel={t('search')} onPress={() => navigation.navigate('Search')}>
-                <Ionicons name="search-outline" size={26} color={C.text} />
-              </TouchableOpacity>
+          {visualActive === 'home' ? (
+            <View style={[s.homeHeader, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
+              {surfBrandButton}
             </View>
-          </View>
-          {visualActive === 'feed' && renderTopTabs()}
+          ) : isFeedChromeSurface ? (
+            <Animated.View
+              style={{
+                height: feedChromeCollapse.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [FEED_BRAND_HEADER_H + FEED_TAB_HEADER_H, 0],
+                  extrapolate: 'clamp',
+                }),
+                opacity: feedChromeCollapse.interpolate({
+                  inputRange: [0, 0.75, 1],
+                  outputRange: [1, 0.4, 0],
+                  extrapolate: 'clamp',
+                }),
+                overflow: 'hidden',
+              }}
+            >
+              {feedBrandHeader}
+              {renderTopTabs()}
+            </Animated.View>
+          ) : (
+            null
+          )}
         </>
       ) : (
         <>
@@ -632,6 +1010,9 @@ export default function MainTabsScreen({ navigation }: Props) {
               navigation={navigation as any}
               onFeedPress={() => handleTab('feed')}
               onFriendsPress={() => handleTab('friends')}
+              onVideoPress={() => handleTab('video')}
+              onNotificationsPress={() => handleTab('notifications')}
+              onMessagesPress={() => handleTab('messages')}
             />
           </Animated.View>
         )}
@@ -641,9 +1022,13 @@ export default function MainTabsScreen({ navigation }: Props) {
             <FeedScreen
               navigation={navigation as any}
               isActive={visualActive === 'feed'}
+              scrollTopSignal={scrollTopSignals.feed}
               resetSignal={resetSignals.feed}
               safeTop={false}
               onCreatePost={() => navigation.navigate('CreatePost')}
+              headerComponent={isFeedChromeSurface ? null : feedListHeader}
+              onFloatingHeaderChange={setFeedFloatingHeaderShown}
+              onScrollPositionChange={(atTop) => updateTabAtTop('feed', atTop)}
             />
           </Animated.View>
         )}
@@ -652,10 +1037,12 @@ export default function MainTabsScreen({ navigation }: Props) {
           <Animated.View style={[sceneStyleFor('video'), s.sceneWithOverlay]} pointerEvents={active === 'video' ? 'auto' : 'none'}>
             <ShortVideoScreen
               isActive={visualActive === 'video' && isFocused}
+              scrollTopSignal={scrollTopSignals.video}
               resetSignal={resetSignals.video}
               safeTop={false}
               showTitle={false}
               onFullscreenChange={handleClipsFullscreenChange}
+              onScrollPositionChange={(atTop) => updateTabAtTop('video', atTop)}
             />
             {visualActive === 'video' && !clipsFullscreen && clipsOverlay}
           </Animated.View>
@@ -663,12 +1050,14 @@ export default function MainTabsScreen({ navigation }: Props) {
 
         {shouldRenderTab('friends') && (
           <Animated.View style={sceneStyleFor('friends')} pointerEvents={active === 'friends' ? 'auto' : 'none'}>
-            {renderCompactHeader('friends')}
+            {renderCompactHeader('friends', { mergeWithSubHeader: true })}
             <FriendsScreen
               navigation={navigation as any}
+              scrollTopSignal={scrollTopSignals.friends}
               resetSignal={resetSignals.friends}
               safeTop={false}
               showTitleBlock={false}
+              onScrollPositionChange={(atTop) => updateTabAtTop('friends', atTop)}
             />
           </Animated.View>
         )}
@@ -679,21 +1068,25 @@ export default function MainTabsScreen({ navigation }: Props) {
             <NotificationCenterScreen
               navigation={navigation as any}
               isActive={visualActive === 'notifications'}
+              scrollTopSignal={scrollTopSignals.notifications}
               resetSignal={resetSignals.notifications}
               safeTop={false}
               showHeader={false}
+              onScrollPositionChange={(atTop) => updateTabAtTop('notifications', atTop)}
             />
           </Animated.View>
         )}
 
-        {shouldRenderTab('marketplace') && (
-          <Animated.View style={sceneStyleFor('marketplace')} pointerEvents={active === 'marketplace' ? 'auto' : 'none'}>
-            {renderCompactHeader('marketplace')}
-            <MarketplaceScreen
+        {shouldRenderTab('messages') && (
+          <Animated.View style={sceneStyleFor('messages')} pointerEvents={active === 'messages' ? 'auto' : 'none'}>
+            {renderCompactHeader('messages')}
+            <MessagesScreen
               navigation={navigation as any}
-              resetSignal={resetSignals.marketplace}
+              scrollTopSignal={scrollTopSignals.messages}
+              resetSignal={resetSignals.messages}
               safeTop={false}
               showHeader={false}
+              onScrollPositionChange={(atTop) => updateTabAtTop('messages', atTop)}
             />
           </Animated.View>
         )}
@@ -704,13 +1097,42 @@ export default function MainTabsScreen({ navigation }: Props) {
               navigation={navigation as any}
               route={{ key: 'MainTabsProfile', name: 'Profile', params: undefined } as any}
               isActive={visualActive === 'profile'}
+              scrollTopSignal={scrollTopSignals.profile}
               resetSignal={resetSignals.profile}
               safeTop={false}
               showBackButton={false}
+              onScrollPositionChange={(atTop) => updateTabAtTop('profile', atTop)}
             />
           </Animated.View>
         )}
       </Animated.View>
+
+      {feedFloatingHeaderVisible && active === 'feed' && !tabTransition && (
+        <Animated.View
+          style={[
+            s.feedFloatingHeader,
+            {
+              backgroundColor: C.bg,
+              opacity: feedFloatingHeader.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0],
+                extrapolate: 'clamp',
+              }),
+              transform: [
+                {
+                  translateY: feedFloatingHeader.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -(FEED_BRAND_HEADER_H + FEED_TAB_HEADER_H)],
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {feedListHeader}
+        </Animated.View>
+      )}
 
       <Sidebar visible={sidebarOpen} onClose={closeSidebar} navigation={navigation} />
     </SafeAreaView>
@@ -722,21 +1144,61 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 4,
+    borderBottomWidth: 0,
+  },
+  feedBrandHeaderClip: {
+    overflow: 'hidden',
+  },
+  feedFloatingHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 25,
+    elevation: 8,
+  },
+  homeHeader: {
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
   },
   headerBrand: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 1,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700', letterSpacing: 1 },
+  menuBrandBtn: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandTextBtn: {
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingRight: 10,
+  },
+  headerTitle: {
+    color: '#14b8d4',
+    fontSize: 23,
+    fontWeight: '900',
+    letterSpacing: 0,
+    textShadowColor: 'rgba(20, 184, 212, 0.28)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 18,
+    gap: 14,
   },
   compactHeader: {
     minHeight: 48,
@@ -755,17 +1217,17 @@ const s = StyleSheet.create({
   },
   topTabs: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    minHeight: 54,
+    borderBottomWidth: 0,
+    minHeight: 46,
     position: 'relative',
   },
   floatingTopTabs: {
-    borderBottomWidth: 1,
-    minHeight: 56,
+    borderBottomWidth: 0,
+    minHeight: 50,
   },
   topTabBtn: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 46,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -788,9 +1250,22 @@ const s = StyleSheet.create({
   },
   reloadDrop: {
     position: 'absolute',
-    top: 4,
-    alignSelf: 'center',
+    left: '50%',
+    bottom: -2,
+    marginLeft: -15,
     zIndex: 3,
+  },
+  reloadBubble: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   topBadge: {
     position: 'absolute',
@@ -818,6 +1293,7 @@ const s = StyleSheet.create({
   sceneHidden: {
     zIndex: 0,
     opacity: 0,
+    display: 'none',
   },
   sceneWithOverlay: {
     position: 'absolute',

@@ -31,9 +31,11 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
   route: RouteProp<RootStackParamList, 'Profile'>;
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showBackButton?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type UserProfile = {
@@ -164,9 +166,11 @@ export default function ProfileScreen({
   navigation,
   route,
   isActive = true,
+  scrollTopSignal = 0,
   resetSignal = 0,
   safeTop = true,
   showBackButton = true,
+  onScrollPositionChange,
 }: Props) {
   const t = useT();
   const scheme = useColorScheme();
@@ -265,7 +269,18 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!resetSignal) return;
     scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }, [resetSignal]);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
+
+  const handleScroll = (event: any) => {
+    onScrollPositionChange?.(Math.max(0, event.nativeEvent.contentOffset.y) < 12);
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -812,6 +827,8 @@ export default function ProfileScreen({
         ref={scrollRef}
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.accent} colors={[C.accent]} />}
       >
         {renderHeader()}

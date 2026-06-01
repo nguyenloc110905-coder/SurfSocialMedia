@@ -33,6 +33,7 @@ type Props = {
   resetSignal?: number;
   safeTop?: boolean;
   showHeader?: boolean;
+  showBackButton?: boolean;
 };
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -212,7 +213,13 @@ function ListingCard({
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
-export default function MarketplaceScreen({ navigation, resetSignal = 0, safeTop = true, showHeader = true }: Props) {
+export default function MarketplaceScreen({
+  navigation,
+  resetSignal = 0,
+  safeTop = true,
+  showHeader = true,
+  showBackButton = true,
+}: Props) {
   const t = useT();
   const language = useLanguage();
   const scheme = useColorScheme();
@@ -290,6 +297,16 @@ export default function MarketplaceScreen({ navigation, resetSignal = 0, safeTop
 
       {/* ── Header ── */}
       {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
+        {showBackButton && navigation.canGoBack() ? (
+          <TouchableOpacity
+            style={[s.iconBtn, { backgroundColor: C.card, borderColor: C.border }]}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel={t('back_home')}
+          >
+            <Ionicons name="arrow-back" size={20} color={C.text} />
+          </TouchableOpacity>
+        ) : null}
         {isSearchMode ? (
           <View style={[s.searchBar, { backgroundColor: C.input, borderColor: C.border }]}>
             <Ionicons name="search" size={16} color={C.subtext} />
