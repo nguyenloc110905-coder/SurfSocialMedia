@@ -10,9 +10,10 @@ export type ListingStatus = 'pending' | 'active' | 'rejected' | 'sold' | 'delete
 export type MarketplaceModerationMode = 'auto' | 'manual';
 export type ListingAvailability = 'in_stock' | 'single_item';
 export type SellerSaleStatus = 'available' | 'pending';
-export type BoostStatus = 'none' | 'awaiting_moderation' | 'active' | 'completed' | 'cancelled' | 'rejected';
+export type BoostStatus = 'none' | 'awaiting_moderation' | 'active' | 'paused' | 'completed' | 'cancelled' | 'rejected';
 export type BoostPaymentMode = 'sandbox' | 'live';
 export type BoostPaymentStatus = 'none' | 'sandbox_authorized' | 'sandbox_voided' | 'paid' | 'refunded';
+export type BoostSandboxPaymentProvider = 'zalopay' | 'vnpay' | 'momo';
 
 export interface BoostMetrics {
   impressions: number;
@@ -55,6 +56,7 @@ export interface Listing {
   boostEndsAt?: unknown;
   boostPaymentMode?: BoostPaymentMode | null;
   boostPaymentStatus?: BoostPaymentStatus;
+  boostPaymentProvider?: BoostSandboxPaymentProvider | null;
   boostBudgetTotal?: number;
   boostEstimatedTax?: number;
   boostTotal?: number;
@@ -135,6 +137,8 @@ export interface CreateListingInput {
     durationDays: number;
     placements: string[];
   } | null;
+  boostPaymentProvider?: BoostSandboxPaymentProvider | null;
+  boostPaymentId?: string | null;
 }
 
 function setSavedBy(listing: Listing, id: string, userId: string | undefined, saved: boolean): Listing {

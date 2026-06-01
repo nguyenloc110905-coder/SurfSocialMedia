@@ -22,6 +22,7 @@ export type BoostStatus =
   | 'none'
   | 'awaiting_moderation'
   | 'active'
+  | 'paused'
   | 'completed'
   | 'cancelled'
   | 'rejected';
@@ -32,6 +33,7 @@ export type BoostPaymentStatus =
   | 'sandbox_voided'
   | 'paid'
   | 'refunded';
+export type BoostSandboxPaymentProvider = 'zalopay' | 'vnpay' | 'momo';
 
 export interface BoostMetrics {
   impressions: number;
@@ -82,6 +84,7 @@ export interface Listing {
   boostEndsAt?: unknown;
   boostPaymentMode?: BoostPaymentMode | null;
   boostPaymentStatus?: BoostPaymentStatus;
+  boostPaymentProvider?: BoostSandboxPaymentProvider | null;
   boostBudgetTotal?: number;
   boostEstimatedTax?: number;
   boostTotal?: number;
@@ -123,6 +126,8 @@ export interface CreateListingInput {
     durationDays: number;
     placements: string[];
   } | null;
+  boostPaymentProvider?: BoostSandboxPaymentProvider | null;
+  boostPaymentId?: string | null;
 }
 
 export interface UpdateListingInput {
@@ -146,6 +151,8 @@ export interface BoostListingInput {
     durationDays: number;
     placements: string[];
   };
+  boostPaymentProvider?: BoostSandboxPaymentProvider;
+  boostPaymentId?: string;
 }
 
 export interface MarketplaceModerationSettings {
@@ -286,6 +293,8 @@ interface MarketplaceState {
   toggleSave: (id: string) => Promise<boolean>;
   createListing: (data: CreateListingInput) => Promise<Listing>;
   boostListing: (id: string, data: BoostListingInput) => Promise<Listing>;
+  pauseBoost: (id: string) => Promise<Listing>;
+  resumeBoost: (id: string) => Promise<Listing>;
   updateListing: (id: string, data: UpdateListingInput) => Promise<Listing>;
   deleteListing: (id: string) => Promise<void>;
   markAsSold: (id: string) => Promise<void>;
@@ -500,6 +509,52 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
 
   boostListing: async (id, data) => {
     const updated = await api.post<Listing>(`/api/marketplace/${id}/boost`, data);
+    set((s) => ({
+      listings:
+        updated.status === 'active'
+          ? [updated, ...s.listings.filter((l) => l.id !== id)]
+          : s.listings.filter((l) => l.id !== id),
+      searchResults:
+        updated.status === 'active'
+          ? s.searchResults.map((l) => (l.id === id ? updated : l))
+          : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings:
+        updated.status === 'active'
+          ? s.savedListings.map((l) => (l.id === id ? updated : l))
+          : s.savedListings.filter((l) => l.id !== id),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
+  },
+
+  pauseBoost: async (id) => {
+    const updated = await api.patch<Listing>(`/api/marketplace/${id}/boost/pause`);
+    set((s) => ({
+      listings:
+        updated.status === 'active'
+          ? [updated, ...s.listings.filter((l) => l.id !== id)]
+          : s.listings.filter((l) => l.id !== id),
+      searchResults:
+        updated.status === 'active'
+          ? s.searchResults.map((l) => (l.id === id ? updated : l))
+          : s.searchResults.filter((l) => l.id !== id),
+      myListings: s.myListings
+        .map((l) => (l.id === id ? updated : l))
+        .filter((l) => matchesMyListingsFilter(l, s.myListingsFilter)),
+      savedListings:
+        updated.status === 'active'
+          ? s.savedListings.map((l) => (l.id === id ? updated : l))
+          : s.savedListings.filter((l) => l.id !== id),
+      detailListing: s.detailListing?.id === id ? updated : s.detailListing,
+    }));
+    return updated;
+  },
+
+  resumeBoost: async (id) => {
+    const updated = await api.patch<Listing>(`/api/marketplace/${id}/boost/resume`);
     set((s) => ({
       listings:
         updated.status === 'active'

@@ -16,13 +16,13 @@ const OPTIONS: Array<{
 }> = [
   {
     value: 'everyone',
-    title: 'Moi nguoi',
-    description: 'Bat ky nguoi dung nao cung co the gui loi moi ket ban cho ban.',
+    title: 'Mọi người',
+    description: 'Bất kỳ người dùng nào cũng có thể gửi lời mời kết bạn cho bạn.',
   },
   {
     value: 'friends_of_friends',
-    title: 'Ban cua ban be',
-    description: 'Chi nguoi co ban chung voi ban moi co the gui loi moi ket ban.',
+    title: 'Bạn của bạn bè',
+    description: 'Chỉ người có bạn chung với bạn mới có thể gửi lời mời kết bạn.',
   },
 ];
 
@@ -55,7 +55,7 @@ export default function FriendRequestPrivacyPanel() {
         setSavedPrivacy(normalized);
       } catch (e) {
         if (cancelled) return;
-        setError((e as Error).message || 'Khong tai duoc cai dat loi moi ket ban.');
+        setError((e as Error).message || 'Không tải được cài đặt lời mời kết bạn.');
         setPrivacy(DEFAULT_FRIEND_REQUEST_PRIVACY);
         setSavedPrivacy(DEFAULT_FRIEND_REQUEST_PRIVACY);
       } finally {
@@ -89,9 +89,9 @@ export default function FriendRequestPrivacyPanel() {
       const normalized = normalizeFriendRequestPrivacy(updated.friendRequestPrivacy ?? privacy);
       setPrivacy(normalized);
       setSavedPrivacy(normalized);
-      setSuccess('Da luu cai dat loi moi ket ban.');
+      setSuccess('Đã lưu cài đặt lời mời kết bạn.');
     } catch (e) {
-      setError((e as Error).message || 'Khong luu duoc cai dat. Vui long thu lai.');
+      setError((e as Error).message || 'Không lưu được cài đặt. Vui lòng thử lại.');
     } finally {
       setSaving(false);
     }
@@ -100,10 +100,10 @@ export default function FriendRequestPrivacyPanel() {
   return (
     <div className="max-w-3xl">
       <h1 className="mb-2 text-2xl font-bold text-slate-800 dark:text-slate-100">
-        Ai co the gui loi moi ket ban
+        Ai có thể gửi lời mời kết bạn
       </h1>
       <p className="mb-6 text-slate-600 dark:text-slate-300">
-        Ban co the cho phep tat ca moi nguoi, hoac chi nhan loi moi tu nhung nguoi co ban chung.
+        Bạn có thể cho phép tất cả mọi người, hoặc chỉ nhận lời mời từ những người có bạn chung.
       </p>
 
       {error && (
@@ -122,7 +122,7 @@ export default function FriendRequestPrivacyPanel() {
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-800">
           <div className="mb-3 inline-block h-8 w-8 animate-spin rounded-full border-2 border-surf-primary border-t-transparent" />
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Dang tai cai dat loi moi ket ban...
+            Đang tải cài đặt lời mời kết bạn...
           </p>
         </div>
       ) : (
@@ -180,7 +180,7 @@ export default function FriendRequestPrivacyPanel() {
               disabled={saving || loading || !isDirty}
               className="inline-flex h-11 items-center justify-center rounded-xl bg-surf-primary px-5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-surf-secondary"
             >
-              {saving ? 'Dang luu...' : 'Luu thay doi'}
+              {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
 
             <button
@@ -192,12 +192,12 @@ export default function FriendRequestPrivacyPanel() {
               disabled={saving}
               className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/40"
             >
-              Dat lai mac dinh
+              Đặt lại mặc định
             </button>
 
             {!isDirty && !saving && (
               <span className="text-xs text-slate-500 dark:text-slate-400">
-                Khong co thay doi moi.
+                Không có thay đổi mới.
               </span>
             )}
           </div>

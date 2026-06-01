@@ -117,6 +117,8 @@ app.get('/api/health', (_, res) => {
   });
 });
 
+app.use('/payment/marketplace', marketplaceRoutes);
+
 // Swagger UI — đặt trước requireAuth để truy cập không cần token
 app.get('/api/docs.json', (_req, res) => {
   res.setHeader('Content-Type', 'application/json');

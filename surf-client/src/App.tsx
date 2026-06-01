@@ -26,8 +26,12 @@ import { GlobalCallProvider } from './components/call/GlobalCallProvider';
 import SavedPage from './pages/SavedPage';
 import HashtagPage from './pages/HashtagPage';
 import HelpSupportPage from './pages/HelpSupportPage';
+import AdminSupportPage from './pages/AdminSupportPage';
 import { useMessageSound } from './hooks/useMessageSound';
+import { useSessionHeartbeat } from './hooks/useSessionHeartbeat';
 import PolicyPage from './pages/PolicyPage';
+import NetworkStatusToast from './components/ui/NetworkStatusToast';
+import BoostPaymentReturnPage from './pages/BoostPaymentReturnPage';
 
 function ThemeInit() {
   const theme = useThemeStore((s) => s.theme);
@@ -62,6 +66,7 @@ function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
   usePresence();
   useMessageSound();
+  useSessionHeartbeat();
   const loading = useAuthStore((s) => s.loading);
   const location = useLocation();
 
@@ -115,6 +120,7 @@ export default function App() {
         <Route path="/register" element={<AuthPage />} />
         {/* / là trang xuất phát = form đăng nhập; /login, /register dùng chung AuthPage */}
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/sandbox/boost-payment-return" element={<BoostPaymentReturnPage />} />
         <Route
           path="/onboarding"
           element={
@@ -150,33 +156,12 @@ export default function App() {
           <Route path="saved" element={<SavedPage />} />
           <Route path="hashtag/:tag" element={<HashtagPage />} />
           <Route path="events" element={<EventsPage />} />
-          <Route
-            path="pages"
-            element={<PlaceholderPage title="Trang" description="Trang bạn quản lý và theo dõi." />}
-          />
           <Route path="waves" element={<Waves />} />
-          <Route
-            path="explore"
-            element={
-              <PlaceholderPage
-                title="Khám phá"
-                description="Khám phá nội dung và chủ đề phù hợp với bạn."
-              />
-            }
-          />
-          <Route
-            path="moments"
-            element={
-              <PlaceholderPage
-                title="Moments"
-                description="Khoảnh khắc 24h từ bạn bè và cộng đồng — tương tự Story."
-              />
-            }
-          />
           <Route path="live" element={<LivePage />} />
           <Route path="live/:streamId" element={<LivePage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="help-support" element={<HelpSupportPage />} />
+          <Route path="admin/support" element={<AdminSupportPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route
@@ -196,8 +181,8 @@ export default function App() {
           }
         />
         <Route path="/policy" element={<PolicyPage />} />
-
       </Routes>
+      <NetworkStatusToast />
     </GlobalCallProvider>
   );
 }

@@ -11,7 +11,7 @@ import {
   toApiNotification,
 } from '../../services/notifications.js';
 import {
-  emitMessageNew,
+  emitMessageNewToTargets,
   emitMessageUnreadCount,
 } from '../emitters/message.emitter.js';
 import {
@@ -205,9 +205,7 @@ const emitCallLog = async (
   if (!result.ok) return;
 
   const realtimePayload = toRealtimeMessagePayload(result.item);
-  result.participantIds.forEach((uid) => {
-    emitMessageNew(uid, realtimePayload);
-  });
+  emitMessageNewToTargets(result.participantIds, payload.conversationId, realtimePayload);
 
   const unreadCounts = await Promise.all(
     result.participantIds.map(async (uid) => ({
@@ -233,9 +231,7 @@ const emitGroupCallStartLog = async (session: GroupCallSession) => {
   if (!result.ok) return;
 
   const realtimePayload = toRealtimeMessagePayload(result.item);
-  result.participantIds.forEach((uid) => {
-    emitMessageNew(uid, realtimePayload);
-  });
+  emitMessageNewToTargets(result.participantIds, session.conversationId, realtimePayload);
 
   const unreadCounts = await Promise.all(
     result.participantIds.map(async (uid) => ({
@@ -265,9 +261,7 @@ const emitGroupCallEndedLog = async (
   if (!result.ok) return;
 
   const realtimePayload = toRealtimeMessagePayload(result.item);
-  result.participantIds.forEach((uid) => {
-    emitMessageNew(uid, realtimePayload);
-  });
+  emitMessageNewToTargets(result.participantIds, session.conversationId, realtimePayload);
 
   const unreadCounts = await Promise.all(
     result.participantIds.map(async (uid) => ({

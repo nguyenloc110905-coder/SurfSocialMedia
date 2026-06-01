@@ -100,8 +100,8 @@ export default function Profile() {
   const initial = displayName.charAt(0).toUpperCase();
   const profileEmail = isOwnProfile ? user?.email : profile?.email;
   const photoURL = isOwnProfile
-    ? (user?.photoURL || profile?.photoURL || null)
-    : (profile?.photoURL || null);
+    ? user?.photoURL || profile?.photoURL || null
+    : profile?.photoURL || null;
   const coverImageUrl = profile?.coverImageUrl ?? null;
   const bio = profile?.bio ?? null;
   const aboutDetails = profile?.aboutDetails ?? [];
@@ -133,6 +133,7 @@ export default function Profile() {
     privacy?: 'public' | 'friends' | 'only-me' | 'custom';
     isEdited?: boolean;
     savedBy?: string[];
+    pinnedAt?: string | null;
     sharedFrom?: {
       id: string;
       authorId?: string;
@@ -245,7 +246,9 @@ export default function Profile() {
       }
     };
     socket.on('friendAccepted', handler);
-    return () => { socket.off('friendAccepted', handler); };
+    return () => {
+      socket.off('friendAccepted', handler);
+    };
   }, [uid, user]);
 
   // Load profile
@@ -395,13 +398,18 @@ export default function Profile() {
         const response = await api.get<{ clips: Clip[] }>(`/api/users/${uid}/clips`);
         if (!cancelled) setClips(response.clips || []);
       } catch {
-        if (!cancelled) { setClipsError('Không thể tải video.'); setClips([]); }
+        if (!cancelled) {
+          setClipsError('Không thể tải video.');
+          setClips([]);
+        }
       } finally {
         if (!cancelled) setClipsLoading(false);
       }
     };
     loadClips();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [uid, activeTab]);
 
   // Load saved posts (own profile only)
@@ -412,10 +420,18 @@ export default function Profile() {
     setSavedPostsError(null);
     api
       .get<{ posts: Post[] }>('/api/posts/saved')
-      .then((r) => { if (!cancelled) setSavedPosts(r.posts ?? []); })
-      .catch(() => { if (!cancelled) setSavedPostsError('Không thể tải bài đã lưu.'); })
-      .finally(() => { if (!cancelled) setSavedPostsLoading(false); });
-    return () => { cancelled = true; };
+      .then((r) => {
+        if (!cancelled) setSavedPosts(r.posts ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedPostsError('Không thể tải bài đã lưu.');
+      })
+      .finally(() => {
+        if (!cancelled) setSavedPostsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isOwnProfile, activeTab]);
 
   // Kểm tra trạng thái bạn bè khi xem trang người khác
@@ -1063,10 +1079,8 @@ export default function Profile() {
                 Bài viết
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setActiveTab('friends')}
-              className="surf-stat-pop flex flex-col items-center px-6 sm:px-8 py-3 hover:bg-surf-primary/5 dark:hover:bg-surf-primary/10 transition-colors"
+            <div
+              className="surf-stat-pop flex flex-col items-center px-6 sm:px-8 py-3"
               style={{ animationDelay: '0.35s' }}
             >
               <span className="text-xl font-extrabold text-gray-900 dark:text-gray-100 tabular-nums">
@@ -1075,11 +1089,9 @@ export default function Profile() {
               <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
                 Bạn bè
               </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('photos')}
-              className="surf-stat-pop flex flex-col items-center px-6 sm:px-8 py-3 hover:bg-surf-primary/5 dark:hover:bg-surf-primary/10 transition-colors"
+            </div>
+            <div
+              className="surf-stat-pop flex flex-col items-center px-6 sm:px-8 py-3"
               style={{ animationDelay: '0.45s' }}
             >
               <span className="text-xl font-extrabold text-gray-900 dark:text-gray-100 tabular-nums">
@@ -1088,7 +1100,7 @@ export default function Profile() {
               <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
                 Ảnh
               </span>
-            </button>
+            </div>
           </div>
 
           {/* Action buttons */}
@@ -1105,15 +1117,6 @@ export default function Profile() {
                     <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
                   </svg>
                   Chỉnh sửa hồ sơ
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                  aria-label="Tùy chọn khác"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                  </svg>
                 </button>
               </>
             )}
@@ -1200,8 +1203,20 @@ export default function Profile() {
                         <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
-                          <svg className="w-4 h-4 group-hover/unfriend-btn:hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>
-                          <svg className="w-4 h-4 hidden group-hover/unfriend-btn:block" viewBox="0 0 24 24" fill="currentColor"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                          <svg
+                            className="w-4 h-4 group-hover/unfriend-btn:hidden"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                          </svg>
+                          <svg
+                            className="w-4 h-4 hidden group-hover/unfriend-btn:block"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
                         </>
                       )}
                       <span className="group-hover/unfriend-btn:hidden">Bạn bè</span>
@@ -1211,16 +1226,34 @@ export default function Profile() {
                 )}
                 {/* Unfriend confirmation modal */}
                 {showUnfriendConfirm && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowUnfriendConfirm(false)}>
-                    <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-6 w-[340px] mx-4" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                    onClick={() => setShowUnfriendConfirm(false)}
+                  >
+                    <div
+                      className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-6 w-[340px] mx-4"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex flex-col items-center text-center gap-4">
                         <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                          <svg className="w-7 h-7 text-red-500" viewBox="0 0 24 24" fill="currentColor"><path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                          <svg
+                            className="w-7 h-7 text-red-500"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M14 8c0-2.21-1.79-4-4-4S6 5.79 6 8s1.79 4 4 4 4-1.79 4-4zm3 2v2h6v-2h-6zm-7 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
                         </div>
                         <div>
-                          <p className="font-bold text-gray-900 dark:text-white text-base">Hủy kết bạn?</p>
+                          <p className="font-bold text-gray-900 dark:text-white text-base">
+                            Hủy kết bạn?
+                          </p>
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            Bạn có chắc muốn hủy kết bạn với <span className="font-semibold text-gray-700 dark:text-gray-300">{profile?.displayName ?? 'người này'}</span> không?
+                            Bạn có chắc muốn hủy kết bạn với{' '}
+                            <span className="font-semibold text-gray-700 dark:text-gray-300">
+                              {profile?.displayName ?? 'người này'}
+                            </span>{' '}
+                            không?
                           </p>
                         </div>
                         <div className="flex gap-3 w-full">
@@ -1234,10 +1267,17 @@ export default function Profile() {
                           <button
                             type="button"
                             disabled={actionLoading}
-                            onClick={() => { setShowUnfriendConfirm(false); handleUnfriend(); }}
+                            onClick={() => {
+                              setShowUnfriendConfirm(false);
+                              handleUnfriend();
+                            }}
                             className="flex-1 h-10 rounded-2xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors disabled:opacity-60"
                           >
-                            {actionLoading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : 'Hủy kết bạn'}
+                            {actionLoading ? (
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                            ) : (
+                              'Hủy kết bạn'
+                            )}
                           </button>
                         </div>
                       </div>
@@ -1273,17 +1313,7 @@ export default function Profile() {
                     </span>
                   </button>
                 )}
-                {friendStatus !== 'loading' && friendStatus !== 'blocked' && (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 h-10 px-5 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
-                    </svg>
-                    Nhắn tin
-                  </button>
-                )}
+
                 {friendStatus !== 'loading' && (
                   <button
                     type="button"
@@ -1306,17 +1336,7 @@ export default function Profile() {
                     {isBlocking ? 'Bỏ chặn' : 'Chặn'}
                   </button>
                 )}
-                {friendStatus !== 'loading' && (
-                  <button
-                    type="button"
-                    className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                    aria-label="Tùy chọn khác"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                    </svg>
-                  </button>
-                )}
+
               </>
             )}
           </div>
@@ -1360,21 +1380,25 @@ export default function Profile() {
               <div className="flex gap-3 items-center">
                 <div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-semibold text-surf-primary flex-shrink-0 overflow-hidden">
                   {photoURL ? (
-                    <img src={optimizeImageUrl(photoURL)} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={optimizeImageUrl(photoURL)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     initial
                   )}
                 </div>
                 <button
                   type="button"
-                  onClick={() => (window.location.href = '/feed')}
+                  onClick={() => navigate('/feed')}
                   className="flex-1 text-left px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                 >
                   Chia sẻ gì đó...
                 </button>
                 <button
                   type="button"
-                  onClick={() => (window.location.href = '/feed')}
+                  onClick={() => navigate('/feed')}
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   title="Ảnh"
                 >
@@ -1384,7 +1408,7 @@ export default function Profile() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => (window.location.href = '/feed')}
+                  onClick={() => navigate('/feed')}
                   className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   title="Video"
                 >
@@ -1505,8 +1529,10 @@ export default function Profile() {
                             const getTs = (p: Post): number => {
                               const c = p.createdAt;
                               if (!c) return 0;
-                              if (typeof c === 'object' && '_seconds' in c) return (c as { _seconds: number })._seconds;
-                              if (typeof c === 'object' && 'seconds' in c) return (c as { seconds: number }).seconds;
+                              if (typeof c === 'object' && '_seconds' in c)
+                                return (c as { _seconds: number })._seconds;
+                              if (typeof c === 'object' && 'seconds' in c)
+                                return (c as { seconds: number }).seconds;
                               return 0;
                             };
                             return getTs(b) - getTs(a);
@@ -1555,7 +1581,13 @@ export default function Profile() {
                               />
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
-                                  <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                  <svg
+                                    className="w-5 h-5 text-white ml-0.5"
+                                    fill="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
                                 </div>
                               </div>
                             </>
@@ -1582,8 +1614,18 @@ export default function Profile() {
                           {/* Shared post badge */}
                           {isShared && (
                             <div className="absolute top-2 left-2 px-2 py-1 rounded-lg bg-green-600/80 backdrop-blur-sm text-white text-xs font-medium flex items-center gap-1">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                                />
                               </svg>
                               Đã chia sẻ
                             </div>
@@ -1870,8 +1912,18 @@ export default function Profile() {
                       onClick={() => setSelectedClip(null)}
                       className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
                     >
-                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="w-8 h-8"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                     <video
@@ -1893,7 +1945,8 @@ export default function Profile() {
           {activeTab === 'saved' && isOwnProfile && (
             <div className="space-y-4">
               <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">
-                Bài viết đã lưu {!savedPostsLoading && savedPosts.length > 0 && `(${savedPosts.length})`}
+                Bài viết đã lưu{' '}
+                {!savedPostsLoading && savedPosts.length > 0 && `(${savedPosts.length})`}
               </h2>
               {savedPostsLoading && (
                 <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-8 text-center shadow-sm">
@@ -1908,11 +1961,25 @@ export default function Profile() {
               )}
               {!savedPostsLoading && !savedPostsError && savedPosts.length === 0 && (
                 <div className="rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 p-12 text-center shadow-sm">
-                  <svg className="w-14 h-14 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  <svg
+                    className="w-14 h-14 mx-auto mb-4 text-gray-300 dark:text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                    />
                   </svg>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Chưa lưu bài viết nào</p>
-                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Nhấn biểu tượng lưu trên bài viết để lưu lại.</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
+                    Chưa lưu bài viết nào
+                  </p>
+                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                    Nhấn biểu tượng lưu trên bài viết để lưu lại.
+                  </p>
                 </div>
               )}
               {!savedPostsLoading && !savedPostsError && savedPosts.length > 0 && (
@@ -1923,7 +1990,9 @@ export default function Profile() {
                       post={post}
                       currentUserId={user?.uid}
                       onPostUpdated={(updated) =>
-                        setSavedPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+                        setSavedPosts((prev) =>
+                          prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+                        )
                       }
                     />
                   ))}
@@ -2108,126 +2177,6 @@ export default function Profile() {
             </div>
           )}
 
-          {/* ── OWN PROFILE: Quick Links ── */}
-          {isOwnProfile && (
-            <div
-              className="surf-hero-in rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 overflow-hidden shadow-sm"
-              style={{ animationDelay: '0.34s' }}
-            >
-              <div className="px-5 pt-4 pb-1">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 tracking-wide uppercase opacity-50">
-                  Truy cập nhanh
-                </h2>
-              </div>
-              <div className="px-3 pb-3 pt-2 space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('about')}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-gray-700 dark:text-gray-300 hover:bg-surf-primary/5 dark:hover:bg-surf-primary/10 hover:text-surf-primary transition-colors text-sm text-left group"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-surf-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-surf-primary/15 transition-colors">
-                    <svg
-                      className="w-4 h-4 text-surf-primary"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">Chỉnh sửa thông tin</span>
-                </button>
-                <a
-                  href="/settings"
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm group"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 group-hover:bg-gray-200 dark:group-hover:bg-gray-700 transition-colors">
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">Cài đặt & Quyền riêng tư</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('photos')}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm text-left group"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 group-hover:bg-gray-200 dark:group-hover:bg-gray-700 transition-colors">
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">Xem tất cả ảnh</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── OTHER PROFILE: Options ── */}
-          {!isOwnProfile && friendStatus !== 'loading' && (
-            <div
-              className="surf-hero-in rounded-3xl bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-700/60 overflow-hidden shadow-sm"
-              style={{ animationDelay: '0.34s' }}
-            >
-              <div className="px-5 pt-4 pb-1">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 tracking-wide uppercase opacity-50">
-                  Tùy chọn
-                </h2>
-              </div>
-              <div className="px-3 pb-3 pt-2 space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('friends')}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm text-left group"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 group-hover:bg-gray-200 dark:group-hover:bg-gray-700 transition-colors">
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">Xem danh sách bạn bè</span>
-                </button>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm text-left group"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 group-hover:bg-gray-200 dark:group-hover:bg-gray-700 transition-colors">
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">Chia sẻ trang cá nhân</span>
-                </button>
-                <div className="mx-3 my-1.5 border-t border-gray-100 dark:border-gray-800" />
-                <button
-                  type="button"
-                  onClick={handleBlockToggle}
-                  disabled={blockActionLoading}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-left group disabled:opacity-60"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.68L5.68 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.68L18.32 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">
-                    {isBlocking ? 'Bỏ chặn người dùng' : 'Chặn người dùng'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-left group"
-                >
-                  <span className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z" />
-                    </svg>
-                  </span>
-                  <span className="font-medium">Báo cáo trang cá nhân</span>
-                </button>
-              </div>
-            </div>
-          )}
         </aside>
       </div>
 
@@ -2410,7 +2359,11 @@ export default function Profile() {
         <div className="space-y-4">
           {coverPreviewUrl && (
             <div className="w-full aspect-video overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800">
-              <img src={optimizeImageUrl(coverPreviewUrl)} alt="Xem trước" className="w-full h-full object-cover" />
+              <img
+                src={optimizeImageUrl(coverPreviewUrl)}
+                alt="Xem trước"
+                className="w-full h-full object-cover"
+              />
             </div>
           )}
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
@@ -2452,7 +2405,12 @@ export default function Profile() {
               aria-label="Đóng"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
             <PostCard post={selectedPost} currentUserId={user?.uid} />

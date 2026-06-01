@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, DEVICE_ID } from '@/lib/api';
 
 interface Session {
   id: string;
@@ -56,7 +56,7 @@ export default function ActiveSessionsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
 
-  const currentSessionId = localStorage.getItem('surf_session_id');
+  const currentSessionId = DEVICE_ID;
 
   const fetchSessions = async () => {
     try {
@@ -96,43 +96,66 @@ export default function ActiveSessionsPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      {sessions.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Không có thiết bị nào khác.</p>
-      ) : (
-        sessions.map(session => {
-          const isCurrent = session.id === currentSessionId;
-          return (
-            <div key={session.id} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-              <div className="text-slate-400 dark:text-slate-500">
-                {getIconForDevice(session.device, session.os)}
+    <div className="mx-auto max-w-3xl space-y-6">
+      <div className="border-b border-slate-200 pb-5 dark:border-slate-700/80">
+        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+          Thiết bị đăng nhập
+        </h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Quản lý các thiết bị đang sử dụng tài khoản của bạn. Bạn chỉ được phép đăng nhập trên tối đa 2 thiết bị cùng lúc.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {sessions.length === 0 ? (
+          <div className="text-sm text-slate-500 text-center py-8">
+            Không có dữ liệu thiết bị.
+          </div>
+        ) : (
+          sessions.map(session => (
+            <div
+              key={session.id}
+              className={`flex items-center justify-between p-4 rounded-xl border ${
+                session.id === currentSessionId
+                  ? 'border-surf-primary/50 bg-surf-primary/5 dark:bg-surf-primary/10'
+                  : 'border-slate-200 bg-white dark:border-slate-700/60 dark:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 rounded-lg">
+                  {getIconForDevice(session.device, session.os)}
+                </div>
+                <div>
+                  <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    {session.os} • {session.browser}
+                    {session.id === currentSessionId && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 font-medium">
+                        Thiết bị này
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                    {session.ip}
+                  </div>
+                  <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                    Hoạt động: {formatDate(session.lastActive)}
+                  </div>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
-                  {session.os} • {session.browser}
-                  {isCurrent && <span className="ml-2 px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] uppercase font-bold">Hiện tại</span>}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                  {session.ip}
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Hoạt động: {formatDate(session.lastActive)}
-                </p>
-              </div>
-              {!isCurrent && (
+              
+              {session.id !== currentSessionId && (
                 <button
-                  type="button"
                   onClick={() => handleRevoke(session.id)}
                   disabled={revoking === session.id}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {revoking === session.id ? 'Đang xử lý...' : 'Đăng xuất'}
+                  {revoking === session.id ? 'Đang xuất...' : 'Đăng xuất'}
                 </button>
               )}
             </div>
-          );
-        })
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

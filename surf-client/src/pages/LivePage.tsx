@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Room, RoomEvent, Track, type RemoteTrack } from 'livekit-client';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -15,8 +16,8 @@ type LiveStream = {
   hostPhotoURL: string | null;
   title: string;
   status: 'live' | 'ended';
-  provider: 'daily';
-  transport: 'daily' | 'socket-webrtc';
+  provider: 'daily' | 'livekit';
+  transport: 'daily' | 'socket-webrtc' | 'livekit';
   providerRoomName: string | null;
   providerRoomUrl: string | null;
   viewerCount: number;
@@ -81,6 +82,13 @@ type LiveSignal =
   | { type: 'answer'; sdp: string }
   | { type: 'candidate'; candidate: RTCIceCandidateInit };
 
+type LiveKitLiveTokenResponse = {
+  provider: 'livekit';
+  roomName: string;
+  serverUrl: string;
+  token: string;
+};
+
 type FloatingReaction = {
   id: string;
   emoji: string;
@@ -92,6 +100,17 @@ const reactionOptions = ['❤️', '🔥', '👏', '😂', '😮', '👍'];
 const iceServers: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
+
+const createClientInstanceId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const shouldUseLiveKit = (stream: LiveStream) =>
+  stream.transport === 'livekit' || stream.provider === 'livekit';
 
 const formatTime = (iso: string) =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -271,6 +290,9 @@ const getExternalPlatform = (stream: TwitchStream) => stream.platform ?? 'twitch
 const getExternalPlatformName = (stream: TwitchStream) =>
   stream.platformName ?? (getExternalPlatform(stream) === 'youtube' ? 'YouTube' : 'Twitch');
 
+const getExternalStreamKey = (stream: TwitchStream) =>
+  `${getExternalPlatform(stream)}:${(stream.userLogin || stream.id).toLowerCase()}`;
+
 const normalizeCategoryText = (value: string) =>
   value
     .toLowerCase()
@@ -297,6 +319,9 @@ export default function LivePage() {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const commentsBottomRef = useRef<HTMLDivElement | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const liveKitRoomRef = useRef<Room | null>(null);
+  const liveKitRemoteStreamRef = useRef<MediaStream>(new MediaStream());
+  const liveKitClientIdRef = useRef(createClientInstanceId());
   const localStreamRef = useRef<MediaStream | null>(null);
   const roleRef = useRef<LiveRole | null>(null);
   const streamIdRef = useRef<string | null>(null);
@@ -318,7 +343,9 @@ export default function LivePage() {
     getAppChatTheme(useThemeStore.getState().theme)
   );
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
+  const [selectedExternalStreamKey, setSelectedExternalStreamKey] = useState<string | null>(null);
   const [selectedExternalChannelKey, setSelectedExternalChannelKey] = useState<string | null>(null);
+  const [suppressRouteExternalTarget, setSuppressRouteExternalTarget] = useState(false);
   const [starting, setStarting] = useState(false);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -394,21 +421,36 @@ export default function LivePage() {
     const twitch = params.get('twitch')?.trim().toLowerCase();
     return twitch ? { platform: 'twitch' as const, id: twitch } : null;
   }, [location.search]);
+
+  useEffect(() => {
+    setSuppressRouteExternalTarget(false);
+  }, [location.search]);
+
+  const routeExternalTarget = suppressRouteExternalTarget ? null : externalTarget;
   const activeTwitchStream = useMemo(
     () =>
-      externalTarget
+      routeExternalTarget
         ? (twitchStreams.find((stream) => {
             const platform = getExternalPlatform(stream);
-            const targetId = externalTarget.id.toLowerCase();
+            const targetId = routeExternalTarget.id.toLowerCase();
             return (
-              platform === externalTarget.platform &&
+              platform === routeExternalTarget.platform &&
               (stream.userLogin.toLowerCase() === targetId || stream.id.toLowerCase() === targetId)
             );
           }) ?? null)
         : null,
-    [externalTarget, twitchStreams]
+    [routeExternalTarget, twitchStreams]
   );
-  const twitchWatchStream = activeTwitchStream;
+  const selectedExternalStream = useMemo(
+    () =>
+      selectedExternalStreamKey
+        ? (twitchStreams.find(
+            (stream) => getExternalStreamKey(stream) === selectedExternalStreamKey
+          ) ?? null)
+        : null,
+    [selectedExternalStreamKey, twitchStreams]
+  );
+  const twitchWatchStream = activeStream ? null : (selectedExternalStream ?? activeTwitchStream);
   const isTwitchWatchMode = Boolean(twitchWatchStream);
   const isWatchMode = Boolean(activeStream) || isTwitchWatchMode;
   const selectedCategoryCard = useMemo(
@@ -536,6 +578,22 @@ export default function LivePage() {
     peerConnectionsRef.current.clear();
   }, []);
 
+  const syncLiveKitRemoteStream = useCallback(() => {
+    const tracks = liveKitRemoteStreamRef.current.getTracks();
+    setRemoteStream(tracks.length > 0 ? new MediaStream(tracks) : null);
+  }, []);
+
+  const resetLiveKitRemoteStream = useCallback(() => {
+    liveKitRemoteStreamRef.current = new MediaStream();
+    setRemoteStream(null);
+  }, []);
+
+  const disconnectLiveKit = useCallback(() => {
+    liveKitRoomRef.current?.disconnect();
+    liveKitRoomRef.current = null;
+    resetLiveKitRemoteStream();
+  }, [resetLiveKitRemoteStream]);
+
   const stopLocalMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
@@ -584,6 +642,106 @@ export default function LivePage() {
     [sendSignal]
   );
 
+  const addLiveKitRemoteTrack = useCallback(
+    (track: RemoteTrack) => {
+      if (track.kind !== Track.Kind.Video && track.kind !== Track.Kind.Audio) return;
+
+      const mediaTrack = track.mediaStreamTrack;
+      const stream = liveKitRemoteStreamRef.current;
+      if (!stream.getTracks().some((item) => item.id === mediaTrack.id)) {
+        stream.addTrack(mediaTrack);
+      }
+      syncLiveKitRemoteStream();
+    },
+    [syncLiveKitRemoteStream]
+  );
+
+  const removeLiveKitRemoteTrack = useCallback(
+    (track: RemoteTrack) => {
+      const mediaTrack = track.mediaStreamTrack;
+      const stream = liveKitRemoteStreamRef.current;
+      stream
+        .getTracks()
+        .filter((item) => item.id === mediaTrack.id)
+        .forEach((item) => stream.removeTrack(item));
+      syncLiveKitRemoteStream();
+    },
+    [syncLiveKitRemoteStream]
+  );
+
+  const connectLiveKitStream = useCallback(
+    async (stream: LiveStream, nextRole: LiveRole, sourceStream?: MediaStream) => {
+      disconnectLiveKit();
+
+      const participantName =
+        user?.displayName?.trim() || user?.email?.split('@')[0]?.trim() || 'Surf user';
+      const tokenResponse = await api.post<LiveKitLiveTokenResponse>(
+        `/api/live-streams/${stream.id}/livekit-token`,
+        {
+          role: nextRole,
+          clientId: liveKitClientIdRef.current,
+          participantName,
+        }
+      );
+
+      if (
+        tokenResponse.provider !== 'livekit' ||
+        !tokenResponse.serverUrl ||
+        !tokenResponse.token
+      ) {
+        throw new Error('LiveKit chưa được cấu hình cho Surf Live.');
+      }
+
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        publishDefaults: {
+          simulcast: true,
+        },
+      });
+
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        addLiveKitRemoteTrack(track);
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track) => {
+        removeLiveKitRemoteTrack(track);
+      });
+      room.on(RoomEvent.Disconnected, () => {
+        if (streamIdRef.current === stream.id && roleRef.current === 'viewer') {
+          resetLiveKitRemoteStream();
+        }
+      });
+
+      liveKitRoomRef.current = room;
+      await room.connect(tokenResponse.serverUrl, tokenResponse.token);
+
+      if (nextRole === 'broadcaster' && sourceStream) {
+        for (const track of sourceStream.getTracks()) {
+          await room.localParticipant.publishTrack(track, {
+            source: track.kind === 'video' ? Track.Source.Camera : Track.Source.Microphone,
+            simulcast: track.kind === 'video',
+          });
+        }
+        return;
+      }
+
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((publication) => {
+          const subscribedTrack = publication.track;
+          if (subscribedTrack) addLiveKitRemoteTrack(subscribedTrack);
+        });
+      });
+    },
+    [
+      addLiveKitRemoteTrack,
+      disconnectLiveKit,
+      removeLiveKitRemoteTrack,
+      resetLiveKitRemoteStream,
+      user?.displayName,
+      user?.email,
+    ]
+  );
+
   const joinViewer = useCallback(
     async (stream: LiveStream) => {
       if (roleRef.current === 'viewer' && streamIdRef.current === stream.id) return;
@@ -594,11 +752,62 @@ export default function LivePage() {
       setRemoteStream(null);
       setActiveStream(stream);
       setRole('viewer');
-      await loadComments(stream.id);
-      getSocket().emit('live:join', { streamId: stream.id, role: 'viewer' });
-      setJoining(false);
+      try {
+        await loadComments(stream.id);
+        if (shouldUseLiveKit(stream)) {
+          await connectLiveKitStream(stream, 'viewer');
+        } else {
+          disconnectLiveKit();
+        }
+        getSocket().emit('live:join', { streamId: stream.id, role: 'viewer' });
+      } catch (err) {
+        disconnectLiveKit();
+        closePeerConnections();
+        setRemoteStream(null);
+        setRole(null);
+        setActiveStream(null);
+        setError((err as Error).message || 'Không thể tham gia live stream.');
+      } finally {
+        setJoining(false);
+      }
     },
-    [closePeerConnections, loadComments]
+    [closePeerConnections, connectLiveKitStream, disconnectLiveKit, loadComments]
+  );
+
+  const openSurfStream = useCallback(
+    async (stream: LiveStream) => {
+      if (roleRef.current === 'broadcaster' && streamIdRef.current !== stream.id) {
+        setError('Bạn đang phát live trên Surf. Hãy kết thúc live trước khi xem live khác.');
+        return;
+      }
+      if (streamIdRef.current === stream.id && roleRef.current) {
+        setSelectedExternalStreamKey(null);
+        setSelectedExternalChannelKey(null);
+        setSuppressRouteExternalTarget(true);
+        setActiveStream(stream);
+        return;
+      }
+
+      setSelectedExternalStreamKey(null);
+      setSelectedExternalChannelKey(null);
+      setSuppressRouteExternalTarget(true);
+      const currentStreamId = streamIdRef.current;
+      if (currentStreamId && currentStreamId !== stream.id) {
+        getSocket().emit('live:leave', { streamId: currentStreamId });
+      }
+
+      if (stream.status === 'live' && stream.hostId !== user?.uid) {
+        await joinViewer(stream);
+        return;
+      }
+
+      closePeerConnections();
+      disconnectLiveKit();
+      setActiveStream(stream);
+      setRole(stream.hostId === user?.uid && stream.status === 'live' ? roleRef.current : null);
+      setComments([]);
+    },
+    [closePeerConnections, disconnectLiveKit, joinViewer, user?.uid]
   );
 
   useEffect(() => {
@@ -641,11 +850,11 @@ export default function LivePage() {
     const currentStreamId = streamIdRef.current;
     if (currentStreamId) getSocket().emit('live:leave', { streamId: currentStreamId });
     closePeerConnections();
-    setRemoteStream(null);
+    disconnectLiveKit();
     setActiveStream(null);
     setRole(null);
     setComments([]);
-  }, [closePeerConnections, externalTarget, streamId]);
+  }, [closePeerConnections, disconnectLiveKit, externalTarget, streamId]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -657,6 +866,7 @@ export default function LivePage() {
     }) => {
       if (roleRef.current !== 'broadcaster') return;
       if (payload.streamId !== streamIdRef.current) return;
+      if (liveKitRoomRef.current) return;
       const source = localStreamRef.current;
       if (!source) return;
 
@@ -683,6 +893,7 @@ export default function LivePage() {
       signal: LiveSignal;
     }) => {
       if (payload.streamId !== streamIdRef.current) return;
+      if (liveKitRoomRef.current) return;
       const { signal } = payload;
 
       if (signal.type === 'offer') {
@@ -749,7 +960,7 @@ export default function LivePage() {
       if (payload.streamId !== streamIdRef.current) return;
       setActiveStream((current) => (current ? { ...current, status: 'ended' } : current));
       setRole(null);
-      setRemoteStream(null);
+      disconnectLiveKit();
       closePeerConnections();
     };
 
@@ -770,16 +981,17 @@ export default function LivePage() {
       socket.off('live:reaction', onReaction);
       socket.off('live:ended', onEnded);
     };
-  }, [closePeerConnections, createPeerConnection, sendSignal]);
+  }, [closePeerConnections, createPeerConnection, disconnectLiveKit, sendSignal]);
 
   useEffect(() => {
     return () => {
       const currentStreamId = streamIdRef.current;
       if (currentStreamId) getSocket().emit('live:leave', { streamId: currentStreamId });
       closePeerConnections();
+      disconnectLiveKit();
       stopLocalMedia();
     };
-  }, [closePeerConnections, stopLocalMedia]);
+  }, [closePeerConnections, disconnectLiveKit, stopLocalMedia]);
 
   const startBroadcast = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -788,9 +1000,10 @@ export default function LivePage() {
     setStarting(true);
     setError(null);
     closePeerConnections();
-    setRemoteStream(null);
+    disconnectLiveKit();
 
     let requestedStream: MediaStream | null = null;
+    let createdStream: LiveStream | null = null;
     try {
       requestedStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -801,14 +1014,27 @@ export default function LivePage() {
         title: titleDraft.trim() || 'Surf Live',
       });
 
+      createdStream = response.item;
       setLocalStream(requestedStream);
+
+      if (shouldUseLiveKit(response.item)) {
+        await connectLiveKitStream(response.item, 'broadcaster', requestedStream);
+      } else {
+        disconnectLiveKit();
+      }
+
       setActiveStream(response.item);
       setComments([]);
       setRole('broadcaster');
       getSocket().emit('live:join', { streamId: response.item.id, role: 'broadcaster' });
       void refreshStreams();
     } catch (err) {
+      if (createdStream) {
+        void api.patch(`/api/live-streams/${createdStream.id}/end`).catch(() => undefined);
+      }
+      disconnectLiveKit();
       requestedStream?.getTracks().forEach((track) => track.stop());
+      setLocalStream(null);
       setError((err as Error).message || 'Không thể bắt đầu live stream.');
     } finally {
       setStarting(false);
@@ -829,8 +1055,8 @@ export default function LivePage() {
     } finally {
       getSocket().emit('live:leave', { streamId: currentStreamId });
       closePeerConnections();
+      disconnectLiveKit();
       stopLocalMedia();
-      setRemoteStream(null);
       setRole(null);
       setActiveStream((current) => (current ? { ...current, status: 'ended' } : current));
       navigate('/feed/live', { replace: true });
@@ -842,7 +1068,7 @@ export default function LivePage() {
     const currentStreamId = streamIdRef.current;
     if (currentStreamId) getSocket().emit('live:leave', { streamId: currentStreamId });
     closePeerConnections();
-    setRemoteStream(null);
+    disconnectLiveKit();
     setRole(null);
     setActiveStream(null);
     setComments([]);
@@ -858,14 +1084,12 @@ export default function LivePage() {
     const currentStreamId = streamIdRef.current;
     if (currentStreamId) getSocket().emit('live:leave', { streamId: currentStreamId });
     closePeerConnections();
-    setRemoteStream(null);
+    disconnectLiveKit();
     setActiveStream(null);
     setRole(null);
     setComments([]);
-    const platform = getExternalPlatform(stream);
-    navigate(
-      `/feed/live?external=${platform}:${encodeURIComponent(stream.userLogin || stream.id)}`
-    );
+    setSuppressRouteExternalTarget(true);
+    setSelectedExternalStreamKey(getExternalStreamKey(stream));
   };
 
   const selectExternalChannelGroup = (group: ExternalChannelGroup) => {
@@ -882,13 +1106,14 @@ export default function LivePage() {
     const currentStreamId = streamIdRef.current;
     if (currentStreamId) getSocket().emit('live:leave', { streamId: currentStreamId });
     closePeerConnections();
-    setRemoteStream(null);
+    disconnectLiveKit();
     setActiveStream(null);
     setRole(null);
     setComments([]);
+    setSuppressRouteExternalTarget(true);
+    setSelectedExternalStreamKey(null);
     setSelectedCategory('Tất cả');
     setSelectedExternalChannelKey(group.key);
-    navigate('/feed/live');
   };
 
   const submitJoin = (event: FormEvent<HTMLFormElement>) => {
@@ -941,7 +1166,7 @@ export default function LivePage() {
       <button
         key={stream.id}
         type="button"
-        onClick={() => navigate(`/feed/live/${stream.id}`)}
+        onClick={() => void openSurfStream(stream)}
         className={
           isFeatured
             ? 'group grid min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl shadow-slate-200/70 transition hover:border-cyan-300 hover:shadow-cyan-100 dark:border-slate-700/80 dark:bg-surf-card dark:shadow-slate-950/40 dark:hover:border-cyan-400/60 lg:grid-cols-[minmax(0,1fr)_250px]'
@@ -1306,7 +1531,11 @@ export default function LivePage() {
                 </a>
                 <button
                   type="button"
-                  onClick={() => navigate('/feed/live')}
+                  onClick={() => {
+                    setSelectedExternalStreamKey(null);
+                    setSelectedExternalChannelKey(null);
+                    setSuppressRouteExternalTarget(true);
+                  }}
                   className="inline-flex h-9 items-center justify-center rounded-lg bg-slate-100 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-700/80 dark:text-white dark:hover:bg-slate-600"
                 >
                   Quay lại Surf Live
@@ -1401,9 +1630,9 @@ export default function LivePage() {
                   : 'Chọn một live stream hoặc bắt đầu live mới'}
               </p>
               <p className="mt-2 max-w-md text-sm text-slate-400">
-                {activeStream?.transport === 'socket-webrtc'
-                  ? 'WebRTC dùng socket signalling của Surf để nối broadcaster và viewer.'
-                  : 'Phiên live đã có metadata Daily room, sẵn sàng chuyển provider khi bật Daily token.'}
+                {activeStream?.transport === 'livekit'
+                  ? 'Media đang đi qua LiveKit SFU để người xem ở máy khác vào ổn định hơn.'
+                  : 'WebRTC dùng socket signalling của Surf để nối broadcaster và viewer.'}
               </p>
             </div>
           </div>
@@ -1478,7 +1707,7 @@ export default function LivePage() {
                     <button
                       key={stream.id}
                       type="button"
-                      onClick={() => navigate(`/feed/live/${stream.id}`)}
+                      onClick={() => void openSurfStream(stream)}
                       className="group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-700/80"
                     >
                       {renderAvatar(
@@ -2044,7 +2273,7 @@ export default function LivePage() {
                         <button
                           key={stream.id}
                           type="button"
-                          onClick={() => navigate(`/feed/live/${stream.id}`)}
+                          onClick={() => void openSurfStream(stream)}
                           className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-700/80"
                         >
                           {renderAvatar(

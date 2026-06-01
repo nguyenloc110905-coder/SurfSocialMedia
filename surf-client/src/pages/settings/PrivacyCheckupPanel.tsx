@@ -1,11 +1,36 @@
 import { SettingsIcon } from '@/lib/settings-data';
 import { PRIVACY_CHECKUP_TOPICS } from './settings-constants';
+import { useNavigate } from 'react-router-dom';
 
 interface PrivacyCheckupPanelProps {
   onBack: () => void;
 }
 
 export default function PrivacyCheckupPanel({ onBack }: PrivacyCheckupPanelProps) {
+  const navigate = useNavigate();
+  
+  const handleTopicClick = (id: string) => {
+    switch (id) {
+      case 'visibility':
+        navigate('?detail=privacy-settings');
+        break;
+      case 'find':
+        navigate('?detail=friend-request-privacy');
+        break;
+      case 'data':
+        navigate('?detail=delete-account');
+        break;
+      case 'security':
+        navigate('?detail=account-security');
+        break;
+      case 'ads':
+        navigate('?detail=notifications');
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="max-w-3xl">
       <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">
@@ -20,6 +45,7 @@ export default function PrivacyCheckupPanel({ onBack }: PrivacyCheckupPanelProps
           <button
             key={topic.id}
             type="button"
+            onClick={() => handleTopicClick(topic.id)}
             className="flex gap-4 p-5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-600/80 hover:border-surf-primary/40 dark:hover:border-surf-secondary/50 hover:shadow-lg hover:shadow-surf-primary/10 dark:hover:shadow-surf-secondary/10 text-left transition-all group border-l-4 border-l-surf-primary dark:border-l-surf-secondary"
           >
             <span

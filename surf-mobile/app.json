@@ -22,7 +22,8 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Surf needs camera access to capture photos and videos for posts.",
-        "NSPhotoLibraryUsageDescription": "Surf needs photo library access to select photos and videos for posts."
+        "NSPhotoLibraryUsageDescription": "Surf needs photo library access to select photos and videos for posts.",
+        "NSContactsUsageDescription": "Surf cần truy cập danh bạ để giúp bạn tìm bạn bè trên ứng dụng."
       }
     },
     "android": {
@@ -35,7 +36,8 @@
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_CONTACTS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0c1929",
@@ -44,6 +46,9 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
+    },
+    "updates": {
+      "enabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -60,7 +65,13 @@
       "expo-apple-authentication",
       "./plugins/withAndroidCleartext",
       "expo-screen-orientation",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Surf cần truy cập danh bạ để giúp bạn tìm bạn bè trên ứng dụng."
+        }
+      ]
     ],
     "extra": {
       "eas": {
