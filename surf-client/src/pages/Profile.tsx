@@ -31,6 +31,22 @@ const TABS: { id: string; label: string; hasArrow?: boolean }[] = [
 
 const ACCEPT_IMAGE = 'image/jpeg,image/png,image/webp,image/gif';
 
+const getGradientClass = (id: string) => {
+  const gradients = [
+    'from-indigo-600 via-indigo-500 to-purple-600',
+    'from-blue-600 via-indigo-600 to-violet-600',
+    'from-fuchsia-600 via-pink-600 to-rose-500',
+    'from-teal-500 via-emerald-600 to-cyan-500',
+    'from-violet-600 via-purple-600 to-indigo-600',
+  ];
+  if (!id) return gradients[0];
+  let sum = 0;
+  for (let i = 0; i < id.length; i++) {
+    sum += id.charCodeAt(i);
+  }
+  return gradients[sum % gradients.length];
+};
+
 export default function Profile() {
   const { uid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
@@ -1556,6 +1572,7 @@ export default function Profile() {
                     const firstVideo = allMediaUrls.find((u) => isVideoUrl(u));
                     const hasMedia = allMediaUrls.length > 0;
                     const isShared = !!post.sharedFrom;
+                    const textGradient = !hasMedia ? getGradientClass(post.id) : '';
 
                     return (
                       <article
@@ -1592,17 +1609,24 @@ export default function Profile() {
                               </div>
                             </>
                           ) : (
-                            <div className="text-center p-4">
+                            <div className={`w-full h-full bg-gradient-to-tr ${textGradient} flex flex-col items-center justify-center p-5 text-center relative select-none`}>
                               <svg
-                                className="w-8 h-8 mx-auto text-gray-400 dark:text-gray-500 mb-2"
+                                className="absolute top-3 left-4 w-5 h-5 text-white/20"
                                 fill="currentColor"
                                 viewBox="0 0 24 24"
                               >
-                                <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" />
+                                <path d="M6 17h3l2-4V7H5v7h3zm8 0h3l2-4V7h-6v7h3z" />
                               </svg>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                                {post.content || post.sharedFrom?.content || ''}
+                              <p className="text-xs sm:text-sm font-bold text-white leading-relaxed line-clamp-4 break-words px-2 max-w-full drop-shadow-sm">
+                                {post.content || post.sharedFrom?.content || 'Bài viết'}
                               </p>
+                              <svg
+                                className="absolute bottom-3 right-4 w-5 h-5 text-white/20 transform rotate-180"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M6 17h3l2-4V7H5v7h3zm8 0h3l2-4V7h-6v7h3z" />
+                              </svg>
                             </div>
                           )}
                           {/* Multiple media badge */}

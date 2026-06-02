@@ -41,3 +41,6 @@ docs/plans/*
 !docs/plans/postman.txt
 !docs/plans/mkcert-https-lan-setup.txt
 !docs/plans/oracle-coturn-setup.txt
+
+# Ignored folders
+Reports/

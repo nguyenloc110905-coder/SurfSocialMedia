@@ -296,8 +296,14 @@ function ClipCard({
       const catLabel = REPORT_CATEGORIES.find((c) => c.key === reportCategory)?.label || reportCategory;
       const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
       
-      const endpoint = isPost ? `/api/posts/${video.id}/report` : `/api/videos/${video.id}/report`;
-      await api.post(endpoint, { reason: reasonText });
+      if (isPost) {
+        await api.post(`/api/posts/${video.id}/report`, {
+          reason: reportCategory,
+          details: reportDetails.trim(),
+        });
+      } else {
+        await api.post(`/api/videos/${video.id}/report`, { reason: reasonText });
+      }
       
       showToast('🚩 Đã gửi báo cáo video');
       setShowReportModal(false);
@@ -1181,6 +1187,11 @@ export default function ShortVideo() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadFeed = useCallback(async (cursor?: number) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setLoading(false);
+      setLoadingMore(false);
+      return;
+    }
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     try {
@@ -1207,9 +1218,15 @@ export default function ShortVideo() {
     }
   }, [setFeed, appendFeed]);
 
-  // Chỉ fetch lần đầu nếu store chưa có data
+  // Chỉ fetch lần đầu nếu store chưa có data, hoặc khi có kết nối mạng trở lại
   useEffect(() => {
     if (!loaded) void loadFeed();
+
+    const handleOnline = () => {
+      void loadFeed();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, [loaded, loadFeed]);
 
   // Xử lý shared video
