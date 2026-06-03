@@ -24,95 +24,8 @@ export interface ImageOptions {
 }
 
 /**
- * Kiểm tra URL có phải Cloudinary hay không.
- */
-function isCloudinaryUrl(url: string): boolean {
-  return url.includes('res.cloudinary.com') || url.includes('cloudinary.com');
-}
-
-function isCloudinaryTransformSegment(segment: string): boolean {
-  // Example valid segment: c_fill,w_400,h_400
-  return /^([a-z]{1,4}_[^,/]+)(,[a-z]{1,4}_[^,/]+)*$/i.test(segment);
-}
-
-function splitUrlAndSuffix(url: string): { base: string; suffix: string } {
-  const qIdx = url.indexOf('?');
-  const hIdx = url.indexOf('#');
-
-  if (qIdx === -1 && hIdx === -1) {
-    return { base: url, suffix: '' };
-  }
-
-  if (qIdx === -1) {
-    return { base: url.slice(0, hIdx), suffix: url.slice(hIdx) };
-  }
-
-  if (hIdx === -1) {
-    return { base: url.slice(0, qIdx), suffix: url.slice(qIdx) };
-  }
-
-  const cut = Math.min(qIdx, hIdx);
-  return { base: url.slice(0, cut), suffix: url.slice(cut) };
-}
-
-/**
- * Chèn Cloudinary transforms vào URL gốc.
- * Ví dụ: https://res.cloudinary.com/dg8oqqjes/image/upload/v1234/photo.jpg
- *       → https://res.cloudinary.com/dg8oqqjes/image/upload/f_auto,q_auto,w_800/v1234/photo.jpg
- */
-function applyCloudinaryTransforms(url: string, opts: ImageOptions): string {
-  const desiredByKey = new Map<string, string>([
-    ['f', 'f_auto'],
-    ['q', 'q_auto'],
-  ]);
-
-  if (opts.width) desiredByKey.set('w', `w_${opts.width}`);
-  if (opts.height) desiredByKey.set('h', `h_${opts.height}`);
-  if (opts.crop) desiredByKey.set('c', `c_${opts.crop}`);
-  if (opts.quality && opts.quality !== 'auto') desiredByKey.set('q', `q_${opts.quality}`);
-  if (opts.format && opts.format !== 'auto') desiredByKey.set('f', `f_${opts.format}`);
-
-  const uploadMarker = '/image/upload/';
-  const { base, suffix } = splitUrlAndSuffix(url);
-  const uploadIdx = base.indexOf(uploadMarker);
-  if (uploadIdx === -1) return url;
-
-  const prefix = base.slice(0, uploadIdx + uploadMarker.length);
-  const rest = base.slice(uploadIdx + uploadMarker.length);
-  const segments = rest.split('/').filter(Boolean);
-
-  const existingTransformSegments: string[] = [];
-  while (segments.length > 0 && isCloudinaryTransformSegment(segments[0])) {
-    existingTransformSegments.push(segments.shift()!);
-  }
-
-  const existingParts = existingTransformSegments
-    .join(',')
-    .split(',')
-    .filter(Boolean)
-    .filter((part) => {
-      const key = part.split('_', 1)[0];
-      return !desiredByKey.has(key);
-    });
-
-  const mergedTransform = [...existingParts, ...Array.from(desiredByKey.values())].join(',');
-  const restPath = segments.join('/');
-
-  return `${prefix}${mergedTransform}/${restPath}${suffix}`;
-}
-
-/**
- * Tối ưu URL ảnh: qua Cloudflare Worker cache hoặc Cloudinary transforms.
- *
- * @example
- * // Cloudflare Worker proxy
- * optimizeImageUrl('https://res.cloudinary.com/.../photo.jpg', { width: 400 })
- * // → https://your-worker.workers.dev/?url=...&w=400&f=auto&q=auto
- *
- * @example
- * // Cloudinary transforms (khi không có Worker)
- * optimizeImageUrl('https://res.cloudinary.com/.../photo.jpg', { width: 400 })
- * // → https://res.cloudinary.com/.../f_auto,q_auto,w_400/photo.jpg
+ * Tối ưu URL ảnh: qua Cloudflare Worker cache.
+ * Cloudinary đã bị loại bỏ.
  */
 export function optimizeImageUrl(url: string | null | undefined, opts: ImageOptions = {}): string {
   if (!url) return '';
@@ -130,12 +43,7 @@ export function optimizeImageUrl(url: string | null | undefined, opts: ImageOpti
     return `${CF_WORKER_URL}?${params.toString()}`;
   }
 
-  // 2️⃣ Cloudinary transforms (miễn phí, không cần deploy thêm)
-  if (isCloudinaryUrl(url)) {
-    return applyCloudinaryTransforms(url, opts);
-  }
-
-  // 3️⃣ URL khác (Firebase Storage, external) → trả nguyên
+  // 2️⃣ URL khác (Firebase Storage, external) → trả nguyên
   return url;
 }
 

@@ -72,17 +72,11 @@ type CommentItem = {
 };
 
 function optimizeCloudinaryVideo(url: string, reduceDataUsage = false) {
-  if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return url;
-  const transform = reduceDataUsage ? 'q_auto:eco,w_480,f_auto' : 'q_auto:eco,w_720,f_auto';
-  return url.replace('/video/upload/', `/video/upload/${transform}/`);
+  return url;
 }
 
 function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false) {
-  if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return null;
-  const transform = reduceDataUsage ? 'w_480,q_auto:eco,f_jpg,so_0' : 'w_720,q_auto,f_jpg,so_0';
-  return url
-    .replace('/video/upload/', `/image/upload/${transform}/`)
-    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+  return null;
 }
 
 function fmtCount(value = 0) {
