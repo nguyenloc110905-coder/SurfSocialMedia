@@ -3,6 +3,8 @@ import { NavigationContainer, NavigationContainerRef, DefaultTheme } from '@reac
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { useAuthStore } from '@/stores/authStore';
+import { useCallStore } from '@/stores/callStore';
+import IncomingCallModal from '@/components/call/IncomingCallModal';
 import AuthScreen from '@/screens/AuthScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
@@ -78,6 +80,8 @@ export type RootStackParamList = {
     callId?: string;
     peerName?: string;
     peerAvatar?: string | null;
+    mode?: 'audio' | 'video';
+    acceptOnReady?: boolean;
   };
 };
 
@@ -95,16 +99,16 @@ export default function Navigation() {
     const socket = getSocket();
     
     const onCallIncoming = (payload: any) => {
-      if (navigationRef.current?.isReady()) {
-        navigationRef.current.navigate('Call', {
-          conversationId: payload.conversationId,
-          peerUid: payload.fromUserId,
-          callId: payload.callId,
-          isHost: false,
-          peerName: payload.fromName,
-          peerAvatar: payload.fromAvatarUrl
-        });
-      }
+      useCallStore.getState().setIncomingCall({
+        callId: payload.callId,
+        conversationId: payload.conversationId,
+        peer: {
+          uid: payload.fromUserId,
+          name: payload.fromName,
+          avatarUrl: payload.fromAvatarUrl,
+        },
+        mode: payload.mode,
+      });
     };
 
     socket.on('call:incoming', onCallIncoming);
@@ -201,6 +205,7 @@ export default function Navigation() {
           </>
         )}
       </Stack.Navigator>
+      <IncomingCallModal />
     </NavigationContainer>
   );
 }

@@ -862,6 +862,20 @@ export default function ChatScreen({ navigation, route }: Props) {
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
       setSending(true);
+      const optimisticId = `opt_${Date.now()}`;
+      const optimistic: ApiMessage = {
+        id: optimisticId,
+        conversationId,
+        senderId: user?.uid ?? '',
+        type: 'file',
+        text: '',
+        mediaUrl: asset.uri,
+        fileName: asset.name,
+        createdAt: new Date().toISOString(),
+        optimistic: true,
+      };
+      setMessages(prev => [optimistic, ...prev]);
+      
       const fileUrl = await uploadFile(
         {
           uri: asset.uri,
@@ -880,9 +894,11 @@ export default function ChatScreen({ navigation, route }: Props) {
       );
       const real = data.item;
       if (real?.id) {
-        setMessages(prev => [real, ...prev.filter(item => item.id !== real.id)]);
+        setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
         lastMessageIdRef.current = real.id;
         markRead(real.id, real.createdAt);
+      } else {
+        setMessages(prev => prev.filter(m => m.id !== optimisticId));
       }
     } catch {
       Alert.alert(t('error_title'), 'Khong the gui tep. Vui long thu lai.');
@@ -899,6 +915,21 @@ export default function ChatScreen({ navigation, route }: Props) {
       const voiceUri = recorder.uri || recorderState.url;
       if (!voiceUri) throw new Error('Missing voice uri');
       const fileName = `voice-${Date.now()}.m4a`;
+
+      const optimisticId = `opt_${Date.now()}`;
+      const optimistic: ApiMessage = {
+        id: optimisticId,
+        conversationId,
+        senderId: user?.uid ?? '',
+        type: 'audio',
+        text: '',
+        mediaUrl: voiceUri,
+        fileName,
+        createdAt: new Date().toISOString(),
+        optimistic: true,
+      };
+      setMessages(prev => [optimistic, ...prev]);
+
       const audioUrl = await uploadFile(
         {
           uri: voiceUri,
@@ -917,9 +948,11 @@ export default function ChatScreen({ navigation, route }: Props) {
       );
       const real = data.item;
       if (real?.id) {
-        setMessages(prev => [real, ...prev.filter(item => item.id !== real.id)]);
+        setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
         lastMessageIdRef.current = real.id;
         markRead(real.id, real.createdAt);
+      } else {
+        setMessages(prev => prev.filter(m => m.id !== optimisticId));
       }
     } catch {
       Alert.alert(t('error_title'), 'Khong the gui tin nhan thoai. Vui long thu lai.');
@@ -1268,10 +1301,10 @@ export default function ChatScreen({ navigation, route }: Props) {
                 <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => setIsSearching(true)}>
                   <Ionicons name="search" size={24} color={C.text} />
                 </TouchableOpacity>
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true })}>
+                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true, peerName: title, peerAvatar, mode: 'audio' })}>
                   <Ionicons name="call" size={24} color={C.text} />
                 </TouchableOpacity>
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true })}>
+                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true, peerName: title, peerAvatar, mode: 'video' })}>
                   <Ionicons name="videocam" size={24} color={C.text} />
                 </TouchableOpacity>
                 <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('ChatInfo', { conversationId, title, peerUid, peerAvatar, conversationType: isMarketplaceThread ? 'marketplace' : 'dm', marketplaceTitle })}>

@@ -336,6 +336,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
   const [hasRemoteVideoTrack, setHasRemoteVideoTrack] = useState(false);
   const [isRemoteCameraMuted, setIsRemoteCameraMuted] = useState(false);
+  const [hasRemoteVideoFrame, setHasRemoteVideoFrame] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [connectedAtMs, setConnectedAtMs] = useState<number | null>(null);
   const [callDurationSec, setCallDurationSec] = useState(0);
@@ -374,6 +375,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = localStream;
+      void localVideoRef.current.play().catch(() => undefined);
     }
   }, [localStream]);
 
@@ -392,16 +394,21 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
+      void remoteVideoRef.current.play().catch(() => undefined);
     }
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = remoteStream;
+      void remoteAudioRef.current.play().catch(() => undefined);
     }
 
     if (!remoteStream) {
       setHasRemoteVideoTrack(false);
       setIsRemoteCameraMuted(false);
+      setHasRemoteVideoFrame(false);
       return;
     }
+
+    setHasRemoteVideoFrame(false);
 
     const updateRemoteTrackState = () => {
       const videoTracks = remoteStream.getVideoTracks();
@@ -1336,10 +1343,27 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
         setRemoteStream(target);
       }
 
-      event.streams[0]?.getTracks().forEach((track) => {
+      const incomingTracks =
+        event.streams[0]?.getTracks() ??
+        (event.track ? [event.track] : []);
+
+      incomingTracks.forEach((track) => {
         const exists = target.getTracks().some((current) => current.id === track.id);
         if (!exists) target.addTrack(track);
       });
+
+      setHasRemoteVideoTrack(target.getVideoTracks().some((track) => track.readyState === 'live'));
+      setIsRemoteCameraMuted(false);
+      setRemoteStream(new MediaStream(target.getTracks()));
+
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = target;
+        void remoteVideoRef.current.play().catch(() => undefined);
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = target;
+        void remoteAudioRef.current.play().catch(() => undefined);
+      }
     };
 
     peer.onicecandidate = (event) => {
@@ -1626,10 +1650,14 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      // Phase 1: Set up local media and peer connection.
       const stream = await requestLocalStream(call.mode);
       const peer = createPeerConnection({ ...call, status: 'connecting', isOutgoing: true });
       stream.getTracks().forEach((track) => peer.addTrack(track, stream));
 
+      // Phase 2: Create and send the SDP offer immediately.
+      // The callee (Mobile) has a signal queue that buffers this offer
+      // if it arrives before the callee's WebRTC is fully initialized.
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
 
@@ -1681,21 +1709,29 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       };
 
       setActiveCall(nextCall);
-      getSocket().emit('call:accept', {
-        callId: call.callId,
-        conversationId: call.conversationId,
-        fromUserId: user.uid,
-        toUserId: call.fromUserId,
-        mode: call.mode,
-      });
+      activeCallRef.current = nextCall;
       setIncomingCall(null);
 
       if (useLiveKitProvider) {
+        getSocket().emit('call:accept', {
+          callId: call.callId,
+          conversationId: call.conversationId,
+          fromUserId: user.uid,
+          toUserId: call.fromUserId,
+          mode: call.mode,
+        });
         await connectLiveKitCall(nextCall);
       } else {
         const stream = await requestLocalStream(call.mode);
         const peer = createPeerConnection(nextCall);
         stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+        getSocket().emit('call:accept', {
+          callId: call.callId,
+          conversationId: call.conversationId,
+          fromUserId: user.uid,
+          toUserId: call.fromUserId,
+          mode: call.mode,
+        });
       }
     } catch (e) {
       const rawMessage = (e as Error).message;
@@ -1765,28 +1801,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
           return;
         }
       }
-
-      try {
-        queuePendingCallAccept(incomingCall, user.uid);
-        const popup = openCallWindow();
-
-        if (popup) {
-          stopRingtone();
-          setIncomingCall(null);
-          setCallError(null);
-          pushToast('Đã mở cửa sổ cuộc gọi', 'Hãy chuyển sang tab mới để nghe/gọi.');
-          return;
-        }
-
-        // Popup bị chặn thì fallback về mở trực tiếp trong tab hiện tại.
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem(PENDING_CALL_ACCEPT_STORAGE_KEY);
-        }
-      } catch {
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem(PENDING_CALL_ACCEPT_STORAGE_KEY);
-        }
-      }
+      // WebRTC P2P mode: handle the call directly in the main window
+      // (skip popup to avoid race conditions with socket listeners).
     }
 
     await acceptIncomingCallInternal(incomingCall);
@@ -2046,27 +2062,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
             return;
           }
         }
-
-        try {
-          queuePendingOutgoingCallConnect(nextCall, user.uid);
-          const popup = openCallWindow();
-
-          if (popup) {
-            clearOutgoingTimeout();
-            setCallError(null);
-            resetCallMedia();
-            setActiveCall(null);
-            pushToast(
-              'Đã chuyển sang cửa sổ gọi',
-              `Cuộc gọi với ${nextCall.peerName} đang chạy ở cửa sổ mới.`
-            );
-            return;
-          }
-
-          window.localStorage.removeItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY);
-        } catch {
-          window.localStorage.removeItem(PENDING_OUTGOING_CALL_CONNECT_STORAGE_KEY);
-        }
+        // WebRTC P2P mode: handle the call directly in the main window
+        // (skip popup to avoid race conditions with socket listeners).
       }
 
       await connectOutgoingAcceptedCall(nextCall);
@@ -2199,7 +2196,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   }, []);
 
   const showRemoteVideoPlaceholder =
-    activeCall?.mode === 'video' && (!remoteStream || !hasRemoteVideoTrack || isRemoteCameraMuted);
+    activeCall?.mode === 'video' &&
+    (!remoteStream || !hasRemoteVideoTrack || isRemoteCameraMuted || !hasRemoteVideoFrame);
   const isOutgoingWaitingForAccept = Boolean(
     activeCall && activeCall.isOutgoing && activeCall.status === 'outgoing'
   );
@@ -2218,13 +2216,13 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     : '';
   const isCallWindow = callWindowMode;
   const overlayClass = isCallWindow
-    ? 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 p-0'
-    : 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-sm sm:p-4 lg:p-6';
+    ? 'fixed inset-0 z-[120] flex items-stretch justify-center bg-slate-950 p-0'
+    : 'fixed inset-0 z-[120] flex items-stretch justify-center bg-slate-950 p-0 backdrop-blur-sm';
   const callStageClass = isFullscreen
-    ? 'w-full bg-slate-950 shadow-2xl shadow-slate-950/40 flex h-full max-h-none max-w-none items-center justify-center overflow-hidden rounded-none p-2 sm:p-4'
+    ? 'relative w-full bg-slate-950 shadow-2xl shadow-slate-950/40 flex h-full max-h-none max-w-none items-center justify-center overflow-hidden rounded-none p-2 sm:p-4'
     : isCallWindow
-      ? 'w-full bg-slate-950 shadow-2xl shadow-slate-950/40 h-[100dvh] max-h-none max-w-none overflow-hidden rounded-none'
-      : 'w-full bg-slate-950 shadow-2xl shadow-slate-950/40 max-h-[calc(100dvh-1rem)] max-w-6xl overflow-hidden rounded-[30px] border border-cyan-300/10 ring-1 ring-white/5 sm:rounded-[36px]';
+      ? 'relative h-[100dvh] w-full bg-slate-950 shadow-2xl shadow-slate-950/40 max-h-none max-w-none overflow-hidden rounded-none'
+      : 'relative h-[100dvh] min-h-0 w-full overflow-hidden bg-slate-950 shadow-2xl shadow-slate-950/40';
   return (
     <GlobalCallContext.Provider
       value={{
@@ -2454,29 +2452,30 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
               )}
               <div
                 className={
-                  'relative grid w-full grid-cols-1 ' +
-                  (isCallWindow
-                    ? 'h-full min-h-0 lg:grid-cols-[minmax(0,1fr)_300px]'
-                    : 'min-h-[420px] lg:min-h-[520px] lg:grid-cols-[minmax(0,1fr)_300px]') +
-                  (isFullscreen ? ' max-h-[calc(100dvh-1rem)] max-w-[1800px] overflow-hidden' : '')
+                  'relative h-full min-h-0 w-full overflow-hidden' +
+                  (isFullscreen ? ' max-h-[calc(100dvh-1rem)] max-w-[1800px]' : '')
                 }
               >
                 <div
                   className={
-                    'relative h-full w-full ' + (isCallWindow ? 'p-0' : 'p-2 sm:p-3 lg:p-4')
+                    'relative h-full w-full bg-black'
                   }
                 >
                   {activeCall.mode === 'video' ? (
-                    <div className="relative h-full w-full p-2 sm:p-3 lg:p-4">
+                    <div className="relative h-full w-full bg-black">
                       <video
                         ref={remoteVideoRef}
                         autoPlay
                         playsInline
+                        onLoadedData={() => setHasRemoteVideoFrame(true)}
+                        onCanPlay={() => setHasRemoteVideoFrame(true)}
+                        onPlaying={() => setHasRemoteVideoFrame(true)}
+                        onResize={(event) => {
+                          const video = event.currentTarget;
+                          setHasRemoteVideoFrame(video.videoWidth > 0 && video.videoHeight > 0);
+                        }}
                         className={
-                          'h-full w-full bg-black object-center shadow-[0_12px_32px_-20px_rgba(0,0,0,0.8)] transition-opacity duration-200 ' +
-                          (isCallWindow
-                            ? 'object-cover rounded-none border-0'
-                            : 'object-contain rounded-2xl border border-white/10') +
+                          'h-full w-full bg-black object-contain object-center transition-opacity duration-200 ' +
                           (showRemoteVideoPlaceholder ? ' opacity-0' : ' opacity-100')
                         }
                       />
@@ -2484,9 +2483,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                         <div
                           className={
                             'absolute flex flex-col items-center justify-center gap-4 bg-black text-white ' +
-                            (isCallWindow
-                              ? 'inset-0 rounded-none'
-                              : 'inset-2 rounded-2xl sm:inset-3 lg:inset-4')
+                            'inset-0'
                           }
                         >
                           <CallAvatar
@@ -2513,10 +2510,10 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                           autoPlay
                           muted
                           playsInline
-                          className="absolute bottom-3 right-3 h-24 w-20 rounded-[18px] border border-white/10 bg-slate-900 object-cover shadow-xl sm:bottom-4 sm:right-4 sm:h-28 sm:w-24 lg:bottom-5 lg:right-5 lg:h-36 lg:w-28 lg:rounded-[24px]"
+                          className="absolute right-4 top-4 z-20 h-28 w-40 rounded-xl border border-white/20 bg-slate-900 object-cover shadow-2xl sm:right-6 sm:top-6 sm:h-36 sm:w-56"
                         />
                       ) : (
-                        <div className="absolute bottom-3 right-3 flex h-24 w-20 items-center justify-center rounded-[18px] border border-white/10 bg-slate-900/95 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-200 shadow-xl sm:bottom-4 sm:right-4 sm:h-28 sm:w-24 lg:bottom-5 lg:right-5 lg:h-36 lg:w-28 lg:rounded-[24px]">
+                        <div className="absolute right-4 top-4 z-20 flex h-28 w-40 items-center justify-center rounded-xl border border-white/20 bg-slate-900/95 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200 shadow-2xl sm:right-6 sm:top-6 sm:h-36 sm:w-56">
                           Cam off
                         </div>
                       )}
@@ -2542,8 +2539,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                     </div>
                   )}
                 </div>
-                <div className="flex flex-col justify-between overflow-y-auto border-white/10 bg-gradient-to-b from-slate-900/92 via-slate-900/88 to-slate-950/92 px-4 py-4 text-white backdrop-blur-sm lg:border-l sm:px-6 sm:py-6">
-                  <div>
+                <div className="hidden min-h-0 flex-col overflow-hidden border-white/10 bg-gradient-to-b from-slate-900/92 via-slate-900/88 to-slate-950/92 px-4 py-4 text-white backdrop-blur-sm lg:border-l sm:px-6 sm:py-6">
+                  <div className="min-h-0 flex-1 overflow-y-auto pb-4 pr-1">
                     <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
                       {activeCall.mode === 'video' ? 'Video call' : 'Audio call'}
                     </p>
@@ -2675,7 +2672,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                       </div>
                     )}
                   </div>
-                  <div className="space-y-3">
+                  <div className="shrink-0 space-y-3 border-t border-white/10 pt-3">
                     <div
                       className={`grid gap-2 ${activeCall.mode === 'video' ? 'grid-cols-2' : 'grid-cols-1'}`}
                     >
@@ -2739,6 +2736,68 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                     </button>
                   </div>
                 </div>
+              </div>
+              <div className="absolute bottom-0 left-0 right-0 z-30 flex h-24 items-center justify-center gap-4 border-t border-white/10 bg-black/85 px-4 text-white shadow-2xl shadow-black/50 backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void toggleMicrophone();
+                  }}
+                  className={`order-3 inline-flex h-14 w-16 items-center justify-center rounded-full border transition ${
+                    isMicEnabled
+                      ? 'border-white/15 bg-white/12 text-white hover:bg-white/18'
+                      : 'border-red-300/30 bg-red-500/25 text-red-100 hover:bg-red-500/35'
+                  }`}
+                  title={isMicEnabled ? 'Tắt mic' : 'Bật mic'}
+                  aria-label={isMicEnabled ? 'Tắt mic' : 'Bật mic'}
+                >
+                  {isMicEnabled ? (
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                      <path d="M12 15a4 4 0 0 0 4-4V7a4 4 0 1 0-8 0v4a4 4 0 0 0 4 4Zm-6-4a1 1 0 0 1 2 0 4 4 0 1 0 8 0 1 1 0 1 1 2 0 6 6 0 0 1-5 5.91V20h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-3.09A6 6 0 0 1 6 11Z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                      <path d="M16 11V7a4 4 0 0 0-7.08-2.56l1.47 1.47A2 2 0 0 1 14 7v4a1.98 1.98 0 0 1-.19.86l1.58 1.58c.39-.7.61-1.5.61-2.44ZM3.7 2.29a1 1 0 0 0-1.41 1.42l18 18a1 1 0 0 0 1.41-1.42l-18-18ZM6 11a7.7 7.7 0 0 1 .37-3.22l1.78 1.78A3.9 3.9 0 0 0 8 11a4 4 0 0 0 6.07 3.42l1.44 1.44A6 6 0 0 1 13 16.91V20h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-3.09A6 6 0 0 1 6 11Z" />
+                    </svg>
+                  )}
+                </button>
+                {activeCall.mode === 'video' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void toggleCamera();
+                    }}
+                    className={`order-1 inline-flex h-14 w-16 items-center justify-center rounded-full border transition ${
+                      isCameraEnabled
+                        ? 'border-white/15 bg-white/12 text-white hover:bg-white/18'
+                        : 'border-red-300/30 bg-red-500/25 text-red-100 hover:bg-red-500/35'
+                    }`}
+                    title={isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
+                    aria-label={isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
+                  >
+                    {isCameraEnabled ? (
+                      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                        <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                        <path d="M4.7 3.29a1 1 0 0 0-1.4 1.42l1.95 1.95A2 2 0 0 0 3 10v4a2 2 0 0 0 2 2h8.17l4.12 4.12a1 1 0 1 0 1.41-1.42L4.7 3.29ZM21.1 8.08a1 1 0 0 1 .9.98v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-.17.82l-1.6-1.6a1.98 1.98 0 0 0 .77-1.58V10a2 2 0 0 0-2-2H9.58l-1.9-1.9c.1-.06.21-.1.32-.1h6a2 2 0 0 1 2 2v.64l3.2-2.56a1 1 0 0 1 1.9.78Z" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    finishCall(true);
+                    closeCurrentCallWindow();
+                  }}
+                  className="order-2 inline-flex h-16 min-w-28 items-center justify-center rounded-full bg-red-500 px-6 text-sm font-semibold text-white shadow-lg shadow-red-500/35 transition hover:bg-red-400"
+                  title="Kết thúc cuộc gọi"
+                  aria-label="Kết thúc cuộc gọi"
+                >
+                  Kết thúc
+                </button>
               </div>
               <audio ref={remoteAudioRef} autoPlay />
             </div>
