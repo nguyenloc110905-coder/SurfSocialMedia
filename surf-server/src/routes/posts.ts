@@ -11,6 +11,7 @@ import {
   getUnreadNotificationCount,
   toApiNotification,
 } from '../services/notifications.js';
+import { sendPushToUser } from '../services/pushNotification.js';
 import {
   emitNotificationNew,
   emitNotificationUnreadCount,
@@ -175,6 +176,22 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
         await recordPostHashtags(docRef.id, content?.trim() || '', now);
       } catch (error) {
         console.warn('⚠️ Không cập nhật được aggregate hashtag:', error);
+      }
+    }
+
+    // Gửi Push Notification cho tác giả bài gốc nếu đây là comment
+    if (parentId) {
+      try {
+        const parentDoc = await postsRef.doc(parentId).get();
+        if (parentDoc.exists && parentDoc.data()?.authorId !== req.uid) {
+          sendPushToUser(parentDoc.data()!.authorId as string, {
+            title: 'Bình luận mới',
+            body: `${user?.displayName ?? 'Ai đó'} đã bình luận về bài viết của bạn.`,
+            data: { url: `/post/${parentId}` },
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Lỗi gửi push comment:', error);
       }
     }
 
@@ -1061,6 +1078,13 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
           const unreadCount = await getUnreadNotificationCount(data.authorId as string);
           emitNotificationNew(data.authorId as string, toApiNotification(notification));
           emitNotificationUnreadCount(data.authorId as string, unreadCount);
+          
+          // Gửi Push Notification (FCM)
+          sendPushToUser(data.authorId as string, {
+            title: 'Lượt thích mới',
+            body: `${reactor?.displayName ?? 'Ai đó'} đã thả cảm xúc ${reaction} vào bài viết của bạn.`,
+            data: { url: `/post/${req.params.id}` },
+          });
         }
       } catch (error) {
         console.warn('⚠️ Không tạo được notification post_reaction:', error);

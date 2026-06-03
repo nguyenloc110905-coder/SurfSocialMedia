@@ -22,6 +22,8 @@ import {
   emitMessageUnreadCount,
 } from '../realtime/emitters/message.emitter.js';
 import { conversationRepository } from '../repositories/conversation.repository.js';
+import { getDb } from '../config/firebase-admin.js';
+import { sendPushToUser } from '../services/pushNotification.js';
 
 const router = Router();
 
@@ -556,6 +558,21 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       const senderCount = await getUnreadConversationCount(senderId);
       emitMessageUnreadCount(senderId, senderCount);
 
+      // Gửi Push Notifications
+      const senderDoc = await getDb().collection('users').doc(senderId).get();
+      const senderName = senderDoc.exists ? senderDoc.data()?.displayName || 'Ai đó' : 'Ai đó';
+      const mutedSet = new Set(mutedBy || []);
+      
+      result.recipientIds.forEach(uid => {
+        if (!mutedSet.has(uid)) {
+          sendPushToUser(uid, {
+            title: 'Tin nhắn mới',
+            body: `${senderName} đã gửi một ảnh/tệp cho bạn.`,
+            data: { url: `/chat/${req.params.id}` },
+          });
+        }
+      });
+
       res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
       return;
     }
@@ -609,6 +626,21 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
 
     const senderCount = await getUnreadConversationCount(senderId);
     emitMessageUnreadCount(senderId, senderCount);
+
+    // Gửi Push Notifications
+    const senderDoc = await getDb().collection('users').doc(senderId).get();
+    const senderName = senderDoc.exists ? senderDoc.data()?.displayName || 'Ai đó' : 'Ai đó';
+    const mutedSet = new Set(mutedBy || []);
+    
+    result.recipientIds.forEach(uid => {
+      if (!mutedSet.has(uid)) {
+        sendPushToUser(uid, {
+          title: 'Tin nhắn mới',
+          body: `${senderName}: ${text.length > 50 ? text.substring(0, 50) + '...' : text}`,
+          data: { url: `/chat/${req.params.id}` },
+        });
+      }
+    });
 
     res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
   } catch (e) {

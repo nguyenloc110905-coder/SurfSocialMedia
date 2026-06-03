@@ -14,6 +14,16 @@ import {
   isFriendRequestPrivacy,
   normalizeFriendRequestPrivacy,
 } from '../types/privacy.js';
+import {
+  createNotification,
+  getUnreadNotificationCount,
+  toApiNotification,
+} from '../services/notifications.js';
+import { sendPushToUser } from '../services/pushNotification.js';
+import {
+  emitNotificationNew,
+  emitNotificationUnreadCount,
+} from '../realtime/emitters/notification.emitter.js';
 
 const router = Router();
 
@@ -197,6 +207,35 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
       notificationPrefs: normalizeNotificationPrefs(data.notificationPrefs),
       friendRequestPrivacy: normalizeFriendRequestPrivacy(data.friendRequestPrivacy),
     });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/users/me/fcm-token:
+ *   put:
+ *     tags: [Users]
+ *     summary: Cập nhật FCM token cho người dùng
+ *     security: [{ bearerAuth: [] }]
+ */
+router.put('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { fcmToken } = req.body;
+    if (!fcmToken) {
+      res.status(400).json({ error: 'Missing fcmToken' });
+      return;
+    }
+
+    const db = getDb();
+    const userRef = db.collection('users').doc(req.uid!);
+
+    await userRef.update({
+      fcmTokens: FieldValue.arrayUnion(fcmToken)
+    });
+
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -1031,6 +1070,34 @@ router.post(
         .collection('follows')
         .doc(viewerUid)
         .set({ followingIds: FieldValue.arrayUnion(targetUid) }, { merge: true });
+
+      // Gửi Notification & Push
+      try {
+        const viewerDoc = await getDb().collection('users').doc(viewerUid).get();
+        const viewerName = viewerDoc.data()?.displayName || 'Ai đó';
+        
+        const notification = await createNotification({
+          userId: targetUid,
+          type: 'new_follower',
+          actorId: viewerUid,
+          message: `${viewerName} đã bắt đầu theo dõi bạn.`,
+        });
+
+        if (notification) {
+          const unreadCount = await getUnreadNotificationCount(targetUid);
+          emitNotificationNew(targetUid, toApiNotification(notification));
+          emitNotificationUnreadCount(targetUid, unreadCount);
+          
+          sendPushToUser(targetUid, {
+            title: 'Người theo dõi mới',
+            body: `${viewerName} đã bắt đầu theo dõi bạn.`,
+            data: { url: `/profile/${viewerUid}` },
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Lỗi gửi thông báo theo dõi:', error);
+      }
+
       res.json({ success: true, isFollowing: true });
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });

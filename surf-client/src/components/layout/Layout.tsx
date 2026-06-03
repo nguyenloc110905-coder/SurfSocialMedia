@@ -115,7 +115,7 @@ export default function Layout() {
                   className={
                     useEmbeddedFullHeight
                       ? 'min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden'
-                      : 'min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hide'
+                      : 'min-w-0 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden scrollbar-hover'
                   }
                 >
                   <div
@@ -131,7 +131,7 @@ export default function Layout() {
                   </div>
                 </div>
                 {!useWideMain && (
-                  <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide">
+                  <div className="min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hover">
                     <MainRightSidebar />
                   </div>
                 )}

@@ -322,11 +322,7 @@ function ClipCard({
       className="relative flex flex-row items-center bg-black snap-start flex-shrink-0 overflow-hidden h-full"
     >
       {/* Video wrapper – flex-1 so it fills remaining space after comment panel */}
-      <div className="flex-1 flex items-center justify-center h-full min-w-0">
-      <div
-        className="relative h-full flex-shrink-0"
-        style={{ aspectRatio: '9/16' }}
-      >
+      <div className="flex-1 relative flex items-center justify-center h-full min-w-0 bg-black group/video-container">
       {/* Video element */}
       <video
         ref={videoRef}
@@ -335,7 +331,7 @@ function ClipCard({
         loop
         muted={muted}
         playsInline
-        className="w-full h-full object-cover cursor-pointer"
+        className="w-full h-full object-contain cursor-pointer"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={togglePlay}
@@ -404,10 +400,10 @@ function ClipCard({
       )}
 
       {/* Bottom gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
-      {/* Right action bar — floats outside the video frame to the right */}
-      <div className="absolute -right-16 bottom-20 flex flex-col items-center gap-4 z-10">
+      {/* Right action bar — floats inside the video frame on the right */}
+      <div className="absolute right-4 lg:right-24 bottom-20 flex flex-col items-center gap-4 z-10 drop-shadow-xl">
         {/* Author avatar */}
         <button
           onClick={() => navigate(`/feed/profile/${video.authorId}`)}
@@ -663,7 +659,7 @@ function ClipCard({
       </div>
 
       {/* Bottom info overlay */}
-      <div className="absolute bottom-4 left-4 right-16 z-10">
+      <div className="absolute bottom-6 left-6 right-20 lg:right-40 z-10">
         <button
           onClick={() => navigate(`/feed/profile/${video.authorId}`)}
           className="font-bold text-sm text-white hover:underline drop-shadow block"
@@ -704,8 +700,7 @@ function ClipCard({
         )}
       </div>
       </div>
-      </div>
-      {/* ── END of 9/16 video box + wrapper ──────────────── */}
+      {/* ── END of adaptive video container ──────────────── */}
 
       {/* ── Comment Panel — in-flow flex sibling, width animates 0→320px ── */}
       <div

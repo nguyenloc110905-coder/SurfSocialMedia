@@ -24,16 +24,58 @@ export interface ImageOptions {
 }
 
 /**
- * Tối ưu URL ảnh: qua Cloudflare Worker cache.
- * Cloudinary đã bị loại bỏ.
+ * Tối ưu URL Firebase Storage khi cài extension Resize Images
+ */
+function getFirebaseResizedUrl(url: string, width: number): string {
+  // Chỉ xử lý link Firebase Storage
+  if (!url.includes('firebasestorage.googleapis.com')) return url;
+
+  // Xác định size cần request (phải map với cấu hình extension)
+  let sizeSuffix = '';
+  if (width <= 400) sizeSuffix = '400x400';
+  else if (width <= 800) sizeSuffix = '800x800';
+  else sizeSuffix = '1200x1200';
+
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split('/');
+    const objectPathIndex = pathParts.findIndex((p) => p === 'o');
+    if (objectPathIndex === -1) return url;
+
+    const encodedObjectPath = pathParts.slice(objectPathIndex + 1).join('/');
+    const objectPath = decodeURIComponent(encodedObjectPath);
+
+    // Bỏ qua nếu đã có suffix
+    if (objectPath.match(/_\d+x\d+\.\w+$/)) return url;
+
+    const lastDotIndex = objectPath.lastIndexOf('.');
+    if (lastDotIndex === -1) return url;
+
+    const name = objectPath.substring(0, lastDotIndex);
+    const ext = objectPath.substring(lastDotIndex);
+
+    // Đổi tên file thêm đuôi size (VD: image_400x400.jpg)
+    const newObjectPath = `${name}_${sizeSuffix}${ext}`;
+    pathParts.splice(objectPathIndex + 1, pathParts.length - objectPathIndex - 1, encodeURIComponent(newObjectPath));
+    parsed.pathname = pathParts.join('/');
+
+    // Xóa token vì file resize sẽ có token khác, ta dùng quyền Public Read
+    parsed.searchParams.delete('token');
+
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Tối ưu URL ảnh: qua Cloudflare Worker cache hoặc Firebase Resize
  */
 export function optimizeImageUrl(url: string | null | undefined, opts: ImageOptions = {}): string {
   if (!url) return '';
 
-  // Base64 / data URL → trả nguyên
   if (url.startsWith('data:')) return url;
 
-  // 1️⃣ Cloudflare Worker proxy (nếu đã cấu hình)
   if (CF_WORKER_URL) {
     const params = new URLSearchParams({ url });
     if (opts.width) params.set('w', String(opts.width));
@@ -43,7 +85,10 @@ export function optimizeImageUrl(url: string | null | undefined, opts: ImageOpti
     return `${CF_WORKER_URL}?${params.toString()}`;
   }
 
-  // 2️⃣ URL khác (Firebase Storage, external) → trả nguyên
+  // Bật resize Firebase bằng cách comment out lệnh return url bên dưới
+  // Nếu đã cài Firebase Extension (Resize Images) với các size: 400x400,800x800,1200x1200
+  if (opts.width) return getFirebaseResizedUrl(url, opts.width);
+
   return url;
 }
 
