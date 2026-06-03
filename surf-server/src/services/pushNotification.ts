@@ -1,4 +1,4 @@
-import { admin, getDb } from '../config/firebase-admin';
+import { admin, getDb } from '../config/firebase-admin.js';
 
 export interface PushNotificationPayload {
   title: string;

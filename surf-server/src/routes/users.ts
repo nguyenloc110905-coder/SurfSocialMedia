@@ -1078,7 +1078,8 @@ router.post(
         
         const notification = await createNotification({
           userId: targetUid,
-          type: 'new_follower',
+          type: 'system',
+          iconKey: 'user-plus',
           actorId: viewerUid,
           message: `${viewerName} đã bắt đầu theo dõi bạn.`,
         });
