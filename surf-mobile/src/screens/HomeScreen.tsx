@@ -235,7 +235,7 @@ export default function HomeScreen({
               activeOpacity={0.85}
             >
               <View style={s.cardTitleRow}>
-                <Text style={[s.sectionTitle, { color: C.text }]}>Tin nhắn</Text>
+                <Text style={[s.sectionTitle, { color: C.text }]}>Waves</Text>
                 {unreadMessages > 0 ? <Badge value={unreadMessages} color={C.accent} /> : null}
               </View>
               {conversations.length > 0 ? (

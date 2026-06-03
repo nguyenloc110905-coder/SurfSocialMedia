@@ -439,6 +439,30 @@ export const listMessagesForConversation = async (
   return { ok: true, items: page.items, nextCursor: page.nextCursor };
 };
 
+export const listMediaForConversation = async (
+  userId: string,
+  conversationId: string,
+  limit = 20,
+  beforeCursor?: string
+): Promise<ListMessagesResult> => {
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation) return { ok: false, reason: 'not_found' };
+
+  const memberIds = await extractParticipantIds(conversationId);
+  if (!memberIds.includes(userId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const page = await messageRepository.listByConversation({
+    conversationId,
+    limit,
+    beforeCursor,
+    viewerId: userId,
+    mediaOnly: true,
+  });
+  return { ok: true, items: page.items, nextCursor: page.nextCursor };
+};
+
 export const markConversationRead = async (
   userId: string,
   conversationId: string,

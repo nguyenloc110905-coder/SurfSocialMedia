@@ -71,6 +71,14 @@
         {
           "contactsPermission": "Surf cần truy cập danh bạ để giúp bạn tìm bạn bè trên ứng dụng."
         }
+      ],
+      "expo-audio",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Cho phép Surf truy cập Camera để gọi Video",
+          "microphonePermission": "Cho phép Surf truy cập Microphone để gọi Thoại"
+        }
       ]
     ],
     "extra": {

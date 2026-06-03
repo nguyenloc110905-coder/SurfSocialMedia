@@ -42,14 +42,20 @@ const { width: SW } = Dimensions.get('window');
 const MEDIA_W = SW - 24;
 
 const DARK = {
-  bg: '#0f172a', card: '#1e293b', card2: '#253347',
-  border: '#334155', text: '#e2e8f0', subtext: '#64748b',
-  placeholder: '#334155', accent: '#0ea5e9', inputBg: '#253347',
+  bg: '#0b1120', card: '#111827', card2: '#1f2937',
+  border: '#243044', text: '#f8fafc', subtext: '#94a3b8',
+  placeholder: '#334155', accent: '#38bdf8', accent2: '#8b5cf6', inputBg: '#151719',
+  composerBg: '#15191c',
+  composerBorder: '#3b485b',
+  waveA: 'rgba(6, 182, 212, 0.22)', waveB: 'rgba(14, 165, 233, 0.13)', waveC: 'rgba(139, 92, 246, 0.11)',
 };
 const LIGHT = {
-  bg: '#f8fafc', card: '#ffffff', card2: '#f1f5f9',
-  border: '#e2e8f0', text: '#1f2937', subtext: '#64748b',
-  placeholder: '#e2e8f0', accent: '#0ea5e9', inputBg: '#f1f5f9',
+  bg: '#f3f7fb', card: '#ffffff', card2: '#f1f5f9',
+  border: '#e2e8f0', text: '#0f172a', subtext: '#64748b',
+  placeholder: '#e2e8f0', accent: '#0284c7', accent2: '#7c3aed', inputBg: '#ffffff',
+  composerBg: '#ffffff',
+  composerBorder: '#bfd2e5',
+  waveA: 'rgba(6, 182, 212, 0.15)', waveB: 'rgba(14, 165, 233, 0.09)', waveC: 'rgba(139, 92, 246, 0.08)',
 };
 
 function SkeletonCard({ C }: { C: typeof DARK }) {
@@ -249,38 +255,39 @@ export default function FeedScreen({
   }).current;
 
   const composer = useMemo(() => (
-    <View style={[s.composer, { backgroundColor: C.card, borderBottomColor: C.border }]}>
-      <TouchableOpacity
-        style={s.composerAvatar}
-        onPress={() => navigation.navigate('Profile', { userId: user?.uid } as never)}
-        activeOpacity={0.78}
-      >
-        {user?.photoURL ? (
-          <Image source={{ uri: user.photoURL }} style={s.composerAvatarImg} />
-        ) : (
-          <View style={[s.composerAvatarImg, { backgroundColor: C.accent }]}>
-            <Text style={s.composerAvatarText}>{initial}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[s.composerInput, { borderColor: C.border, backgroundColor: scheme === 'dark' ? C.card2 : '#ffffff' }]}
-        onPress={openCreatePost}
-        activeOpacity={0.82}
-      >
-        <Text style={[s.composerText, { color: C.text }]} numberOfLines={1}>{t('feed_composer_placeholder')}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={s.composerMediaBtn}
-        onPress={openCreatePost}
-        activeOpacity={0.78}
-        accessibilityRole="button"
-        accessibilityLabel={t('feed_add_media')}
-      >
-        <Ionicons name="image-outline" size={26} color="#22c55e" />
-      </TouchableOpacity>
+    <View style={s.composerOuter}>
+      <View style={[s.composerShell, { backgroundColor: C.composerBg, borderColor: C.composerBorder }]}>
+        <View style={[s.waveBandTop, { backgroundColor: C.waveA }]} />
+        <View style={[s.waveBandBottom, { backgroundColor: C.waveB }]} />
+        <View style={[s.waveBandMiddle, { backgroundColor: C.waveC }]} />
+        <View style={s.composerTopRow}>
+          <TouchableOpacity
+            style={[s.composerAvatar, { borderColor: scheme === 'dark' ? 'rgba(255,255,255,0.16)' : 'rgba(2,132,199,0.18)' }]}
+            onPress={() => navigation.navigate('Profile', { userId: user?.uid } as never)}
+            activeOpacity={0.78}
+          >
+            {user?.photoURL ? (
+              <Image source={{ uri: user.photoURL }} style={s.composerAvatarImg} />
+            ) : (
+              <View style={[s.composerAvatarImg, { backgroundColor: C.accent }]}>
+                <Text style={s.composerAvatarText}>{initial}</Text>
+              </View>
+            )}
+            <View style={[s.onlineDot, { borderColor: scheme === 'dark' ? '#0b1120' : '#fff' }]} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.composerInput, { borderColor: C.composerBorder, backgroundColor: C.inputBg }]}
+            onPress={openCreatePost}
+            activeOpacity={0.82}
+          >
+            <Text style={[s.composerText, { color: C.text }]} numberOfLines={1} ellipsizeMode="tail">
+              🌊 Chia sẻ làn sóng cảm xúc của bạn...
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
-  ), [C, initial, navigation, openCreatePost, scheme, t, user?.photoURL, user?.uid]);
+  ), [C, initial, navigation, openCreatePost, scheme, user?.photoURL, user?.uid]);
 
   const listHeader = useMemo(() => (
     <>
@@ -375,46 +382,96 @@ export default function FeedScreen({
 const s = StyleSheet.create({
   root: { flex: 1 },
   list: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 16 },
-  composer: {
+  composerOuter: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  composerShell: {
+    minHeight: 88,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+    justifyContent: 'center',
+  },
+  waveBandTop: {
+    position: 'absolute',
+    left: -32,
+    right: -32,
+    top: -22,
+    height: 76,
+    borderBottomLeftRadius: 120,
+    borderBottomRightRadius: 95,
+    transform: [{ rotate: '-2deg' }],
+  },
+  waveBandMiddle: {
+    position: 'absolute',
+    left: -42,
+    right: -42,
+    top: 38,
+    height: 58,
+    borderTopLeftRadius: 100,
+    borderBottomRightRadius: 120,
+    transform: [{ rotate: '3deg' }],
+  },
+  waveBandBottom: {
+    position: 'absolute',
+    left: -26,
+    right: -26,
+    bottom: -32,
+    height: 78,
+    borderTopLeftRadius: 140,
+    borderTopRightRadius: 88,
+    transform: [{ rotate: '-1deg' }],
+  },
+  composerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    marginBottom: 8,
+    gap: 12,
   },
   composerAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
     overflow: 'hidden',
+    borderWidth: 1.5,
   },
   composerAvatarImg: {
-    width: 48,
-    height: 48,
+    width: '100%',
+    height: '100%',
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  composerAvatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  composerAvatarText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  onlineDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    backgroundColor: '#22c55e',
+  },
   composerInput: {
     flex: 1,
-    minHeight: 44,
+    height: 44,
     borderRadius: 22,
     borderWidth: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
     minWidth: 0,
   },
-  composerText: { fontSize: 16, fontWeight: '500' },
-  composerMediaBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  composerText: { flex: 1, fontSize: 13, fontWeight: '600', opacity: 0.8 },
   card: { borderRadius: 14, borderWidth: 1, marginBottom: 12, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
   avatarCircle: { width: 40, height: 40, borderRadius: 20 },

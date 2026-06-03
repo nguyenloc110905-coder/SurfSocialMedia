@@ -24,15 +24,15 @@ type CloudinaryUploadResponse = {
   error?: { message?: string };
 };
 
-function endpoint(kind: 'image' | 'video') {
+function endpoint(kind: 'image' | 'video' | 'raw') {
   if (!CLOUD_NAME) throw new Error('Cloudinary cloud name is required');
-  const resourceType = kind === 'video' ? 'auto' : 'image';
+  const resourceType = kind === 'video' ? 'auto' : kind;
   return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
 }
 
-function fileNameFor(asset: UploadableAsset, kind: 'image' | 'video') {
+function fileNameFor(asset: UploadableAsset, kind: 'image' | 'video' | 'raw') {
   if (asset.fileName) return asset.fileName;
-  const extension = kind === 'video' ? 'mp4' : 'jpg';
+  const extension = kind === 'video' ? 'mp4' : kind === 'raw' ? 'bin' : 'jpg';
   return `surf-upload-${Date.now()}.${extension}`;
 }
 
@@ -73,12 +73,44 @@ async function uploadAsset(asset: UploadableAsset, kind: 'image' | 'video', opti
   return withMediaSize(data.secure_url, asset);
 }
 
+async function uploadRawAsset(asset: UploadableAsset, options: UploadOptions = {}) {
+  if (!API_KEY || !UPLOAD_PRESET) {
+    throw new Error('Cloudinary upload config is missing');
+  }
+
+  const formData = new FormData();
+  formData.append('file', {
+    uri: asset.uri,
+    name: fileNameFor(asset, 'raw'),
+    type: asset.mimeType || 'application/octet-stream',
+  } as unknown as Blob);
+  formData.append('upload_preset', UPLOAD_PRESET);
+  formData.append('api_key', API_KEY);
+  if (options.folder) formData.append('folder', options.folder);
+
+  const res = await fetch(endpoint('raw'), {
+    method: 'POST',
+    body: formData,
+  });
+  const data = (await res.json().catch(() => ({}))) as CloudinaryUploadResponse;
+
+  if (!res.ok || data.error || !data.secure_url) {
+    throw new Error(data.error?.message || `Cloudinary raw upload failed (${res.status})`);
+  }
+
+  return data.secure_url;
+}
+
 export function uploadImage(asset: UploadableAsset, options?: UploadOptions) {
   return uploadAsset(asset, 'image', options);
 }
 
 export function uploadVideo(asset: UploadableAsset, options?: UploadOptions) {
   return uploadAsset(asset, 'video', options);
+}
+
+export function uploadFile(asset: UploadableAsset, options?: UploadOptions) {
+  return uploadRawAsset(asset, options);
 }
 
 export function isVideoAsset(asset: UploadableAsset) {

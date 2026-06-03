@@ -138,7 +138,7 @@ export default function CreatePostScreen({ navigation, route }: Props) {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: true,
       selectionLimit: 10,
       quality: 0.85,
@@ -155,7 +155,7 @@ export default function CreatePostScreen({ navigation, route }: Props) {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ['images', 'videos'],
       quality: 0.85,
     });
     if (!result.canceled) {
@@ -518,3 +518,4 @@ const s = StyleSheet.create({
     fontSize: 16,
   },
 });
+

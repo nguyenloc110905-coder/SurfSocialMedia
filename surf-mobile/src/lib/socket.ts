@@ -2,15 +2,19 @@ import Constants from 'expo-constants';
 import { io, type Socket } from 'socket.io-client';
 
 function getSocketBase(): string {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.manifest2?.extra?.expoGo?.debuggerHost;
   if (hostUri) {
     const host = hostUri.split(':')[0];
     return `http://${host}:4000`;
   }
-  return process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+  return 'http://localhost:4000';
 }
 
 const SOCKET_URL = getSocketBase();
+console.log("SOCKET_URL =>", SOCKET_URL);
 
 let socket: Socket | null = null;
 let currentUserId: string | null = null;
@@ -23,7 +27,6 @@ export const getSocket = (): Socket => {
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
     });
 
     socket.on('connect', () => {

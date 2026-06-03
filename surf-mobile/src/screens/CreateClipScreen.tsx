@@ -254,7 +254,7 @@ export default function CreateClipScreen({ navigation }: Props) {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: ['videos'],
       allowsEditing: false,
       quality: 0.9,
     });
@@ -268,7 +268,7 @@ export default function CreateClipScreen({ navigation }: Props) {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: ['videos'],
       allowsEditing: false,
       quality: 0.9,
       videoMaxDuration: 180,
@@ -948,3 +948,4 @@ const s = StyleSheet.create({
   sheetTitle: { fontSize: 20, fontWeight: '900', marginBottom: 8 },
   privacyOption: { minHeight: 72, borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
 });
+

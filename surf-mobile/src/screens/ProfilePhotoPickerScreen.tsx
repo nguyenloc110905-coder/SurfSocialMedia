@@ -191,7 +191,7 @@ export default function ProfilePhotoPickerScreen({ navigation, route }: Props) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: isAvatar ? [1, 1] : [16, 9],
       quality: 0.9,
@@ -209,7 +209,7 @@ export default function ProfilePhotoPickerScreen({ navigation, route }: Props) {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: isAvatar ? [1, 1] : [16, 9],
       quality: 0.9,
@@ -675,3 +675,4 @@ const s = StyleSheet.create({
   },
   emptyButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });
+

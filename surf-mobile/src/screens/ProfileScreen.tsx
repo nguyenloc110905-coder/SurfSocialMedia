@@ -86,7 +86,7 @@ const LIGHT = {
   chip: '#f0f2f5',
 };
 
-const { width: SW } = Dimensions.get('window');
+const { width: SW, height: SCREEN_H } = Dimensions.get('window');
 const COVER_H = Math.max(165, Math.min(225, SW * 0.46));
 const AVATAR_SIZE = 84;
 type ProfileTab = 'all' | 'photos' | 'reels';
@@ -162,6 +162,14 @@ function videoThumbnailUrl(url: string) {
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
+function areSetsEqual<T>(a: Set<T>, b: Set<T>) {
+  if (a.size !== b.size) return false;
+  for (const item of a) {
+    if (!b.has(item)) return false;
+  }
+  return true;
+}
+
 export default function ProfileScreen({
   navigation,
   route,
@@ -179,6 +187,10 @@ export default function ProfileScreen({
   const { user: authUser } = useAuthStore();
   const toggleSidebar = useSidebarStore((state) => state.toggleSidebar);
   const scrollRef = useRef<ScrollView>(null);
+  const lastScrollYRef = useRef(0);
+  const viewportHeightRef = useRef(SCREEN_H);
+  const contentBodyYRef = useRef(0);
+  const postLayoutRef = useRef<Record<string, { y: number; height: number }>>({});
 
   const targetUid = route.params?.userId ?? authUser?.uid ?? '';
   const isOwn = !route.params?.userId || route.params.userId === authUser?.uid;
@@ -198,6 +210,7 @@ export default function ProfileScreen({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPost, setPreviewPost] = useState<FeedPost | null>(null);
   const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
+  const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(() => new Set());
 
   const loadProfile = useCallback(async () => {
     if (!targetUid) return;
@@ -278,8 +291,40 @@ export default function ProfileScreen({
     onScrollPositionChange?.(true);
   }, [onScrollPositionChange, scrollTopSignal]);
 
+  const updateVisibleProfilePosts = useCallback((scrollY: number) => {
+    if (!isActive || activeTab !== 'all') {
+      setVisiblePostIds((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+
+    const viewportTop = scrollY;
+    const viewportBottom = scrollY + viewportHeightRef.current;
+    const next = new Set<string>();
+
+    Object.entries(postLayoutRef.current).forEach(([postId, layout]) => {
+      if (layout.height <= 0) return;
+      const postTop = contentBodyYRef.current + layout.y;
+      const postBottom = postTop + layout.height;
+      const visibleHeight = Math.min(postBottom, viewportBottom) - Math.max(postTop, viewportTop);
+      if (visibleHeight / layout.height >= 0.45) next.add(postId);
+    });
+
+    setVisiblePostIds((prev) => (areSetsEqual(prev, next) ? prev : next));
+  }, [activeTab, isActive]);
+
+  useEffect(() => {
+    const postIds = new Set(posts.map((post) => post.id));
+    Object.keys(postLayoutRef.current).forEach((postId) => {
+      if (!postIds.has(postId)) delete postLayoutRef.current[postId];
+    });
+    updateVisibleProfilePosts(lastScrollYRef.current);
+  }, [posts, activeTab, isActive, updateVisibleProfilePosts]);
+
   const handleScroll = (event: any) => {
-    onScrollPositionChange?.(Math.max(0, event.nativeEvent.contentOffset.y) < 12);
+    const scrollY = Math.max(0, event.nativeEvent.contentOffset.y);
+    lastScrollYRef.current = scrollY;
+    onScrollPositionChange?.(scrollY < 12);
+    updateVisibleProfilePosts(scrollY);
   };
 
   const handleRefresh = async () => {
@@ -785,7 +830,15 @@ export default function ProfileScreen({
       );
     }
     return posts.map((post) => (
-      <PostCard key={post.id} post={post} isVisible={false} navigation={navigation} />
+      <View
+        key={post.id}
+        onLayout={(event) => {
+          postLayoutRef.current[post.id] = event.nativeEvent.layout;
+          updateVisibleProfilePosts(lastScrollYRef.current);
+        }}
+      >
+        <PostCard post={post} isVisible={isActive && activeTab === 'all' && visiblePostIds.has(post.id)} navigation={navigation} />
+      </View>
     ));
   };
 
@@ -827,12 +880,22 @@ export default function ProfileScreen({
         ref={scrollRef}
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        onLayout={(event) => {
+          viewportHeightRef.current = event.nativeEvent.layout.height || SCREEN_H;
+          updateVisibleProfilePosts(lastScrollYRef.current);
+        }}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.accent} colors={[C.accent]} />}
       >
         {renderHeader()}
-        <View style={{ paddingBottom: insets.bottom + 16 }}>
+        <View
+          style={{ paddingBottom: insets.bottom + 16 }}
+          onLayout={(event) => {
+            contentBodyYRef.current = event.nativeEvent.layout.y;
+            updateVisibleProfilePosts(lastScrollYRef.current);
+          }}
+        >
           {renderTabContent()}
         </View>
       </ScrollView>
@@ -1169,7 +1232,7 @@ const s = StyleSheet.create({
   },
   previewPostContent: {
     paddingTop: 104,
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
     paddingBottom: 28,
   },
 });

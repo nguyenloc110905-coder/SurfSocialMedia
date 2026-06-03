@@ -1,12 +1,15 @@
 import React, { useEffect, useRef } from 'react';
 import { NavigationContainer, NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
 import { useAuthStore } from '@/stores/authStore';
 import AuthScreen from '@/screens/AuthScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
 import ChatScreen from '@/screens/ChatScreen';
+import ChatInfoScreen from '@/screens/ChatInfoScreen';
+import CallScreen from '@/screens/CallScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
 import { isDevModeEnabled, getDebugScreen } from '@/lib/debug-config';
@@ -26,6 +29,7 @@ import SearchScreen from '@/screens/SearchScreen';
 import SavedPostsScreen from '@/screens/SavedPostsScreen';
 import GroupsScreen from '@/screens/GroupsScreen';
 import GroupDetailScreen from '@/screens/GroupDetailScreen';
+import { getSocket } from '@/lib/socket';
 
 export type RootStackParamList = {
   Auth: { initialTab?: 'login' | 'register' };
@@ -36,7 +40,22 @@ export type RootStackParamList = {
   Profile: { userId?: string };
   AI: undefined;
   Messages: undefined;
-  Chat: { conversationId: string; title: string; peerUid?: string | null; peerAvatar?: string | null; };
+  ChatInfo: {
+    conversationId: string;
+    title: string;
+    peerUid?: string | null;
+    peerAvatar?: string | null;
+    conversationType?: 'dm' | 'group' | 'marketplace';
+    marketplaceTitle?: string | null;
+  };
+  Chat: {
+    conversationId: string;
+    title: string;
+    peerUid?: string | null;
+    peerAvatar?: string | null;
+    conversationType?: 'dm' | 'group' | 'marketplace';
+    marketplaceTitle?: string | null;
+  };
   Settings: undefined;
   EditProfile: undefined;
   ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
@@ -52,6 +71,14 @@ export type RootStackParamList = {
   SavedPosts: undefined;
   Groups: undefined;
   GroupDetail: { groupId: string };
+  Call: {
+    conversationId: string;
+    peerUid: string;
+    isHost?: boolean;
+    callId?: string;
+    peerName?: string;
+    peerAvatar?: string | null;
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -62,6 +89,30 @@ export default function Navigation() {
   const devMode = isDevModeEnabled();
 
   console.log(`🧭 Navigation render - user=${user ? user.email : 'null'}, loading=${loading}, devMode=${devMode}`);
+
+  useEffect(() => {
+    if (!user) return;
+    const socket = getSocket();
+    
+    const onCallIncoming = (payload: any) => {
+      if (navigationRef.current?.isReady()) {
+        navigationRef.current.navigate('Call', {
+          conversationId: payload.conversationId,
+          peerUid: payload.fromUserId,
+          callId: payload.callId,
+          isHost: false,
+          peerName: payload.fromName,
+          peerAvatar: payload.fromAvatarUrl
+        });
+      }
+    };
+
+    socket.on('call:incoming', onCallIncoming);
+
+    return () => {
+      socket.off('call:incoming', onCallIncoming);
+    };
+  }, [user]);
 
   // Normal mode: auth flow
   // Chỉ hiện splash khi Firebase đang kiểm tra auth (~200-500ms thực tế)
@@ -102,6 +153,8 @@ export default function Navigation() {
             <Stack.Screen name="AI" component={AIScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="ChatInfo" component={ChatInfoScreen} />
+            <Stack.Screen name="Call" component={CallScreen} options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ProfilePhotoPicker" component={ProfilePhotoPickerScreen} />

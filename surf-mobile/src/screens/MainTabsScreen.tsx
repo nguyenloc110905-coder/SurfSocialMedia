@@ -20,6 +20,7 @@ import type { RootStackParamList } from '@/navigation';
 import { api } from '@/lib/api';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { usePresence } from '@/hooks/usePresence';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { gestureState } from '@/lib/gestureState';
 import { useNotificationStore, type NotificationItem, type RealtimeMessagePayload } from '@/stores/notificationStore';
@@ -103,6 +104,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
   const { width } = useWindowDimensions();
   const user = useAuthStore((state) => state.user);
+  usePresence();
 
   const [active, setActive] = useState<Tab>('home');
   const [clipsFullscreen, setClipsFullscreen] = useState(false);
@@ -163,6 +165,8 @@ export default function MainTabsScreen({ navigation }: Props) {
   const feedChromeCollapse = useRef(new Animated.Value(0)).current;
   const feedFloatingHeader = useRef(new Animated.Value(1)).current;
   const tabTransitionRef = useRef<typeof tabTransition>(null);
+  const lastUnreadRefreshAtRef = useRef(0);
+  const unreadRefreshInFlightRef = useRef(false);
 
   const HIT = { top: 10, bottom: 10, left: 10, right: 10 };
   const visualActive = tabTransition && tabTransition.mode !== 'drag' ? tabTransition.to : active;
@@ -486,10 +490,13 @@ export default function MainTabsScreen({ navigation }: Props) {
     return () => subscription.remove();
   }, [activateTab, closeSidebar, sidebarOpen]);
 
-  const refreshUnreadCounts = useCallback(async () => {
+  const refreshUnreadCounts = useCallback(async (force = false) => {
     if (!user?.uid) return;
+    if (unreadRefreshInFlightRef.current) return;
+    if (!force && lastUnreadRefreshAtRef.current && Date.now() - lastUnreadRefreshAtRef.current < 20_000) return;
 
     try {
+      unreadRefreshInFlightRef.current = true;
       const [notificationData, messageData] = await Promise.all([
         api.get<CountResponse>('/api/notifications/unread-count'),
         api.get<CountResponse>('/api/conversations/unread-count'),
@@ -503,12 +510,15 @@ export default function MainTabsScreen({ navigation }: Props) {
       }
     } catch {
       // The center screens still reconcile their lists; badge refresh is best effort.
+    } finally {
+      unreadRefreshInFlightRef.current = false;
+      lastUnreadRefreshAtRef.current = Date.now();
     }
   }, [setNotificationUnreadCount, setUnreadMessages, user?.uid]);
 
   useEffect(() => {
     if (!user?.uid || !isFocused) return;
-    refreshUnreadCounts();
+    void refreshUnreadCounts();
   }, [isFocused, refreshUnreadCounts, user?.uid]);
 
   useEffect(() => {
@@ -519,14 +529,12 @@ export default function MainTabsScreen({ navigation }: Props) {
 
     const onNotificationNew = (payload: NotificationItem) => {
       if (payload?.id) upsertNotification(payload);
-      refreshUnreadCounts();
     };
     const onNotificationUnreadCount = (payload: CountResponse) => {
       if (typeof payload?.count === 'number') setNotificationUnreadCount(payload.count);
     };
     const onNotificationRead = ({ id }: { id?: string }) => {
       if (id) markNotificationRead(id);
-      refreshUnreadCounts();
     };
     const onNotificationReadAll = () => {
       markAllNotificationsRead();
@@ -534,7 +542,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     };
     const onMessageNew = (payload: RealtimeMessagePayload & { muted?: boolean }) => {
       if (payload?.message?.senderId !== user.uid && !payload?.muted) {
-        refreshUnreadCounts();
+        void refreshUnreadCounts();
       }
     };
     const onMessageUnreadCount = (payload: CountResponse) => {
@@ -548,7 +556,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     socket.on('message:new', onMessageNew);
     socket.on('message:unread-count', onMessageUnreadCount);
 
-    refreshUnreadCounts();
+    void refreshUnreadCounts(true);
 
     return () => {
       socket.off('notification:new', onNotificationNew);
@@ -945,10 +953,10 @@ export default function MainTabsScreen({ navigation }: Props) {
       activeOpacity={0.78}
       accessibilityRole="button"
       accessibilityLabel={visualActive === 'home' ? t('nav_feed') : t('back_home')}
-      style={s.brandTextBtn}
-    >
-      <Text style={s.headerTitle}>Surf</Text>
-    </TouchableOpacity>
+    style={s.brandTextBtn}
+  >
+    <Text style={s.headerTitle}>Surf</Text>
+  </TouchableOpacity>
   );
 
   return (

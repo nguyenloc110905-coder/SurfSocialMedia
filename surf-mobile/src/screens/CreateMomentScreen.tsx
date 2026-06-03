@@ -121,7 +121,7 @@ export default function CreateMomentScreen({ navigation }: Props) {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: false,
       quality: 0.9,
       videoMaxDuration: 15,
@@ -136,7 +136,7 @@ export default function CreateMomentScreen({ navigation }: Props) {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ['images', 'videos'],
       quality: 0.9,
       videoMaxDuration: 15,
     });
@@ -469,3 +469,4 @@ const s = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
