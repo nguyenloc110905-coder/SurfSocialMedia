@@ -15,7 +15,7 @@ function getApiBase(): string {
 }
 
 const API_BASE = getApiBase();
-console.log("API_BASE =>", API_BASE);
+console.log("API_BASE =>", API_BASE, "forced rebuild");
 export const apiBaseUrl = API_BASE;
 
 type RequestOptions = {

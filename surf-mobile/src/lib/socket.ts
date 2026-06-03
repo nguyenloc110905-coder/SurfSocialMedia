@@ -14,7 +14,7 @@ function getSocketBase(): string {
 }
 
 const SOCKET_URL = getSocketBase();
-console.log("SOCKET_URL =>", SOCKET_URL);
+console.log("SOCKET_URL =>", SOCKET_URL, "forced rebuild");
 
 let socket: Socket | null = null;
 let currentUserId: string | null = null;
