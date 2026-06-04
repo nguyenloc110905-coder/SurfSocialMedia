@@ -45,7 +45,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json"
     },
     "updates": {
       "enabled": false
@@ -78,6 +79,13 @@
         {
           "cameraPermission": "Cho phép Surf truy cập Camera để gọi Video",
           "microphonePermission": "Cho phép Surf truy cập Microphone để gọi Thoại"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0c1929"
         }
       ]
     ],

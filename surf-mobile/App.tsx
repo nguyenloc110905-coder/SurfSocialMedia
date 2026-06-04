@@ -14,6 +14,12 @@ import { useFriendStore } from './src/stores/friendStore';
 import { useSettingsStore } from './src/stores/settingsStore';
 import { useUserStore } from './src/stores/userStore';
 import { tamaguiConfig } from './tamagui.config';
+import * as Notifications from 'expo-notifications';
+import {
+  registerForPushNotificationsAsync,
+  sendPushTokenToServer,
+  removePushTokenFromServer,
+} from './src/lib/notifications';
 
 export default function App() {
   const scheme = useColorScheme();
@@ -30,6 +36,35 @@ export default function App() {
   const fetchProfile = useUserStore((s) => s.fetchProfile);
   const lastOnlineSyncAtRef = useRef(0);
   const wasOnlineRef = useRef<boolean | null>(null);
+  const pushTokenRef = useRef<string | null>(null);
+
+  // Khởi tạo notification listener (tap vào thông báo)
+  useEffect(() => {
+    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('User tapped on notification:', response.notification.request.content);
+      // Tương lai có thể parse URL từ data để navigate
+    });
+    return () => responseListener.remove();
+  }, []);
+
+  // Xử lý lấy FCM Token khi đăng nhập
+  useEffect(() => {
+    if (user?.uid) {
+      registerForPushNotificationsAsync()
+        .then(token => {
+          if (token) {
+            pushTokenRef.current = token;
+            sendPushTokenToServer(token);
+          }
+        })
+        .catch(err => console.error('Error registering push:', err));
+    } else {
+      if (pushTokenRef.current) {
+        removePushTokenFromServer(pushTokenRef.current).catch(() => {});
+        pushTokenRef.current = null;
+      }
+    }
+  }, [user?.uid]);
 
   useEffect(() => {
     void initializeSettings();

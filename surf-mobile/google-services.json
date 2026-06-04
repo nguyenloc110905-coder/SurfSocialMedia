@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "755301113435",
+    "project_id": "surf-7ce71",
+    "storage_bucket": "surf-7ce71.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:755301113435:android:ee89b014a3de24a52aa97e",
+        "android_client_info": {
+          "package_name": "com.surf.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "755301113435-8jv4c0vnkh0emh8qd0ev636pnjoep83a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.surf.app",
+            "certificate_hash": "0d180416fadf476d0a6a7b50fd137371c19048a4"
+          }
+        },
+        {
+          "client_id": "755301113435-pgi57pt1plautk0s7tg52qpe8hvpgtig.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCB0uwdu7LQacZqhiybSnTR0ERu40YXAR0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "755301113435-ml4841ksdcipi06ehh7l7io895d6c8au.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "755301113435-kuciq5a4jl8aujjdf77bsg7r66bg3549.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.surf.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
