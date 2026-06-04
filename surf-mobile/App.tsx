@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppState, useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
+import { TamaguiProvider } from '@tamagui/core';
 import Navigation, { navigationRef } from './src/navigation';
 import { useAuthStore } from './src/stores/authStore';
 import { useFeedStore } from './src/stores/feedStore';
@@ -11,6 +12,14 @@ import { connectSocket, disconnectSocket, getSocket } from './src/lib/socket';
 import { useNotificationStore, type RealtimeMessagePayload } from './src/stores/notificationStore';
 import { useFriendStore } from './src/stores/friendStore';
 import { useSettingsStore } from './src/stores/settingsStore';
+import { useUserStore } from './src/stores/userStore';
+import { tamaguiConfig } from './tamagui.config';
+import * as Notifications from 'expo-notifications';
+import {
+  registerForPushNotificationsAsync,
+  sendPushTokenToServer,
+  removePushTokenFromServer,
+} from './src/lib/notifications';
 import {
   ACCEPT_CALL_ACTION,
   DECLINE_CALL_ACTION,
@@ -216,6 +225,38 @@ export default function App() {
   const resetAuth = useAuthStore((s) => s.resetAuth);
   const user = useAuthStore((s) => s.user);
   const fetchFeed = useFeedStore((s) => s.fetch);
+  const fetchProfile = useUserStore((s) => s.fetchProfile);
+  const lastOnlineSyncAtRef = useRef(0);
+  const wasOnlineRef = useRef<boolean | null>(null);
+  const pushTokenRef = useRef<string | null>(null);
+
+  // Khởi tạo notification listener (tap vào thông báo)
+  useEffect(() => {
+    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('User tapped on notification:', response.notification.request.content);
+      // Tương lai có thể parse URL từ data để navigate
+    });
+    return () => responseListener.remove();
+  }, []);
+
+  // Xử lý lấy FCM Token khi đăng nhập
+  useEffect(() => {
+    if (user?.uid) {
+      registerForPushNotificationsAsync()
+        .then(token => {
+          if (token) {
+            pushTokenRef.current = token;
+            sendPushTokenToServer(token);
+          }
+        })
+        .catch(err => console.error('Error registering push:', err));
+    } else {
+      if (pushTokenRef.current) {
+        removePushTokenFromServer(pushTokenRef.current).catch(() => {});
+        pushTokenRef.current = null;
+      }
+    }
+  }, [user?.uid]);
 
   useEffect(() => {
     void initializeSettings();
@@ -268,8 +309,11 @@ export default function App() {
 
   // Prefetch feed ngay khi auth xong — chạy song song với navigation render
   useEffect(() => {
-    if (user) fetchFeed();
-  }, [user, fetchFeed]);
+    if (user?.uid) {
+      void fetchFeed();
+      void fetchProfile();
+    }
+  }, [user?.uid, fetchFeed, fetchProfile]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -286,9 +330,13 @@ export default function App() {
     if (!user) return;
 
     const unsubscribe = NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable) {
+      const isOnline = !!state.isConnected && !!state.isInternetReachable;
+      const wasOnline = wasOnlineRef.current;
+      wasOnlineRef.current = isOnline;
+      if (isOnline && wasOnline === false && Date.now() - lastOnlineSyncAtRef.current > 30_000) {
         console.log('🌐 Back online, syncing feed...');
-        fetchFeed(true);
+        lastOnlineSyncAtRef.current = Date.now();
+        void fetchFeed(true);
       }
     });
 
@@ -438,9 +486,11 @@ export default function App() {
   }, [user?.uid]);
 
   return (
-    <SafeAreaProvider style={{ backgroundColor: appBg }}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={appBg} translucent={false} />
-      <Navigation />
-    </SafeAreaProvider>
+    <TamaguiProvider config={tamaguiConfig} defaultTheme={isDark ? 'dark_surf' : 'light_surf'}>
+      <SafeAreaProvider style={{ backgroundColor: appBg }}>
+        <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={appBg} translucent={false} />
+        <Navigation />
+      </SafeAreaProvider>
+    </TamaguiProvider>
   );
 }

@@ -7,6 +7,7 @@ import {
   getGroupMembers,
   getUnreadConversationCount,
   listMessagesForConversation,
+  listMediaForConversation,
   listConversationsForUser,
   listReadReceiptsForConversation,
   markConversationRead,
@@ -23,6 +24,8 @@ import {
   emitMessageUnreadCount,
 } from '../realtime/emitters/message.emitter.js';
 import { conversationRepository } from '../repositories/conversation.repository.js';
+import { getDb } from '../config/firebase-admin.js';
+import { sendPushToUser } from '../services/pushNotification.js';
 
 const router = Router();
 
@@ -36,6 +39,14 @@ const parseCursorSafe = (value: unknown): string | undefined => {
   if (typeof value !== 'string' || !value.trim()) return undefined;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
+const parseMuteExpiresAt = (value: unknown): Date | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return null;
+  return date;
 };
 
 const normalizeStringArray = (value: unknown): string[] =>
@@ -262,6 +273,57 @@ router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     res.status(500).json({ error: (e as Error).message });
   }
 });
+
+/**
+ * @swagger
+ * /api/conversations/{id}/media:
+ *   get:
+ *     tags: [Conversations]
+ *     summary: Danh sách tin nhắn media trong cuộc trò chuyện (cursor pagination)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải thành viên }
+ */
+router.get('/:id/media', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const limit = Math.min(parseIntSafe(req.query.limit, 20), 50);
+    const cursor = parseCursorSafe(req.query.cursor);
+
+    const result = await listMediaForConversation(
+      uid,
+      req.params.id,
+      limit,
+      cursor
+    );
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    res.json({ items: result.items.map(toApiMessage), nextCursor: result.nextCursor });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 
 /**
  * @swagger
@@ -539,7 +601,10 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       }
 
       const payload = toRealtimeMessagePayload(result.item);
-      const mutedBy = await conversationRepository.getMutedBy(req.params.id);
+      const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(req.params.id);
+      const mutedBy = Object.entries(muteSettingsByUser)
+        .filter(([, settings]) => settings.muteMessages)
+        .map(([userId]) => userId);
       emitMessageNewToTargets([senderId, ...result.recipientIds], req.params.id, {
         ...payload,
         mutedBy,
@@ -556,6 +621,21 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       });
       const senderCount = await getUnreadConversationCount(senderId);
       emitMessageUnreadCount(senderId, senderCount);
+
+      // Gửi Push Notifications
+      const senderDoc = await getDb().collection('users').doc(senderId).get();
+      const senderName = senderDoc.exists ? senderDoc.data()?.displayName || 'Ai đó' : 'Ai đó';
+      const mutedSet = new Set(mutedBy || []);
+      
+      result.recipientIds.forEach(uid => {
+        if (!mutedSet.has(uid)) {
+          sendPushToUser(uid, {
+            title: 'Tin nhắn mới',
+            body: `${senderName} đã gửi một ảnh/tệp cho bạn.`,
+            data: { url: `/chat/${req.params.id}` },
+          });
+        }
+      });
 
       res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
       return;
@@ -590,7 +670,10 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(result.item);
-    const mutedBy = await conversationRepository.getMutedBy(req.params.id);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(req.params.id);
+    const mutedBy = Object.entries(muteSettingsByUser)
+      .filter(([, settings]) => settings.muteMessages)
+      .map(([userId]) => userId);
 
     emitMessageNewToTargets([senderId, ...result.recipientIds], req.params.id, {
       ...payload,
@@ -610,6 +693,21 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
 
     const senderCount = await getUnreadConversationCount(senderId);
     emitMessageUnreadCount(senderId, senderCount);
+
+    // Gửi Push Notifications
+    const senderDoc = await getDb().collection('users').doc(senderId).get();
+    const senderName = senderDoc.exists ? senderDoc.data()?.displayName || 'Ai đó' : 'Ai đó';
+    const mutedSet = new Set(mutedBy || []);
+    
+    result.recipientIds.forEach(uid => {
+      if (!mutedSet.has(uid)) {
+        sendPushToUser(uid, {
+          title: 'Tin nhắn mới',
+          body: `${senderName}: ${text.length > 50 ? text.substring(0, 50) + '...' : text}`,
+          data: { url: `/chat/${req.params.id}` },
+        });
+      }
+    });
 
     res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
   } catch (e) {
@@ -703,10 +801,32 @@ router.patch('/:id/mute', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const muted = req.body?.muted !== false;
+    const muteMessages = muted
+      ? req.body?.muteMessages === undefined
+        ? true
+        : req.body?.muteMessages !== false
+      : false;
+    const muteCalls = muted
+      ? req.body?.muteCalls === undefined
+        ? true
+        : req.body?.muteCalls !== false
+      : false;
+    const expiresAt = muted ? parseMuteExpiresAt(req.body?.expiresAt) : null;
     const memberIds = await conversationRepository.getMemberIds(req.params.id);
     if (!memberIds.includes(uid)) { res.status(403).json({ error: 'Forbidden' }); return; }
-    await conversationRepository.setMutedForUser(req.params.id, uid, muted);
-    res.json({ success: true, muted });
+    const settings = await conversationRepository.setMutedForUser(req.params.id, uid, {
+      muted,
+      muteMessages,
+      muteCalls,
+      expiresAt,
+    });
+    res.json({
+      success: true,
+      muted: settings.muted,
+      muteMessages: settings.muteMessages,
+      muteCalls: settings.muteCalls,
+      muteExpiresAt: settings.expiresAt ? settings.expiresAt.toISOString() : null,
+    });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

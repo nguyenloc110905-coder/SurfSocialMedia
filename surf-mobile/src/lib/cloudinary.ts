@@ -77,6 +77,10 @@ export function uploadRawFile(asset: UploadableAsset, options?: UploadOptions) {
   return uploadAsset(asset, 'raw', options);
 }
 
+export function uploadFile(asset: UploadableAsset, options?: UploadOptions) {
+  return uploadRawFile(asset, options);
+}
+
 export function isVideoAsset(asset: UploadableAsset) {
   return asset.type === 'video' || asset.mimeType?.startsWith('video/');
 }

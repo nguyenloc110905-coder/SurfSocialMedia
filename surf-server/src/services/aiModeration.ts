@@ -575,3 +575,38 @@ Trả lời duy nhất bằng JSON có định dạng sau:
   }
 }
 
+export async function moderateReportedPost(
+  postText: string,
+  mediaUrls: string[],
+  reportReason: string
+): Promise<{ violation: boolean; reason: string }> {
+  const prompt = `Bạn là hệ thống AI kiểm duyệt tự động mạng xã hội. Người dùng vừa báo cáo một bài viết với lý do: "${reportReason}".
+  
+Nội dung bài viết bị báo cáo:
+"""
+${postText}
+"""
+Danh sách link ảnh/video đính kèm (nếu có): ${mediaUrls.join(', ')}
+
+Dựa vào nội dung bài viết và lý do báo cáo, hãy đánh giá bài viết này có THỰC SỰ vi phạm Tiêu chuẩn cộng đồng (Spam, quấy rối, xúc phạm, bạo lực, 18+, thông tin sai lệch...) hay không.
+
+Trả lời duy nhất bằng JSON có định dạng sau:
+{"violation": true, "reason": "Lý do ngắn gọn tại sao xóa bài viết này"} (nếu cần gỡ bỏ)
+{"violation": false, "reason": "Lý do bài viết vẫn hợp lệ"} (nếu không vi phạm)`;
+
+  try {
+    const raw = (await callGemini(prompt)).trim();
+    console.log(`[Moderation] Report Post result: ${raw}`);
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { violation: false, reason: "Không thể phân tích phản hồi từ AI" };
+    const parsed = JSON.parse(match[0]);
+    return {
+      violation: parsed.violation === true,
+      reason: parsed.reason || '',
+    };
+  } catch (err) {
+    console.error('[Moderation] Report Post check error:', err);
+    return { violation: false, reason: "Lỗi hệ thống AI" };
+  }
+}
+

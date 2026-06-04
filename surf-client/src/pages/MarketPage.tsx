@@ -953,7 +953,18 @@ export default function MarketPage() {
 
   useEffect(() => {
     fetchListings(true);
-  }, [fetchListings]);
+
+    const handleOnline = () => {
+      fetchListings(true);
+      if (activeTab === 'my') {
+        void fetchMyListings(true);
+      } else if (activeTab === 'saved') {
+        void fetchSavedListings();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [fetchListings, activeTab, fetchMyListings, fetchSavedListings]);
 
   useEffect(() => {
     if (!routeListingId) {

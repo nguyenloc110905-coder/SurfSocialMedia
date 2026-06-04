@@ -19,6 +19,7 @@ import {
   emitNotificationUnreadCount,
 } from '../emitters/notification.emitter.js';
 import { userRoom } from '../rooms.js';
+import { conversationRepository } from '../../repositories/conversation.repository.js';
 
 type CallMode = 'audio' | 'video';
 
@@ -185,6 +186,11 @@ const toSafeSegment = (value: string, fallback: string): string => {
 const buildGroupRoomName = (conversationId: string, callId: string) =>
   `surf-group-${toSafeSegment(conversationId, 'conversation')}-${toSafeSegment(callId, 'call')}`;
 
+const isCallMutedForUser = async (conversationId: string, userId: string): Promise<boolean> => {
+  const settingsByUser = await conversationRepository.getMuteSettingsByUser(conversationId);
+  return settingsByUser[userId]?.muteCalls === true;
+};
+
 const emitCallLog = async (
   payload: Pick<CallEndPayload, 'callId' | 'conversationId' | 'fromUserId'>,
   outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended' | 'started',
@@ -307,13 +313,14 @@ const finalizeGroupCallSession = async (
 };
 
 export const registerCallHandlers = (io: Server, socket: Socket) => {
-  socket.on('call:invite', (payload: CallInvitePayload) => {
+  socket.on('call:invite', async (payload: CallInvitePayload) => {
     callSessions.set(payload.callId, {
       conversationId: payload.conversationId,
       fromUserId: payload.fromUserId,
       toUserId: payload.toUserId,
       mode: payload.mode,
     });
+    if (await isCallMutedForUser(payload.conversationId, payload.toUserId)) return;
     io.to(userRoom(payload.toUserId)).emit('call:incoming', payload);
   });
 
@@ -365,6 +372,8 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
       const callerDoc = await getDb().collection('users').doc(payload.fromUserId).get();
       const callerName = callerDoc.data()?.displayName ?? 'Ai đó';
 
+      if (await isCallMutedForUser(payload.conversationId, payload.toUserId)) return;
+
       const notification = await createNotification({
         userId: payload.toUserId,
         type: 'missed_call',
@@ -388,7 +397,7 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
     io.to(userRoom(payload.toUserId)).emit('call:signal', payload);
   });
 
-  socket.on('call:group-invite', (payload: GroupCallInvitePayload) => {
+  socket.on('call:group-invite', async (payload: GroupCallInvitePayload) => {
     const participantIds = Array.from(
       new Set((payload.participantIds ?? []).map((id) => id.trim()).filter(Boolean))
     ).filter((id) => id !== payload.fromUserId);
@@ -423,9 +432,12 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
       mode: payload.mode,
     };
 
-    participantIds.forEach((uid) => {
-      io.to(userRoom(uid)).emit('call:group-incoming', incomingPayload);
-    });
+    await Promise.all(
+      participantIds.map(async (uid) => {
+        if (await isCallMutedForUser(payload.conversationId, uid)) return;
+        io.to(userRoom(uid)).emit('call:group-incoming', incomingPayload);
+      })
+    );
   });
 
   socket.on('call:group-accept', async (payload: GroupCallAcceptPayload) => {

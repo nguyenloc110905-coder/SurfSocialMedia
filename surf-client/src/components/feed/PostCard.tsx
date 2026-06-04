@@ -1151,7 +1151,10 @@ export default function PostCard({
           reason: reasonText,
         });
       } else {
-        await api.post(`/api/posts/${post.id}/report`, { reason: reasonText });
+        await api.post(`/api/posts/${post.id}/report`, {
+          reason: reportReason,
+          details: reportDetails.trim(),
+        });
       }
 
       setShowReportModal(false);

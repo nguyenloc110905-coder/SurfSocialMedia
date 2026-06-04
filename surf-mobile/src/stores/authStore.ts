@@ -6,6 +6,7 @@ import {
   signOut,
   subscribeAuth,
 } from '@/lib/firebase/auth';
+import { rememberAccount } from '@/lib/recentAccounts';
 
 type AuthState = {
   user: User | null;
@@ -40,6 +41,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, initialized: false, unsubscribe: null });
 
     const resolveAuth = (user: User | null) => {
+      if (user) {
+        void rememberAccount(user).catch((err) => {
+          console.warn('Failed to remember account:', err);
+        });
+      }
       set({ user, loading: false, initialized: true });
     };
 

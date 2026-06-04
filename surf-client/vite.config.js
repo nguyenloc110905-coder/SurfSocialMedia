@@ -17,7 +17,7 @@ function loadEnvFile(dir) {
     return out;
 }
 export default defineConfig(function () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b;
     var env = loadEnvFile(path.resolve(__dirname));
     var defaultHttpsKeyPath = path.resolve(__dirname, 'certs/dev-key.pem');
     var defaultHttpsCertPath = path.resolve(__dirname, 'certs/dev-cert.pem');
@@ -29,11 +29,7 @@ export default defineConfig(function () {
         resolve: {
             alias: { '@': path.resolve(__dirname, './src') },
         },
-        define: {
-            'import.meta.env.VITE_CLOUDINARY_CLOUD_NAME': JSON.stringify((_c = env.VITE_CLOUDINARY_CLOUD_NAME) !== null && _c !== void 0 ? _c : ''),
-            'import.meta.env.VITE_CLOUDINARY_API_KEY': JSON.stringify((_d = env.VITE_CLOUDINARY_API_KEY) !== null && _d !== void 0 ? _d : ''),
-            'import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET': JSON.stringify((_e = env.VITE_CLOUDINARY_UPLOAD_PRESET) !== null && _e !== void 0 ? _e : ''),
-        },
+        define: {},
         server: {
             host: true,
             port: 5173,
@@ -51,10 +47,10 @@ export default defineConfig(function () {
                     ws: true,
                 },
             },
-            headers: {
-                'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-                'Cross-Origin-Embedder-Policy': 'unsafe-none',
-            },
+            // headers: {
+            //   'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+            //   'Cross-Origin-Embedder-Policy': 'unsafe-none',
+            // },
         },
     };
 });

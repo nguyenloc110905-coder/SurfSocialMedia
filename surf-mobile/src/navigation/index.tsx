@@ -1,12 +1,14 @@
 import React from 'react';
 import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
 import { useAuthStore } from '@/stores/authStore';
 import AuthScreen from '@/screens/AuthScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
 import ChatScreen from '@/screens/ChatScreen';
+import ChatInfoScreen from '@/screens/ChatInfoScreen';
 import CallScreen from '@/screens/CallScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
@@ -16,6 +18,7 @@ import SettingsScreen from '@/screens/SettingsScreen';
 import EditProfileScreen from '@/screens/EditProfileScreen';
 import ProfilePhotoPickerScreen from '@/screens/ProfilePhotoPickerScreen';
 import CreatePostScreen from '@/screens/CreatePostScreen';
+import CreateMomentScreen from '@/screens/CreateMomentScreen';
 import CreateClipScreen from '@/screens/CreateClipScreen';
 import MarketplaceScreen from '@/screens/MarketplaceScreen';
 import MarketplaceDetailScreen from '@/screens/MarketplaceDetailScreen';
@@ -24,11 +27,12 @@ import MyListingsScreen from '@/screens/MyListingsScreen';
 import { NotificationPostDetailScreen } from '@/screens/NotificationCenterScreen';
 import SearchScreen from '@/screens/SearchScreen';
 import SavedPostsScreen from '@/screens/SavedPostsScreen';
+import ArchivedPostsScreen from '@/screens/ArchivedPostsScreen';
 import GroupsScreen from '@/screens/GroupsScreen';
 import GroupDetailScreen from '@/screens/GroupDetailScreen';
 
 export type RootStackParamList = {
-  Auth: { initialTab?: 'login' | 'register' };
+  Auth: { initialTab?: 'login' | 'register'; initialEmail?: string };
   ForgotPassword: undefined;
   MainTabs: undefined;
   Home: undefined;
@@ -36,6 +40,14 @@ export type RootStackParamList = {
   Profile: { userId?: string };
   AI: undefined;
   Messages: undefined;
+  ChatInfo: {
+    conversationId: string;
+    title: string;
+    peerUid?: string | null;
+    peerAvatar?: string | null;
+    conversationType?: 'dm' | 'group' | 'marketplace';
+    marketplaceTitle?: string | null;
+  };
   Chat: {
     conversationId: string;
     title: string;
@@ -53,7 +65,27 @@ export type RootStackParamList = {
       location?: string;
       sellerId?: string;
     } | null;
+    conversationType?: 'dm' | 'group' | 'marketplace';
+    marketplaceTitle?: string | null;
+    initialSearch?: boolean;
+    targetMessageId?: string;
   };
+  Settings: undefined;
+  EditProfile: undefined;
+  ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
+  CreatePost: { groupId?: string; groupName?: string } | undefined;
+  CreateMoment: undefined;
+  CreateClip: undefined;
+  Marketplace: undefined;
+  MarketplaceDetail: { listingId: string };
+  CreateListing: undefined;
+  MyListings: undefined;
+  NotificationPost: { postId: string };
+  Search: undefined;
+  SavedPosts: undefined;
+  ArchivedPosts: undefined;
+  Groups: undefined;
+  GroupDetail: { groupId: string };
   Call: {
     conversationId: string;
     peerUid?: string | null;
@@ -69,21 +101,9 @@ export type RootStackParamList = {
     conversationTitle?: string;
     hostUserId?: string | null;
     participantIds?: string[];
+    isHost?: boolean;
+    acceptOnReady?: boolean;
   };
-  Settings: undefined;
-  EditProfile: undefined;
-  ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
-  CreatePost: { groupId?: string; groupName?: string } | undefined;
-  CreateClip: undefined;
-  Marketplace: undefined;
-  MarketplaceDetail: { listingId: string };
-  CreateListing: undefined;
-  MyListings: undefined;
-  NotificationPost: { postId: string };
-  Search: undefined;
-  SavedPosts: undefined;
-  Groups: undefined;
-  GroupDetail: { groupId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -135,6 +155,7 @@ export default function Navigation() {
             <Stack.Screen name="AI" component={AIScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="ChatInfo" component={ChatInfoScreen} />
             <Stack.Screen name="Call" component={CallScreen} options={{ animation: 'fade' }} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
@@ -142,6 +163,11 @@ export default function Navigation() {
             <Stack.Screen
               name="CreatePost"
               component={CreatePostScreen}
+              options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="CreateMoment"
+              component={CreateMomentScreen}
               options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: true }}
             />
             <Stack.Screen
@@ -164,6 +190,7 @@ export default function Navigation() {
             />
             <Stack.Screen name="MyListings" component={MyListingsScreen} />
             <Stack.Screen name="SavedPosts" component={SavedPostsScreen} />
+            <Stack.Screen name="ArchivedPosts" component={ArchivedPostsScreen} />
             <Stack.Screen name="Groups" component={GroupsScreen} />
             <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
           </>

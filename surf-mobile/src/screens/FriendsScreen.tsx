@@ -27,9 +27,11 @@ import { useT } from '@/lib/i18n';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showTitleBlock?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type MainTab = 'friends' | 'requests' | 'suggestions' | 'contacts';
@@ -86,7 +88,14 @@ function Avatar({ name, url, size = 52 }: { name: string; url?: string | null; s
   );
 }
 
-export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = true, showTitleBlock = true }: Props) {
+export default function FriendsScreen({
+  navigation,
+  scrollTopSignal = 0,
+  resetSignal = 0,
+  safeTop = true,
+  showTitleBlock = true,
+  onScrollPositionChange,
+}: Props) {
   const scheme = useColorScheme();
   const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
@@ -123,7 +132,14 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
   useEffect(() => {
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
   }, [resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   const filteredFriends = useMemo(() => {
     const q = normalizeText(query.trim());
@@ -305,7 +321,7 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
   };
 
   const renderHeader = () => (
-    <View>
+    <View style={[s.headerControls, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
       {showTitleBlock && <View style={s.titleBlock}>
         <Text style={[s.headerTitle, { color: C.text }]}>{t('friends_title')}</Text>
         <Text style={[s.headerSub, { color: C.subtext }]}>
@@ -437,6 +453,10 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
     return renderFriend({ item: item as FriendPerson });
   };
 
+  const handleScroll = (event: any) => {
+    onScrollPositionChange?.(Math.max(0, event.nativeEvent.contentOffset.y) < 12);
+  };
+
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {isLoading && listData.length === 0 ? (
@@ -447,6 +467,8 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           ListHeaderComponent={renderHeader}
           renderItem={() => <SkeletonRow C={C} />}
           contentContainerStyle={s.listContent}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={C.accent} colors={[C.accent]} />}
         />
       ) : (
@@ -458,6 +480,8 @@ export default function FriendsScreen({ navigation, resetSignal = 0, safeTop = t
           renderItem={renderListItem}
           ListEmptyComponent={<EmptyState C={C} activeTab={activeTab} requestTab={requestTab} query={query} />}
           contentContainerStyle={s.listContent}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={C.accent} colors={[C.accent]} />}
           showsVerticalScrollIndicator={false}
         />
@@ -564,6 +588,10 @@ function EmptyState({ C, activeTab, requestTab, query }: { C: typeof DARK; activ
 const s = StyleSheet.create({
   root: { flex: 1 },
   listContent: { paddingBottom: 22 },
+  headerControls: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 12,
+  },
   titleBlock: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10 },
   headerTitle: { fontSize: 28, fontWeight: '800' },
   headerSub: { fontSize: 13, marginTop: 2 },
@@ -571,6 +599,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 16,
+    paddingTop: 4,
     marginBottom: 8,
   },
   tabBtn: {

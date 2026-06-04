@@ -107,15 +107,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const snap = await q.get();
 
     // Lấy danh sách bài đã đọc từ Redis để giảm điểm (ít xuất hiện lại)
+    // ĐÃ TẠM TẮT để không làm hỏng logic Pagination (lastId)
     let seenPosts = new Set<string>();
-    if (redis) {
-      const seenStr = await redis.get(`seen_posts:${uid}`);
-      if (seenStr) {
-        try {
-          seenPosts = new Set(JSON.parse(seenStr));
-        } catch {}
-      }
-    }
 
     type PostDoc = {
       id: string;
@@ -130,6 +123,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       isAnonymous?: boolean;
       group?: any;
       [key: string]: unknown;
+      archived?: boolean;
     };
 
     const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PostDoc);
@@ -137,6 +131,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     // Loại bỏ bài đã xóa hoặc bài trong nhóm mà chưa tham gia
     const activeDocs = allDocs.filter((p) => {
       if (p.deleted === true) return false;
+      if (p.archived === true) return false;
       if (p.groupId && !joinedGroupIds.has(p.groupId)) return false;
       return true;
     });
@@ -208,18 +203,26 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       
       // Ưu tiên bài cá nhân hóa (bạn bè, follow) hơn khám phá
       if (!p._discover) score += 20;
+      if (p.authorId === uid) score += 1500;
       
-      // Phạt nặng nếu đã đọc rồi (để rơi xuống đáy)
-      if (seenPosts.has(p.id)) score -= 1000;
+      // Phạt nặng nếu đã đọc rồi (để rơi xuống đáy) - TẠM TẮT DO LỖI PAGINATION
+      // if (p.authorId !== uid && seenPosts.has(p.id)) score -= 1000;
 
-      // Yếu tố ngẫu nhiên nhỏ để làm mới feed
-      score += Math.random() * 5;
+      // Yếu tố ngẫu nhiên nhỏ dựa trên ID để làm mới feed nhưng vẫn CỐ ĐỊNH (deterministic)
+      // Dùng mã ASCII của ký tự cuối trong ID để tạo độ lệch 0-5 điểm
+      const charCode = p.id.charCodeAt(p.id.length - 1) || 0;
+      score += (charCode % 5);
 
       return { ...p, _score: score };
     });
 
-    // Sắp xếp theo điểm giảm dần
-    posts.sort((a, b) => (b._score as number) - (a._score as number));
+    // Sắp xếp theo điểm giảm dần. 
+    // Quan trọng: Thêm tiêu chí phụ (id) để đảm bảo thuật toán sắp xếp (sort) luôn cố định
+    posts.sort((a, b) => {
+      const diff = (b._score as number) - (a._score as number);
+      if (diff !== 0) return diff;
+      return a.id.localeCompare(b.id);
+    });
 
     // Pagination dựa trên vị trí của lastId trong mảng đã sort
     let startIndex = 0;

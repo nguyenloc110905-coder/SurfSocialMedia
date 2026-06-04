@@ -296,8 +296,14 @@ function ClipCard({
       const catLabel = REPORT_CATEGORIES.find((c) => c.key === reportCategory)?.label || reportCategory;
       const reasonText = reportDetails.trim() ? `${catLabel} - ${reportDetails.trim()}` : catLabel;
       
-      const endpoint = isPost ? `/api/posts/${video.id}/report` : `/api/videos/${video.id}/report`;
-      await api.post(endpoint, { reason: reasonText });
+      if (isPost) {
+        await api.post(`/api/posts/${video.id}/report`, {
+          reason: reportCategory,
+          details: reportDetails.trim(),
+        });
+      } else {
+        await api.post(`/api/videos/${video.id}/report`, { reason: reasonText });
+      }
       
       showToast('🚩 Đã gửi báo cáo video');
       setShowReportModal(false);
@@ -316,11 +322,7 @@ function ClipCard({
       className="relative flex flex-row items-center bg-black snap-start flex-shrink-0 overflow-hidden h-full"
     >
       {/* Video wrapper – flex-1 so it fills remaining space after comment panel */}
-      <div className="flex-1 flex items-center justify-center h-full min-w-0">
-      <div
-        className="relative h-full flex-shrink-0"
-        style={{ aspectRatio: '9/16' }}
-      >
+      <div className="flex-1 relative flex items-center justify-center h-full min-w-0 bg-black group/video-container">
       {/* Video element */}
       <video
         ref={videoRef}
@@ -329,7 +331,7 @@ function ClipCard({
         loop
         muted={muted}
         playsInline
-        className="w-full h-full object-cover cursor-pointer"
+        className="w-full h-full object-contain cursor-pointer"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={togglePlay}
@@ -398,10 +400,10 @@ function ClipCard({
       )}
 
       {/* Bottom gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
-      {/* Right action bar — floats outside the video frame to the right */}
-      <div className="absolute -right-16 bottom-20 flex flex-col items-center gap-4 z-10">
+      {/* Right action bar — floats inside the video frame on the right */}
+      <div className="absolute right-4 lg:right-24 bottom-20 flex flex-col items-center gap-4 z-10 drop-shadow-xl">
         {/* Author avatar */}
         <button
           onClick={() => navigate(`/feed/profile/${video.authorId}`)}
@@ -657,7 +659,7 @@ function ClipCard({
       </div>
 
       {/* Bottom info overlay */}
-      <div className="absolute bottom-4 left-4 right-16 z-10">
+      <div className="absolute bottom-6 left-6 right-20 lg:right-40 z-10">
         <button
           onClick={() => navigate(`/feed/profile/${video.authorId}`)}
           className="font-bold text-sm text-white hover:underline drop-shadow block"
@@ -698,8 +700,7 @@ function ClipCard({
         )}
       </div>
       </div>
-      </div>
-      {/* ── END of 9/16 video box + wrapper ──────────────── */}
+      {/* ── END of adaptive video container ──────────────── */}
 
       {/* ── Comment Panel — in-flow flex sibling, width animates 0→320px ── */}
       <div
@@ -1181,6 +1182,11 @@ export default function ShortVideo() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadFeed = useCallback(async (cursor?: number) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setLoading(false);
+      setLoadingMore(false);
+      return;
+    }
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     try {
@@ -1207,9 +1213,15 @@ export default function ShortVideo() {
     }
   }, [setFeed, appendFeed]);
 
-  // Chỉ fetch lần đầu nếu store chưa có data
+  // Chỉ fetch lần đầu nếu store chưa có data, hoặc khi có kết nối mạng trở lại
   useEffect(() => {
     if (!loaded) void loadFeed();
+
+    const handleOnline = () => {
+      void loadFeed();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, [loaded, loadFeed]);
 
   // Xử lý shared video

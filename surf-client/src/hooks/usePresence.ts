@@ -9,6 +9,7 @@ const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
 function fetchFriendPresence(
     setInitial: (friendIds: string[], onlineIds: string[], lastSeen: Record<string, number>) => void
 ) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     api
         .get<{ online: string[]; lastSeen: Record<string, number>; friendIds: string[] }>('/api/presence/friends')
         .then((res) => {
@@ -43,9 +44,14 @@ export function usePresence() {
             setOffline(userId, lastSeen);
         };
 
+        const handleWindowOnline = () => {
+            fetchFriendPresence(setInitial);
+        };
+
         socket.on('connect', handleConnect);
         socket.on('presence:online', handleOnline);
         socket.on('presence:offline', handleOffline);
+        window.addEventListener('online', handleWindowOnline);
 
         // Heartbeat — keeps server-side TTL alive
         const heartbeat = setInterval(() => {
@@ -58,6 +64,7 @@ export function usePresence() {
             socket.off('connect', handleConnect);
             socket.off('presence:online', handleOnline);
             socket.off('presence:offline', handleOffline);
+            window.removeEventListener('online', handleWindowOnline);
             clearInterval(heartbeat);
         };
     }, [user?.uid, setOnline, setOffline, setInitial]);

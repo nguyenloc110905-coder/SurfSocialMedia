@@ -30,6 +30,11 @@ import { useFriendStore } from '@/stores/friendStore';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Messages'>;
+  scrollTopSignal?: number;
+  resetSignal?: number;
+  safeTop?: boolean;
+  showHeader?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type ConversationItem = {
@@ -318,7 +323,14 @@ function SwipeableConvRow({
 
 // ── Screen ─────────────────────────────────────────────────────────────────
 
-export default function MessagesScreen({ navigation }: Props) {
+export default function MessagesScreen({
+  navigation,
+  scrollTopSignal = 0,
+  resetSignal = 0,
+  safeTop = true,
+  showHeader = true,
+  onScrollPositionChange,
+}: Props) {
   const scheme = useColorScheme();
   const t = useT();
   const language = useLanguage();
@@ -343,6 +355,7 @@ export default function MessagesScreen({ navigation }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [typingByConversation, setTypingByConversation] = useState<Record<string, Record<string, number>>>({});
   const conversationsRef = useRef<ConversationItem[]>([]);
+  const listRef = useRef<FlatList<ConversationItem>>(null);
   const creatingGroupRef = useRef(false);
   const openingConversationRef = useRef<string | null>(null);
   const openingFriendRef = useRef<string | null>(null);
@@ -384,6 +397,18 @@ export default function MessagesScreen({ navigation }: Props) {
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  useEffect(() => {
+    if (!resetSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   const clearTypingUser = useCallback((conversationId: string, userId: string) => {
     const key = `${conversationId}:${userId}`;
@@ -812,9 +837,9 @@ export default function MessagesScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={['top']}>
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {/* Header */}
-      <View style={[s.header, { borderBottomColor: C.border }]}>
+      {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={C.text} />
         </TouchableOpacity>
@@ -826,7 +851,7 @@ export default function MessagesScreen({ navigation }: Props) {
         >
           <Ionicons name="create-outline" size={24} color={C.text} />
         </TouchableOpacity>
-      </View>
+      </View>}
 
       {/* Search */}
       <View style={[s.searchWrap, { backgroundColor: C.bg }]}>
@@ -902,11 +927,14 @@ export default function MessagesScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={filtered}
           keyExtractor={i => i.id}
           renderItem={renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} colors={[C.accent]} />}
           showsVerticalScrollIndicator={false}
+          onScroll={(event) => onScrollPositionChange?.(event.nativeEvent.contentOffset.y <= 8)}
+          scrollEventThrottle={64}
         />
       )}
       <Modal visible={createGroupOpen} transparent animationType="fade" onRequestClose={closeCreateGroup}>

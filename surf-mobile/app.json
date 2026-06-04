@@ -54,7 +54,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json"
     },
     "updates": {
       "enabled": false
@@ -84,7 +85,14 @@
           "contactsPermission": "Surf cần truy cập danh bạ để giúp bạn tìm bạn bè trên ứng dụng."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0c1929"
+        }
+      ]
     ],
     "owner": "datshroud",
     "extra": {

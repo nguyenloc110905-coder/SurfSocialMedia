@@ -31,6 +31,7 @@ import {
   emitMessageUnreadCount,
 } from '../realtime/emitters/message.emitter.js';
 import type { MarketplaceConversationContext } from '../types/conversation.js';
+import { conversationRepository } from '../repositories/conversation.repository.js';
 
 const router = Router();
 
@@ -450,56 +451,9 @@ function normalizeMediaUrls(input: unknown) {
     : [];
 }
 
-function getCloudinaryPublicId(url: string) {
-  try {
-    const parsed = new URL(url);
-    if (!parsed.hostname.includes('res.cloudinary.com')) return null;
-    const marker = '/image/upload/';
-    const markerIndex = parsed.pathname.indexOf(marker);
-    if (markerIndex < 0) return null;
-    const uploadPath = decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length));
-    const parts = uploadPath.split('/').filter(Boolean);
-    const versionIndex = parts.findIndex((part) => /^v\d+$/.test(part));
-    const publicIdParts = versionIndex >= 0 ? parts.slice(versionIndex + 1) : parts;
-    if (publicIdParts.length === 0) return null;
-    const last = publicIdParts[publicIdParts.length - 1];
-    publicIdParts[publicIdParts.length - 1] = last.replace(/\.[^.]+$/, '');
-    return publicIdParts.join('/');
-  } catch {
-    return null;
-  }
-}
-
-async function deleteCloudinaryImage(publicId: string) {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME ?? process.env.VITE_CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY ?? process.env.VITE_CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
-  if (!cloudName || !apiKey || !apiSecret) return;
-
-  const timestamp = Math.floor(Date.now() / 1000).toString();
-  const signature = createHash('sha1')
-    .update(`public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
-    .digest('hex');
-  const body = new URLSearchParams({
-    public_id: publicId,
-    timestamp,
-    api_key: apiKey,
-    signature,
-  });
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`, {
-    method: 'POST',
-    body,
-  });
-  if (!response.ok) {
-    throw new Error(`Cloudinary destroy failed: ${response.status}`);
-  }
-}
-
 async function deleteMarketplaceImages(mediaUrls: string[]) {
-  const publicIds = mediaUrls
-    .map(getCloudinaryPublicId)
-    .filter((value): value is string => Boolean(value));
-  await Promise.allSettled(publicIds.map(deleteCloudinaryImage));
+  // Cloudinary has been removed. Images are now handled by Firebase Storage.
+  return;
 }
 
 function getTimeValue(value: unknown): number {
@@ -2910,10 +2864,14 @@ router.post('/:id/contact', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(messageResult.item);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(conversationResult.item.id);
+    const mutedBy = Object.entries(muteSettingsByUser)
+      .filter(([, settings]) => settings.muteMessages)
+      .map(([userId]) => userId);
     emitMessageNewToTargets(
       [req.uid!, ...messageResult.recipientIds],
       conversationResult.item.id,
-      payload
+      { ...payload, mutedBy }
     );
     const recipientCounts = await Promise.all(
       messageResult.recipientIds.map(async (uid) => ({
