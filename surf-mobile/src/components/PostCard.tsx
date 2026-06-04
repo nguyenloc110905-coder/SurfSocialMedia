@@ -18,6 +18,7 @@ import {
   useColorScheme,
   Dimensions,
 } from 'react-native';
+import type { TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -25,6 +26,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useUserStore } from '@/stores/userStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/lib/api';
@@ -81,6 +83,46 @@ const LIGHT = {
   border: '#e2e8f0', text: '#1f2937', subtext: '#64748b',
   placeholder: '#e2e8f0', accent: '#0ea5e9', inputBg: '#f1f5f9',
 };
+
+type PostTextFont = 'system' | 'serif' | 'rounded' | 'bold' | 'mono';
+
+const POST_TEXT_COLORS = new Set([
+  '#0f172a',
+  '#f8fafc',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+]);
+
+function postFontStyle(font?: PostTextFont): TextStyle {
+  switch (font) {
+    case 'serif':
+      return { fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }) };
+    case 'rounded':
+      return {
+        fontFamily: Platform.select({ ios: 'Avenir Next', android: 'sans-serif-medium', default: undefined }),
+        fontWeight: '700',
+      };
+    case 'bold':
+      return { fontWeight: '900' };
+    case 'mono':
+      return { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) };
+    default:
+      return {};
+  }
+}
+
+function postContentTextStyle(post: FeedPost, fallbackColor: string): TextStyle {
+  const color = post.textStyle?.color && POST_TEXT_COLORS.has(post.textStyle.color)
+    ? post.textStyle.color
+    : fallbackColor;
+  return { ...postFontStyle(post.textStyle?.font), color };
+}
 
 const FEELING_STR: Record<string, string> = {
   happy: '😊', excited: '🎉', sad: '😢', angry: '😠', loved: '❤️', grateful: '🙏',
@@ -736,6 +778,8 @@ function CommentSheet({ postId, onClose, onCountChange }: {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
+  const profile = useUserStore((state) => state.profile);
+  const avatarUrl = profile?.photoURL || user?.photoURL || '';
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -967,8 +1011,8 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               </View>
             )}
             <View style={[cs.inputRow, { borderTopColor: C.border }]}>
-              {user?.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={cs.inputAvatar} />
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={cs.inputAvatar} />
               ) : (
                 <View style={[cs.inputAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
                   <Ionicons name="person" size={12} color={C.subtext} />
@@ -1389,6 +1433,8 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
     ? post.content
     : long ? post.content.slice(0, MAX_CHARS).trimEnd() + '…' : post.content;
 
+  const contentTextStyle = useMemo(() => postContentTextStyle(post, C.text), [C.text, post]);
+
   const handleReact = async (emoji: string) => {
     if (!uid) return;
     const alreadyPicked = liked && selectedReaction === emoji;
@@ -1554,7 +1600,7 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
       {/* Content */}
       {post.content ? (
         <View style={s.contentWrap}>
-          <Text style={[s.contentText, { color: C.text }]}>{displayText}</Text>
+          <Text style={[s.contentText, contentTextStyle]}>{displayText}</Text>
           {long && (
             <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
               <Text style={[s.seeMore, { color: C.accent }]}>{expanded ? t('post_see_less') : t('post_see_more')}</Text>

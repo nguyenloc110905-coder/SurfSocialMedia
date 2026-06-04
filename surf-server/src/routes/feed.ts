@@ -208,9 +208,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       
       // Ưu tiên bài cá nhân hóa (bạn bè, follow) hơn khám phá
       if (!p._discover) score += 20;
+      if (p.authorId === uid) score += 1500;
       
       // Phạt nặng nếu đã đọc rồi (để rơi xuống đáy)
-      if (seenPosts.has(p.id)) score -= 1000;
+      if (p.authorId !== uid && seenPosts.has(p.id)) score -= 1000;
 
       // Yếu tố ngẫu nhiên nhỏ để làm mới feed
       score += Math.random() * 5;

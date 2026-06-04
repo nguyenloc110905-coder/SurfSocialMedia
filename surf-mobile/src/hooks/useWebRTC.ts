@@ -6,10 +6,13 @@ import {
   MediaStream,
   mediaDevices,
 } from 'react-native-webrtc';
+import WebRTCLogger from 'react-native-webrtc/lib/module/Logger';
 import RTCIceCandidateEvent from 'react-native-webrtc/lib/typescript/RTCIceCandidateEvent';
 import RTCTrackEvent from 'react-native-webrtc/lib/typescript/RTCTrackEvent';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
+
+WebRTCLogger.enable('rn-webrtc:*:WARN,rn-webrtc:*:ERROR');
 
 // ── ICE servers ────────────────────────────────────────────────────────────────
 const configuration = {
@@ -23,6 +26,7 @@ const configuration = {
 type QueuedSignal = {
   callId: string;
   fromUserId: string;
+  mode?: 'audio' | 'video';
   signal: any;
 };
 
@@ -34,6 +38,7 @@ export function useWebRTC({
   isHost,
   mode,
   onReady,
+  onModeChange,
 }: {
   callId: string;
   conversationId: string;
@@ -41,13 +46,16 @@ export function useWebRTC({
   isHost: boolean;
   mode: 'audio' | 'video';
   onReady?: () => void;
+  onModeChange?: (mode: 'audio' | 'video') => void;
 }) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(mode === 'audio');
   const [isFrontCamera, setIsFrontCamera] = useState(true);
   const [connectionState, setConnectionState] = useState<string>('new');
+  const [currentMode, setCurrentModeState] = useState<'audio' | 'video'>(mode);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -55,9 +63,24 @@ export function useWebRTC({
   const pendingIceCandidatesRef = useRef<any[]>([]);
   const isReadyRef = useRef(false);
   const shouldSendOfferRef = useRef(false);
+  const modeRef = useRef<'audio' | 'video'>(mode);
+  const onReadyRef = useRef(onReady);
 
   const socket = getSocket();
   const user = useAuthStore((state) => state.user);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  const setCurrentMode = useCallback(
+    (nextMode: 'audio' | 'video') => {
+      modeRef.current = nextMode;
+      setCurrentModeState(nextMode);
+      onModeChange?.(nextMode);
+    },
+    [onModeChange]
+  );
 
   // ── Camera / Mic init ────────────────────────────────────────────────────────
 
@@ -92,28 +115,71 @@ export function useWebRTC({
     }
   }, []);
 
+  const ensureLocalVideoTrack = useCallback(async () => {
+    const currentStream = localStreamRef.current;
+    const currentTrack = currentStream?.getVideoTracks()[0];
+
+    if (currentTrack) {
+      currentTrack.enabled = true;
+      setIsCameraOff(false);
+      setCurrentMode('video');
+      return currentTrack;
+    }
+
+    const cameraStream = await mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    const videoTrack = (cameraStream as MediaStream).getVideoTracks()[0];
+    if (!videoTrack) return null;
+
+    const baseStream = currentStream ?? new MediaStream();
+    baseStream.addTrack(videoTrack);
+    localStreamRef.current = baseStream;
+    setLocalStream(new MediaStream(baseStream.getTracks()));
+
+    const pc = pcRef.current;
+    if (pc) {
+      const sender = pc.getSenders().find((item) => item.track?.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(videoTrack);
+      } else {
+        pc.addTrack(videoTrack, baseStream);
+      }
+    }
+
+    setIsFrontCamera(true);
+    setIsCameraOff(false);
+    setCurrentMode('video');
+    return videoTrack;
+  }, [setCurrentMode]);
+
   const toggleCamera = useCallback(() => {
-    if (mode !== 'video') return;
+    if (modeRef.current !== 'video') return;
     const track = localStreamRef.current?.getVideoTracks()[0];
     if (track) {
       track.enabled = !track.enabled;
       setIsCameraOff(!track.enabled);
+      return;
     }
-  }, [mode]);
+    void ensureLocalVideoTrack();
+  }, [ensureLocalVideoTrack]);
 
   const switchCamera = useCallback(() => {
-    if (mode !== 'video') return;
+    if (modeRef.current !== 'video') return;
     const track = localStreamRef.current?.getVideoTracks()[0] as any;
     if (track?._switchCamera) {
       track._switchCamera();
       setIsFrontCamera((prev) => !prev);
     }
-  }, [mode]);
+  }, []);
 
   const endCall = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     setLocalStream(null);
+    setRemoteStream(null);
+    setHasRemoteVideo(false);
     pcRef.current?.close();
     pcRef.current = null;
     isReadyRef.current = false;
@@ -131,11 +197,11 @@ export function useWebRTC({
         conversationId,
         fromUserId: user?.uid,
         toUserId: peerUid,
-        mode,
+        mode: modeRef.current,
         signal,
       });
     },
-    [callId, conversationId, peerUid, mode, socket, user?.uid]
+    [callId, conversationId, peerUid, socket, user?.uid]
   );
 
   const createAndSendOfferInternal = useCallback(async () => {
@@ -162,10 +228,14 @@ export function useWebRTC({
   }, []);
 
   const processSignal = useCallback(
-    async (signal: any) => {
+    async (signal: any, signalMode?: 'audio' | 'video') => {
       const pc = pcRef.current;
       if (!pc) return;
       try {
+        if (signalMode === 'video' && modeRef.current !== 'video') {
+          await ensureLocalVideoTrack();
+        }
+
         if (signal.type === 'offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await flushPendingIceCandidates();
@@ -186,7 +256,7 @@ export function useWebRTC({
         console.error('[WebRTC] Error processing signal:', e);
       }
     },
-    [emitSignal, flushPendingIceCandidates]
+    [emitSignal, ensureLocalVideoTrack, flushPendingIceCandidates]
   );
 
   // ── Main effect ───────────────────────────────────────────────────────────────
@@ -204,7 +274,7 @@ export function useWebRTC({
         pendingSignalsRef.current.push(payload);
         return;
       }
-      await processSignal(payload.signal);
+      await processSignal(payload.signal, payload.mode);
     };
     socket.on('call:signal', handleSignal);
 
@@ -220,7 +290,15 @@ export function useWebRTC({
 
       // Remote stream handler
       (pc as any).addEventListener('track', (event: RTCTrackEvent<'track'>) => {
-        if (event.streams?.[0]) setRemoteStream(event.streams[0] as MediaStream);
+        if (event.streams?.[0]) {
+          const stream = event.streams[0] as MediaStream;
+          setRemoteStream(stream);
+          setHasRemoteVideo(stream.getVideoTracks().some((track) => track.readyState === 'live'));
+        }
+        if ((event as any).track?.kind === 'video') {
+          setHasRemoteVideo(true);
+          setCurrentMode('video');
+        }
       });
 
       // ICE candidate handler
@@ -240,7 +318,7 @@ export function useWebRTC({
 
       // Mark ready, flush queue
       isReadyRef.current = true;
-      onReady?.();
+      onReadyRef.current?.();
 
       if (shouldSendOfferRef.current) {
         shouldSendOfferRef.current = false;
@@ -248,7 +326,7 @@ export function useWebRTC({
       }
 
       for (const queued of pendingSignalsRef.current) {
-        await processSignal(queued.signal);
+        await processSignal(queued.signal, queued.mode);
       }
       pendingSignalsRef.current = [];
     };
@@ -260,7 +338,7 @@ export function useWebRTC({
       endCall();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callId, conversationId, peerUid, mode, onReady]);
+  }, [callId, conversationId, peerUid]);
 
   // ── Public: called by caller when peer accepts ────────────────────────────────
 
@@ -272,9 +350,20 @@ export function useWebRTC({
     void createAndSendOfferInternal();
   }, [createAndSendOfferInternal]);
 
+  const upgradeToVideo = useCallback(async () => {
+    try {
+      await ensureLocalVideoTrack();
+      await createAndSendOfferInternal();
+    } catch (e) {
+      console.error('[WebRTC] Error upgrading to video:', e);
+    }
+  }, [createAndSendOfferInternal, ensureLocalVideoTrack]);
+
   return {
     localStream,
     remoteStream,
+    hasRemoteVideo,
+    callMode: currentMode,
     isMicMuted,
     isCameraOff,
     isFrontCamera,
@@ -284,5 +373,6 @@ export function useWebRTC({
     switchCamera,
     endCall,
     createAndSendOffer,
+    upgradeToVideo,
   };
 }

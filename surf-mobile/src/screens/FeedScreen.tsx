@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useGestureStore } from '@/lib/gestureState';
 import { useAuthStore } from '@/stores/authStore';
+import { useUserStore } from '@/stores/userStore';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import PostCard from '@/components/PostCard';
@@ -120,6 +121,7 @@ export default function FeedScreen({
   const lastResetSignalRef = useRef(0);
   const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(new Set());
   const user = useAuthStore((state) => state.user);
+  const profile = useUserStore((state) => state.profile);
   const reactionPickerActive = useGestureStore((s) => s.reactionPickerActive);
 
   const posts         = useFeedStore((s) => s.posts);
@@ -220,6 +222,7 @@ export default function FeedScreen({
     [isFirstLoad, posts]
   );
   const displayName = user?.displayName || user?.email || t('user_fallback');
+  const avatarUrl = profile?.photoURL || user?.photoURL || '';
   const initial = displayName.charAt(0).toUpperCase();
   const openCreatePost = useCallback(() => {
     if (onCreatePost) onCreatePost();
@@ -266,8 +269,8 @@ export default function FeedScreen({
             onPress={() => navigation.navigate('Profile', { userId: user?.uid } as never)}
             activeOpacity={0.78}
           >
-            {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={s.composerAvatarImg} />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={s.composerAvatarImg} />
             ) : (
               <View style={[s.composerAvatarImg, { backgroundColor: C.accent }]}>
                 <Text style={s.composerAvatarText}>{initial}</Text>
@@ -287,7 +290,7 @@ export default function FeedScreen({
         </View>
       </View>
     </View>
-  ), [C, initial, navigation, openCreatePost, scheme, user?.photoURL, user?.uid]);
+  ), [C, avatarUrl, initial, navigation, openCreatePost, scheme, user?.uid]);
 
   const listHeader = useMemo(() => (
     <>

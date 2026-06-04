@@ -61,6 +61,8 @@ type UserProfile = {
 
 type Birthday = { day: number; month: number; year: number; showYear: boolean };
 type Friend = { id: string; displayName?: string; photoURL?: string | null };
+type WorkItem = NonNullable<UserProfile['work']>[number];
+type EducationItem = NonNullable<UserProfile['education']>[number];
 
 const DARK = {
   bg: '#0b1120',
@@ -89,6 +91,10 @@ const LIGHT = {
 const { width: SW, height: SCREEN_H } = Dimensions.get('window');
 const COVER_H = Math.max(165, Math.min(225, SW * 0.46));
 const AVATAR_SIZE = 84;
+const PROFILE_CACHE_TTL = 90_000;
+const profileCache = new Map<string, { data: UserProfile; loadedAt: number }>();
+const profilePostsCache = new Map<string, { posts: FeedPost[]; loadedAt: number }>();
+const profileFriendsCache = new Map<string, { friends: Friend[]; loadedAt: number }>();
 type ProfileTab = 'all' | 'photos' | 'reels';
 const TABS: Array<{ key: ProfileTab; labelKey: I18nKey }> = [
   { key: 'all', labelKey: 'profile_tab_all' },
@@ -212,40 +218,66 @@ export default function ProfileScreen({
   const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
   const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(() => new Set());
 
-  const loadProfile = useCallback(async () => {
+  const loadProfile = useCallback(async (force = false) => {
     if (!targetUid) return;
-    setProfileLoading(true);
+    const cached = profileCache.get(targetUid);
+    if (!force && cached && Date.now() - cached.loadedAt < PROFILE_CACHE_TTL) {
+      setProfile(cached.data);
+      setProfileLoading(false);
+      return;
+    }
+    setProfileLoading(!cached);
+    if (cached) setProfile(cached.data);
     try {
       const data = await api.get<UserProfile>(`/api/users/${targetUid}`);
+      profileCache.set(targetUid, { data, loadedAt: Date.now() });
       setProfile(data);
     } catch {
-      setProfile({});
+      if (!cached) setProfile({});
     } finally {
       setProfileLoading(false);
     }
   }, [targetUid]);
 
-  const loadPosts = useCallback(async () => {
+  const loadPosts = useCallback(async (force = false) => {
     if (!targetUid) return;
-    setPostsLoading(true);
+    const cached = profilePostsCache.get(targetUid);
+    if (!force && cached && Date.now() - cached.loadedAt < PROFILE_CACHE_TTL) {
+      setPosts(cached.posts);
+      setPostsLoading(false);
+      return;
+    }
+    setPostsLoading(!cached);
+    if (cached) setPosts(cached.posts);
     try {
       const data = await api.get<{ posts: FeedPost[] }>(`/api/users/${targetUid}/posts`);
-      setPosts(data.posts ?? []);
+      const nextPosts = data.posts ?? [];
+      profilePostsCache.set(targetUid, { posts: nextPosts, loadedAt: Date.now() });
+      setPosts(nextPosts);
     } catch {
-      setPosts([]);
+      if (!cached) setPosts([]);
     } finally {
       setPostsLoading(false);
     }
   }, [targetUid]);
 
-  const loadFriends = useCallback(async () => {
+  const loadFriends = useCallback(async (force = false) => {
     if (!targetUid) return;
-    setFriendsLoading(true);
+    const cached = profileFriendsCache.get(targetUid);
+    if (!force && cached && Date.now() - cached.loadedAt < PROFILE_CACHE_TTL) {
+      setFriends(cached.friends);
+      setFriendsLoading(false);
+      return;
+    }
+    setFriendsLoading(!cached);
+    if (cached) setFriends(cached.friends);
     try {
       const data = await api.get<{ friends: Friend[] }>(`/api/users/${targetUid}/friends`);
-      setFriends(data.friends ?? []);
+      const nextFriends = data.friends ?? [];
+      profileFriendsCache.set(targetUid, { friends: nextFriends, loadedAt: Date.now() });
+      setFriends(nextFriends);
     } catch {
-      setFriends([]);
+      if (!cached) setFriends([]);
     } finally {
       setFriendsLoading(false);
     }
@@ -329,7 +361,7 @@ export default function ProfileScreen({
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadProfile(), loadPosts(), loadFriends(), !isOwn ? loadFriendStatus() : Promise.resolve()]);
+    await Promise.all([loadProfile(true), loadPosts(true), loadFriends(true), !isOwn ? loadFriendStatus() : Promise.resolve()]);
     setRefreshing(false);
   };
 
@@ -587,18 +619,6 @@ export default function ProfileScreen({
               </>
             )}
           </View>
-
-          {isOwn ? (
-            <View style={s.lockNotice}>
-              <View style={[s.lockIcon, { backgroundColor: C.muted }]}>
-                <Ionicons name="shield-checkmark" size={20} color={C.text} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.lockTitle, { color: C.text }]}>{t('profile_locked')}</Text>
-                <Text style={[s.lockLink, { color: C.accent }]}>{t('learn_more')}</Text>
-              </View>
-            </View>
-          ) : null}
         </View>
 
         <View style={[s.tabBar, { backgroundColor: C.card, borderBottomColor: C.border }]}>
@@ -686,16 +706,18 @@ export default function ProfileScreen({
   );
 
   const renderAboutSection = () => {
+    const workItems: WorkItem[] = Array.isArray(profile?.work) ? profile.work : [];
+    const educationItems: EducationItem[] = Array.isArray(profile?.education) ? profile.education : [];
     const details = [
       city ? { icon: 'location-outline' as const, text: city } : null,
       birthday ? { icon: 'calendar-outline' as const, text: birthday } : null,
       relationship ? { icon: 'heart-outline' as const, text: relationship } : null,
       gender ? { icon: 'person-outline' as const, text: gender } : null,
-      ...(profile?.work ?? []).map((item) => ({
+      ...workItems.map((item) => ({
         icon: 'briefcase-outline' as const,
         text: item.title ? t('work_at_company', { title: item.title, company: item.company }) : item.company,
       })),
-      ...(profile?.education ?? []).map((item) => ({
+      ...educationItems.map((item) => ({
         icon: 'school-outline' as const,
         text: item.degree ? `${item.school} · ${item.degree}` : item.school,
       })),

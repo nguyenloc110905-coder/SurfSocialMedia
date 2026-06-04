@@ -12,6 +12,7 @@ import { connectSocket, disconnectSocket, getSocket } from './src/lib/socket';
 import { useNotificationStore } from './src/stores/notificationStore';
 import { useFriendStore } from './src/stores/friendStore';
 import { useSettingsStore } from './src/stores/settingsStore';
+import { useUserStore } from './src/stores/userStore';
 import { tamaguiConfig } from './tamagui.config';
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
   const resetAuth = useAuthStore((s) => s.resetAuth);
   const user = useAuthStore((s) => s.user);
   const fetchFeed = useFeedStore((s) => s.fetch);
+  const fetchProfile = useUserStore((s) => s.fetchProfile);
   const lastOnlineSyncAtRef = useRef(0);
   const wasOnlineRef = useRef<boolean | null>(null);
 
@@ -80,8 +82,11 @@ export default function App() {
 
   // Prefetch feed ngay khi auth xong — chạy song song với navigation render
   useEffect(() => {
-    if (user?.uid) void fetchFeed();
-  }, [user, fetchFeed]);
+    if (user?.uid) {
+      void fetchFeed();
+      void fetchProfile();
+    }
+  }, [user?.uid, fetchFeed, fetchProfile]);
 
   // Sync when coming back online
   useEffect(() => {

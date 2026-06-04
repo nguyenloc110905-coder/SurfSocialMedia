@@ -338,6 +338,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   const [isRemoteCameraMuted, setIsRemoteCameraMuted] = useState(false);
   const [hasRemoteVideoFrame, setHasRemoteVideoFrame] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isCallMinimized, setIsCallMinimized] = useState(false);
+  const [isCallHidden, setIsCallHidden] = useState(false);
   const [connectedAtMs, setConnectedAtMs] = useState<number | null>(null);
   const [callDurationSec, setCallDurationSec] = useState(0);
   const [pendingGroupOutgoingCall, setPendingGroupOutgoingCall] =
@@ -377,7 +379,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       localVideoRef.current.srcObject = localStream;
       void localVideoRef.current.play().catch(() => undefined);
     }
-  }, [localStream]);
+  }, [activeCall?.callId, isCallHidden, isCallMinimized, isCameraEnabled, localStream]);
 
   useEffect(() => {
     const syncFullscreenState = () => {
@@ -449,7 +451,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     return () => {
       cleanupFns.forEach((cleanup) => cleanup());
     };
-  }, [remoteStream]);
+  }, [activeCall?.callId, isCallHidden, isCallMinimized, remoteStream]);
 
   useEffect(() => {
     if (!activeCall) {
@@ -1220,6 +1222,97 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     }
   };
 
+  const upgradeVoiceToVideo = async () => {
+    const currentCall = activeCallRef.current;
+    if (!currentCall || currentCall.mode === 'video' || !user?.uid) return;
+
+    const nextCall: ActiveCall = { ...currentCall, mode: 'video' };
+    const setVideoMode = () => {
+      activeCallRef.current = nextCall;
+      setActiveCall((current) =>
+        current && current.callId === nextCall.callId ? { ...current, mode: 'video' } : current
+      );
+    };
+
+    try {
+      if (useLiveKitProvider) {
+        const room = liveKitRoomRef.current;
+        if (!room) return;
+
+        await room.localParticipant.setCameraEnabled(
+          true,
+          {
+            resolution: activeVideoSpec.resolution,
+            frameRate: {
+              ideal: targetVideoFps,
+            },
+          },
+          {
+            simulcast: true,
+            videoEncoding: activeVideoSpec.encoding,
+          }
+        );
+        syncLiveKitLocalPreview(room);
+        setVideoMode();
+        setIsCameraEnabled(true);
+        setCallError(null);
+        return;
+      }
+
+      const peer = peerConnectionRef.current;
+      if (!peer) return;
+
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: buildCameraConstraints(selectedVideoProfile),
+      });
+      const videoTrack = videoStream.getVideoTracks()[0];
+      if (!videoTrack) {
+        setCallError('Camera chÆ°a sáºµn sÃ ng.');
+        return;
+      }
+
+      const baseStream = localStreamRef.current ?? new MediaStream();
+      baseStream.getVideoTracks().forEach((track) => {
+        track.stop();
+        baseStream.removeTrack(track);
+      });
+      baseStream.addTrack(videoTrack);
+      localStreamRef.current = baseStream;
+
+      const sender = peer.getSenders().find((item) => item.track?.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(videoTrack);
+      } else {
+        peer.addTrack(videoTrack, baseStream);
+      }
+
+      setLocalStream(new MediaStream(baseStream.getTracks()));
+      setVideoMode();
+      setIsCameraEnabled(true);
+
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      getSocket().emit('call:signal', {
+        callId: nextCall.callId,
+        conversationId: nextCall.conversationId,
+        fromUserId: user.uid,
+        toUserId: nextCall.peerId,
+        mode: 'video',
+        signal: {
+          type: 'offer',
+          sdp: {
+            type: offer.type,
+            sdp: offer.sdp ?? undefined,
+          },
+        },
+      });
+      setCallError(null);
+    } catch (error) {
+      setCallError((error as Error).message || 'KhÃ´ng thá»ƒ chuyá»ƒn sang video call');
+    }
+  };
+
   const clearOutgoingTimeout = () => {
     if (outgoingTimeoutRef.current) {
       window.clearTimeout(outgoingTimeoutRef.current);
@@ -1473,6 +1566,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     setCallQuotaState(null);
     setConnectedAtMs(null);
     setCallDurationSec(0);
+    setIsCallMinimized(false);
+    setIsCallHidden(false);
     setIsMicEnabled(true);
     setIsCameraEnabled(true);
     setAwaitingGroupRoomCallId(null);
@@ -1493,6 +1588,15 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     const peer = peerConnectionRef.current;
     if (!current || current.callId !== payload.callId || !peer) return;
 
+    if (payload.mode === 'video' && current.mode !== 'video') {
+      const nextCall: ActiveCall = { ...current, mode: 'video' };
+      activeCallRef.current = nextCall;
+      setActiveCall((active) =>
+        active && active.callId === payload.callId ? { ...active, mode: 'video' } : active
+      );
+      setIsCameraEnabled(localStreamRef.current?.getVideoTracks().some((track) => track.enabled) ?? false);
+    }
+
     if (payload.signal.type === 'offer') {
       await peer.setRemoteDescription(new RTCSessionDescription(payload.signal.sdp));
       await flushPendingIceCandidates(peer);
@@ -1505,7 +1609,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
         conversationId: current.conversationId,
         fromUserId: user.uid,
         toUserId: current.peerId,
-        mode: current.mode,
+        mode: payload.mode,
         signal: {
           type: 'answer',
           sdp: {
@@ -2218,6 +2322,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
   const overlayClass = isCallWindow
     ? 'fixed inset-0 z-[120] flex items-stretch justify-center bg-slate-950 p-0'
     : 'fixed inset-0 z-[120] flex items-stretch justify-center bg-slate-950 p-0 backdrop-blur-sm';
+  const minimizedCallClass =
+    'fixed bottom-5 right-5 z-[121] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-3xl border border-white/15 bg-slate-950/95 text-white shadow-[0_24px_80px_-24px_rgba(15,23,42,0.75)] backdrop-blur-xl';
   const callStageClass = isFullscreen
     ? 'relative w-full bg-slate-950 shadow-2xl shadow-slate-950/40 flex h-full max-h-none max-w-none items-center justify-center overflow-hidden rounded-none p-2 sm:p-4'
     : isCallWindow
@@ -2332,17 +2438,148 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
           </div>
         )}
 
-      {(incomingCall || activeCall || fallbackSession) && (
+      {activeCall && isCallMinimized && (
+        isCallHidden ? (
+          <button
+            type="button"
+            onClick={() => setIsCallHidden(false)}
+            className="fixed bottom-5 right-5 z-[121] inline-flex items-center gap-3 rounded-full border border-cyan-200/40 bg-slate-950/95 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_60px_-22px_rgba(8,145,178,0.9)] backdrop-blur-xl transition hover:bg-slate-900"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-500">
+              {activeCall.mode === 'video' ? (
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                  <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                  <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24 11.7 11.7 0 0 0 3.68.59 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.48a1 1 0 0 1 1 1 11.7 11.7 0 0 0 .59 3.68 1 1 0 0 1-.25 1.01Z" />
+                </svg>
+              )}
+            </span>
+            <span className="text-left">
+              <span className="block text-xs uppercase tracking-[0.14em] text-cyan-200">
+                Surf Call
+              </span>
+              <span className="block max-w-[180px] truncate">{activeCall.peerName}</span>
+            </span>
+          </button>
+        ) : (
+          <div className={minimizedCallClass}>
+            <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+              <CallAvatar
+                src={activeCall.peerAvatarUrl}
+                name={activeCall.peerName}
+                className="h-11 w-11 rounded-full object-cover"
+                fallbackClassName="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-sm font-semibold text-white"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{activeCall.peerName}</p>
+                <p className="mt-0.5 text-xs text-slate-300">
+                  {activeCall.status === 'connected'
+                    ? formatCallDuration(callDurationSec)
+                    : activeCall.status === 'outgoing'
+                      ? 'Đang đổ chuông'
+                      : 'Đang kết nối'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCallMinimized(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/15"
+                title="Mở lại cuộc gọi"
+                aria-label="Mở lại cuộc gọi"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                  <path d="M5 11h2V7h4V5H5v6Zm12 6h-4v2h6v-6h-2v4ZM13 5v2h4v4h2V5h-6ZM7 13H5v6h6v-2H7v-4Z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCallHidden(true)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/15"
+                title="Ẩn panel cuộc gọi"
+                aria-label="Ẩn panel cuộc gọi"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                  <path d="M5 11h14v2H5z" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex items-center justify-center gap-3 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  void toggleMicrophone();
+                }}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition ${
+                  isMicEnabled ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-amber-400/25 text-amber-100'
+                }`}
+                title={isMicEnabled ? 'Tắt mic' : 'Bật mic'}
+                aria-label={isMicEnabled ? 'Tắt mic' : 'Bật mic'}
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                  <path d="M12 15a4 4 0 0 0 4-4V7a4 4 0 1 0-8 0v4a4 4 0 0 0 4 4Zm-6-4a1 1 0 0 1 2 0 4 4 0 1 0 8 0 1 1 0 1 1 2 0 6 6 0 0 1-5 5.91V20h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-3.09A6 6 0 0 1 6 11Z" />
+                </svg>
+              </button>
+              {activeCall.mode === 'video' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void toggleCamera();
+                  }}
+                  className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition ${
+                    isCameraEnabled ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-amber-400/25 text-amber-100'
+                  }`}
+                  title={isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
+                  aria-label={isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                    <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                  </svg>
+                </button>
+              )}
+              {activeCall.mode === 'audio' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void upgradeVoiceToVideo();
+                  }}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-100 transition hover:bg-cyan-500/30"
+                  title="Chuyá»ƒn sang video"
+                  aria-label="Chuyá»ƒn sang video"
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                    <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  finishCall(true);
+                  closeCurrentCallWindow();
+                }}
+                className="inline-flex h-12 min-w-24 items-center justify-center rounded-full bg-red-500 px-5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition hover:bg-red-400"
+              >
+                Kết thúc
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
+      {(incomingCall || (activeCall && !isCallMinimized) || fallbackSession) && (
         <div className={overlayClass}>
           {incomingCall && !activeCall ? (
-            <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+            <div className="max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-6 text-center shadow-[0_30px_90px_-32px_rgba(15,23,42,0.55)] sm:p-8 md:flex md:items-center md:gap-8 md:text-left">
               <CallAvatar
                 src={incomingCall.fromAvatarUrl}
                 name={incomingCall.fromName}
-                className="mx-auto h-24 w-24 rounded-full object-cover"
-                fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white"
+                className="mx-auto h-24 w-24 flex-shrink-0 rounded-full object-cover md:mx-0 md:h-32 md:w-32"
+                fallbackClassName="mx-auto flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white md:mx-0 md:h-32 md:w-32 md:text-4xl"
               />
-              <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600">
+              <div className="md:min-w-0 md:flex-1">
+              <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600 md:mt-0">
                 {incomingCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
               </p>
               <h3 className="mt-3 text-3xl font-semibold text-slate-900">
@@ -2350,15 +2587,15 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
               </h3>
               <p className="mt-2 text-sm text-slate-500">Đang gọi cho bạn qua Surf Waves</p>
               {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
-              <div className="mt-8 flex items-center justify-center gap-4">
+              <div className="mt-8 grid grid-cols-2 gap-3 md:max-w-md">
                 <button
                   type="button"
                   onClick={declineIncomingCall}
-                  className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/30"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                 >
                   <svg
                     viewBox="0 0 24 24"
-                    className="h-6 w-6"
+                    className="h-5 w-5"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2.2"
@@ -2369,6 +2606,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                     <path d="M7.2 15.2 6 18" />
                     <path d="M16.8 15.2 18 18" />
                   </svg>
+                  Từ chối
                 </button>
                 <button
                   type="button"
@@ -2376,7 +2614,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                     void acceptIncomingCall();
                   }}
                   disabled={acceptingCall}
-                  className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 disabled:opacity-50"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-400 disabled:opacity-50"
                 >
                   {acceptingCall ? (
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/50 border-t-white" />
@@ -2389,25 +2627,28 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                       <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24 11.7 11.7 0 0 0 3.68.59 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.48a1 1 0 0 1 1 1 11.7 11.7 0 0 0 .59 3.68 1 1 0 0 1-.25 1.01Z" />
                     </svg>
                   )}
+                  {acceptingCall ? 'Đang mở' : 'Nghe máy'}
                 </button>
               </div>
             </div>
+            </div>
           ) : activeCall ? (
             showPreConnectScreen ? (
-              <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+              <div className="max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8 md:flex md:items-center md:gap-8 md:text-left">
                 <CallAvatar
                   src={activeCall.peerAvatarUrl}
                   name={activeCall.peerName}
-                  className="mx-auto h-24 w-24 rounded-full object-cover"
-                  fallbackClassName="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white"
+                  className="mx-auto h-24 w-24 flex-shrink-0 rounded-full object-cover md:mx-0 md:h-32 md:w-32"
+                  fallbackClassName="mx-auto flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white md:mx-0 md:h-32 md:w-32 md:text-4xl"
                 />
-                <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600">
+                <div className="md:min-w-0 md:flex-1">
+                <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600 md:mt-0">
                   {activeCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
                 </p>
-                <h3 className="mt-3 text-3xl font-semibold text-slate-900">{preConnectTitle}</h3>
+                <h3 className="mt-3 text-3xl font-semibold text-slate-900 md:text-4xl">{preConnectTitle}</h3>
                 <p className="mt-2 text-sm text-slate-500">{preConnectHint}</p>
                 {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
-                <div className="mt-8 flex items-center justify-center gap-4">
+                <div className="mt-8 flex items-center justify-center gap-4 md:justify-start">
                   <button
                     type="button"
                     onClick={() => {
@@ -2445,11 +2686,53 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                   </button>
                 </div>
               </div>
+              </div>
             ) : (
             <div ref={callStageRef} className={callStageClass}>
               {!isFullscreen && (
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/8 via-transparent to-blue-500/8" />
               )}
+              <div className="absolute left-4 right-4 top-4 z-40 flex items-center justify-between gap-3 text-white sm:left-6 sm:right-6 sm:top-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCallMinimized(true);
+                    setIsCallHidden(false);
+                  }}
+                  className="inline-flex h-11 items-center gap-2 rounded-full border border-white/15 bg-black/45 px-4 text-sm font-semibold text-white shadow-lg shadow-black/25 backdrop-blur-md transition hover:bg-black/60"
+                  title="Về Surf và giữ cuộc gọi"
+                  aria-label="Về Surf và giữ cuộc gọi"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                    <path d="M10.6 5.4 12 6.8 7.8 11H20v2H7.8l4.2 4.2-1.4 1.4L4 12Z" />
+                  </svg>
+                  Về Surf
+                </button>
+                <div className="hidden min-w-0 items-center gap-3 rounded-full border border-white/15 bg-black/35 px-4 py-2 text-sm shadow-lg shadow-black/20 backdrop-blur-md sm:flex">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
+                  <span className="truncate font-semibold">{activeCall.peerName}</span>
+                  <span className="text-slate-300">
+                    {activeCall.status === 'connected'
+                      ? formatCallDuration(callDurationSec)
+                      : activeCall.status === 'outgoing'
+                        ? 'Đang đổ chuông'
+                        : 'Đang kết nối'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void toggleCallFullscreen();
+                  }}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white shadow-lg shadow-black/25 backdrop-blur-md transition hover:bg-black/60"
+                  title={isFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                  aria-label={isFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                    <path d="M5 5h5a1 1 0 1 0 0-2H4a1 1 0 0 0-1 1v6a1 1 0 0 0 2 0V5ZM19 3h-6a1 1 0 1 0 0 2h5v5a1 1 0 0 0 2 0V4a1 1 0 0 0-1-1ZM5 13a1 1 0 0 0-2 0v6a1 1 0 0 0 1 1h6a1 1 0 1 0 0-2H5v-5ZM20 13a1 1 0 0 0-2 0v5h-5a1 1 0 1 0 0 2h6a1 1 0 0 0 1-1v-6Z" />
+                  </svg>
+                </button>
+              </div>
               <div
                 className={
                   'relative h-full min-h-0 w-full overflow-hidden' +
@@ -2510,24 +2793,37 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                           autoPlay
                           muted
                           playsInline
-                          className="absolute right-4 top-4 z-20 h-28 w-40 rounded-xl border border-white/20 bg-slate-900 object-cover shadow-2xl sm:right-6 sm:top-6 sm:h-36 sm:w-56"
+                          className="absolute right-4 top-20 z-20 h-28 w-40 scale-x-[-1] rounded-xl border border-white/20 bg-slate-900 object-cover shadow-2xl sm:right-6 sm:top-24 sm:h-36 sm:w-56"
                         />
                       ) : (
-                        <div className="absolute right-4 top-4 z-20 flex h-28 w-40 items-center justify-center rounded-xl border border-white/20 bg-slate-900/95 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200 shadow-2xl sm:right-6 sm:top-6 sm:h-36 sm:w-56">
+                        <div className="absolute right-4 top-20 z-20 flex h-28 w-40 items-center justify-center rounded-xl border border-white/20 bg-slate-900/95 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200 shadow-2xl sm:right-6 sm:top-24 sm:h-36 sm:w-56">
                           Cam off
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center gap-5 px-8 text-center text-white">
+                    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_25%,rgba(14,165,233,0.24),transparent_34%),linear-gradient(135deg,#07111f,#111827_48%,#020617)] px-6 text-center text-white">
+                      <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center gap-2 opacity-30">
+                        {[36, 58, 84, 110, 74, 48, 92, 62, 40].map((height, index) => (
+                          <span
+                            key={index}
+                            className="w-2 rounded-full bg-cyan-300/70"
+                            style={{ height }}
+                          />
+                        ))}
+                      </div>
+                      <div className="relative z-10 w-full max-w-lg rounded-[32px] border border-white/12 bg-white/8 px-8 py-10 shadow-[0_26px_90px_-34px_rgba(8,145,178,0.75)] backdrop-blur-xl">
                       <CallAvatar
                         src={activeCall.peerAvatarUrl}
                         name={activeCall.peerName}
-                        className="h-28 w-28 rounded-full object-cover"
-                        fallbackClassName="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-3xl font-semibold text-white"
+                        className="mx-auto h-32 w-32 rounded-full object-cover ring-4 ring-cyan-300/25"
+                        fallbackClassName="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-4xl font-semibold text-white ring-4 ring-cyan-300/25"
                       />
                       <div>
-                        <p className="text-3xl font-semibold">{activeCall.peerName}</p>
+                        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">
+                          Surf Voice Call
+                        </p>
+                        <p className="mt-3 text-4xl font-semibold">{activeCall.peerName}</p>
                         <p className="mt-2 text-sm text-slate-300">
                           {activeCall.status === 'connected'
                             ? 'Đang trong cuộc gọi thoại'
@@ -2535,6 +2831,11 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                               ? 'Đang đổ chuông...'
                               : 'Đang kết nối...'}
                         </p>
+                        <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
+                          {isMicEnabled ? 'Mic đang bật' : 'Mic đang tắt'}
+                        </div>
+                      </div>
                       </div>
                     </div>
                   )}
@@ -2674,7 +2975,7 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                   </div>
                   <div className="shrink-0 space-y-3 border-t border-white/10 pt-3">
                     <div
-                      className={`grid gap-2 ${activeCall.mode === 'video' ? 'grid-cols-2' : 'grid-cols-1'}`}
+                      className="grid grid-cols-2 gap-2"
                     >
                       <button
                         type="button"
@@ -2721,6 +3022,20 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                             </svg>
                           )}
                           {isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
+                        </button>
+                      )}
+                      {activeCall.mode === 'audio' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void upgradeVoiceToVideo();
+                          }}
+                          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-cyan-300/40 bg-cyan-500/20 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/30"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                            <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                          </svg>
+                          Video
                         </button>
                       )}
                     </div>
@@ -2784,6 +3099,21 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
                         <path d="M4.7 3.29a1 1 0 0 0-1.4 1.42l1.95 1.95A2 2 0 0 0 3 10v4a2 2 0 0 0 2 2h8.17l4.12 4.12a1 1 0 1 0 1.41-1.42L4.7 3.29ZM21.1 8.08a1 1 0 0 1 .9.98v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-.17.82l-1.6-1.6a1.98 1.98 0 0 0 .77-1.58V10a2 2 0 0 0-2-2H9.58l-1.9-1.9c.1-.06.21-.1.32-.1h6a2 2 0 0 1 2 2v.64l3.2-2.56a1 1 0 0 1 1.9.78Z" />
                       </svg>
                     )}
+                  </button>
+                )}
+                {activeCall.mode === 'audio' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void upgradeVoiceToVideo();
+                    }}
+                    className="order-1 inline-flex h-14 w-16 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-500/25 text-cyan-100 transition hover:bg-cyan-500/35"
+                    title="Chuyá»ƒn sang video"
+                    aria-label="Chuyá»ƒn sang video"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                      <path d="M15 8a2 2 0 0 1 2 2v.64l3.2-2.56A1 1 0 0 1 22 8.86v6.28a1 1 0 0 1-1.8.78L17 13.36V14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h10Z" />
+                    </svg>
                   </button>
                 )}
                 <button

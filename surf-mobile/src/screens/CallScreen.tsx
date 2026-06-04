@@ -32,7 +32,7 @@ export default function CallScreen({ route, navigation }: Props) {
   );
   const [callId] = useState(initialCallId || `call_${Date.now()}`);
   const [duration, setDuration] = useState(0);
-  const [callMode] = useState<'audio' | 'video'>(initialMode ?? 'audio');
+  const [callMode, setCallMode] = useState<'audio' | 'video'>(initialMode ?? 'audio');
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const acceptSentRef = useRef(false);
@@ -53,6 +53,8 @@ export default function CallScreen({ route, navigation }: Props) {
   const {
     localStream,
     remoteStream,
+    hasRemoteVideo,
+    callMode: rtcCallMode,
     isMicMuted,
     isCameraOff,
     isFrontCamera,
@@ -60,6 +62,7 @@ export default function CallScreen({ route, navigation }: Props) {
     toggleMic,
     toggleCamera,
     switchCamera,
+    upgradeToVideo,
     endCall: endWebRTC,
     createAndSendOffer,
   } = useWebRTC({
@@ -69,6 +72,7 @@ export default function CallScreen({ route, navigation }: Props) {
     isHost,
     mode: callMode,
     onReady: handleRtcReady,
+    onModeChange: setCallMode,
   });
 
   // ── Timer ─────────────────────────────────────────────────────────────────
@@ -129,7 +133,8 @@ export default function CallScreen({ route, navigation }: Props) {
       if (timerRef.current) clearInterval(timerRef.current);
       endWebRTC();
     };
-  }, [callId, conversationId, isHost, peerUid, callMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callId, conversationId, isHost, peerUid]);
 
   // Callee: start timer immediately (call was already accepted before navigating here)
   useEffect(() => {
@@ -158,7 +163,7 @@ export default function CallScreen({ route, navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       {/* Remote video (full screen background) */}
-      {callMode === 'video' && remoteStream && (
+      {rtcCallMode === 'video' && remoteStream && hasRemoteVideo && (
         <RTCView
           streamURL={remoteStream.toURL()}
           style={styles.remoteVideo}
@@ -167,7 +172,7 @@ export default function CallScreen({ route, navigation }: Props) {
       )}
 
       {/* Local video (picture-in-picture, top right) */}
-      {callMode === 'video' && localStream && !isCameraOff && (
+      {rtcCallMode === 'video' && localStream && !isCameraOff && (
         <View style={styles.localVideoContainer}>
           <RTCView
             streamURL={localStream.toURL()}
@@ -203,7 +208,7 @@ export default function CallScreen({ route, navigation }: Props) {
         </View>
 
         {/* Avatar (shown when no remote video) */}
-        {(!remoteStream || callMode === 'audio') && (
+        {(!hasRemoteVideo || rtcCallMode === 'audio') && (
           <View style={styles.center}>
             {peerAvatar ? (
               <Image source={{ uri: peerAvatar }} style={styles.avatar} />
@@ -228,7 +233,22 @@ export default function CallScreen({ route, navigation }: Props) {
                 <Ionicons name={isMicMuted ? 'mic-off' : 'mic'} size={26} color="#fff" />
               </TouchableOpacity>
 
-              {callMode === 'video' && (
+              <TouchableOpacity style={styles.btnEnd} onPress={handleEnd}>
+                <Ionicons
+                  name="call"
+                  size={30}
+                  color="#fff"
+                  style={{ transform: [{ rotate: '135deg' }] }}
+                />
+              </TouchableOpacity>
+
+              {rtcCallMode === 'audio' && (
+                <TouchableOpacity style={styles.controlBtnVideo} onPress={upgradeToVideo}>
+                  <Ionicons name="videocam" size={26} color="#fff" />
+                </TouchableOpacity>
+              )}
+
+              {rtcCallMode === 'video' && (
                 <>
                   <TouchableOpacity
                     style={[styles.controlBtn, isCameraOff && styles.controlBtnActive]}
@@ -246,15 +266,6 @@ export default function CallScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                 </>
               )}
-
-              <TouchableOpacity style={styles.btnEnd} onPress={handleEnd}>
-                <Ionicons
-                  name="call"
-                  size={30}
-                  color="#fff"
-                  style={{ transform: [{ rotate: '135deg' }] }}
-                />
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -350,6 +361,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   controlBtnActive: { backgroundColor: 'rgba(203,213,225,0.85)' },
+  controlBtnVideo: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#0ea5e9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   btnEnd: {
     width: 62,
     height: 62,

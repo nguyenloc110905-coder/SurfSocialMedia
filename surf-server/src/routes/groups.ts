@@ -11,6 +11,33 @@ import {
 
 const router = Router();
 
+const POST_TEXT_FONTS = new Set(['system', 'serif', 'rounded', 'bold', 'mono']);
+const POST_TEXT_COLORS = new Set([
+  '#0f172a',
+  '#f8fafc',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+]);
+
+function normalizePostTextStyle(input: unknown): { font?: string; color?: string } | null {
+  if (!input || typeof input !== 'object') return null;
+  const style = input as { font?: unknown; color?: unknown };
+  const normalized: { font?: string; color?: string } = {};
+  if (typeof style.font === 'string' && POST_TEXT_FONTS.has(style.font) && style.font !== 'system') {
+    normalized.font = style.font;
+  }
+  if (typeof style.color === 'string' && POST_TEXT_COLORS.has(style.color)) {
+    normalized.color = style.color;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
 const parseIntSafe = (value: unknown, fallback: number): number => {
   if (typeof value !== 'string') return fallback;
   const n = Number(value);
@@ -434,6 +461,7 @@ router.post('/:id/posts', requireAuth, async (req: AuthRequest, res) => {
       taggedFriends = [],
       isAnonymous = false,
       poll,
+      textStyle,
     } = req.body;
 
     if (!content?.trim() && (!Array.isArray(mediaUrls) || mediaUrls.length === 0)) {
@@ -484,6 +512,7 @@ router.post('/:id/posts', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const docRef = db.collection('posts').doc();
+    const normalizedTextStyle = content?.trim() ? normalizePostTextStyle(textStyle) : null;
     await docRef.set({
       authorId: uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
@@ -504,6 +533,7 @@ router.post('/:id/posts', requireAuth, async (req: AuthRequest, res) => {
       hasVideo,
       isAnonymous: !!isAnonymous,
       poll: formattedPoll,
+      textStyle: normalizedTextStyle,
     });
 
     const created = await docRef.get();

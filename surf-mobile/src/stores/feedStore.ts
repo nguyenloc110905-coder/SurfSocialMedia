@@ -10,10 +10,15 @@ export type FeedPost = {
   authorDisplayName: string;
   authorPhotoURL: string | null;
   content: string;
+  textStyle?: {
+    font?: 'system' | 'serif' | 'rounded' | 'bold' | 'mono';
+    color?: string;
+  } | null;
   mediaUrls: string[];
   createdAt: { _seconds?: number; seconds?: number } | string | number | null;
   likeCount: number;
   replyCount: number;
+  shareCount?: number;
   likedBy: string[];
   reactions?: Record<string, string>;
   savedBy?: string[];
@@ -23,15 +28,22 @@ export type FeedPost = {
     authorDisplayName: string;
     authorPhotoURL: string | null;
     content: string;
+    textStyle?: FeedPost['textStyle'];
     mediaUrls: string[];
     createdAt: FeedPost['createdAt'];
   };
   feeling?: string;
   location?: string;
-  taggedFriends?: Array<{ uid: string; displayName: string }>;
+  taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
   isEdited?: boolean;
+  pinnedAt?: string | null;
   _discover?: boolean;
+  group?: {
+    id: string;
+    name: string;
+    coverImageUrl?: string | null;
+  };
 };
 
 type FeedState = {

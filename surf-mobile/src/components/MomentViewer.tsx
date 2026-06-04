@@ -102,6 +102,7 @@ export default function MomentViewer({
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [reply, setReply] = useState('');
+  const [mediaReady, setMediaReady] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
   const viewedRef = useRef<Set<string>>(new Set());
 
@@ -118,6 +119,11 @@ export default function MomentViewer({
   const isOwn = group?.userId === currentUserId;
 
   const duration = moment?.mediaType === 'video' ? VIDEO_DURATION : IMAGE_DURATION;
+
+  useEffect(() => {
+    setMediaReady(moment?.mediaType === 'video');
+    progress.setValue(0);
+  }, [moment?.id, moment?.mediaType, progress]);
 
   const goNext = useCallback(() => {
     progress.stopAnimation();
@@ -150,7 +156,7 @@ export default function MomentViewer({
   }, [groupIndex, groups, momentIndex, progress]);
 
   useEffect(() => {
-    if (!visible || !moment || paused) return;
+    if (!visible || !moment || paused || !mediaReady) return;
     progress.setValue(0);
     Animated.timing(progress, {
       toValue: 1,
@@ -161,7 +167,7 @@ export default function MomentViewer({
     });
 
     return () => progress.stopAnimation();
-  }, [duration, goNext, moment?.id, paused, progress, visible]);
+  }, [duration, goNext, mediaReady, moment?.id, paused, progress, visible]);
 
   useEffect(() => {
     if (!visible || !moment || viewedRef.current.has(moment.id)) return;
@@ -233,7 +239,12 @@ export default function MomentViewer({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.root}>
         {moment.mediaType === 'image' ? (
-          <Image source={{ uri: moment.mediaUrl }} style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.01 }] }]} resizeMode="cover" />
+          <Image
+            source={{ uri: moment.mediaUrl }}
+            style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.01 }] }]}
+            resizeMode="cover"
+            onLoadEnd={() => setMediaReady(true)}
+          />
         ) : (
           <MomentVideo uri={moment.mediaUrl} active={visible && !paused} muted={muted || moment.audioMode === 'music'} />
         )}

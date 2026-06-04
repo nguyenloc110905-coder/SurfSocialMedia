@@ -1,5 +1,7 @@
 import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage';
 import { app } from './firebase/config';
+import { uploadAsync } from 'expo-file-system/src/legacy/FileSystem';
+import { getAuth } from 'firebase/auth';
 
 type UploadOptions = {
   folder?: string;
@@ -52,14 +54,59 @@ function generateFileName(asset: UploadableAsset, kind: UploadKind, index?: numb
 }
 
 async function uploadAsset(asset: UploadableAsset, kind: UploadKind, options: UploadOptions = {}, index?: number) {
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
-
   const storage = getStorage(app);
   const filename = generateFileName(asset, kind, index);
-  const storageRef = ref(storage, `${storageFolder(kind, options)}/${filename}`);
+  const path = `${storageFolder(kind, options)}/${filename}`;
+  const contentType = asset.mimeType || defaultMimeType(kind);
+
+  if (asset.uri.startsWith('file://')) {
+    const bucket = storage.app.options.storageBucket;
+    if (!bucket) throw new Error('Firebase Storage bucket not configured');
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(path)}`;
+    
+    const auth = getAuth(app);
+    let token: string | undefined;
+    if (auth.currentUser) {
+      try { token = await auth.currentUser.getIdToken(); } catch {}
+    }
+
+    const response = await uploadAsync(url, asset.uri, {
+      httpMethod: 'POST',
+      uploadType: 0, // BINARY_CONTENT
+      headers: {
+        'Content-Type': contentType,
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
+
+    if (response.status !== 200) {
+      throw new Error(`Upload failed with status ${response.status}: ${response.body}`);
+    }
+
+    const storageRef = ref(storage, path);
+    return getDownloadURL(storageRef);
+  }
+
+  const blob: Blob = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200 || xhr.status === 0) {
+          resolve(xhr.response as Blob);
+        } else {
+          reject(new Error(`XHR failed with status ${xhr.status}`));
+        }
+      }
+    };
+    xhr.onerror = () => reject(new Error('Failed to create blob from uri'));
+    xhr.responseType = 'blob';
+    xhr.open('GET', asset.uri, true);
+    xhr.send(null);
+  });
+
+  const storageRef = ref(storage, path);
   const snapshot = await uploadBytesResumable(storageRef, blob, {
-    contentType: asset.mimeType || blob.type || defaultMimeType(kind),
+    contentType: asset.mimeType || blob.type || contentType,
     customMetadata: {
       source: 'surf-mobile',
       mediaType: kind,

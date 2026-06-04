@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
+import { useUserStore } from '@/stores/userStore';
 import { useT } from '@/lib/i18n';
 
 type Props = {
@@ -46,6 +47,8 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
   const C = scheme === 'dark' ? DARK : LIGHT;
   
   const user = useAuthStore((s) => s.user);
+  const profile = useUserStore((s) => s.profile);
+  const avatarUrl = profile?.photoURL || user?.photoURL || '';
   const [loggingOut, setLoggingOut] = React.useState(false);
 
   const handleLogout = () => {
@@ -111,8 +114,8 @@ export default function Sidebar({ visible, onClose, navigation }: Props) {
                 navigation.navigate('Profile', { userId: user.uid });
               }}
             >
-              {user.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={s.avatar} />
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={s.avatar} />
               ) : (
                 <View style={[s.avatar, { backgroundColor: C.border, alignItems: 'center', justifyContent: 'center' }]}>
                   <Ionicons name="person" size={24} color={C.subtext} />

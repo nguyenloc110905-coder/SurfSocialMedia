@@ -17,6 +17,7 @@ import type { RootStackParamList } from '@/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useUserStore } from '@/stores/userStore';
 import type { MomentGroup } from '@/types/moments';
 import MomentViewer from './MomentViewer';
 
@@ -27,6 +28,10 @@ type Props = {
 const { width: SW } = Dimensions.get('window');
 const CARD_W = Math.min(116, Math.max(98, (SW - 48) / 3.35));
 const CARD_H = Math.round(CARD_W * 1.55);
+const MOMENTS_CACHE_TTL = 90_000;
+
+let cachedGroups: MomentGroup[] = [];
+let cachedGroupsLoadedAt = 0;
 
 const DARK = {
   card: '#15191c',
@@ -76,19 +81,42 @@ function videoPoster(url: string) {
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
+function prefetchMomentMedia(groups: MomentGroup[]) {
+  groups
+    .flatMap((group) => group.moments)
+    .slice(0, 12)
+    .forEach((moment) => {
+      if (moment.mediaType === 'image') {
+        Image.prefetch(moment.mediaUrl).catch(() => {});
+        return;
+      }
+      const poster = videoPoster(moment.mediaUrl);
+      if (poster) Image.prefetch(poster).catch(() => {});
+    });
+}
+
 export default function MomentsBar({ navigation }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const user = useAuthStore((state) => state.user);
-  const [groups, setGroups] = useState<MomentGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const profile = useUserStore((state) => state.profile);
+  const avatarUrl = profile?.photoURL || user?.photoURL || '';
+  const [groups, setGroupsState] = useState<MomentGroup[]>(() => cachedGroups);
+  const [loading, setLoading] = useState(() => cachedGroups.length === 0);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const lastLoadedAtRef = React.useRef(0);
   const inFlightRef = React.useRef(false);
+
+  const setGroups = useCallback((next: MomentGroup[]) => {
+    cachedGroups = next;
+    cachedGroupsLoadedAt = Date.now();
+    setGroupsState(next);
+    prefetchMomentMedia(next);
+  }, []);
 
   const load = useCallback(async (force = false) => {
     if (inFlightRef.current) return;
-    if (!force && lastLoadedAtRef.current && Date.now() - lastLoadedAtRef.current < 60_000) {
+    if (!force && cachedGroupsLoadedAt && Date.now() - cachedGroupsLoadedAt < MOMENTS_CACHE_TTL) {
+      if (groups.length === 0 && cachedGroups.length > 0) setGroupsState(cachedGroups);
       setLoading(false);
       return;
     }
@@ -96,14 +124,14 @@ export default function MomentsBar({ navigation }: Props) {
     try {
       const data = await api.get<{ groups: MomentGroup[] }>('/api/moments/feed');
       setGroups(data.groups ?? []);
-      lastLoadedAtRef.current = Date.now();
     } catch {
-      setGroups([]);
+      if (cachedGroups.length > 0) setGroupsState(cachedGroups);
+      else setGroups([]);
     } finally {
       inFlightRef.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [groups.length, setGroups]);
 
   useEffect(() => {
     void load(true);
@@ -148,8 +176,8 @@ export default function MomentsBar({ navigation }: Props) {
                   style={s.storyGradientBorder}
                 />
                 <View style={[s.storyCard, { backgroundColor: scheme === 'dark' ? '#172033' : '#f8fafc', borderWidth: 0 }]}>
-                  {user?.photoURL ? (
-                    <Image source={{ uri: user.photoURL }} style={s.cardImage} />
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={s.cardImage} />
                   ) : (
                     <View style={[s.cardImage, { backgroundColor: scheme === 'dark' ? '#253347' : '#e2e8f0' }]} />
                   )}
