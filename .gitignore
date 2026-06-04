@@ -44,3 +44,8 @@ docs/plans/*
 !docs/plans/postman.txt
 !docs/plans/mkcert-https-lan-setup.txt
 !docs/plans/oracle-coturn-setup.txt
+
+# Local diagrams / generated docs
+docs/surf-db-class-diagram.html
+docs/surf-mobile-class-diagram.mdj
+docs/waves-marketplace-diagram-guide.md
