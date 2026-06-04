@@ -81,6 +81,9 @@ export type ApiConversationListItem = {
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
   muted: boolean;
+  muteMessages: boolean;
+  muteCalls: boolean;
+  muteExpiresAt: string | null;
 };
 
 export type SendTextMessageResult =
@@ -1032,6 +1035,18 @@ const buildConversationListItemsFromDetails = async (
   const mutedByConversation = new Map(
     details.map((detail) => [detail.item.id, detail.muted ?? false])
   );
+  const muteMessagesByConversation = new Map(
+    details.map((detail) => [detail.item.id, detail.muteMessages ?? false])
+  );
+  const muteCallsByConversation = new Map(
+    details.map((detail) => [detail.item.id, detail.muteCalls ?? false])
+  );
+  const muteExpiresAtByConversation = new Map(
+    details.map((detail) => [
+      detail.item.id,
+      detail.muteExpiresAt ? detail.muteExpiresAt.toISOString() : null,
+    ])
+  );
 
   const allMemberIds = Array.from(
     new Set(details.flatMap((detail) => detail.memberIds).filter((id) => id !== userId))
@@ -1101,6 +1116,9 @@ const buildConversationListItemsFromDetails = async (
         lastMessagePreview: groupPreview,
         lastMessageAt,
         muted: mutedByConversation.get(doc.id) ?? false,
+        muteMessages: muteMessagesByConversation.get(doc.id) ?? false,
+        muteCalls: muteCallsByConversation.get(doc.id) ?? false,
+        muteExpiresAt: muteExpiresAtByConversation.get(doc.id) ?? null,
       };
     }
 
@@ -1115,6 +1133,9 @@ const buildConversationListItemsFromDetails = async (
       lastMessagePreview,
       lastMessageAt,
       muted: mutedByConversation.get(doc.id) ?? false,
+      muteMessages: muteMessagesByConversation.get(doc.id) ?? false,
+      muteCalls: muteCallsByConversation.get(doc.id) ?? false,
+      muteExpiresAt: muteExpiresAtByConversation.get(doc.id) ?? null,
     };
   });
 };

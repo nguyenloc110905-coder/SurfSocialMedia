@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   LayoutAnimation,
   AppState,
@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   useColorScheme,
   Animated,
+  PanResponder,
   Alert,
   Linking,
   Modal,
@@ -27,6 +28,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { View as TamaguiView, Text as TamaguiText, styled } from '@tamagui/core';
 import {
   RecordingPresets,
+  useAudioPlayer,
+  useAudioPlayerStatus,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   useAudioRecorder,
@@ -125,12 +128,12 @@ const Pill = styled(TamaguiView, {
 });
 
 const SoftTitle = styled(TamaguiText, {
-  fontSize: 15,
+  fontSize: 14,
   fontWeight: '700',
 });
 
 const SoftMeta = styled(TamaguiText, {
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: '500',
 });
 
@@ -153,7 +156,6 @@ function formatDateHeader(iso: string, locale: string, t: ReturnType<typeof useT
 }
 
 const POLL_INTERVAL = 30000;
-const MESSAGE_REACTION_OPTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const URL_TOKEN_PATTERN = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
 const REPLY_PREFIX_PATTERN = /^↪\s*(.+?):\s*(.+)$/u;
 const REPLY_TARGET_MARKER_PATTERN = /^__reply_to:([^\n]+)__$/;
@@ -266,6 +268,71 @@ function getMessageSnippet(message: ApiMessage) {
   return text.length > 90 ? `${text.slice(0, 90)}...` : text || 'tin nhắn';
 }
 
+function messageTimeMs(message: ApiMessage) {
+  const time = new Date(message.createdAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortMessagesNewestFirst(items: ApiMessage[]) {
+  return [...items].sort((a, b) => {
+    const diff = messageTimeMs(b) - messageTimeMs(a);
+    if (diff !== 0) return diff;
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function messageFingerprint(message: ApiMessage) {
+  const text = stripReplyMetadata(message.text ?? '').trim();
+  const fileName = message.fileName ?? '';
+  const mediaTail = message.mediaUrl?.split('?')[0]?.split('/').pop() ?? '';
+  return [message.conversationId, message.senderId, message.type, text, fileName, mediaTail].join('|');
+}
+
+function isLikelySameOptimisticMessage(optimistic: ApiMessage, incoming: ApiMessage) {
+  if (!optimistic.optimistic) return false;
+  if (optimistic.conversationId !== incoming.conversationId) return false;
+  if (optimistic.senderId !== incoming.senderId) return false;
+  if (optimistic.type !== incoming.type) return false;
+  const optimisticTime = messageTimeMs(optimistic);
+  const incomingTime = messageTimeMs(incoming);
+  if (Math.abs(optimisticTime - incomingTime) > 120000) return false;
+  if (incoming.type === 'text') {
+    return stripReplyMetadata(optimistic.text ?? '').trim() === stripReplyMetadata(incoming.text ?? '').trim();
+  }
+  if (incoming.type === 'file' || incoming.type === 'audio') {
+    return (optimistic.fileName ?? '') === (incoming.fileName ?? '');
+  }
+  return incoming.type === 'image';
+}
+
+function mergeMessagesNewestFirst(current: ApiMessage[], incoming: ApiMessage[]) {
+  const byId = new Map<string, ApiMessage>();
+  [...current, ...incoming].forEach((message) => {
+    if (!message?.id) return;
+    if (!message.optimistic) {
+      for (const [id, existing] of byId) {
+        if (id !== message.id && isLikelySameOptimisticMessage(existing, message)) {
+          byId.delete(id);
+          break;
+        }
+      }
+    }
+    const existing = byId.get(message.id);
+    byId.set(message.id, existing ? { ...existing, ...message } : message);
+  });
+  const byFingerprint = new Map<string, ApiMessage>();
+  Array.from(byId.values()).forEach((message) => {
+    const key = messageFingerprint(message);
+    const existing = byFingerprint.get(key);
+    if (!existing) {
+      byFingerprint.set(key, message);
+      return;
+    }
+    byFingerprint.set(key, existing.optimistic && !message.optimistic ? message : existing);
+  });
+  return sortMessagesNewestFirst(Array.from(byFingerprint.values()));
+}
+
 // ── Typing dots ───────────────────────────────────────────────────────────────
 
 function formatCallDuration(durationSeconds?: number) {
@@ -331,6 +398,167 @@ function TypingDots({ C }: { C: typeof DARK }) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const SWIPE_REPLY_THRESHOLD = 58;
+const SWIPE_REPLY_MAX = 82;
+const VOICE_WAVE_HEIGHTS = [9, 14, 20, 12, 17, 23, 11, 19, 15, 21];
+
+function formatAudioTime(seconds?: number): string {
+  const total = Math.max(0, Math.floor(seconds ?? 0));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${rest.toString().padStart(2, '0')}`;
+}
+
+function SwipeableMessageRow({
+  isOwn,
+  disabled,
+  onReply,
+  children,
+}: {
+  isOwn: boolean;
+  disabled?: boolean;
+  onReply: () => void;
+  children: React.ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const replyOpacity = translateX.interpolate({
+    inputRange: isOwn ? [-SWIPE_REPLY_THRESHOLD, -18] : [18, SWIPE_REPLY_THRESHOLD],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => {
+      if (disabled) return false;
+      const horizontal = Math.abs(gesture.dx) > 14 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.45;
+      if (!horizontal) return false;
+      return isOwn ? gesture.dx < 0 : gesture.dx > 0;
+    },
+    onPanResponderMove: (_, gesture) => {
+      const raw = isOwn ? Math.min(0, gesture.dx) : Math.max(0, gesture.dx);
+      const clamped = isOwn
+        ? Math.max(-SWIPE_REPLY_MAX, raw)
+        : Math.min(SWIPE_REPLY_MAX, raw);
+      translateX.setValue(clamped);
+    },
+    onPanResponderRelease: (_, gesture) => {
+      const completed = isOwn ? gesture.dx < -SWIPE_REPLY_THRESHOLD : gesture.dx > SWIPE_REPLY_THRESHOLD;
+      Animated.spring(translateX, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 22,
+        bounciness: 6,
+      }).start();
+      if (completed) onReply();
+    },
+    onPanResponderTerminate: () => {
+      Animated.spring(translateX, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 22,
+        bounciness: 6,
+      }).start();
+    },
+  }), [disabled, isOwn, onReply, translateX]);
+
+  return (
+    <View style={s.swipeShell}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          s.swipeReplyCue,
+          isOwn ? s.swipeReplyCueOwn : s.swipeReplyCueOther,
+          { opacity: replyOpacity },
+        ]}
+      >
+        <Ionicons name="return-up-back-outline" size={18} color="#fff" />
+      </Animated.View>
+      <Animated.View {...panResponder.panHandlers} style={{ transform: [{ translateX }] }}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
+function VoiceMessage({
+  uri,
+  isOwn,
+  C,
+  active,
+  onActivate,
+  onFinish,
+}: {
+  uri: string;
+  isOwn: boolean;
+  C: typeof DARK;
+  active: boolean;
+  onActivate: () => void;
+  onFinish: () => void;
+}) {
+  const player = useAudioPlayer(uri, { updateInterval: 250 });
+  const status = useAudioPlayerStatus(player);
+
+  useEffect(() => {
+    if (!active && status.playing) player.pause();
+  }, [active, player, status.playing]);
+
+  useEffect(() => {
+    if (status.didJustFinish) {
+      void player.seekTo(0);
+      onFinish();
+    }
+  }, [onFinish, player, status.didJustFinish]);
+
+  const toggle = async () => {
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    if (active && status.playing) {
+      player.pause();
+      return;
+    }
+    onActivate();
+    player.play();
+  };
+
+  const duration = status.duration || 0;
+  const current = status.currentTime || 0;
+  const timeLabel = duration > 0
+    ? formatAudioTime(active ? current : duration)
+    : formatAudioTime(current);
+
+  return (
+    <TouchableOpacity
+      style={[s.voicePlayerMsg, { backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : C.card }]}
+      onPress={toggle}
+      activeOpacity={0.76}
+    >
+      <View style={[s.playBtn, { backgroundColor: isOwn ? '#fff' : C.accent }]}>
+        <Ionicons
+          name={active && status.playing ? 'pause' : 'play'}
+          size={14}
+          color={isOwn ? C.accent : '#fff'}
+          style={active && status.playing ? undefined : { marginLeft: 2 }}
+        />
+      </View>
+      <View style={s.waveform}>
+        {VOICE_WAVE_HEIGHTS.map((height, index) => (
+          <View
+            key={`${uri}-${index}`}
+            style={[
+              s.waveBar,
+              {
+                height,
+                backgroundColor: isOwn ? 'rgba(255,255,255,0.82)' : C.subtext,
+                opacity: active && status.playing ? 1 : 0.62,
+              },
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={[s.voiceTime, { color: isOwn ? '#fff' : C.subtext }]}>{timeLabel}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function ChatScreen({ navigation, route }: Props) {
   const {
     conversationId,
@@ -339,6 +567,8 @@ export default function ChatScreen({ navigation, route }: Props) {
     peerAvatar,
     conversationType,
     marketplaceTitle,
+    initialSearch,
+    targetMessageId,
   } = route.params;
   const scheme = useColorScheme();
   const t = useT();
@@ -356,16 +586,18 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [showPinnedMessages, setShowPinnedMessages] = useState(false);
   const [reactionDetailsMessageId, setReactionDetailsMessageId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<ApiMessage | null>(null);
+  const [activeAudioMessageId, setActiveAudioMessageId] = useState<string | null>(null);
   const [seenMessageId, setSeenMessageId] = useState<string | null>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(Boolean(initialSearch));
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [searchResults, setSearchResults] = useState<ApiMessage[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState('');
 
   const flatRef = useRef<FlatList>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -375,6 +607,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   const peerTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const socketConnectedRef = useRef(false);
+  const hasScrolledToTargetRef = useRef<string | null>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
 
@@ -399,14 +632,16 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   // ── Load messages ──────────────────────────────────────────────────────────
 
-  const loadMessages = useCallback(async (silent = false) => {
-    if (loading || (!silent && messages.length > 0 && !nextCursor)) return;
+  const loadMessages = useCallback(async (silent = false, reset = false) => {
+    if (loading) return;
+    const cursor = reset ? null : nextCursor;
+    if (!reset && !silent && messages.length > 0 && !cursor) return;
     setLoading(!silent);
     try {
       const cached = await messagesCache.getMessages(conversationId);
       let hasCache = false;
-      if (cached && cached.length > 0 && !nextCursor) {
-        const cachedMessages = cached.map((m) => ({
+      if (cached && cached.length > 0 && !cursor) {
+        const cachedMessages = sortMessagesNewestFirst(cached.map((m) => ({
           id: m.id,
           conversationId: m.conversationId,
           senderId: m.senderId,
@@ -414,26 +649,37 @@ export default function ChatScreen({ navigation, route }: Props) {
           text: m.text,
           mediaUrl: m.mediaUrl,
           createdAt: m.createdAt,
-        })) as ApiMessage[];
+        })) as ApiMessage[]);
         setMessages(cachedMessages);
         hasCache = true;
       }
 
+      const params = [
+        'limit=20',
+        cursor ? `cursor=${encodeURIComponent(cursor)}` : '',
+      ].filter(Boolean).join('&');
       const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
-        `/api/conversations/${conversationId}/messages?limit=20${nextCursor ? `&cursor=${nextCursor}` : ''}`
+        `/api/conversations/${conversationId}/messages?${params}`
       );
       const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string');
+      const pageItems = sortMessagesNewestFirst(items);
       
-      if (items.length > 0) {
+      if (reset) {
+        setMessages(pageItems);
+        if (pageItems[0]) {
+          lastMessageIdRef.current = pageItems[0].id;
+          markRead(pageItems[0].id, pageItems[0].createdAt);
+        }
+      } else if (pageItems.length > 0) {
         setMessages(prev => {
-          if (!nextCursor && !hasCache) return items;
-          const prevIds = new Set(prev.map(m => m.id));
-          return [...prev.filter(m => hasCache ? m.optimistic : true), ...items.filter(m => !prevIds.has(m.id))];
+          if (!cursor && !hasCache) return pageItems;
+          const base = hasCache ? prev.filter(m => m.optimistic) : prev;
+          return mergeMessagesNewestFirst(base, pageItems);
         });
-        if (!nextCursor) {
-          lastMessageIdRef.current = items[0].id;
-          markRead(items[0].id, items[0].createdAt);
-          items.forEach(m => messagesCache.addMessage(conversationId, {
+        if (!cursor) {
+          lastMessageIdRef.current = pageItems[0].id;
+          markRead(pageItems[0].id, pageItems[0].createdAt);
+          pageItems.forEach(m => messagesCache.addMessage(conversationId, {
             id: m.id,
             conversationId: m.conversationId,
             senderId: m.senderId,
@@ -452,7 +698,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [conversationId, messages.length, nextCursor, loading]);
+  }, [conversationId, loading, messages.length, nextCursor]);
 
   const loadMore = useCallback(() => {
     if (nextCursor && !loadingMore && !loading) {
@@ -466,15 +712,15 @@ export default function ChatScreen({ navigation, route }: Props) {
     (typeof marketplaceTitle === 'string' && marketplaceTitle.length > 0) ||
     title.includes('·');
   const marketplaceQuickReplies = getMarketplaceQuickReplies(t);
-  const selectedMessage = selectedMessageId
-    ? messages.find((message) => message.id === selectedMessageId) ?? null
-    : null;
   const reactionDetailsMessage = reactionDetailsMessageId
     ? messages.find((message) => message.id === reactionDetailsMessageId) ?? null
     : null;
   const pinnedMessages = messages.filter(
     (message) => (message.pinnedBy?.length ?? 0) > 0 && !message.isRecalled && !message.recalledForEveryone
   );
+  const latestPinnedMessage = [...pinnedMessages].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )[0] ?? null;
 
   // ── Mark as read ───────────────────────────────────────────────────────────
 
@@ -510,12 +756,82 @@ export default function ChatScreen({ navigation, route }: Props) {
   // ── Polling ────────────────────────────────────────────────────────────────
 
   const replaceMessage = useCallback((nextMessage: ApiMessage) => {
-    setMessages(prev => prev.map(message => message.id === nextMessage.id ? { ...message, ...nextMessage } : message));
+    setMessages(prev => sortMessagesNewestFirst(
+      prev.map(message => message.id === nextMessage.id ? { ...message, ...nextMessage } : message)
+    ));
   }, []);
 
-  const scrollToMessage = useCallback((messageId: string) => {
-    // Dummy scrollToMessage to satisfy TS
+  const scrollToMessage = useCallback(async (messageId: string) => {
+    const scroll = (items: ApiMessage[]) => {
+      const index = items.findIndex((message) => message.id === messageId);
+      if (index < 0) return false;
+      setTimeout(() => {
+        flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      }, 80);
+      return true;
+    };
+
+    if (scroll(messages)) return;
+
+    let cursor: string | null = null;
+    let merged: ApiMessage[] = messages;
+    for (let page = 0; page < 6; page += 1) {
+      const queryString: string = `limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const data: { items: ApiMessage[]; nextCursor: string | null } = await api.get(
+        `/api/conversations/${conversationId}/messages?${queryString}`
+      );
+      const items = sortMessagesNewestFirst(
+        (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string')
+      );
+      merged = mergeMessagesNewestFirst(merged, items);
+      setMessages(merged);
+      if (scroll(merged)) {
+        setNextCursor(data.nextCursor ?? null);
+        return;
+      }
+      cursor = data.nextCursor ?? null;
+      if (!cursor) break;
+    }
+  }, [conversationId, messages]);
+
+  const runMessageSearch = useCallback(async () => {
+    const query = searchQuery.trim();
+    setSearchedQuery(query);
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
+        `/api/conversations/${conversationId}/messages?limit=50&q=${encodeURIComponent(query)}`
+      );
+      setSearchResults(sortMessagesNewestFirst(
+        (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string')
+      ));
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [conversationId, searchQuery]);
+
+  const closeSearch = useCallback(() => {
+    setIsSearching(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchedQuery('');
+    setSearchLoading(false);
   }, []);
+
+  const openSearchResult = useCallback((messageId: string) => {
+    navigation.push('Chat', {
+      ...route.params,
+      targetMessageId: messageId,
+      initialSearch: false,
+    });
+  }, [navigation, route.params]);
 
   const copyMessage = useCallback(async (msg: ApiMessage) => {
     if (!msg.text) return;
@@ -608,7 +924,9 @@ export default function ChatScreen({ navigation, route }: Props) {
       const data = await api.get<{ items: ApiMessage[]; nextCursor: string | null }>(
         `/api/conversations/${conversationId}/messages?limit=20`
       );
-      const items = (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string').reverse();
+      const items = sortMessagesNewestFirst(
+        (data.items ?? []).filter((m): m is ApiMessage => m != null && typeof m.id === 'string')
+      );
       if (items.length === 0) return;
       const newest = items[0];
       if (newest.id === lastMessageIdRef.current) return;
@@ -631,7 +949,7 @@ export default function ChatScreen({ navigation, route }: Props) {
               senderAvatarUrl: null,
             });
           });
-          return [...fresh, ...prev];
+          return mergeMessagesNewestFirst(prev, fresh);
         }
         return prev;
       });
@@ -648,6 +966,12 @@ export default function ChatScreen({ navigation, route }: Props) {
   }, [loadMessages, poll]);
 
   useEffect(() => {
+    if (initialSearch) {
+      setIsSearching(true);
+    }
+  }, [initialSearch]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const wasBackground = appStateRef.current !== 'active';
       appStateRef.current = nextState;
@@ -660,24 +984,18 @@ export default function ChatScreen({ navigation, route }: Props) {
   }, [loadMessages]);
 
   useEffect(() => {
-    if (isSearchActive) {
-      const delay = setTimeout(() => {
-        loadMessages(false);
-      }, 500);
-      return () => clearTimeout(delay);
-    }
-  }, [searchQuery, isSearchActive, loadMessages]);
+    if (!targetMessageId || loading || hasScrolledToTargetRef.current === targetMessageId) return;
+    hasScrolledToTargetRef.current = targetMessageId;
+    void scrollToMessage(targetMessageId);
+  }, [loading, scrollToMessage, targetMessageId]);
 
   // ── Socket: typing indicators ───────────────────────────────────────────────
 
   useEffect(() => {
-    if (selectedMessageId && !messages.some((message) => message.id === selectedMessageId)) {
-      setSelectedMessageId(null);
-    }
     if (reactionDetailsMessageId && !messages.some((message) => message.id === reactionDetailsMessageId)) {
       setReactionDetailsMessageId(null);
     }
-  }, [messages, reactionDetailsMessageId, selectedMessageId]);
+  }, [messages, reactionDetailsMessageId]);
 
   useEffect(() => {
     void loadReadReceipts();
@@ -720,11 +1038,10 @@ export default function ChatScreen({ navigation, route }: Props) {
       const targetConversationId = payload.conversationId || message?.conversationId;
       if (!message || targetConversationId !== conversationId) return;
       setMessages(prev => {
-        if (prev.some(item => item.id === message.id)) return prev;
-        return [
-          message,
-          ...prev.filter(item => !(item.optimistic && item.text === message.text && item.senderId === message.senderId)),
-        ];
+        const withoutMatchingOptimistic = prev.filter(
+          item => !(item.optimistic && item.text === message.text && item.senderId === message.senderId && item.type === message.type)
+        );
+        return mergeMessagesNewestFirst(withoutMatchingOptimistic, [message]);
       });
       lastMessageIdRef.current = message.id;
       markRead(message.id, message.createdAt);
@@ -819,7 +1136,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       createdAt: new Date().toISOString(),
       optimistic: true,
     };
-    setMessages(prev => [optimistic, ...prev]);
+    setMessages(prev => mergeMessagesNewestFirst(prev, [optimistic]));
     setSending(true);
     try {
       const url = await uploadImage(asset, { folder: 'surf/chat' });
@@ -829,7 +1146,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       );
       const real = data.item;
       if (real?.id) {
-        setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
+        setMessages(prev => sortMessagesNewestFirst(prev.map(m => m.id === optimisticId ? real : m)));
         lastMessageIdRef.current = real.id;
         markRead(real.id, real.createdAt);
       } else {
@@ -874,7 +1191,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         createdAt: new Date().toISOString(),
         optimistic: true,
       };
-      setMessages(prev => [optimistic, ...prev]);
+      setMessages(prev => mergeMessagesNewestFirst(prev, [optimistic]));
       
       const fileUrl = await uploadFile(
         {
@@ -894,7 +1211,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       );
       const real = data.item;
       if (real?.id) {
-        setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
+        setMessages(prev => sortMessagesNewestFirst(prev.map(m => m.id === optimisticId ? real : m)));
         lastMessageIdRef.current = real.id;
         markRead(real.id, real.createdAt);
       } else {
@@ -928,7 +1245,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         createdAt: new Date().toISOString(),
         optimistic: true,
       };
-      setMessages(prev => [optimistic, ...prev]);
+      setMessages(prev => mergeMessagesNewestFirst(prev, [optimistic]));
 
       const audioUrl = await uploadFile(
         {
@@ -948,7 +1265,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       );
       const real = data.item;
       if (real?.id) {
-        setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
+        setMessages(prev => sortMessagesNewestFirst(prev.map(m => m.id === optimisticId ? real : m)));
         lastMessageIdRef.current = real.id;
         markRead(real.id, real.createdAt);
       } else {
@@ -1004,7 +1321,7 @@ export default function ChatScreen({ navigation, route }: Props) {
 
     setDraft('');
     setSending(true);
-    setMessages(prev => [optimistic, ...prev]);
+    setMessages(prev => mergeMessagesNewestFirst(prev, [optimistic]));
 
     try {
       const socket = getSocket();
@@ -1020,7 +1337,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         setMessages(prev => prev.filter(m => m.id !== optimisticId));
         return;
       }
-      setMessages(prev => prev.map(m => m.id === optimisticId ? real : m));
+      setMessages(prev => sortMessagesNewestFirst(prev.map(m => m.id === optimisticId ? real : m)));
       lastMessageIdRef.current = real.id;
       markRead(real.id, real.createdAt);
     } catch {
@@ -1032,6 +1349,26 @@ export default function ChatScreen({ navigation, route }: Props) {
   };
 
   // ── Render message ─────────────────────────────────────────────────────────
+
+  const startCallFromMessage = useCallback((message: ApiMessage) => {
+    navigation.navigate('Call' as any, {
+      conversationId,
+      peerUid,
+      isHost: true,
+      peerName: title,
+      peerAvatar,
+      mode: message.callMode ?? 'audio',
+    });
+  }, [conversationId, navigation, peerAvatar, peerUid, title]);
+
+  const callToneForMessage = useCallback((message: ApiMessage) => {
+    const danger = message.callOutcome === 'missed' || message.callOutcome === 'declined' || message.callOutcome === 'failed';
+    return {
+      color: danger ? '#ef4444' : C.accent,
+      bg: danger ? 'rgba(239,68,68,0.12)' : 'rgba(14,165,233,0.12)',
+      border: danger ? 'rgba(239,68,68,0.34)' : 'rgba(14,165,233,0.28)',
+    };
+  }, [C.accent]);
 
   const renderReactions = (message: ApiMessage, isOwn: boolean) => {
     const groups = Object.entries(message.reactions ?? {})
@@ -1080,17 +1417,14 @@ export default function ChatScreen({ navigation, route }: Props) {
     }
     if (item.type === 'audio' && item.mediaUrl) {
       return (
-        <TouchableOpacity style={[s.voicePlayerMsg, { backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : C.card }]} onPress={() => Linking.openURL(item.mediaUrl!).catch(() => {})}>
-          <View style={[s.playBtn, { backgroundColor: isOwn ? '#fff' : C.accent }]}>
-            <Ionicons name="play" size={16} color={isOwn ? C.accent : '#fff'} style={{ marginLeft: 2 }} />
-          </View>
-          <View style={s.waveform}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(i => (
-              <View key={i} style={[s.waveBar, { height: 10 + Math.random() * 14, backgroundColor: isOwn ? 'rgba(255,255,255,0.8)' : C.subtext }]} />
-            ))}
-          </View>
-          <Text style={[s.voiceTime, { color: isOwn ? '#fff' : C.subtext }]}>0:05</Text>
-        </TouchableOpacity>
+        <VoiceMessage
+          uri={item.mediaUrl}
+          isOwn={isOwn}
+          C={C}
+          active={activeAudioMessageId === item.id}
+          onActivate={() => setActiveAudioMessageId(item.id)}
+          onFinish={() => setActiveAudioMessageId((current) => current === item.id ? null : current)}
+        />
       );
     }
     if (item.type === 'call_log') {
@@ -1123,8 +1457,55 @@ export default function ChatScreen({ navigation, route }: Props) {
     const isRecalled = item.isRecalled || item.recalledForEveryone || messageBodyText === 'Tin nhắn đã được thu hồi';
     const isPinned = (item.pinnedBy?.length ?? 0) > 0;
     const hasReactions = Object.values(item.reactions ?? {}).some(group => Object.keys(group).length > 0);
-    const isSelected = selectedMessageId === item.id;
     const isSeen = isOwn && seenMessageId === item.id;
+
+    if (item.type === 'call_log') {
+      const tone = callToneForMessage(item);
+      return (
+        <>
+          {showDateHeader && (
+            <View style={s.dateHeader}>
+              <Text style={[s.dateHeaderText, { color: C.subtext }]}>{formatDateHeader(item.createdAt, locale, t)}</Text>
+            </View>
+          )}
+          <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
+            {!isOwn && (
+              <View style={s.msgAvatarWrap}>
+                {peerAvatar ? (
+                  <Image source={{ uri: peerAvatar }} style={s.msgAvatar} />
+                ) : (
+                  <View style={[s.msgAvatar, { backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{(title || '?').charAt(0)}</Text>
+                  </View>
+                )}
+                {item.senderId && <PresenceBadge uid={item.senderId} size="sm" style={{ borderColor: C.card }} />}
+              </View>
+            )}
+            <TouchableOpacity
+              activeOpacity={0.78}
+              onPress={() => startCallFromMessage(item)}
+              onLongPress={() => openMessageActions(item)}
+              delayLongPress={260}
+              style={[s.callCard, { backgroundColor: tone.bg, borderColor: tone.border }]}
+            >
+              <View style={[s.callIconWrap, { backgroundColor: tone.bg }]}>
+                <Ionicons
+                  name={tone.color === '#ef4444' ? 'call' : item.callMode === 'video' ? 'videocam' : 'call'}
+                  size={21}
+                  color={tone.color}
+                />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.callTitle, { color: tone.color }]} numberOfLines={1}>{getCallLabel(item)}</Text>
+                <Text style={[s.callSubtitle, { color: C.subtext }]} numberOfLines={1}>
+                  {formatTime(item.createdAt, locale)} · Nhấn để gọi lại
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </>
+      );
+    }
 
     return (
       <>
@@ -1133,6 +1514,11 @@ export default function ChatScreen({ navigation, route }: Props) {
             <Text style={[s.dateHeaderText, { color: C.subtext }]}>{formatDateHeader(item.createdAt, locale, t)}</Text>
           </View>
         )}
+        <SwipeableMessageRow
+          isOwn={isOwn}
+          disabled={item.optimistic || isRecalled}
+          onReply={() => handleReplyToMessage(item)}
+        >
         <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
           {!isOwn && (
             <View style={s.msgAvatarWrap}>
@@ -1148,7 +1534,6 @@ export default function ChatScreen({ navigation, route }: Props) {
           )}
           <TouchableOpacity
             activeOpacity={0.86}
-            onPress={() => setSelectedMessageId(item.id)}
             onLongPress={() => openMessageActions(item)}
             delayLongPress={260}
             style={[s.bubble, isOwn
@@ -1156,7 +1541,6 @@ export default function ChatScreen({ navigation, route }: Props) {
               : [s.bubbleOther, { backgroundColor: C.otherBubble }],
               item.optimistic && s.optimistic,
               hasReactions && s.bubbleWithReaction,
-              isSelected && [s.bubbleSelected, { borderColor: C.accent }],
             ]}
           >
             {isPinned && (
@@ -1183,6 +1567,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           </TouchableOpacity>
           {isSeen ? <Text style={[s.seenText, { color: C.subtext }]}>Seen</Text> : null}
         </View>
+        </SwipeableMessageRow>
       </>
     );
   };
@@ -1219,7 +1604,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         <GlassPanel style={[s.headerShell, { borderColor: C.border, backgroundColor: scheme === 'dark' ? 'rgba(13,22,28,0.86)' : 'rgba(255,255,255,0.88)' }]}>
           <View style={[s.header, { borderBottomColor: 'transparent', backgroundColor: 'transparent' }]}>
             <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="arrow-back" size={24} color={C.text} />
+              <Ionicons name="arrow-back" size={22} color={C.text} />
             </TouchableOpacity>
             <Text style={[s.headerTitle, { color: C.text }]}>{title}</Text>
             <View style={{ width: 24 }} />
@@ -1238,10 +1623,10 @@ export default function ChatScreen({ navigation, route }: Props) {
         colors={scheme === 'dark' ? ['#071318', '#0b2c31', '#071318'] : ['#f6fbfb', '#e9f8f7', '#eef6fb']}
         style={StyleSheet.absoluteFillObject}
       />
-      <GlassPanel style={[s.headerShell, { borderColor: C.border, backgroundColor: scheme === 'dark' ? 'rgba(12,23,28,0.88)' : 'rgba(255,255,255,0.9)' }]}>
-        <View style={[s.header, { borderBottomColor: 'transparent', backgroundColor: 'transparent' }]}>
+      <GlassPanel style={[s.chatShell, { borderColor: C.border, backgroundColor: scheme === 'dark' ? 'rgba(12,23,28,0.9)' : 'rgba(255,255,255,0.9)' }]}>
+        <View style={[s.header, { borderBottomColor: C.border, backgroundColor: 'transparent' }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="arrow-back" size={24} color={C.text} />
+            <Ionicons name="arrow-back" size={22} color={C.text} />
           </TouchableOpacity>
           {isSearching ? (
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 10 }}>
@@ -1251,21 +1636,18 @@ export default function ChatScreen({ navigation, route }: Props) {
                 placeholderTextColor={C.subtext}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
+                onSubmitEditing={runMessageSearch}
+                returnKeyType="search"
                 autoFocus
               />
               <TouchableOpacity
-                onPress={() => {
-                  setIsSearching(false);
-                  setSearchQuery('');
-                  setIsSearchActive(false);
-                  setTimeout(() => loadMessages(), 100);
-                }}
+                onPress={closeSearch}
                 style={{ paddingHorizontal: 10 }}
               >
                 <Text style={{ color: C.accent }}>Đóng</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setIsSearchActive(true)}
+                onPress={runMessageSearch}
                 style={{ paddingHorizontal: 10 }}
               >
                 <Text style={{ color: C.accent, fontWeight: 'bold' }}>Tìm</Text>
@@ -1297,144 +1679,147 @@ export default function ChatScreen({ navigation, route }: Props) {
       
                 </TamaguiView>
               </TouchableOpacity>
-              <View style={[s.headerActions, { gap: 16 }]}>
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => setIsSearching(true)}>
-                  <Ionicons name="search" size={24} color={C.text} />
+              <View style={s.headerActions}>
+                <TouchableOpacity style={s.headerActionBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true, peerName: title, peerAvatar, mode: 'audio' })}>
+                  <Ionicons name="call" size={23} color={C.text} />
                 </TouchableOpacity>
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true, peerName: title, peerAvatar, mode: 'audio' })}>
-                  <Ionicons name="call" size={24} color={C.text} />
+                <TouchableOpacity style={s.headerActionBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true, peerName: title, peerAvatar, mode: 'video' })}>
+                  <Ionicons name="videocam" size={23} color={C.text} />
                 </TouchableOpacity>
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('Call' as any, { conversationId, peerUid, isHost: true, peerName: title, peerAvatar, mode: 'video' })}>
-                  <Ionicons name="videocam" size={24} color={C.text} />
-                </TouchableOpacity>
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('ChatInfo', { conversationId, title, peerUid, peerAvatar, conversationType: isMarketplaceThread ? 'marketplace' : 'dm', marketplaceTitle })}>
-                  <Ionicons name="information-circle" size={24} color={C.text} />
+                <TouchableOpacity style={s.headerActionBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => navigation.navigate('ChatInfo', { conversationId, title, peerUid, peerAvatar, conversationType: isMarketplaceThread ? 'marketplace' : 'dm', marketplaceTitle })}>
+                  <Ionicons name="information-circle" size={23} color={C.text} />
                 </TouchableOpacity>
               </View>
             </>
           )}
         </View>
-      </GlassPanel>
-
-      {/* Messages */}
+        {/* Messages */}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={s.chatBody}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <GlassPanel style={[s.messagesShell, { borderColor: C.border, backgroundColor: scheme === 'dark' ? 'rgba(7,24,28,0.78)' : 'rgba(255,255,255,0.58)' }]}>
-          <FlatList
-            ref={flatRef}
-            data={messages}
-            keyExtractor={m => m.id}
-            renderItem={renderMessage}
-            inverted
-            contentContainerStyle={s.msgList}
-            showsVerticalScrollIndicator={false}
-            onEndReached={loadMore}
-            onEndReachedThreshold={0.3}
-            onScrollToIndexFailed={({ index }) => {
-              setTimeout(() => {
-                flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
-              }, 250);
-            }}
-            ListHeaderComponent={peerTyping ? (
-              <View style={[s.msgRow]}>
-                <View style={s.msgAvatarWrap}>
-                    {peerAvatar ? (
-                      <Image source={{ uri: peerAvatar }} style={s.msgAvatar} />
-                    ) : (
-                      <View style={[s.msgAvatar, { backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }]}>
-                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{(title || '?').charAt(0)}</Text>
-                      </View>
-                    )}
-                    {peerUid && <PresenceBadge uid={peerUid} size="sm" style={{ borderColor: C.card }} />}
+        <View style={s.messagesShell}>
+          {isSearching && searchedQuery ? (
+            <View style={s.searchResultsPane}>
+              <View style={[s.searchResultsHeader, { borderBottomColor: C.border }]}>
+                <Text style={[s.searchResultsTitle, { color: C.text }]} numberOfLines={1}>
+                  Kết quả cho "{searchedQuery}"
+                </Text>
+                {searchLoading ? <ActivityIndicator size="small" color={C.accent} /> : null}
+              </View>
+              <FlatList
+                data={searchResults}
+                keyExtractor={(m, index) => `search-${m.id}-${index}`}
+                contentContainerStyle={s.searchResultsList}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  <View style={s.emptyChat}>
+                    <Ionicons name="search-outline" size={42} color={C.subtext} />
+                    <Text style={[s.emptyChatText, { color: C.subtext }]}>
+                      {searchLoading ? 'Đang tìm...' : 'Không tìm thấy tin nhắn phù hợp.'}
+                    </Text>
                   </View>
-                <View style={[s.bubble, s.bubbleOther, { backgroundColor: C.otherBubble }]}>
-                  <TypingDots C={C} />
-                </View>
-              </View>
-            ) : null}
-            ListFooterComponent={loadingMore ? <ActivityIndicator color={C.accent} style={{ paddingVertical: 12 }} /> : null}
-            ListEmptyComponent={
-              <View style={s.emptyChat}>
-                <Ionicons name="chatbubble-outline" size={48} color={C.subtext} />
-                <Text style={[s.emptyChatText, { color: C.subtext }]}>{t('chat_empty')}</Text>
-              </View>
-            }
-          />
-        </GlassPanel>
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[s.searchResultItem, { borderBottomColor: C.border }]}
+                    activeOpacity={0.78}
+                    onPress={() => openSearchResult(item.id)}
+                  >
+                    <View style={[s.searchResultIcon, { backgroundColor: `${C.accent}18` }]}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.accent} />
+                    </View>
+                    <View style={s.searchResultTextWrap}>
+                      <Text style={[s.searchResultSender, { color: C.text }]} numberOfLines={1}>
+                        {item.senderId === user?.uid ? 'Bạn' : title}
+                      </Text>
+                      <Text style={[s.searchResultSnippet, { color: C.subtext }]} numberOfLines={2}>
+                        {getMessageSnippet(item)}
+                      </Text>
+                    </View>
+                    <Text style={[s.searchResultTime, { color: C.subtext }]}>
+                      {formatTime(item.createdAt, locale)}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          ) : (
+            <>
+              <FlatList
+                ref={flatRef}
+                data={messages}
+                keyExtractor={(m, index) => `${m.id}-${m.optimistic ? 'optimistic' : 'real'}-${index}`}
+                renderItem={renderMessage}
+                inverted
+                contentContainerStyle={[s.msgList, latestPinnedMessage && s.msgListWithPinnedOverlay]}
+                showsVerticalScrollIndicator={false}
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.3}
+                onScrollToIndexFailed={({ index }) => {
+                  setTimeout(() => {
+                    flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+                  }, 250);
+                }}
+                ListHeaderComponent={peerTyping ? (
+                  <View style={[s.msgRow]}>
+                    <View style={s.msgAvatarWrap}>
+                        {peerAvatar ? (
+                          <Image source={{ uri: peerAvatar }} style={s.msgAvatar} />
+                        ) : (
+                          <View style={[s.msgAvatar, { backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }]}>
+                            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{(title || '?').charAt(0)}</Text>
+                          </View>
+                        )}
+                        {peerUid && <PresenceBadge uid={peerUid} size="sm" style={{ borderColor: C.card }} />}
+                      </View>
+                    <View style={[s.bubble, s.bubbleOther, { backgroundColor: C.otherBubble }]}>
+                      <TypingDots C={C} />
+                    </View>
+                  </View>
+                ) : null}
+                ListFooterComponent={loadingMore ? <ActivityIndicator color={C.accent} style={{ paddingVertical: 12 }} /> : null}
+                ListEmptyComponent={
+                  <View style={s.emptyChat}>
+                    <Ionicons name="chatbubble-outline" size={48} color={C.subtext} />
+                    <Text style={[s.emptyChatText, { color: C.subtext }]}>{t('chat_empty')}</Text>
+                  </View>
+                }
+              />
+              {latestPinnedMessage && (
+                <TouchableOpacity
+                  style={[s.pinnedBar, { backgroundColor: C.card, borderColor: C.border }]}
+                  activeOpacity={0.84}
+                  onPress={() => scrollToMessage(latestPinnedMessage.id)}
+                >
+                  <View style={[s.pinnedBarIcon, { backgroundColor: `${C.accent}18` }]}>
+                    <Ionicons name="pricetag" size={16} color={C.accent} />
+                  </View>
+                  <View style={s.pinnedBarTextWrap}>
+                    <Text style={[s.pinnedBarTitle, { color: C.text }]} numberOfLines={1}>
+                      Tin nhắn đã ghim
+                    </Text>
+                    <Text style={[s.pinnedBarSnippet, { color: C.subtext }]} numberOfLines={1}>
+                      {getMessageSnippet(latestPinnedMessage)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={s.pinnedBarButton}
+                    onPress={() => setShowPinnedMessages(true)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="chevron-down" size={20} color={C.subtext} />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
 
         {/* Composer */}
-        <GlassPanel style={[s.composerShell, { borderColor: C.border, backgroundColor: scheme === 'dark' ? 'rgba(17,24,29,0.92)' : 'rgba(255,255,255,0.92)' }]}>
-        <View style={[s.composer, { backgroundColor: 'transparent', borderTopColor: 'transparent', paddingBottom: insets.bottom || 10 }]}>
-          {selectedMessage && (
-            <View style={[s.contextCard, { backgroundColor: C.input, borderColor: C.border }]}>
-              <View style={s.contextCardHeader}>
-                <Text style={[s.contextTitle, { color: C.text }]} numberOfLines={1}>
-                  {t('waves_selected_message')}
-                </Text>
-                <TouchableOpacity onPress={() => setSelectedMessageId(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close" size={18} color={C.subtext} />
-                </TouchableOpacity>
-              </View>
-              <Text style={[s.contextSnippet, { color: C.subtext }]} numberOfLines={2}>
-                {getMessageSnippet(selectedMessage)}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.actionRow}>
-                <TouchableOpacity
-                  style={[s.actionChip, { backgroundColor: C.card, borderColor: C.border }]}
-                  onPress={() => {
-                    handleReplyToMessage(selectedMessage);
-                    setSelectedMessageId(null);
-                  }}
-                >
-                  <Ionicons name="return-up-back-outline" size={15} color={C.accent} />
-                  <Text style={[s.actionChipText, { color: C.text }]}>{t('reply')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.actionChip, { backgroundColor: C.card, borderColor: C.border }]}
-                  onPress={() => {
-                    void toggleMessagePin(selectedMessage);
-                  }}
-                >
-                  <Ionicons
-                    name={(selectedMessage.pinnedBy?.length ?? 0) > 0 ? 'pricetag' : 'pricetag-outline'}
-                    size={15}
-                    color={C.accent}
-                  />
-                  <Text style={[s.actionChipText, { color: C.text }]}>
-                    {(selectedMessage.pinnedBy?.length ?? 0) > 0 ? t('waves_unpin_message') : t('waves_pin_message')}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.actionChip, { backgroundColor: C.card, borderColor: C.border }]}
-                  onPress={() => setReactionDetailsMessageId(selectedMessage.id)}
-                >
-                  <Ionicons name="happy-outline" size={15} color={C.accent} />
-                  <Text style={[s.actionChipText, { color: C.text }]}>{t('reactions')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.actionChip, { backgroundColor: C.card, borderColor: C.border }]}
-                  onPress={() => openMessageActions(selectedMessage)}
-                >
-                  <Ionicons name="ellipsis-horizontal" size={15} color={C.accent} />
-                  <Text style={[s.actionChipText, { color: C.text }]}>{t('waves_more_actions')}</Text>
-                </TouchableOpacity>
-              </ScrollView>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.emojiRow}>
-                {MESSAGE_REACTION_OPTIONS.map((emoji) => (
-                  <TouchableOpacity
-                    key={`${selectedMessage.id}-${emoji}`}
-                    style={[s.emojiChip, { backgroundColor: C.card, borderColor: C.border }]}
-                    onPress={() => void toggleMessageReaction(selectedMessage, emoji)}
-                  >
-                    <Text style={s.emojiChipText}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+        <View style={s.composerShell}>
+        <View style={[s.composer, { backgroundColor: 'transparent', borderTopColor: C.border, paddingBottom: insets.bottom || 10 }]}>
           {isMarketplaceThread && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.quickReplyRow}>
               {marketplaceQuickReplies.map((reply) => (
@@ -1469,10 +1854,10 @@ export default function ChatScreen({ navigation, route }: Props) {
               </Text>
             </View>
           )}
-          <View style={[s.composerActions, isComposerExpanded && { width: 40 }]}>
+          <View style={[s.composerActions, isComposerExpanded && { width: 35 }]}>
             {isComposerExpanded ? (
                <TouchableOpacity style={s.mediaBtn} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setIsComposerExpanded(false); }}>
-                 <Ionicons name="chevron-forward" size={24} color={C.accent} />
+                 <Ionicons name="chevron-forward" size={22} color={C.accent} />
                </TouchableOpacity>
             ) : (
               <>
@@ -1526,12 +1911,27 @@ export default function ChatScreen({ navigation, route }: Props) {
             {sending ? (
               <ActivityIndicator size={16} color="#fff" />
             ) : (
-              <Ionicons name="send" size={18} color="#fff" />
+              <Ionicons name="send" size={16} color="#fff" />
             )}
           </TouchableOpacity>
         </View>
-        </GlassPanel>
+        </View>
       </KeyboardAvoidingView>
+      </GlassPanel>
+
+      <MessageActionModal
+        visible={actionMessage !== null}
+        message={actionMessage}
+        onClose={() => setActionMessage(null)}
+        onReply={handleReplyToMessage}
+        onReaction={toggleMessageReaction}
+        onPin={(message) => { void toggleMessagePin(message); }}
+        onDeleteForMe={(message) => { void hideMessageForSelf(message); }}
+        onDeleteForEveryone={(message) => { void recallMessageForEveryone(message); }}
+        onCopy={(message) => { void copyMessage(message); }}
+        onReport={(message) => { void reportMessage(message); }}
+        themeColors={C}
+      />
 
       <Modal visible={showPinnedMessages} transparent animationType="slide" onRequestClose={() => setShowPinnedMessages(false)}>
         <View style={s.modalRoot}>
@@ -1610,6 +2010,16 @@ export default function ChatScreen({ navigation, route }: Props) {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
+  chatShell: {
+    flex: 1,
+    marginHorizontal: 6,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  chatBody: {
+    flex: 1,
+  },
   headerShell: {
     marginHorizontal: 10,
     marginTop: 8,
@@ -1617,13 +2027,19 @@ const s = StyleSheet.create({
   },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, gap: 10,
+    paddingHorizontal: 9, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8,
   },
-  headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, overflow: 'hidden' },
-  headerAvatarLarge: { width: 52, height: 52, borderRadius: 26, overflow: 'hidden' },
+  headerAvatarLarge: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden' },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: '700' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  headerActionBtn: {
+    width: 30,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerIconBtn: { position: 'relative' },
   headerIconPill: {
     width: 44,
@@ -1651,12 +2067,67 @@ const s = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   messagesShell: {
     flex: 1,
-    marginHorizontal: 10,
-    marginBottom: 10,
+    position: 'relative',
+  },
+  pinnedBar: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    zIndex: 20,
+    minHeight: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pinnedBarIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinnedBarTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pinnedBarTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  pinnedBarSnippet: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  pinnedBarButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   msgList: { paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  msgListWithPinnedOverlay: { paddingTop: 78 },
 
+  swipeShell: { position: 'relative' },
+  swipeReplyCue: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0ea5e9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swipeReplyCueOther: { left: 42 },
+  swipeReplyCueOwn: { right: 10, transform: [{ scaleX: -1 }] },
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', marginVertical: 2, gap: 6 },
   msgRowOwn: { flexDirection: 'row-reverse' },
   msgAvatarWrap: { marginBottom: 4 },
@@ -1692,11 +2163,11 @@ const s = StyleSheet.create({
   replySender: { fontSize: 12, fontWeight: '800' },
   replySnippet: { fontSize: 12, marginTop: 1 },
   fileMsg: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
-  voicePlayerMsg: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, paddingRight: 12, borderRadius: 24, minWidth: 200 },
-  playBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  waveform: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  waveBar: { width: 3, borderRadius: 2 },
-  voiceTime: { fontSize: 12, fontWeight: '600' },
+  voicePlayerMsg: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 6, paddingRight: 9, borderRadius: 20, minWidth: 150 },
+  playBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  waveform: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  waveBar: { width: 2.5, borderRadius: 2 },
+  voiceTime: { fontSize: 10, fontWeight: '700', minWidth: 28, textAlign: 'right' },
   fileMsgCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, minWidth: 220 },
   fileIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   fileInfo: { flex: 1 },
@@ -1743,14 +2214,66 @@ const s = StyleSheet.create({
 
   emptyChat: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 80 },
   emptyChatText: { fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
+  searchResultsPane: {
+    flex: 1,
+  },
+  searchResultsHeader: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  searchResultsTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  searchResultsList: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  searchResultItem: {
+    minHeight: 64,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  searchResultIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchResultTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  searchResultSender: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  searchResultSnippet: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  searchResultTime: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
 
   composerShell: {
-    marginHorizontal: 10,
-    marginBottom: 10,
+    flexShrink: 0,
   },
   composer: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, gap: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 5, borderTopWidth: StyleSheet.hairlineWidth, gap: 5,
     flexWrap: 'wrap',
   },
   contextCard: {
@@ -1807,26 +2330,30 @@ const s = StyleSheet.create({
   },
   composerReplyText: { flex: 1, minWidth: 0 },
   inputWrap: {
-    flex: 1, borderRadius: 24, borderWidth: 1,
-    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 8 : 4,
-    maxHeight: 120,
+    flex: 1, borderRadius: 17, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: Platform.OS === 'ios' ? 4 : 0,
+    minHeight: 34,
+    maxHeight: 84,
+    justifyContent: 'center',
   },
-  input: { fontSize: 15, maxHeight: 100 },
+  input: { fontSize: 13, lineHeight: 18, maxHeight: 72, textAlignVertical: 'center' },
   sendBtn: {
-    width: 42, height: 42, borderRadius: 21,
+    width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
+    alignSelf: 'center',
   },
   mediaBtn: {
-    width: 36, height: 42,
+    width: 32, height: 34,
     alignItems: 'center', justifyContent: 'center',
-    borderRadius: 18,
+    borderRadius: 16,
   },
   mediaBtnActive: { borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)' },
   composerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 1,
     flexShrink: 0,
+    alignSelf: 'center',
   },
   voiceStatus: {
     width: '100%',

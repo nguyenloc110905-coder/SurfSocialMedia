@@ -31,6 +31,7 @@ import { useUserStore } from '@/stores/userStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 import { gestureState, setReactionPickerActive } from '@/lib/gestureState';
 import { useT, type I18nKey } from '@/lib/i18n';
 
@@ -90,6 +91,13 @@ export type PostCardProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, any>;
   onPostRemoved?: (postId: string) => void;
   hideOptions?: boolean;
+};
+
+type PostReactedPayload = {
+  postId?: string;
+  likeCount?: number;
+  likedBy?: string[];
+  reactions?: Record<string, string>;
 };
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -1662,6 +1670,55 @@ function PostCard({ post, isVisible, navigation, onPostRemoved, hideOptions = fa
   useEffect(() => {
     setSaved(uid ? (post.savedBy?.includes(uid) ?? false) : false);
   }, [post.savedBy, uid]);
+
+  useEffect(() => {
+    setLiked(uid ? (post.likedBy?.includes(uid) ?? false) : false);
+    setSelectedReaction(uid ? (post.reactions?.[uid] ?? null) : null);
+    setReactionsMap(post.reactions ?? {});
+    setLikeCount(post.likeCount ?? 0);
+    setCommentCount(post.replyCount ?? 0);
+  }, [post.likedBy, post.likeCount, post.reactions, post.replyCount, uid]);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleReacted = (payload: PostReactedPayload) => {
+      if (payload?.postId !== post.id) return;
+      const nextReactions = payload.reactions ?? {};
+      const nextLikedBy = payload.likedBy ?? Object.keys(nextReactions);
+      const nextLikeCount = payload.likeCount ?? nextLikedBy.length;
+
+      setReactionsMap(nextReactions);
+      setLikeCount(nextLikeCount);
+      setLiked(uid ? nextLikedBy.includes(uid) : false);
+      setSelectedReaction(uid ? (nextReactions[uid] ?? null) : null);
+      updatePost({
+        id: post.id,
+        likeCount: nextLikeCount,
+        likedBy: nextLikedBy,
+        reactions: nextReactions,
+      });
+    };
+
+    const handleNewComment = (comment: Comment & { postId?: string }) => {
+      if (comment?.postId && comment.postId !== post.id) return;
+      setCommentCount((current) => {
+        const next = current + 1;
+        updatePost({ id: post.id, replyCount: next });
+        return next;
+      });
+    };
+
+    socket.emit('post:join', post.id);
+    socket.on('post:reacted', handleReacted);
+    socket.on('comment:new', handleNewComment);
+
+    return () => {
+      socket.off('post:reacted', handleReacted);
+      socket.off('comment:new', handleNewComment);
+      socket.emit('post:leave', post.id);
+    };
+  }, [post.id, uid, updatePost]);
 
   const handleShare = () => setShowShareModal(true);
 

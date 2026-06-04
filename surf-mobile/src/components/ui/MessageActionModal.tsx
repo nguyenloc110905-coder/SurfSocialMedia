@@ -1,9 +1,25 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback, Alert } from 'react-native';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/stores/authStore';
 
 const MESSAGE_REACTION_OPTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+
+type ThemeColors = {
+  card: string;
+  border: string;
+  text: string;
+  subtext: string;
+  accent: string;
+};
 
 type Props = {
   visible: boolean;
@@ -15,7 +31,8 @@ type Props = {
   onDeleteForMe: (msg: any) => void;
   onDeleteForEveryone: (msg: any) => void;
   onCopy: (msg: any) => void;
-  themeColors: any;
+  onReport: (msg: any) => void;
+  themeColors: ThemeColors;
 };
 
 export default function MessageActionModal({
@@ -28,6 +45,7 @@ export default function MessageActionModal({
   onDeleteForMe,
   onDeleteForEveryone,
   onCopy,
+  onReport,
   themeColors: C,
 }: Props) {
   const user = useAuthStore((state) => state.user);
@@ -35,120 +53,188 @@ export default function MessageActionModal({
   if (!visible || !message) return null;
 
   const isOwn = message.senderId === user?.uid;
-  const isPinned = message.pinnedBy?.includes(user?.uid ?? '');
+  const isPinned = message.pinnedBy?.includes(user?.uid ?? '') ?? false;
+  const isCallLog = message.type === 'call_log';
+  const canCopy = Boolean(message.text?.trim());
 
-  const handleDelete = () => {
-    if (isOwn) {
-      Alert.alert('Xóa tin nhắn', 'Bạn muốn thu hồi tin nhắn này với mọi người hay chỉ xóa ở phía bạn?', [
-        { text: 'Thu hồi với mọi người', style: 'destructive', onPress: () => { onClose(); onDeleteForEveryone(message); } },
-        { text: 'Xóa ở phía bạn', onPress: () => { onClose(); onDeleteForMe(message); } },
-        { text: 'Hủy', style: 'cancel' }
-      ]);
-    } else {
-      Alert.alert('Xóa tin nhắn', 'Tin nhắn này sẽ chỉ bị xóa ở phía bạn.', [
-        { text: 'Xóa ở phía bạn', style: 'destructive', onPress: () => { onClose(); onDeleteForMe(message); } },
-        { text: 'Hủy', style: 'cancel' }
-      ]);
-    }
+  const confirmRecall = () => {
+    Alert.alert('Thu hoi tin nhan', 'Tin nhan nay se bi thu hoi voi moi nguoi.', [
+      { text: 'Thu hoi', style: 'destructive', onPress: () => { onClose(); onDeleteForEveryone(message); } },
+      { text: 'Huy', style: 'cancel' },
+    ]);
+  };
+
+  const confirmDeleteForMe = () => {
+    Alert.alert('Xoa phia toi', 'Tin nhan nay chi bi xoa o phia ban.', [
+      { text: 'Xoa', style: 'destructive', onPress: () => { onClose(); onDeleteForMe(message); } },
+      { text: 'Huy', style: 'cancel' },
+    ]);
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={s.overlay}>
-          <TouchableWithoutFeedback>
-            <View style={s.contentContainer}>
-              
-              {/* Emoji Bar */}
-              <View style={[s.emojiBar, { backgroundColor: C.card }]}>
-                {MESSAGE_REACTION_OPTIONS.map((emoji) => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={s.emojiBtn}
-                    onPress={() => {
-                      onReaction(message, emoji);
-                      onClose();
-                    }}
-                  >
-                    <Text style={s.emojiText}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Bottom Sheet Menu */}
-              <View style={[s.menu, { backgroundColor: C.card }]}>
-                <TouchableOpacity style={[s.menuItem, { borderBottomColor: C.border }]} onPress={() => { onClose(); onReply(message); }}>
-                  <Text style={[s.menuText, { color: C.text }]}>Trả lời</Text>
-                  <Ionicons name="arrow-undo" size={20} color={C.text} />
+      <View style={s.root}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={s.content} pointerEvents="box-none">
+          {!isCallLog && (
+            <View style={[s.emojiBar, { backgroundColor: C.card, borderColor: C.border }]}>
+              {MESSAGE_REACTION_OPTIONS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={s.emojiBtn}
+                  activeOpacity={0.75}
+                  onPress={() => {
+                    onReaction(message, emoji);
+                    onClose();
+                  }}
+                >
+                  <Text style={s.emojiText}>{emoji}</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity style={[s.menuItem, { borderBottomColor: C.border }]} onPress={() => { onClose(); onCopy(message); }}>
-                  <Text style={[s.menuText, { color: C.text }]}>Sao chép</Text>
-                  <Ionicons name="copy" size={20} color={C.text} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={[s.menuItem, { borderBottomColor: C.border }]} onPress={() => { onClose(); onPin(message); }}>
-                  <Text style={[s.menuText, { color: C.text }]}>{isPinned ? 'Bỏ ghim' : 'Ghim'}</Text>
-                  <Ionicons name="pricetag" size={20} color={C.text} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={s.menuItem} onPress={handleDelete}>
-                  <Text style={[s.menuText, { color: '#ef4444' }]}>Xóa</Text>
-                  <Ionicons name="trash" size={20} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
-
+              ))}
             </View>
-          </TouchableWithoutFeedback>
+          )}
+
+          <View style={[s.sheet, { backgroundColor: C.card, borderColor: C.border }]}>
+            {!isCallLog && (
+              <ActionButton
+                icon="return-up-back-outline"
+                label="Tra loi"
+                color={C.accent}
+                onPress={() => { onClose(); onReply(message); }}
+              />
+            )}
+            <ActionButton
+              icon="copy-outline"
+              label="Sao chep"
+              color={canCopy ? C.accent : C.subtext}
+              disabled={!canCopy}
+              onPress={() => { onClose(); onCopy(message); }}
+            />
+            <ActionButton
+              icon={isPinned ? 'pricetag' : 'pricetag-outline'}
+              label={isPinned ? 'Bo ghim' : 'Ghim'}
+              color={C.accent}
+              onPress={() => { onClose(); onPin(message); }}
+            />
+            {isOwn && !isCallLog && (
+              <ActionButton
+                icon="return-down-back-outline"
+                label="Thu hoi"
+                color="#ef4444"
+                onPress={confirmRecall}
+              />
+            )}
+            {!isOwn && !isCallLog && (
+              <ActionButton
+                icon="flag-outline"
+                label="Bao cao"
+                color="#ef4444"
+                onPress={() => { onClose(); onReport(message); }}
+              />
+            )}
+            <ActionButton
+              icon="trash-outline"
+              label="Xoa phia toi"
+              color="#ef4444"
+              onPress={confirmDeleteForMe}
+            />
+          </View>
         </View>
-      </TouchableWithoutFeedback>
+      </View>
     </Modal>
   );
 }
 
+function ActionButton({
+  icon,
+  label,
+  color,
+  disabled,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[s.actionBtn, disabled && s.actionDisabled]}
+      activeOpacity={0.72}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <Ionicons name={icon} size={29} color={color} />
+      <Text style={[s.actionLabel, { color }]} numberOfLines={1}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const s = StyleSheet.create({
-  overlay: {
+  root: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.24)',
   },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 16,
+  content: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    gap: 14,
   },
   emojiBar: {
+    alignSelf: 'center',
+    maxWidth: '100%',
+    minHeight: 64,
+    borderRadius: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 30,
-    elevation: 4,
+    alignItems: 'center',
+    gap: 7,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   emojiBtn: {
-    padding: 4,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emojiText: {
     fontSize: 28,
   },
-  menu: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  menuItem: {
+  sheet: {
+    minHeight: 116,
+    borderRadius: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: -16,
+    marginBottom: -20,
+    paddingTop: 18,
+    paddingBottom: 28,
+    paddingHorizontal: 12,
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
   },
-  menuText: {
-    fontSize: 16,
-    fontWeight: '500',
+  actionBtn: {
+    width: 76,
+    minHeight: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionDisabled: {
+    opacity: 0.42,
+  },
+  actionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });

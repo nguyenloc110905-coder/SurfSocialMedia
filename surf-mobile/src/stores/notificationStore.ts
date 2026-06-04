@@ -35,6 +35,7 @@ export type RealtimeMessagePayload = {
     lastMessagePreview?: string | null;
     lastMessageAt?: string | null;
   };
+  mutedBy?: string[];
 };
 
 export type FriendRequestPayload = {

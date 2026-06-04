@@ -58,6 +58,8 @@ export type RootStackParamList = {
     peerAvatar?: string | null;
     conversationType?: 'dm' | 'group' | 'marketplace';
     marketplaceTitle?: string | null;
+    initialSearch?: boolean;
+    targetMessageId?: string;
   };
   Settings: undefined;
   EditProfile: undefined;

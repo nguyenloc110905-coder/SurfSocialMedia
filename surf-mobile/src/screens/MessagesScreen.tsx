@@ -63,6 +63,9 @@ type ConversationItem = {
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
   muted?: boolean;
+  muteMessages?: boolean;
+  muteCalls?: boolean;
+  muteExpiresAt?: string | null;
 };
 
 type MessageFilter = 'all' | 'unread' | 'groups';
@@ -93,6 +96,12 @@ const REPLY_SENDER_MARKER_INLINE_PATTERN = /__reply_sender:[^\s]+__/g;
 const REPLY_TARGET_MARKER_LINE_PATTERN = /^__reply_to:[^\n]+__\n?/;
 const REPLY_SENDER_MARKER_LINE_PATTERN = /^__reply_sender:[^\n]+__\n?/;
 const ACTION_W = 136;
+
+function isMuteActive(item: Pick<ConversationItem, 'muted' | 'muteExpiresAt'>) {
+  if (!item.muted) return false;
+  if (!item.muteExpiresAt) return true;
+  return new Date(item.muteExpiresAt).getTime() > Date.now();
+}
 
 function normalizeConversationPreview(value?: string | null) {
   const stripped = (value ?? '')
@@ -217,6 +226,7 @@ function SwipeableConvRow({
   const title = getConversationTitle(item, t);
   const avatar = getConversationAvatar(item);
   const isUnread = (item.unreadCount ?? 0) > 0;
+  const muted = isMuteActive(item);
   const isMarketplace = item.marketplace?.kind === 'marketplace';
   const previewText = typingText
     ? typingText
@@ -234,8 +244,8 @@ function SwipeableConvRow({
             onToggleMute();
           }}
         >
-          <Ionicons name={item.muted ? 'notifications-outline' : 'notifications-off-outline'} size={20} color="#fff" />
-          <Text style={s.actionLabel}>{item.muted ? t('unmute_notifications') : t('mute_notifications')}</Text>
+          <Ionicons name={muted ? 'notifications-outline' : 'notifications-off-outline'} size={20} color="#fff" />
+          <Text style={s.actionLabel}>{muted ? t('unmute_notifications') : t('mute_notifications')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.actionBtn, { backgroundColor: '#ef4444' }]}
@@ -274,9 +284,9 @@ function SwipeableConvRow({
                 <Ionicons name="people" size={10} color="#fff" />
               </View>
             )}
-            {item.muted && (
-              <View style={[s.muteBadge, { backgroundColor: C.border }]}>
-                <Ionicons name="notifications-off" size={9} color={C.subtext} />
+            {muted && (
+              <View style={[s.muteBadge, { backgroundColor: C.card, borderColor: C.border }]}>
+                <Ionicons name="notifications-off" size={13} color={C.subtext} />
               </View>
             )}
           </View>
@@ -536,10 +546,24 @@ export default function MessagesScreen({
   };
 
   const toggleMute = async (item: ConversationItem) => {
-    const muted = !item.muted;
-    setConversations((prev) => prev.map((c) => (c.id === item.id ? { ...c, muted } : c)));
+    const muted = !isMuteActive(item);
+    const patch = muted
+      ? { muted: true, muteMessages: true, muteCalls: true, muteExpiresAt: null }
+      : { muted: false, muteMessages: false, muteCalls: false, muteExpiresAt: null };
+    setConversations((prev) => prev.map((c) => (c.id === item.id ? { ...c, ...patch } : c)));
     try {
-      await api.patch(`/api/conversations/${item.id}/mute`, { muted });
+      const data = await api.patch<{
+        muted: boolean;
+        muteMessages: boolean;
+        muteCalls: boolean;
+        muteExpiresAt: string | null;
+      }>(`/api/conversations/${item.id}/mute`, {
+        muted,
+        muteMessages: muted,
+        muteCalls: muted,
+        expiresAt: null,
+      });
+      setConversations((prev) => prev.map((c) => (c.id === item.id ? { ...c, ...data } : c)));
     } catch {
       void load();
     }
@@ -706,11 +730,12 @@ const s = StyleSheet.create({
   },
   muteBadge: {
     position: 'absolute',
-    bottom: -2,
-    left: -2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    bottom: -3,
+    left: -3,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -38,6 +38,14 @@ const parseCursorSafe = (value: unknown): string | undefined => {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 
+const parseMuteExpiresAt = (value: unknown): Date | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return null;
+  return date;
+};
+
 const normalizeStringArray = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
@@ -590,7 +598,10 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       }
 
       const payload = toRealtimeMessagePayload(result.item);
-      const mutedBy = await conversationRepository.getMutedBy(req.params.id);
+      const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(req.params.id);
+      const mutedBy = Object.entries(muteSettingsByUser)
+        .filter(([, settings]) => settings.muteMessages)
+        .map(([userId]) => userId);
       emitMessageNewToTargets([senderId, ...result.recipientIds], req.params.id, {
         ...payload,
         mutedBy,
@@ -641,7 +652,10 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(result.item);
-    const mutedBy = await conversationRepository.getMutedBy(req.params.id);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(req.params.id);
+    const mutedBy = Object.entries(muteSettingsByUser)
+      .filter(([, settings]) => settings.muteMessages)
+      .map(([userId]) => userId);
 
     emitMessageNewToTargets([senderId, ...result.recipientIds], req.params.id, {
       ...payload,
@@ -686,10 +700,32 @@ router.patch('/:id/mute', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const muted = req.body?.muted !== false;
+    const muteMessages = muted
+      ? req.body?.muteMessages === undefined
+        ? true
+        : req.body?.muteMessages !== false
+      : false;
+    const muteCalls = muted
+      ? req.body?.muteCalls === undefined
+        ? true
+        : req.body?.muteCalls !== false
+      : false;
+    const expiresAt = muted ? parseMuteExpiresAt(req.body?.expiresAt) : null;
     const memberIds = await conversationRepository.getMemberIds(req.params.id);
     if (!memberIds.includes(uid)) { res.status(403).json({ error: 'Forbidden' }); return; }
-    await conversationRepository.setMutedForUser(req.params.id, uid, muted);
-    res.json({ success: true, muted });
+    const settings = await conversationRepository.setMutedForUser(req.params.id, uid, {
+      muted,
+      muteMessages,
+      muteCalls,
+      expiresAt,
+    });
+    res.json({
+      success: true,
+      muted: settings.muted,
+      muteMessages: settings.muteMessages,
+      muteCalls: settings.muteCalls,
+      muteExpiresAt: settings.expiresAt ? settings.expiresAt.toISOString() : null,
+    });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }

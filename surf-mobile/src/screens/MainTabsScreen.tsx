@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Animated,
   BackHandler,
   Easing,
@@ -26,6 +27,7 @@ import { gestureState } from '@/lib/gestureState';
 import { useNotificationStore, type NotificationItem, type RealtimeMessagePayload } from '@/stores/notificationStore';
 import { useFriendStore } from '@/stores/friendStore';
 import { useMessageStore } from '@/stores/messageStore';
+import { useFeedStore } from '@/stores/feedStore';
 import Sidebar from '@/components/Sidebar';
 import { useT, type I18nKey } from '@/lib/i18n';
 
@@ -154,6 +156,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const markAllNotificationsRead = useNotificationStore((state) => state.markAllRead);
   const unreadMessages = useMessageStore((state) => state.unreadConversations);
   const setUnreadMessages = useMessageStore((state) => state.setUnreadConversations);
+  const refreshFeed = useFeedStore((state) => state.fetch);
   const incomingFriendRequests = useFriendStore((state) => state.incomingRequests.length);
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
 
@@ -520,7 +523,21 @@ export default function MainTabsScreen({ navigation }: Props) {
   useEffect(() => {
     if (!user?.uid || !isFocused) return;
     void refreshUnreadCounts();
-  }, [isFocused, refreshUnreadCounts, user?.uid]);
+    void refreshFeed();
+  }, [isFocused, refreshFeed, refreshUnreadCounts, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    void refreshFeed();
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshFeed();
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [refreshFeed, user?.uid]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -541,15 +558,21 @@ export default function MainTabsScreen({ navigation }: Props) {
       markAllNotificationsRead();
       setNotificationUnreadCount(0);
     };
-    const onMessageNew = (payload: RealtimeMessagePayload & { muted?: boolean }) => {
-      if (payload?.message?.senderId !== user.uid && !payload?.muted) {
+    const onMessageNew = (payload: RealtimeMessagePayload & { muted?: boolean; mutedBy?: string[] }) => {
+      const mutedForMe = payload?.muted === true || payload?.mutedBy?.includes(user.uid);
+      if (payload?.message?.senderId !== user.uid && !mutedForMe) {
         void refreshUnreadCounts();
       }
     };
     const onMessageUnreadCount = (payload: CountResponse) => {
       if (typeof payload?.count === 'number') setUnreadMessages(payload.count);
     };
+    const onSocketConnect = () => {
+      void refreshFeed();
+      void refreshUnreadCounts(true);
+    };
 
+    socket.on('connect', onSocketConnect);
     socket.on('notification:new', onNotificationNew);
     socket.on('notification:unread-count', onNotificationUnreadCount);
     socket.on('notification:read', onNotificationRead);
@@ -561,6 +584,7 @@ export default function MainTabsScreen({ navigation }: Props) {
 
     return () => {
       socket.off('notification:new', onNotificationNew);
+      socket.off('connect', onSocketConnect);
       socket.off('notification:unread-count', onNotificationUnreadCount);
       socket.off('notification:read', onNotificationRead);
       socket.off('notification:read-all', onNotificationReadAll);
@@ -571,6 +595,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     markAllNotificationsRead,
     markNotificationRead,
     refreshUnreadCounts,
+    refreshFeed,
     setNotificationUnreadCount,
     setUnreadMessages,
     upsertNotification,

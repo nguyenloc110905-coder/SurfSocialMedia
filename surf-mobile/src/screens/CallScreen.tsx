@@ -6,7 +6,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useWebRTC } from '@/hooks/useWebRTC';
-import { RTCView } from 'react-native-webrtc';
+import RTCVideo from '@/components/RTCVideo';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Call'>;
 
@@ -164,7 +164,7 @@ export default function CallScreen({ route, navigation }: Props) {
     <SafeAreaView style={styles.container}>
       {/* Remote video (full screen background) */}
       {rtcCallMode === 'video' && remoteStream && hasRemoteVideo && (
-        <RTCView
+        <RTCVideo
           streamURL={remoteStream.toURL()}
           style={styles.remoteVideo}
           objectFit="cover"
@@ -174,7 +174,7 @@ export default function CallScreen({ route, navigation }: Props) {
       {/* Local video (picture-in-picture, top right) */}
       {rtcCallMode === 'video' && localStream && !isCameraOff && (
         <View style={styles.localVideoContainer}>
-          <RTCView
+          <RTCVideo
             streamURL={localStream.toURL()}
             style={styles.localVideo}
             objectFit="cover"
