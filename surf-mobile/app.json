@@ -33,11 +33,20 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.CAMERA",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_CAMERA",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
-        "android.permission.READ_CONTACTS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.WAKE_LOCK",
+        "android.permission.DISABLE_KEYGUARD",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0c1929",
@@ -66,18 +75,22 @@
       "./plugins/withAndroidCleartext",
       "expo-screen-orientation",
       "expo-video",
+      "expo-notifications",
+      "./plugins/withAndroidCallNotifications",
+      "@livekit/react-native-expo-plugin",
       [
         "expo-contacts",
         {
           "contactsPermission": "Surf cần truy cập danh bạ để giúp bạn tìm bạn bè trên ứng dụng."
         }
-      ]
+      ],
+      "expo-audio"
     ],
+    "owner": "datshroud",
     "extra": {
       "eas": {
-        "projectId": "ac18826d-7735-4a4d-ba38-aad8c1114679"
+        "projectId": "c0b1946a-e56e-4180-96ff-c93dc88e79fa"
       }
-    },
-    "owner": "tichne1625"
+    }
   }
 }

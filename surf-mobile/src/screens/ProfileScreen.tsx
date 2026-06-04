@@ -190,6 +190,7 @@ export default function ProfileScreen({
   const [friendStatus, setFriendStatus] = useState<'loading' | 'friends' | 'request_sent' | 'stranger'>('loading');
   const [actionLoading, setActionLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const chatOpeningRef = useRef(false);
   const [mediaSheet, setMediaSheet] = useState<'avatar' | 'cover' | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPost, setPreviewPost] = useState<FeedPost | null>(null);
@@ -334,7 +335,8 @@ export default function ProfileScreen({
   };
 
   const handleStartChat = async () => {
-    if (chatLoading || !targetUid) return;
+    if (chatOpeningRef.current || !targetUid) return;
+    chatOpeningRef.current = true;
     setChatLoading(true);
     try {
       const res = await api.post<{ item: { id: string } }>('/api/conversations', { peerUid: targetUid });
@@ -344,11 +346,13 @@ export default function ProfileScreen({
         conversationId: convId,
         title: displayName,
         peerUid: targetUid,
+        peerName: displayName,
         peerAvatar: photoURL ?? null,
       });
     } catch {
       Alert.alert(t('cannot_open_messages'), t('try_again_later'));
     } finally {
+      chatOpeningRef.current = false;
       setChatLoading(false);
     }
   };

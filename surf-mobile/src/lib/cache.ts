@@ -20,12 +20,41 @@ export type CachedMessage = {
   id: string;
   conversationId: string;
   senderId: string;
+  type?: 'text' | 'image' | 'file' | 'audio' | 'call_log';
   text: string;
   mediaUrl: string | null;
+  fileName?: string;
   createdAt: string;
   senderName: string;
   senderAvatarUrl: string | null;
+  editedAt?: string;
+  isForwarded?: boolean;
+  isRecalled?: boolean;
+  recalledForEveryone?: boolean;
+  pinnedBy?: string[];
+  reactions?: Record<string, Record<string, { uid: string; name: string; avatarUrl: string | null }>>;
+  callMode?: 'audio' | 'video';
+  callOutcome?: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended' | 'started';
+  durationSeconds?: number;
 };
+
+function getCachedMessageCreatedAtMs(message: CachedMessage): number {
+  const timestamp = new Date(message.createdAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function uniqueCachedMessages(messages: CachedMessage[]): CachedMessage[] {
+  const byId = new Map<string, CachedMessage>();
+  messages.forEach(message => {
+    if (!message?.id) return;
+    const existing = byId.get(message.id);
+    byId.set(message.id, existing ? { ...existing, ...message } : message);
+  });
+
+  return Array.from(byId.values()).sort(
+    (a, b) => getCachedMessageCreatedAtMs(b) - getCachedMessageCreatedAtMs(a)
+  );
+}
 
 function getCacheKey(key: string): string {
   return `${CACHE_PREFIX}${key}`;
@@ -93,8 +122,9 @@ export const feedCache = {
 export const messagesCache = {
   setMessages: async (conversationId: string, messages: CachedMessage[]): Promise<void> => {
     const key = `messages_${conversationId}`;
-    console.log('💾 Saving to cache key:', key, 'messages:', messages.length);
-    await setItemWithExpiry(key, JSON.stringify(messages));
+    const unique = uniqueCachedMessages(messages);
+    console.log('💾 Saving to cache key:', key, 'messages:', unique.length);
+    await setItemWithExpiry(key, JSON.stringify(unique));
   },
 
   getMessages: async (conversationId: string): Promise<CachedMessage[] | null> => {
@@ -106,7 +136,7 @@ export const messagesCache = {
       return null;
     }
     try {
-      const parsed = JSON.parse(cached) as CachedMessage[];
+      const parsed = uniqueCachedMessages(JSON.parse(cached) as CachedMessage[]);
       console.log('📦 Cache hit for key:', key, 'messages:', parsed.length);
       return parsed;
     } catch (e) {
@@ -117,9 +147,13 @@ export const messagesCache = {
 
   addMessage: async (conversationId: string, message: CachedMessage): Promise<void> => {
     const existing = (await messagesCache.getMessages(conversationId)) || [];
-    const updated = [...existing, message].sort((a, b) => 
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+    const updated = uniqueCachedMessages([message, ...existing]);
+    await setItemWithExpiry(`messages_${conversationId}`, JSON.stringify(updated));
+  },
+
+  removeMessage: async (conversationId: string, messageId: string): Promise<void> => {
+    const existing = (await messagesCache.getMessages(conversationId)) || [];
+    const updated = existing.filter((item) => item.id !== messageId);
     await setItemWithExpiry(`messages_${conversationId}`, JSON.stringify(updated));
   },
 

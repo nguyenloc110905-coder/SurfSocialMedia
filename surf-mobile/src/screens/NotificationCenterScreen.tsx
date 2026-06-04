@@ -269,7 +269,9 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
         conversationId,
         title: item.actorName ?? 'Tin nhắn',
         peerUid: item.actorId ?? null,
+        peerName: item.actorName ?? null,
         peerAvatar: getActorPhoto(item),
+        marketplace: null,
       });
       return;
     }

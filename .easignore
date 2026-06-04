@@ -1,0 +1,16 @@
+node_modules/
+**/node_modules/
+.expo/
+**/.expo/
+.expo-check/
+**/.expo-check/
+.eas-tmp/
+dist/
+**/dist/
+*.log
+npm-debug.log*
+.logs/
+.env
+.env.local
+.env.*.local
+docs/Surf-clips-seed/

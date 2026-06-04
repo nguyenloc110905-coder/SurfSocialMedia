@@ -69,6 +69,23 @@ type UserLite = {
   email?: string;
 };
 
+const cleanDisplayText = (value?: string | null): string => {
+  if (!value) return '';
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[\s._\-•·:]+/u, '')
+    .trim();
+};
+
+const displayNameForUser = (data?: UserLite, fallback = 'Người dùng'): string => {
+  const name = cleanDisplayText(data?.displayName);
+  if (name) return name;
+
+  const emailName = cleanDisplayText(data?.email?.split('@')[0]);
+  return emailName || fallback;
+};
+
 export type ApiConversationListItem = {
   id: string;
   type: ConservationDoc['type'];
@@ -93,7 +110,7 @@ export type SendMediaMessageResult =
 
 export type CreateCallLogResult =
   | { ok: true; item: MessageDoc; participantIds: string[]; recipientIds: string[] }
-  | { ok: false; reason: 'not_found' };
+  | { ok: false; reason: 'not_found' | 'forbidden' };
 
 export type ListMessagesResult =
   | { ok: true; items: MessageDoc[]; nextCursor: string | null }
@@ -273,11 +290,10 @@ const userExists = async (uid: string): Promise<boolean> => {
 const buildReactionActor = async (uid: string): Promise<MessageReactionActor> => {
   const snap = await getDb().collection('users').doc(uid).get();
   const data = (snap.data() ?? {}) as UserLite;
-  const fallbackName = data.email?.split('@')[0] ?? 'Người dùng';
 
   return {
     uid,
-    name: data.displayName?.trim() || fallbackName,
+    name: displayNameForUser(data),
     avatarUrl: data.photoURL ?? null,
   };
 };
@@ -404,6 +420,9 @@ export const createCallLogMessage = async (
   if (!conversation) return { ok: false, reason: 'not_found' };
 
   const participantIds = await extractParticipantIds(input.conversationId);
+  if (!participantIds.includes(input.actorId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
   const recipientIds = participantIds.filter((uid) => uid !== input.actorId);
 
   const item = await messageRepository.createCallLogMessage({
@@ -983,7 +1002,7 @@ export const getGroupMembers = async (
     const data = (snap.data() ?? {}) as UserLite;
     return {
       uid: snap.id,
-      name: data.displayName ?? 'Unknown',
+      name: displayNameForUser(data),
       avatarUrl: data.photoURL ?? null,
     };
   });
@@ -1026,7 +1045,7 @@ const buildConversationListItemsFromDetails = async (
     const data = memberMap.get(uid);
     return {
       uid,
-      name: data?.displayName ?? 'Unknown',
+      name: displayNameForUser(data),
       avatarUrl: data?.photoURL ?? null,
     };
   };
@@ -1068,7 +1087,7 @@ const buildConversationListItemsFromDetails = async (
       return {
         id: doc.id,
         type: doc.type,
-        title: doc.title,
+        title: cleanDisplayText(doc.title) || undefined,
         marketplace: doc.marketplace,
         peer: null,
         members: otherIds.map(toMember),
@@ -1084,7 +1103,7 @@ const buildConversationListItemsFromDetails = async (
     return {
       id: doc.id,
       type: doc.type,
-      title: doc.title,
+      title: doc.marketplace ? doc.marketplace.title : cleanDisplayText(doc.title) || undefined,
       marketplace: doc.marketplace,
       peer: peerUid ? toMember(peerUid) : null,
       unreadCount: unreadCountByConversation.get(doc.id) ?? 0,

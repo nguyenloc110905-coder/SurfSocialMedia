@@ -10,6 +10,7 @@ import {
   listConversationsForUser,
   listReadReceiptsForConversation,
   markConversationRead,
+  createCallLogMessage,
   sendTextMessage,
   sendMediaMessage,
   toApiConversation,
@@ -609,6 +610,74 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
 
     const senderCount = await getUnreadConversationCount(senderId);
     emitMessageUnreadCount(senderId, senderCount);
+
+    res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+router.post('/:id/call-log', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const actorId = req.uid!;
+    const mode = req.body?.mode === 'video' ? 'video' : req.body?.mode === 'audio' ? 'audio' : null;
+    const outcome =
+      req.body?.outcome === 'started' ||
+      req.body?.outcome === 'ended' ||
+      req.body?.outcome === 'completed' ||
+      req.body?.outcome === 'missed' ||
+      req.body?.outcome === 'declined' ||
+      req.body?.outcome === 'busy' ||
+      req.body?.outcome === 'failed'
+        ? req.body.outcome
+        : null;
+    const durationSeconds =
+      typeof req.body?.durationSeconds === 'number' && Number.isFinite(req.body.durationSeconds)
+        ? Math.max(0, Math.trunc(req.body.durationSeconds))
+        : undefined;
+
+    if (!mode || !outcome) {
+      res.status(400).json({ error: 'Invalid call mode or outcome' });
+      return;
+    }
+
+    const result = await createCallLogMessage({
+      conversationId: req.params.id,
+      actorId,
+      recipientIds: [],
+      mode,
+      outcome,
+      durationSeconds,
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+    }
+
+    if (!result.ok) {
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    const payload = toRealtimeMessagePayload(result.item);
+    const mutedBy = await conversationRepository.getMutedBy(req.params.id);
+
+    emitMessageNewToTargets([actorId, ...result.recipientIds], req.params.id, {
+      ...payload,
+      mutedBy,
+    });
+
+    const recipientCounts = await Promise.all(
+      result.recipientIds.map(async (uid) => ({
+        uid,
+        count: await getUnreadConversationCount(uid),
+      }))
+    );
+    recipientCounts.forEach(({ uid, count }) => emitMessageUnreadCount(uid, count));
+    emitMessageUnreadCount(actorId, await getUnreadConversationCount(actorId));
 
     res.status(201).json({ item: toApiMessage(result.item), conversation: payload.conversation });
   } catch (e) {

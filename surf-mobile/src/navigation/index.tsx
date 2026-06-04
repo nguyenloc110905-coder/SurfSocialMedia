@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { NavigationContainer, NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
+import React from 'react';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '@/stores/authStore';
 import AuthScreen from '@/screens/AuthScreen';
@@ -7,6 +7,7 @@ import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
 import MessagesScreen from '@/screens/MessagesScreen';
 import ChatScreen from '@/screens/ChatScreen';
+import CallScreen from '@/screens/CallScreen';
 import SplashScreen from '@/screens/SplashScreen';
 import MainTabsScreen from '@/screens/MainTabsScreen';
 import { isDevModeEnabled, getDebugScreen } from '@/lib/debug-config';
@@ -35,7 +36,40 @@ export type RootStackParamList = {
   Profile: { userId?: string };
   AI: undefined;
   Messages: undefined;
-  Chat: { conversationId: string; title: string; peerUid?: string | null; peerAvatar?: string | null; };
+  Chat: {
+    conversationId: string;
+    title: string;
+    peerUid?: string | null;
+    peerName?: string | null;
+    peerAvatar?: string | null;
+    muted?: boolean;
+    members?: Array<{ uid: string; name: string; avatarUrl: string | null }>;
+    memberCount?: number;
+    marketplace?: {
+      listingId: string;
+      title: string;
+      imageUrl: string | null;
+      price?: number;
+      location?: string;
+      sellerId?: string;
+    } | null;
+  };
+  Call: {
+    conversationId: string;
+    peerUid?: string | null;
+    peerName: string;
+    peerAvatar?: string | null;
+    mode: 'audio' | 'video';
+    callKind?: 'direct' | 'group';
+    callId?: string;
+    direction?: 'outgoing' | 'incoming';
+    autoAccept?: boolean;
+    resume?: boolean;
+    resumeState?: 'ringing' | 'connecting' | 'active';
+    conversationTitle?: string;
+    hostUserId?: string | null;
+    participantIds?: string[];
+  };
   Settings: undefined;
   EditProfile: undefined;
   ProfilePhotoPicker: { mode: 'avatarUpload' | 'coverUpload' | 'coverPosted' };
@@ -54,9 +88,10 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
 export default function Navigation() {
   const { user, loading } = useAuthStore();
-  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
   const devMode = isDevModeEnabled();
 
   console.log(`🧭 Navigation render - user=${user ? user.email : 'null'}, loading=${loading}, devMode=${devMode}`);
@@ -100,6 +135,7 @@ export default function Navigation() {
             <Stack.Screen name="AI" component={AIScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Call" component={CallScreen} options={{ animation: 'fade' }} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ProfilePhotoPicker" component={ProfilePhotoPickerScreen} />

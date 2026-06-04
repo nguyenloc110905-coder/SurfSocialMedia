@@ -15,6 +15,15 @@ const toDate = (value: unknown): Date | undefined => {
 const mapMemberIds = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
+const cleanDisplayText = (value?: string | null): string => {
+  if (!value) return '';
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[\s._\-•·:]+/u, '')
+    .trim();
+};
+
 const mapMarketplaceContext = (value: unknown): MarketplaceConversationContext | undefined => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const data = value as Record<string, unknown>;
@@ -34,7 +43,9 @@ const mapMarketplaceContext = (value: unknown): MarketplaceConversationContext |
     location: typeof data.location === 'string' ? data.location : '',
     status: typeof data.status === 'string' ? data.status : 'active',
     saleStatus: typeof data.saleStatus === 'string' ? data.saleStatus : null,
-    sellerDisplayName: typeof data.sellerDisplayName === 'string' ? data.sellerDisplayName : 'Người bán',
+    sellerDisplayName:
+      cleanDisplayText(typeof data.sellerDisplayName === 'string' ? data.sellerDisplayName : '') ||
+      'Người bán',
     sellerPhotoURL: typeof data.sellerPhotoURL === 'string' && data.sellerPhotoURL ? data.sellerPhotoURL : null,
   };
 };
@@ -137,7 +148,7 @@ export const conversationRepository = {
       if (existing.exists) {
         tx.update(ref, {
           marketplace: input.context,
-          title: `${input.context.sellerDisplayName} · ${input.context.title}`,
+          title: input.context.title,
           marketplaceListingId: input.context.listingId,
           marketplaceBuyerId: input.buyerId,
           marketplaceSellerId: input.sellerId,
@@ -149,7 +160,7 @@ export const conversationRepository = {
       created = true;
       tx.set(ref, {
         type: 'dm',
-        title: `${input.context.sellerDisplayName} · ${input.context.title}`,
+        title: input.context.title,
         memberIds,
         memberPairKey: `${input.context.listingId}__${input.buyerId}__${input.sellerId}`,
         marketplace: input.context,
