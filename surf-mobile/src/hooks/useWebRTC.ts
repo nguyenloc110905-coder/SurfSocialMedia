@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Platform, PermissionsAndroid } from 'react-native';
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -19,7 +20,11 @@ const configuration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
+    { 
+      urls: 'turn:surfhub.metered.live:443?transport=tcp',
+      username: '093c288600cee290030da3b1',
+      credential: 'oeemF8a2m3hpI5tR'
+    }
   ],
 };
 
@@ -86,6 +91,20 @@ export function useWebRTC({
 
   const initLocalStream = useCallback(async (): Promise<MediaStream | null> => {
     try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ]);
+        if (
+          granted['android.permission.CAMERA'] !== PermissionsAndroid.RESULTS.GRANTED ||
+          granted['android.permission.RECORD_AUDIO'] !== PermissionsAndroid.RESULTS.GRANTED
+        ) {
+          console.warn('[WebRTC] Missing Camera/Mic permissions');
+          return null;
+        }
+      }
+
       const stream = await mediaDevices.getUserMedia({
         audio: true,
         video:

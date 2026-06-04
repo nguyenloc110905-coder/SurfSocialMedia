@@ -2320,8 +2320,8 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
     : '';
   const isCallWindow = callWindowMode;
   const overlayClass = isCallWindow
-    ? 'fixed inset-0 z-[120] flex items-stretch justify-center bg-slate-950 p-0'
-    : 'fixed inset-0 z-[120] flex items-stretch justify-center bg-slate-950 p-0 backdrop-blur-sm';
+    ? 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 p-0'
+    : 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 p-0 backdrop-blur-sm';
   const minimizedCallClass =
     'fixed bottom-5 right-5 z-[121] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-3xl border border-white/15 bg-slate-950/95 text-white shadow-[0_24px_80px_-24px_rgba(15,23,42,0.75)] backdrop-blur-xl';
   const callStageClass = isFullscreen
@@ -2571,23 +2571,26 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
       {(incomingCall || (activeCall && !isCallMinimized) || fallbackSession) && (
         <div className={overlayClass}>
           {incomingCall && !activeCall ? (
-            <div className="max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-6 text-center shadow-[0_30px_90px_-32px_rgba(15,23,42,0.55)] sm:p-8 md:flex md:items-center md:gap-8 md:text-left">
-              <CallAvatar
-                src={incomingCall.fromAvatarUrl}
-                name={incomingCall.fromName}
-                className="mx-auto h-24 w-24 flex-shrink-0 rounded-full object-cover md:mx-0 md:h-32 md:w-32"
-                fallbackClassName="mx-auto flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white md:mx-0 md:h-32 md:w-32 md:text-4xl"
-              />
-              <div className="md:min-w-0 md:flex-1">
-              <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600 md:mt-0">
-                {incomingCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
-              </p>
-              <h3 className="mt-3 text-3xl font-semibold text-slate-900">
-                {incomingCall.fromName}
-              </h3>
-              <p className="mt-2 text-sm text-slate-500">Đang gọi cho bạn qua Surf Waves</p>
-              {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
-              <div className="mt-8 grid grid-cols-2 gap-3 md:max-w-md">
+            <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] border border-slate-200 bg-white p-6 text-center shadow-[0_30px_90px_-32px_rgba(15,23,42,0.55)] sm:p-8">
+              <div className="relative mx-auto h-24 w-24">
+                <div className="absolute inset-0 animate-ping rounded-full bg-cyan-400/40"></div>
+                <CallAvatar
+                  src={incomingCall.fromAvatarUrl}
+                  name={incomingCall.fromName}
+                  className="relative h-24 w-24 flex-shrink-0 rounded-full object-cover shadow-xl"
+                  fallbackClassName="relative flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white shadow-xl"
+                />
+              </div>
+              <div>
+                <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-600">
+                  {incomingCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
+                </p>
+                <h3 className="mt-3 text-2xl font-semibold text-slate-900">
+                  {incomingCall.fromName}
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">Đang gọi cho bạn qua Surf Waves</p>
+                {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
+                <div className="mt-8 grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={declineIncomingCall}
@@ -2634,21 +2637,24 @@ export function GlobalCallProvider({ children }: PropsWithChildren) {
             </div>
           ) : activeCall ? (
             showPreConnectScreen ? (
-              <div className="max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8 md:flex md:items-center md:gap-8 md:text-left">
-                <CallAvatar
-                  src={activeCall.peerAvatarUrl}
-                  name={activeCall.peerName}
-                  className="mx-auto h-24 w-24 flex-shrink-0 rounded-full object-cover md:mx-0 md:h-32 md:w-32"
-                  fallbackClassName="mx-auto flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white md:mx-0 md:h-32 md:w-32 md:text-4xl"
-                />
-                <div className="md:min-w-0 md:flex-1">
-                <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-cyan-600 md:mt-0">
-                  {activeCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
-                </p>
-                <h3 className="mt-3 text-3xl font-semibold text-slate-900 md:text-4xl">{preConnectTitle}</h3>
-                <p className="mt-2 text-sm text-slate-500">{preConnectHint}</p>
-                {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
-                <div className="mt-8 flex items-center justify-center gap-4 md:justify-start">
+              <div className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-[32px] bg-white p-6 text-center shadow-2xl sm:p-8">
+                <div className="relative mx-auto h-24 w-24">
+                  <div className="absolute inset-0 animate-ping rounded-full bg-cyan-400/40"></div>
+                  <CallAvatar
+                    src={activeCall.peerAvatarUrl}
+                    name={activeCall.peerName}
+                    className="relative h-24 w-24 flex-shrink-0 rounded-full object-cover shadow-xl"
+                    fallbackClassName="relative flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-surf-primary to-cyan-500 text-2xl font-semibold text-white shadow-xl"
+                  />
+                </div>
+                <div>
+                  <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-600">
+                    {activeCall.mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
+                  </p>
+                  <h3 className="mt-3 text-2xl font-semibold text-slate-900">{preConnectTitle}</h3>
+                  <p className="mt-2 text-sm text-slate-500">{preConnectHint}</p>
+                  {callError && <p className="mt-3 text-sm text-red-500">{callError}</p>}
+                  <div className="mt-8 flex items-center justify-center gap-4">
                   <button
                     type="button"
                     onClick={() => {
