@@ -181,6 +181,7 @@ type ListConversationMessagesInput = {
   beforeCursor?: string;
   viewerId?: string;
   searchText?: string;
+  mediaOnly?: boolean;
 };
 
 type ListConversationMessagesResult = {
@@ -234,6 +235,10 @@ export const messageRepository = {
           normalizedSearchText &&
           !`${message.text} ${message.fileName ?? ''}`.toLowerCase().includes(normalizedSearchText)
         ) {
+          continue;
+        }
+
+        if (input.mediaOnly && !['image', 'file', 'audio'].includes(message.type)) {
           continue;
         }
 

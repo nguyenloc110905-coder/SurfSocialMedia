@@ -26,37 +26,12 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useClipStore } from '@/stores/clipStore';
+import type { ClipFeedItem } from '@/stores/clipStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useT } from '@/lib/i18n';
 
-type ShortVideo = {
-  _source?: 'clip' | 'post';
-  id: string;
-  authorId?: string;
-  authorDisplayName?: string;
-  authorPhotoURL?: string | null;
-  title?: string;
-  description?: string;
-  videoUrl: string;
-  thumbnailUrl?: string | null;
-  likeCount?: number;
-  likedBy?: string[];
-  commentCount?: number;
-  viewCount?: number;
-  allowComments?: boolean;
-  editOptions?: {
-    contentFit?: 'contain' | 'cover';
-    mutedOriginal?: boolean;
-  };
-  textOverlays?: Array<{
-    id?: string;
-    text?: string;
-    color?: string;
-    fontSize?: number;
-    placement?: 'top' | 'center' | 'bottom';
-  }>;
-};
+type ShortVideo = ClipFeedItem;
 
 type FeedResponse = {
   videos: ShortVideo[];
@@ -77,6 +52,12 @@ function optimizeCloudinaryVideo(url: string, reduceDataUsage = false) {
 
 function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false) {
   return null;
+}
+
+function commentsPathFor(item: ShortVideo) {
+  return item._source === 'post'
+    ? `/api/comments/${item.id}`
+    : `/api/videos/${item.id}/comments`;
 }
 
 function fmtCount(value = 0) {
@@ -398,7 +379,7 @@ function VideoItem({
           style={StyleSheet.absoluteFill}
           contentFit={contentFit}
           nativeControls={false}
-          allowsFullscreen={false}
+          fullscreenOptions={{ enable: false }}
           allowsPictureInPicture={false}
         />
         {(item.textOverlays ?? []).map((overlay, idx) => {
@@ -556,33 +537,41 @@ function VideoItem({
 
 type ShortVideoScreenProps = {
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showTitle?: boolean;
   onFullscreenChange?: (enabled: boolean) => void;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 export default function ShortVideoScreen({
   isActive = true,
+  scrollTopSignal = 0,
   resetSignal = 0,
   safeTop = true,
   showTitle = true,
   onFullscreenChange,
+  onScrollPositionChange,
 }: ShortVideoScreenProps) {
   const user = useAuthStore((state) => state.user);
   const t = useT();
   const clipRefreshSignal = useClipStore((state) => state.refreshSignal);
+  const items = useClipStore((state) => state.items);
+  const hasMore = useClipStore((state) => state.hasMore);
+  const nextCursor = useClipStore((state) => state.nextCursor);
+  const lastFetched = useClipStore((state) => state.lastFetched);
+  const setClipFeed = useClipStore((state) => state.setFeed);
+  const appendClipFeed = useClipStore((state) => state.appendFeed);
+  const setItems = useClipStore((state) => state.replaceItems);
   const autoplayClips = useSettingsStore((state) => state.prefs.autoplayClips);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const listRef = useRef<FlatList<ShortVideo>>(null);
-  const [items, setItems] = useState<ShortVideo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [height, setHeight] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => items.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [commentTarget, setCommentTarget] = useState<ShortVideo | null>(null);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -590,6 +579,11 @@ export default function ShortVideoScreen({
   const [commentSending, setCommentSending] = useState(false);
   const [landscapeLocked, setLandscapeLocked] = useState(false);
   const viewedRef = useRef<Set<string>>(new Set());
+  const scrollPositionChangeRef = useRef(onScrollPositionChange);
+
+  useEffect(() => {
+    scrollPositionChangeRef.current = onScrollPositionChange;
+  }, [onScrollPositionChange]);
 
   useEffect(() => {
     ScreenOrientation.unlockAsync().catch(() => {});
@@ -614,42 +608,60 @@ export default function ShortVideoScreen({
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     setActiveIndex(0);
-  }, [resetSignal]);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setActiveIndex(0);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   const load = useCallback(async (mode: 'initial' | 'refresh' | 'more' = 'initial') => {
+    if (mode === 'initial' && items.length > 0 && lastFetched && Date.now() - lastFetched < 90_000) {
+      setLoading(false);
+      return;
+    }
     if (mode === 'more') setLoadingMore(true);
     else if (mode === 'refresh') setRefreshing(true);
-    else setLoading(true);
+    else setLoading(items.length === 0);
 
     try {
       const params = new URLSearchParams({ limit: '10' });
       if (mode === 'more' && nextCursor) params.set('before', String(nextCursor));
       const data = await api.get<FeedResponse>(`/api/videos/feed?${params.toString()}`);
-      setItems((current) => {
-        const incoming = data.videos ?? [];
-        if (mode !== 'more') return incoming;
-        const existing = new Set(current.map((item) => `${item._source}:${item.id}`));
-        return [...current, ...incoming.filter((item) => !existing.has(`${item._source}:${item.id}`))];
-      });
-      setHasMore(!!data.hasMore);
-      setNextCursor(data.nextCursor ?? null);
+      const incoming = data.videos ?? [];
+      if (mode === 'more') {
+        appendClipFeed({
+          items: incoming,
+          hasMore: !!data.hasMore,
+          nextCursor: data.nextCursor ?? null,
+        });
+      } else {
+        setClipFeed({
+          items: incoming,
+          hasMore: !!data.hasMore,
+          nextCursor: data.nextCursor ?? null,
+        });
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [nextCursor]);
+  }, [appendClipFeed, items.length, lastFetched, nextCursor, setClipFeed]);
 
   useEffect(() => {
     load('initial').catch(() => setLoading(false));
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     if (!clipRefreshSignal) return;
     setActiveIndex(0);
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
     load('refresh').catch(() => setRefreshing(false));
-  }, [clipRefreshSignal]);
+  }, [clipRefreshSignal, load]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -667,7 +679,10 @@ export default function ShortVideoScreen({
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((token) => token.isViewable && typeof token.index === 'number');
-    if (typeof first?.index === 'number') setActiveIndex(first.index);
+    if (typeof first?.index === 'number') {
+      setActiveIndex(first.index);
+      scrollPositionChangeRef.current?.(first.index === 0);
+    }
   }).current;
 
   const onLayout = (event: LayoutChangeEvent) => {
@@ -718,7 +733,7 @@ export default function ShortVideoScreen({
     setCommentInput('');
     setCommentsLoading(true);
     try {
-      const res = await api.get<{ comments: CommentItem[] }>(`/api/comments/${item.id}`);
+      const res = await api.get<{ comments: CommentItem[] }>(commentsPathFor(item));
       setComments(res.comments ?? []);
     } catch (err) {
       Alert.alert(t('comments'), (err as Error).message || t('comments_load_error'));
@@ -731,7 +746,7 @@ export default function ShortVideoScreen({
     if (!commentTarget || !commentInput.trim() || commentSending) return;
     setCommentSending(true);
     try {
-      const created = await api.post<CommentItem>(`/api/comments/${commentTarget.id}`, {
+      const created = await api.post<CommentItem>(commentsPathFor(commentTarget), {
         content: commentInput.trim(),
       });
       setComments((current) => [...current, created]);

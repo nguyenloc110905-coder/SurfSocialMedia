@@ -13,11 +13,13 @@ import {
   Keyboard,
   Share,
   Platform,
+  Alert,
   ActivityIndicator,
   StyleSheet,
   useColorScheme,
   Dimensions,
 } from 'react-native';
+import type { TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -25,9 +27,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useUserStore } from '@/stores/userStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 import { gestureState, setReactionPickerActive } from '@/lib/gestureState';
 import { useT, type I18nKey } from '@/lib/i18n';
 
@@ -48,6 +52,29 @@ type Comment = {
 
 const REACTIONS = ['❤️', '🌊', '😂', '😮', '😢', '👍'] as const;
 
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
+] as const;
+
+function normalizeReportReason(reason: string): string {
+  switch (reason) {
+    case 'hate':
+      return 'hate_speech';
+    case 'fake_news':
+      return 'misinformation';
+    case 'illegal':
+      return 'inappropriate';
+    default:
+      return reason;
+  }
+}
+
 function parseMentions(text: string): string {
   return text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
 }
@@ -62,10 +89,23 @@ export type PostCardProps = {
   post: FeedPost;
   isVisible: boolean;
   navigation: NativeStackNavigationProp<RootStackParamList, any>;
+  onPostRemoved?: (postId: string) => void;
+  hideOptions?: boolean;
+};
+
+type PostReactedPayload = {
+  postId?: string;
+  likeCount?: number;
+  likedBy?: string[];
+  reactions?: Record<string, string>;
 };
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const MEDIA_W = SW - 24;
+const MEDIA_W = SW;
+const SHARED_MEDIA_W = MEDIA_W - 28;
+
+type MediaOrientation = 'portrait' | 'landscape' | 'square';
+type MediaSize = { width: number; height: number };
 
 const DARK = {
   bg: '#0f172a', card: '#1e293b', card2: '#253347',
@@ -77,6 +117,46 @@ const LIGHT = {
   border: '#e2e8f0', text: '#1f2937', subtext: '#64748b',
   placeholder: '#e2e8f0', accent: '#0ea5e9', inputBg: '#f1f5f9',
 };
+
+type PostTextFont = 'system' | 'serif' | 'rounded' | 'bold' | 'mono';
+
+const POST_TEXT_COLORS = new Set([
+  '#0f172a',
+  '#f8fafc',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+]);
+
+function postFontStyle(font?: PostTextFont): TextStyle {
+  switch (font) {
+    case 'serif':
+      return { fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }) };
+    case 'rounded':
+      return {
+        fontFamily: Platform.select({ ios: 'Avenir Next', android: 'sans-serif-medium', default: undefined }),
+        fontWeight: '700',
+      };
+    case 'bold':
+      return { fontWeight: '900' };
+    case 'mono':
+      return { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) };
+    default:
+      return {};
+  }
+}
+
+function postContentTextStyle(post: FeedPost, fallbackColor: string): TextStyle {
+  const color = post.textStyle?.color && POST_TEXT_COLORS.has(post.textStyle.color)
+    ? post.textStyle.color
+    : fallbackColor;
+  return { ...postFontStyle(post.textStyle?.font), color };
+}
 
 const FEELING_STR: Record<string, string> = {
   happy: '😊', excited: '🎉', sad: '😢', angry: '😠', loved: '❤️', grateful: '🙏',
@@ -116,6 +196,68 @@ function optimizeCloudinaryVideo(url: string, reduceDataUsage = false): string {
 
 function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false): string | null {
   return null;
+}
+
+function mediaOrientationForSize(width: number, height: number): MediaOrientation {
+  if (!width || !height) return 'square';
+  const ratio = width / height;
+  if (ratio < 0.88) return 'portrait';
+  if (ratio > 1.12) return 'landscape';
+  return 'square';
+}
+
+function mediaSizeFromUrl(url?: string | null): MediaSize | null {
+  if (!url) return null;
+  const match = url.match(/[?&]mw=(\d+(?:\.\d+)?)&mh=(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? { width, height }
+    : null;
+}
+
+function mediaHeightForOrientation(orientation: MediaOrientation, displayWidth = MEDIA_W): number {
+  if (orientation === 'portrait') return displayWidth * 5 / 4;
+  if (orientation === 'landscape') return displayWidth / 1.91;
+  return displayWidth;
+}
+
+function useResponsiveMediaBox(
+  sourceUri: string | null,
+  fallbackOrientation: MediaOrientation = 'square',
+  displayWidth = MEDIA_W,
+  metadataUrl?: string | null
+) {
+  const metadataSize = useMemo(() => mediaSizeFromUrl(metadataUrl ?? sourceUri), [metadataUrl, sourceUri]);
+  const metadataOrientation = metadataSize
+    ? mediaOrientationForSize(metadataSize.width, metadataSize.height)
+    : fallbackOrientation;
+  const [orientation, setOrientation] = useState<MediaOrientation>(metadataOrientation);
+
+  useEffect(() => {
+    let active = true;
+    setOrientation(metadataOrientation);
+    if (!sourceUri) return () => { active = false; };
+    if (metadataSize) return () => { active = false; };
+
+    Image.getSize(
+      sourceUri,
+      (width, imageHeight) => {
+        if (active) setOrientation(mediaOrientationForSize(width, imageHeight));
+      },
+      () => {
+        if (active) setOrientation(metadataOrientation);
+      }
+    );
+
+    return () => { active = false; };
+  }, [metadataOrientation, metadataSize, sourceUri]);
+
+  return useMemo(
+    () => ({ width: displayWidth, height: mediaHeightForOrientation(orientation, displayWidth), alignSelf: 'center' as const }),
+    [displayWidth, orientation]
+  );
 }
 
 function fmtCount(n: number): string {
@@ -324,11 +466,16 @@ const iv = StyleSheet.create({
 });
 
 // ── VideoPlaceholder ──────────────────────────────────────────────────────────
-function VideoPlaceholder() {
+function VideoPlaceholder({ url }: { url?: string }) {
   const scheme = useColorScheme();
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const bg = scheme === 'dark' ? '#1a2535' : '#d1d5db';
+  const thumbnail = url ? cloudinaryVideoThumbnail(url, reduceDataUsage) : null;
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', MEDIA_W, url);
   return (
-    <View style={[s.videoContainer, { backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
+    <View style={[s.videoContainer, mediaStyle, { backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
+      {thumbnail ? <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      <View style={s.videoPlaceholderOverlay} />
       <Ionicons name="play-circle-outline" size={52} color="rgba(255,255,255,0.55)" />
     </View>
   );
@@ -341,6 +488,7 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', MEDIA_W, url);
   const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
 
   useEffect(() => {
@@ -366,13 +514,13 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
   };
 
   return (
-    <View style={s.videoContainer}>
+    <View style={[s.videoContainer, mediaStyle]}>
       <VideoView
         player={player}
-        style={s.videoArea}
+        style={StyleSheet.absoluteFill}
         fullscreenOptions={{ enable: true }}
         allowsPictureInPicture={false}
-        contentFit="contain"
+        contentFit="cover"
       />
       {buffering && thumbnail && (
         <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -400,13 +548,11 @@ function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) 
     if (isVideoUrl(urls[0])) {
       return isVisible
         ? <VideoMediaItem key={`${urls[0]}:${reduceDataUsage}`} url={urls[0]} isVisible />
-        : <VideoPlaceholder />;
+        : <VideoPlaceholder url={urls[0]} />;
     }
     return (
       <>
-        <TouchableOpacity onPress={() => setViewerIndex(0)} activeOpacity={0.92}>
-          <FeedImage uri={urls[0]} style={s.mediaArea} />
-        </TouchableOpacity>
+        <SingleImageMedia uri={urls[0]} onPress={() => setViewerIndex(0)} />
         {viewerIndex !== null && (
           <ImageViewer urls={urls} initialIndex={viewerIndex} onClose={() => setViewerIndex(null)} />
         )}
@@ -666,6 +812,8 @@ function CommentSheet({ postId, onClose, onCountChange }: {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
+  const profile = useUserStore((state) => state.profile);
+  const avatarUrl = profile?.photoURL || user?.photoURL || '';
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -897,8 +1045,8 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               </View>
             )}
             <View style={[cs.inputRow, { borderTopColor: C.border }]}>
-              {user?.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={cs.inputAvatar} />
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={cs.inputAvatar} />
               ) : (
                 <View style={[cs.inputAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
                   <Ionicons name="person" size={12} color={C.subtext} />
@@ -1079,25 +1227,75 @@ const rs = StyleSheet.create({
 // ── EmbedVideoItem ─────────────────────────────────────────────────────────
 function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean }) {
   const [buffering, setBuffering] = useState(true);
+  const muted = useMediaPlaybackStore((state) => state.videosMuted);
+  const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
-  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = false; });
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', SHARED_MEDIA_W, url);
+  const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
   useEffect(() => {
     const sub = player.addListener('statusChange', (e: { status: string }) => setBuffering(e.status === 'idle' || e.status === 'loading'));
     return () => { try { player.pause(); } catch {} sub.remove(); };
   }, [player]);
   useEffect(() => { try { isVisible ? player.play() : player.pause(); } catch {} }, [isVisible, player]);
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
   return (
-    <View style={ev.wrap}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" />
+    <View style={[ev.wrap, mediaStyle]}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture={false}
+      />
       {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
       {buffering && <View style={ev.loader}><ActivityIndicator color="#fff" size="small" /></View>}
+      <TouchableOpacity style={s.muteBtn} onPress={() => setVideosMuted(!muted)}>
+        <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={15} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SingleImageMedia({ uri, onPress }: { uri: string; onPress: () => void }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(sourceUri, 'square', MEDIA_W, uri);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
+      <FeedImage uri={uri} style={mediaStyle} resizeMode="cover" />
+    </TouchableOpacity>
+  );
+}
+
+function SharedImageMedia({ uri }: { uri: string }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(sourceUri, 'square', SHARED_MEDIA_W, uri);
+
+  return <FeedImage uri={uri} style={mediaStyle} resizeMode="cover" />;
+}
+
+function EmbedVideoPlaceholder({ url }: { url: string }) {
+  const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
+  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', SHARED_MEDIA_W, url);
+  return (
+    <View style={[ev.wrap, mediaStyle]}>
+      {thumbnail ? <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      <View style={ev.placeholderOverlay}>
+        <Ionicons name="play-circle-outline" size={42} color="rgba(255,255,255,0.72)" />
+      </View>
     </View>
   );
 }
 const ev = StyleSheet.create({
-  wrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
+  wrap: { alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden' },
   loader: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+  placeholderOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.18)' },
 });
 
 // ── SharedPostEmbed ─────────────────────────────────────────────────────────
@@ -1120,8 +1318,12 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
           <Text style={[se.author, { color: C.text }]} numberOfLines={1}>{sf.authorDisplayName}</Text>
         </View>
         {text ? <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text> : null}
-        {hasVideo && !firstMedia && <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible={isVisible} />}
-        {firstMedia && <FeedImage uri={firstMedia} style={se.media} resizeMode="cover" />}
+        {hasVideo && !firstMedia && (
+          isVisible
+            ? <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible />
+            : <EmbedVideoPlaceholder url={firstVideo} />
+        )}
+        {firstMedia && <SharedImageMedia uri={firstMedia} />}
       </View>
     </View>
   );
@@ -1218,13 +1420,226 @@ const sm = StyleSheet.create({
 });
 
 // ── PostCard ──────────────────────────────────────────────────────────────────
-export default function PostCard({ post, isVisible, navigation }: PostCardProps) {
+function PostOptionsSheet({
+  visible,
+  saved,
+  canReport,
+  canManage,
+  C,
+  onClose,
+  onToggleSave,
+  onReport,
+  onArchive,
+  onDelete,
+}: {
+  visible: boolean;
+  saved: boolean;
+  canReport: boolean;
+  canManage: boolean;
+  C: typeof LIGHT;
+  onClose: () => void;
+  onToggleSave: () => void;
+  onReport: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      </TouchableOpacity>
+      <View style={[os.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 10 }]}>
+        <View style={[os.handle, { backgroundColor: C.border }]} />
+        <TouchableOpacity
+          style={[os.item, { borderBottomColor: C.border }]}
+          activeOpacity={0.75}
+          onPress={() => {
+            onClose();
+            onToggleSave();
+          }}
+        >
+          <View style={[os.iconWrap, { backgroundColor: saved ? C.accent + '22' : C.card2 }]}>
+            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? C.accent : C.text} />
+          </View>
+          <Text style={[os.itemText, { color: C.text }]}>{saved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}</Text>
+          {saved ? <Ionicons name="checkmark" size={18} color={C.accent} /> : null}
+        </TouchableOpacity>
+        {canReport ? (
+          <TouchableOpacity
+            style={os.item}
+            activeOpacity={0.75}
+            onPress={() => {
+              onClose();
+              onReport();
+            }}
+          >
+            <View style={[os.iconWrap, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="warning-outline" size={20} color="#ef4444" />
+            </View>
+            <Text style={[os.itemText, { color: '#ef4444' }]}>Báo cáo bài viết</Text>
+          </TouchableOpacity>
+        ) : null}
+        {canManage ? (
+          <>
+            <TouchableOpacity
+              style={[os.item, { borderBottomColor: C.border }]}
+              activeOpacity={0.75}
+              onPress={() => {
+                onClose();
+                onArchive();
+              }}
+            >
+              <View style={[os.iconWrap, { backgroundColor: C.card2 }]}>
+                <Ionicons name="archive-outline" size={20} color={C.text} />
+              </View>
+              <Text style={[os.itemText, { color: C.text }]}>Lưu trữ bài viết</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={os.item}
+              activeOpacity={0.75}
+              onPress={() => {
+                onClose();
+                onDelete();
+              }}
+            >
+              <View style={[os.iconWrap, { backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              </View>
+              <Text style={[os.itemText, { color: '#ef4444' }]}>Xóa bài viết</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function ReportPostModal({
+  visible,
+  C,
+  submitting,
+  reason,
+  details,
+  onClose,
+  onReasonChange,
+  onDetailsChange,
+  onSubmit,
+}: {
+  visible: boolean;
+  C: typeof LIGHT;
+  submitting: boolean;
+  reason: string;
+  details: string;
+  onClose: () => void;
+  onReasonChange: (value: string) => void;
+  onDetailsChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <View style={reportStyles.backdrop}>
+        <View style={[reportStyles.panel, { backgroundColor: C.card }]}>
+          <View style={[reportStyles.header, { borderBottomColor: C.border }]}>
+            <Text style={[reportStyles.title, { color: C.text }]}>Báo cáo bài viết</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={C.subtext} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[reportStyles.desc, { color: C.subtext }]}>Hãy cho chúng tôi biết vấn đề với bài viết này.</Text>
+          <ScrollView style={reportStyles.reasonList} showsVerticalScrollIndicator={false}>
+            {REPORT_CATEGORIES.map((category) => {
+              const selected = reason === category.key;
+              return (
+                <TouchableOpacity
+                  key={category.key}
+                  style={[
+                    reportStyles.reasonRow,
+                    {
+                      backgroundColor: selected ? C.accent + '16' : C.card2,
+                      borderColor: selected ? C.accent : C.border,
+                    },
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => onReasonChange(category.key)}
+                >
+                  <Ionicons
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={19}
+                    color={selected ? C.accent : C.subtext}
+                  />
+                  <Text style={[reportStyles.reasonText, { color: C.text }]}>{category.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          {reason ? (
+            <TextInput
+              style={[reportStyles.detailsInput, { backgroundColor: C.inputBg, color: C.text, borderColor: C.border }]}
+              placeholder="Chi tiết bổ sung (không bắt buộc)"
+              placeholderTextColor={C.placeholder}
+              value={details}
+              onChangeText={onDetailsChange}
+              multiline
+              maxLength={500}
+              textAlignVertical="top"
+            />
+          ) : null}
+          <View style={reportStyles.footer}>
+            <TouchableOpacity style={[reportStyles.cancelBtn, { backgroundColor: C.card2 }]} onPress={onClose}>
+              <Text style={[reportStyles.cancelText, { color: C.text }]}>Hủy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[reportStyles.submitBtn, { backgroundColor: C.accent, opacity: submitting || !reason ? 0.55 : 1 }]}
+              onPress={onSubmit}
+              disabled={submitting || !reason}
+            >
+              {submitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={reportStyles.submitText}>Gửi báo cáo</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const os = StyleSheet.create({
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8 },
+  handle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 6 },
+  item: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, borderBottomWidth: StyleSheet.hairlineWidth },
+  iconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  itemText: { flex: 1, fontSize: 15, fontWeight: '700' },
+});
+
+const reportStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', paddingHorizontal: 18 },
+  panel: { borderRadius: 18, overflow: 'hidden', maxHeight: '86%' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  title: { fontSize: 18, fontWeight: '800' },
+  desc: { fontSize: 13, lineHeight: 18, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
+  reasonList: { maxHeight: 290, paddingHorizontal: 14 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8 },
+  reasonText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  detailsInput: { marginHorizontal: 14, marginTop: 4, minHeight: 84, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  footer: { flexDirection: 'row', gap: 10, padding: 14 },
+  cancelBtn: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { fontSize: 14, fontWeight: '800' },
+  submitBtn: { flex: 1.2, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  submitText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+});
+
+function PostCard({ post, isVisible, navigation, onPostRemoved, hideOptions = false }: PostCardProps) {
   const scheme = useColorScheme();
   const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
   const uid = user?.uid;
   const updatePost = useFeedStore((s) => s.updatePost);
+  const removePost = useFeedStore((s) => s.removePost);
+  const isOwnPost = !!uid && uid === post.authorId;
 
   const [liked, setLiked] = useState(uid ? (post.likedBy?.includes(uid) ?? false) : false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(uid ? (post.reactions?.[uid] ?? null) : null);
@@ -1234,6 +1649,11 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   const [commentCount, setCommentCount] = useState(post.replyCount ?? 0);
   const [showComments, setShowComments] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showOptionsSheet, setShowOptionsSheet] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [showReactionsSheet, setShowReactionsSheet] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
@@ -1247,16 +1667,167 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   const handleLikePressRef = useRef<() => void>(() => {});
   const handleReactRef = useRef<(e: string) => void>(() => {});
 
+  useEffect(() => {
+    setSaved(uid ? (post.savedBy?.includes(uid) ?? false) : false);
+  }, [post.savedBy, uid]);
+
+  useEffect(() => {
+    setLiked(uid ? (post.likedBy?.includes(uid) ?? false) : false);
+    setSelectedReaction(uid ? (post.reactions?.[uid] ?? null) : null);
+    setReactionsMap(post.reactions ?? {});
+    setLikeCount(post.likeCount ?? 0);
+    setCommentCount(post.replyCount ?? 0);
+  }, [post.likedBy, post.likeCount, post.reactions, post.replyCount, uid]);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleReacted = (payload: PostReactedPayload) => {
+      if (payload?.postId !== post.id) return;
+      const nextReactions = payload.reactions ?? {};
+      const nextLikedBy = payload.likedBy ?? Object.keys(nextReactions);
+      const nextLikeCount = payload.likeCount ?? nextLikedBy.length;
+
+      setReactionsMap(nextReactions);
+      setLikeCount(nextLikeCount);
+      setLiked(uid ? nextLikedBy.includes(uid) : false);
+      setSelectedReaction(uid ? (nextReactions[uid] ?? null) : null);
+      updatePost({
+        id: post.id,
+        likeCount: nextLikeCount,
+        likedBy: nextLikedBy,
+        reactions: nextReactions,
+      });
+    };
+
+    const handleNewComment = (comment: Comment & { postId?: string }) => {
+      if (comment?.postId && comment.postId !== post.id) return;
+      setCommentCount((current) => {
+        const next = current + 1;
+        updatePost({ id: post.id, replyCount: next });
+        return next;
+      });
+    };
+
+    socket.emit('post:join', post.id);
+    socket.on('post:reacted', handleReacted);
+    socket.on('comment:new', handleNewComment);
+
+    return () => {
+      socket.off('post:reacted', handleReacted);
+      socket.off('comment:new', handleNewComment);
+      socket.emit('post:leave', post.id);
+    };
+  }, [post.id, uid, updatePost]);
+
   const handleShare = () => setShowShareModal(true);
 
+  const removeCurrentPost = useCallback(() => {
+    removePost(post.id);
+    onPostRemoved?.(post.id);
+  }, [onPostRemoved, post.id, removePost]);
+
   const handleSave = async () => {
-    if (!uid) return;
+    if (!uid) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để lưu bài viết.');
+      return;
+    }
     const next = !saved;
+    const prevSavedBy = post.savedBy ?? [];
+    const nextSavedBy = next
+      ? Array.from(new Set([...prevSavedBy, uid]))
+      : prevSavedBy.filter((id) => id !== uid);
+
     setSaved(next);
+    updatePost({ id: post.id, savedBy: nextSavedBy });
     try {
       if (next) await api.post(`/api/posts/${post.id}/save`, {});
       else await api.delete(`/api/posts/${post.id}/save`);
-    } catch { setSaved(!next); }
+    } catch {
+      setSaved(!next);
+      updatePost({ id: post.id, savedBy: prevSavedBy });
+      Alert.alert('Chưa thể lưu', 'Vui lòng kiểm tra kết nối và thử lại.');
+    }
+  };
+
+  const closeReportModal = () => {
+    if (reportSubmitting) return;
+    setShowReportModal(false);
+    setReportReason('');
+    setReportDetails('');
+  };
+
+  const handleArchivePost = () => {
+    if (!isOwnPost) return;
+    Alert.alert(
+      'Lưu trữ bài viết?',
+      'Bài viết sẽ không còn hiển thị trên trang cá nhân/feed và chỉ bạn xem được trong kho lưu trữ.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Lưu trữ',
+          onPress: async () => {
+            try {
+              await api.post(`/api/posts/${post.id}/archive`, {});
+              removeCurrentPost();
+            } catch {
+              Alert.alert('Không thể lưu trữ', 'Vui lòng thử lại sau.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeletePost = () => {
+    if (!isOwnPost) return;
+    Alert.alert(
+      'Xóa bài viết?',
+      'Bài viết sẽ được chuyển vào thùng rác theo cài đặt hiện tại.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/api/posts/${post.id}`);
+              removeCurrentPost();
+            } catch {
+              Alert.alert('Không thể xóa bài viết', 'Vui lòng thử lại sau.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleReport = async () => {
+    if (!uid) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để báo cáo bài viết.');
+      return;
+    }
+    if (!reportReason || reportSubmitting) return;
+    setReportSubmitting(true);
+    try {
+      await api.post(`/api/posts/${post.id}/report`, {
+        reason: normalizeReportReason(reportReason),
+        details: reportDetails.trim(),
+      });
+      setShowReportModal(false);
+      setReportReason('');
+      setReportDetails('');
+      Alert.alert('Đã gửi báo cáo', 'Cảm ơn bạn đã giúp Surf an toàn hơn.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const duplicate = /already|reported|đã báo cáo|da bao cao/i.test(msg);
+      Alert.alert(
+        duplicate ? 'Bạn đã báo cáo bài viết này rồi' : 'Không thể gửi báo cáo',
+        duplicate ? 'Báo cáo trước đó của bạn đang được xử lý.' : 'Vui lòng thử lại sau.'
+      );
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   const MAX_CHARS = 150;
@@ -1264,6 +1835,8 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   const displayText = expanded
     ? post.content
     : long ? post.content.slice(0, MAX_CHARS).trimEnd() + '…' : post.content;
+
+  const contentTextStyle = useMemo(() => postContentTextStyle(post, C.text), [C.text, post]);
 
   const handleReact = async (emoji: string) => {
     if (!uid) return;
@@ -1422,15 +1995,22 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
             <Ionicons name={privacyIcon(post.privacy)} size={11} color={C.subtext} />
           </View>
         </View>
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        {hideOptions ? null : (
+        <TouchableOpacity
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          onPress={() => setShowOptionsSheet(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Mở tùy chọn bài viết"
+        >
           <Ionicons name="ellipsis-horizontal" size={18} color={C.subtext} />
         </TouchableOpacity>
+        )}
       </View>
 
       {/* Content */}
       {post.content ? (
         <View style={s.contentWrap}>
-          <Text style={[s.contentText, { color: C.text }]}>{displayText}</Text>
+          <Text style={[s.contentText, contentTextStyle]}>{displayText}</Text>
           {long && (
             <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
               <Text style={[s.seeMore, { color: C.accent }]}>{expanded ? t('post_see_less') : t('post_see_more')}</Text>
@@ -1508,6 +2088,31 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
         <ReactionsSheet postId={post.id} onClose={() => setShowReactionsSheet(false)} C={C} />
       )}
 
+      <PostOptionsSheet
+        visible={showOptionsSheet}
+        saved={saved}
+        canReport={!isOwnPost}
+        canManage={isOwnPost}
+        C={C}
+        onClose={() => setShowOptionsSheet(false)}
+        onToggleSave={handleSave}
+        onReport={() => setShowReportModal(true)}
+        onArchive={handleArchivePost}
+        onDelete={handleDeletePost}
+      />
+
+      <ReportPostModal
+        visible={showReportModal}
+        C={C}
+        submitting={reportSubmitting}
+        reason={reportReason}
+        details={reportDetails}
+        onClose={closeReportModal}
+        onReasonChange={setReportReason}
+        onDetailsChange={setReportDetails}
+        onSubmit={handleReport}
+      />
+
       {showComments && (
         <CommentSheet
           postId={post.id}
@@ -1522,6 +2127,8 @@ export default function PostCard({ post, isVisible, navigation }: PostCardProps)
   );
 }
 
+export default React.memo(PostCard);
+
 const s = StyleSheet.create({
   card: { borderRadius: 14, borderWidth: 1, marginBottom: 12, overflow: 'hidden' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
@@ -1533,10 +2140,19 @@ const s = StyleSheet.create({
   contentWrap: { paddingHorizontal: 12, paddingBottom: 8 },
   contentText: { fontSize: 14, lineHeight: 21 },
   seeMore: { fontSize: 14, fontWeight: '600' },
-  mediaArea: { width: MEDIA_W, height: MEDIA_W * 0.5625, alignSelf: 'center' },
-  videoContainer: { width: MEDIA_W, maxHeight: MEDIA_W, minHeight: MEDIA_W * 0.5625, alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
-  videoArea: { width: MEDIA_W, height: MEDIA_W },
-  muteBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, padding: 6 },
+  mediaArea: { width: MEDIA_W, height: MEDIA_W / 1.91, alignSelf: 'center' },
+  videoContainer: { alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
+  videoPlaceholderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)' },
+  muteBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 3,
+    elevation: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 14,
+    padding: 6,
+  },
   videoBuffering: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1 },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 },

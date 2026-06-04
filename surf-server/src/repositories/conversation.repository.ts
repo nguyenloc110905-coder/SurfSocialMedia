@@ -66,6 +66,51 @@ export type ConversationListDetail = {
   memberIds: string[];
   unreadCount: number;
   muted: boolean;
+  muteMessages: boolean;
+  muteCalls: boolean;
+  muteExpiresAt: Date | null;
+};
+
+export type ConversationMuteSettings = {
+  muted: boolean;
+  muteMessages: boolean;
+  muteCalls: boolean;
+  expiresAt: Date | null;
+};
+
+const readMuteSettingsForUser = (
+  data: Record<string, unknown>,
+  userId: string
+): ConversationMuteSettings => {
+  const mutedBy = Array.isArray(data.mutedBy) ? (data.mutedBy as string[]) : [];
+  const legacyMuted = mutedBy.includes(userId);
+  const settingsByUser =
+    data.muteSettingsByUser &&
+    typeof data.muteSettingsByUser === 'object' &&
+    !Array.isArray(data.muteSettingsByUser)
+      ? (data.muteSettingsByUser as Record<string, unknown>)
+      : {};
+  const raw = settingsByUser[userId];
+  const settings =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+
+  const expiresAt = settings ? toDate(settings.expiresAt) ?? null : null;
+  const expired = Boolean(expiresAt && expiresAt.getTime() <= Date.now());
+  const muteMessages = settings
+    ? settings.muteMessages !== false && !expired
+    : legacyMuted;
+  const muteCalls = settings
+    ? settings.muteCalls !== false && !expired
+    : legacyMuted;
+
+  return {
+    muted: (muteMessages || muteCalls) && !expired,
+    muteMessages,
+    muteCalls,
+    expiresAt: expired ? null : expiresAt,
+  };
 };
 
 export const conversationRepository = {
@@ -203,12 +248,15 @@ export const conversationRepository = {
       })
       .map((doc) => {
         const data = (doc.data() ?? {}) as Record<string, unknown>;
-        const mutedBy = Array.isArray(data.mutedBy) ? (data.mutedBy as string[]) : [];
+        const muteSettings = readMuteSettingsForUser(data, userId);
         return {
           item: mapConservationDoc(doc.id, data),
           memberIds: mapMemberIds(data.memberIds),
           unreadCount: getUnreadCountForUser(data, userId),
-          muted: mutedBy.includes(userId),
+          muted: muteSettings.muted,
+          muteMessages: muteSettings.muteMessages,
+          muteCalls: muteSettings.muteCalls,
+          muteExpiresAt: muteSettings.expiresAt,
         };
       });
   },
@@ -245,6 +293,9 @@ export const conversationRepository = {
         memberIds: detail.memberIds,
         unreadCount: detail.unreadCount,
         muted: false,
+        muteMessages: false,
+        muteCalls: false,
+        muteExpiresAt: null,
       }));
   },
 
@@ -332,11 +383,45 @@ export const conversationRepository = {
     });
   },
 
-  async setMutedForUser(conversationId: string, userId: string, muted: boolean): Promise<void> {
+  async setMutedForUser(
+    conversationId: string,
+    userId: string,
+    settings: {
+      muted: boolean;
+      muteMessages: boolean;
+      muteCalls: boolean;
+      expiresAt: Date | null;
+    }
+  ): Promise<ConversationMuteSettings> {
+    const active = settings.muted && (settings.muteMessages || settings.muteCalls);
+    const normalized: ConversationMuteSettings = active
+      ? {
+          muted: true,
+          muteMessages: settings.muteMessages,
+          muteCalls: settings.muteCalls,
+          expiresAt: settings.expiresAt,
+        }
+      : {
+          muted: false,
+          muteMessages: false,
+          muteCalls: false,
+          expiresAt: null,
+        };
+
     await col().doc(conversationId).update({
-      mutedBy: muted ? FieldValue.arrayUnion(userId) : FieldValue.arrayRemove(userId),
+      mutedBy: normalized.muted ? FieldValue.arrayUnion(userId) : FieldValue.arrayRemove(userId),
+      [`muteSettingsByUser.${userId}`]: normalized.muted
+        ? {
+            muteMessages: normalized.muteMessages,
+            muteCalls: normalized.muteCalls,
+            expiresAt: normalized.expiresAt,
+            updatedAt: FieldValue.serverTimestamp(),
+          }
+        : FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    return normalized;
   },
 
   async getMutedBy(conversationId: string): Promise<string[]> {
@@ -344,6 +429,18 @@ export const conversationRepository = {
     if (!snap.exists) return [];
     const data = snap.data() ?? {};
     return Array.isArray(data.mutedBy) ? (data.mutedBy as string[]) : [];
+  },
+
+  async getMuteSettingsByUser(
+    conversationId: string
+  ): Promise<Record<string, ConversationMuteSettings>> {
+    const snap = await col().doc(conversationId).get();
+    if (!snap.exists) return {};
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const memberIds = mapMemberIds(data.memberIds);
+    return Object.fromEntries(
+      memberIds.map((userId) => [userId, readMuteSettingsForUser(data, userId)])
+    );
   },
 
   async refreshPreviewIfLatestMessage(

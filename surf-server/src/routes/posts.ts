@@ -23,10 +23,38 @@ const router = Router();
 type PostListItem = {
   id: string;
   deleted?: boolean;
+  archived?: boolean;
   privacy?: string;
   content?: string;
   [key: string]: unknown;
 };
+
+const POST_TEXT_FONTS = new Set(['system', 'serif', 'rounded', 'bold', 'mono']);
+const POST_TEXT_COLORS = new Set([
+  '#0f172a',
+  '#f8fafc',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+]);
+
+function normalizePostTextStyle(input: unknown): { font?: string; color?: string } | null {
+  if (!input || typeof input !== 'object') return null;
+  const style = input as { font?: unknown; color?: unknown };
+  const normalized: { font?: string; color?: string } = {};
+  if (typeof style.font === 'string' && POST_TEXT_FONTS.has(style.font) && style.font !== 'system') {
+    normalized.font = style.font;
+  }
+  if (typeof style.color === 'string' && POST_TEXT_COLORS.has(style.color)) {
+    normalized.color = style.color;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
 
 /** Returns true if any URL in the array is a video (Cloudinary or by extension) */
 function detectHasVideo(urls: string[]): boolean {
@@ -87,6 +115,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       groupId,
       isAnonymous = false,
       poll,
+      textStyle,
     } = req.body;
 
     if (!content?.trim() && mediaUrls.length === 0) {
@@ -148,6 +177,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
     const now = new Date();
     const docRef = postsRef.doc();
+    const normalizedTextStyle = content?.trim() ? normalizePostTextStyle(textStyle) : null;
     await docRef.set({
       authorId: req.uid,
       authorDisplayName: user?.displayName ?? 'Anonymous',
@@ -168,6 +198,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       hasVideo: detectHasVideo(Array.isArray(mediaUrls) ? mediaUrls : []),
       isAnonymous: !!isAnonymous,
       poll: formattedPoll,
+      textStyle: normalizedTextStyle,
     });
     const created = await docRef.get();
 
@@ -270,7 +301,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       const snap = await postsRef.get();
       posts = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as PostListItem)
-        .filter((p) => !p.deleted && p.privacy !== 'only-me')
+        .filter((p) => !p.deleted && !p.archived && p.privacy !== 'only-me')
         .filter((p) => {
           const content = p.content ?? '';
           // Match both #hashtag and #hashtag-with-dashes or any non-space chars
@@ -367,6 +398,7 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
       id: string;
       content?: string;
       deleted?: boolean;
+      archived?: boolean;
       hasVideo?: boolean;
       privacy?: string;
       location?: string;
@@ -376,7 +408,7 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
     };
     let posts = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
-      .filter((p) => !p.deleted && p.privacy !== 'only-me')
+      .filter((p) => !p.deleted && !p.archived && p.privacy !== 'only-me')
       .filter((p) => isMatch(p.content ?? '') || isMatch(p.authorDisplayName ?? ''))
       .filter((p) => (cutoffMs === null ? true : getCreatedAtMs(p.createdAt) >= cutoffMs))
       .filter((p) =>
@@ -461,6 +493,29 @@ router.get('/trash', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// GET /archive — danh sách bài viết đã lưu trữ của user
+router.get('/archive', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const snap = await getDb()
+      .collection('posts')
+      .where('authorId', '==', req.uid!)
+      .where('archived', '==', true)
+      .get();
+    type PostDoc = { id: string; archivedAt?: { toMillis?: () => number }; [key: string]: unknown };
+    const posts = snap.docs
+      .filter((d) => !d.data().deleted)
+      .map((d) => ({ id: d.id, ...d.data() }) as PostDoc)
+      .sort((a, b) => {
+        const aTime = a.archivedAt?.toMillis?.() ?? 0;
+        const bTime = b.archivedAt?.toMillis?.() ?? 0;
+        return bTime - aTime;
+      });
+    res.json({ posts });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 /**
  * @swagger
  * /api/posts/saved:
@@ -480,7 +535,7 @@ router.get('/saved', requireAuth, async (req: AuthRequest, res) => {
       .limit(20)
       .get();
     const posts = snap.docs
-      .filter((d) => !d.data().deleted)
+      .filter((d) => !d.data().deleted && !d.data().archived)
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
         const getTs = (v: unknown): number => {
@@ -531,7 +586,7 @@ router.post('/:id/save', requireAuth, async (req: AuthRequest, res) => {
   try {
     const ref = getDb().collection('posts').doc(req.params.id);
     const doc = await ref.get();
-    if (!doc.exists || doc.data()?.deleted === true) {
+    if (!doc.exists || doc.data()?.deleted === true || doc.data()?.archived === true) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -551,6 +606,53 @@ router.delete('/:id/save', requireAuth, async (req: AuthRequest, res) => {
     const ref = getDb().collection('posts').doc(req.params.id);
     await ref.update({ savedBy: FieldValue.arrayRemove(req.uid!) });
     res.json({ saved: false });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/archive — lưu trữ bài viết (chỉ tác giả)
+router.post('/:id/archive', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = getDb().collection('posts').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    if (doc.data()?.authorId !== req.uid) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+    await ref.update({
+      archived: true,
+      archivedAt: new Date(),
+      pinnedAt: null,
+    });
+    res.json({ archived: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /:id/unarchive — khôi phục bài viết khỏi kho lưu trữ (chỉ tác giả)
+router.post('/:id/unarchive', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = getDb().collection('posts').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    if (doc.data()?.authorId !== req.uid) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+    await ref.update({
+      archived: false,
+      archivedAt: null,
+    });
+    res.json({ archived: false });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -586,7 +688,7 @@ router.post('/:id/poll/:optionId', requireAuth, async (req: AuthRequest, res) =>
 
     await getDb().runTransaction(async (t) => {
       const doc = await t.get(postRef);
-      if (!doc.exists || doc.data()?.deleted === true) {
+      if (!doc.exists || doc.data()?.deleted === true || doc.data()?.archived === true) {
         throw new Error('Post not found');
       }
       const data = doc.data() as any;
@@ -684,7 +786,7 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
     const postDoc = await db.collection('posts').doc(req.params.id).get();
-    if (!postDoc.exists || postDoc.data()?.deleted === true) {
+    if (!postDoc.exists || postDoc.data()?.deleted === true || postDoc.data()?.archived === true) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -826,11 +928,15 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const postsRef = getDb().collection('posts');
     const postDoc = await postsRef.doc(req.params.id).get();
     if (!postDoc.exists || postDoc.data()?.deleted === true) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    if (postDoc.data()?.archived === true && postDoc.data()?.authorId !== req.uid) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -857,7 +963,7 @@ router.patch('/:id/pin', requireAuth, async (req: AuthRequest, res) => {
     const ref = db.collection('posts').doc(req.params.id);
     const doc = await ref.get();
 
-    if (!doc.exists || doc.data()?.deleted === true) {
+    if (!doc.exists || doc.data()?.deleted === true || doc.data()?.archived === true) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -1034,7 +1140,7 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
     const postsRef = getDb().collection('posts');
     const ref = postsRef.doc(req.params.id);
     const doc = await ref.get();
-    if (!doc.exists) {
+    if (!doc.exists || doc.data()?.deleted === true || doc.data()?.archived === true) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -1136,7 +1242,7 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
     const usersRef = db.collection('users');
 
     const originalDoc = await postsRef.doc(req.params.id).get();
-    if (!originalDoc.exists || originalDoc.data()?.deleted === true) {
+    if (!originalDoc.exists || originalDoc.data()?.deleted === true || originalDoc.data()?.archived === true) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }

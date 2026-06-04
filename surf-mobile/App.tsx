@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
+import { TamaguiProvider } from '@tamagui/core';
 import Navigation from './src/navigation';
 import { useAuthStore } from './src/stores/authStore';
 import { useFeedStore } from './src/stores/feedStore';
@@ -11,6 +12,8 @@ import { connectSocket, disconnectSocket, getSocket } from './src/lib/socket';
 import { useNotificationStore } from './src/stores/notificationStore';
 import { useFriendStore } from './src/stores/friendStore';
 import { useSettingsStore } from './src/stores/settingsStore';
+import { useUserStore } from './src/stores/userStore';
+import { tamaguiConfig } from './tamagui.config';
 
 export default function App() {
   const scheme = useColorScheme();
@@ -24,6 +27,9 @@ export default function App() {
   const resetAuth = useAuthStore((s) => s.resetAuth);
   const user = useAuthStore((s) => s.user);
   const fetchFeed = useFeedStore((s) => s.fetch);
+  const fetchProfile = useUserStore((s) => s.fetchProfile);
+  const lastOnlineSyncAtRef = useRef(0);
+  const wasOnlineRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     void initializeSettings();
@@ -76,17 +82,24 @@ export default function App() {
 
   // Prefetch feed ngay khi auth xong — chạy song song với navigation render
   useEffect(() => {
-    if (user) fetchFeed();
-  }, [user, fetchFeed]);
+    if (user?.uid) {
+      void fetchFeed();
+      void fetchProfile();
+    }
+  }, [user?.uid, fetchFeed, fetchProfile]);
 
   // Sync when coming back online
   useEffect(() => {
     if (!user) return;
 
     const unsubscribe = NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable) {
+      const isOnline = !!state.isConnected && !!state.isInternetReachable;
+      const wasOnline = wasOnlineRef.current;
+      wasOnlineRef.current = isOnline;
+      if (isOnline && wasOnline === false && Date.now() - lastOnlineSyncAtRef.current > 30_000) {
         console.log('🌐 Back online, syncing feed...');
-        fetchFeed(true);
+        lastOnlineSyncAtRef.current = Date.now();
+        void fetchFeed(true);
       }
     });
 
@@ -131,9 +144,11 @@ export default function App() {
   }, [user?.uid]);
 
   return (
-    <SafeAreaProvider style={{ backgroundColor: appBg }}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={appBg} translucent={false} />
-      <Navigation />
-    </SafeAreaProvider>
+    <TamaguiProvider config={tamaguiConfig} defaultTheme={isDark ? 'dark_surf' : 'light_surf'}>
+      <SafeAreaProvider style={{ backgroundColor: appBg }}>
+        <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={appBg} translucent={false} />
+        <Navigation />
+      </SafeAreaProvider>
+    </TamaguiProvider>
   );
 }

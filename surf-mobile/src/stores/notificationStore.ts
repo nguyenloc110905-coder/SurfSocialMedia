@@ -35,6 +35,7 @@ export type RealtimeMessagePayload = {
     lastMessagePreview?: string | null;
     lastMessageAt?: string | null;
   };
+  mutedBy?: string[];
 };
 
 export type FriendRequestPayload = {
@@ -123,7 +124,9 @@ function friendRequestToNotification(payload: FriendRequestPayload): Notificatio
 
 type NotificationState = {
   items: NotificationItem[];
+  unreadCount: number;
   setItems: (items: NotificationItem[]) => void;
+  setUnreadCount: (count: number) => void;
   upsertNotification: (item: NotificationItem) => void;
   upsertMessage: (payload: RealtimeMessagePayload, currentUserId: string) => void;
   upsertFriendRequest: (payload: FriendRequestPayload) => void;
@@ -132,33 +135,52 @@ type NotificationState = {
   clear: () => void;
 };
 
+const countUnread = (items: NotificationItem[]): number =>
+  items.filter((item) => !(item.read ?? item.isRead)).length;
+
+const normalizeCount = (count: number): number =>
+  Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+
 export const useNotificationStore = create<NotificationState>((set) => ({
   items: [],
+  unreadCount: 0,
   setItems: (items) =>
     set((state) => {
       const merged = new Map<string, NotificationItem>();
       state.items.forEach((item) => merged.set(item.id, item));
       items.map(normalizeNotification).forEach((item) => merged.set(item.id, item));
-      return { items: sortNotifications(Array.from(merged.values())) };
+      const nextItems = sortNotifications(Array.from(merged.values()));
+      return { items: nextItems, unreadCount: countUnread(nextItems) };
     }),
-  upsertNotification: (item) => set((state) => ({ items: upsert(state.items, item) })),
+  setUnreadCount: (count) => set({ unreadCount: normalizeCount(count) }),
+  upsertNotification: (item) =>
+    set((state) => {
+      const items = upsert(state.items, item);
+      return { items, unreadCount: countUnread(items) };
+    }),
   upsertMessage: (payload, currentUserId) =>
     set((state) => {
       const notification = messageToNotification(payload, currentUserId);
-      return notification ? { items: upsert(state.items, notification) } : state;
+      if (!notification) return state;
+      const items = upsert(state.items, notification);
+      return { items, unreadCount: countUnread(items) };
     }),
   upsertFriendRequest: (payload) =>
     set((state) => {
       const notification = friendRequestToNotification(payload);
-      return notification ? { items: upsert(state.items, notification) } : state;
+      if (!notification) return state;
+      const items = upsert(state.items, notification);
+      return { items, unreadCount: countUnread(items) };
     }),
   markItemRead: (id) =>
-    set((state) => ({
-      items: state.items.map((item) => item.id === id ? { ...item, read: true, isRead: true } : item),
-    })),
+    set((state) => {
+      const items = state.items.map((item) => item.id === id ? { ...item, read: true, isRead: true } : item);
+      return { items, unreadCount: countUnread(items) };
+    }),
   markAllRead: () =>
     set((state) => ({
       items: state.items.map((item) => ({ ...item, read: true, isRead: true })),
+      unreadCount: 0,
     })),
-  clear: () => set({ items: [] }),
+  clear: () => set({ items: [], unreadCount: 0 }),
 }));

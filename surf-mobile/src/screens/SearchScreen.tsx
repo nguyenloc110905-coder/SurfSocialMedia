@@ -36,6 +36,7 @@ type SearchPost = {
   likeCount: number;
   replyCount: number;
 };
+type RecentSearchValue = string | { query?: unknown; name?: unknown };
 
 type Tab = 'people' | 'posts' | 'videos';
 type DateFilter = 'any' | 'today' | 'week' | 'month';
@@ -72,6 +73,28 @@ const DATE_FILTERS: { key: DateFilter; labelKey: I18nKey }[] = [
 
 function isVideoUrl(url: string) {
   return /\.(mp4|mov|webm|avi|mkv)(\?|$)/i.test(url);
+}
+
+function normalizeRecentSearches(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const item of input) {
+    let value: unknown = null;
+    if (typeof item === 'string') {
+      value = item;
+    } else if (item && typeof item === 'object') {
+      const recent = item as Exclude<RecentSearchValue, string>;
+      value = recent.query ?? recent.name;
+    }
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    output.push(trimmed);
+    if (output.length >= 10) break;
+  }
+  return output;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -223,8 +246,8 @@ export default function SearchScreen({ navigation }: Props) {
 
   // ── Load recent searches ──
   useEffect(() => {
-    api.get<{ recentSearches: string[] }>('/api/users/me/recent-searches')
-      .then(d => setRecentSearches(d.recentSearches ?? []))
+    api.get<{ recentSearches: unknown[] }>('/api/users/me/recent-searches')
+      .then(d => setRecentSearches(normalizeRecentSearches(d.recentSearches)))
       .catch(() => {});
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
