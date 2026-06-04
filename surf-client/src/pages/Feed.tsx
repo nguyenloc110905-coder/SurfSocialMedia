@@ -115,6 +115,7 @@ export default function Feed() {
   };
 
   const loadFeedBoostListings = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     try {
       const response = await api.get<{ items: Listing[]; nextCursor: string | null }>('/api/marketplace');
       setFeedBoostListings((response.items || []).filter(isFeedBoostListing).slice(0, 3));
@@ -125,6 +126,15 @@ export default function Feed() {
   };
 
   const loadPosts = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (posts.length > 0) {
+        setError(t('feed_error_refresh'));
+      } else {
+        setError(t('feed_error_load'));
+      }
+      setLoading(false);
+      return;
+    }
     try {
       if (posts.length === 0) setLoading(true);
       setError(null);
@@ -136,7 +146,11 @@ export default function Feed() {
       if (message.includes('currently building')) {
         setError(t('feed_error_building'));
       } else {
-        setError(t('feed_error_load'));
+        if (posts.length > 0) {
+          setError(t('feed_error_refresh'));
+        } else {
+          setError(t('feed_error_load'));
+        }
       }
     } finally {
       setLoading(false);
@@ -158,24 +172,43 @@ export default function Feed() {
     }
   }, [loadingMore, hasMore, nextCursor]);
 
+  const loadMoreRef = useRef(loadMore);
+  useEffect(() => {
+    loadMoreRef.current = loadMore;
+  }, [loadMore]);
+
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
+    const container = document.getElementById('main-feed-scroll');
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) loadMore();
+        if (entries[0].isIntersecting) {
+          loadMoreRef.current();
+        }
       },
-      { threshold: 0.1 }
+      {
+        root: container,
+        rootMargin: '800px 0px',
+        threshold: 0.01,
+      }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore]);
+  }, []);
 
   useEffect(() => {
     // Luôn gọi API để lấy dữ liệu mới nhất (revalidate)
     // Nhưng nếu đã có dữ liệu cache, nó sẽ tự động render ra màn hình TRƯỚC khi API chạy xong
     void loadPosts();
+
+    const handleOnline = () => {
+      void loadPosts();
+      void loadFeedBoostListings();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   useEffect(() => {
@@ -272,7 +305,6 @@ export default function Feed() {
       )}
 
       {!loading &&
-        !error &&
         posts.map((post, idx) => (
           <div key={post.id}>
             {/* Divider "Khám phá" xuất hiện trước bài discover đầu tiên */}

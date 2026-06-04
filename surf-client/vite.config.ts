@@ -37,9 +37,6 @@ export default defineConfig(() => {
       alias: { '@': path.resolve(__dirname, './src') },
     },
     define: {
-      'import.meta.env.VITE_CLOUDINARY_CLOUD_NAME': JSON.stringify(env.VITE_CLOUDINARY_CLOUD_NAME ?? ''),
-      'import.meta.env.VITE_CLOUDINARY_API_KEY': JSON.stringify(env.VITE_CLOUDINARY_API_KEY ?? ''),
-      'import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET': JSON.stringify(env.VITE_CLOUDINARY_UPLOAD_PRESET ?? ''),
     },
     server: {
       host: true,
@@ -58,10 +55,10 @@ export default defineConfig(() => {
           ws: true,
         },
       },
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-        'Cross-Origin-Embedder-Policy': 'unsafe-none',
-      },
+      // headers: {
+      //   'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      //   'Cross-Origin-Embedder-Policy': 'unsafe-none',
+      // },
     },
   };
 });

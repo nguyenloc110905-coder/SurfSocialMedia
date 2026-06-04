@@ -1,9 +1,5 @@
-const CLOUD_NAME =
-  process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dg8oqqjes';
-const API_KEY =
-  process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY || '244888796188991';
-const UPLOAD_PRESET =
-  process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'Surf_Project2';
+import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage';
+import { app } from './firebase/config';
 
 type UploadOptions = {
   folder?: string;
@@ -18,87 +14,61 @@ type UploadableAsset = {
   height?: number | null;
 };
 
-type CloudinaryUploadResponse = {
-  secure_url?: string;
-  url?: string;
-  error?: { message?: string };
-};
+type UploadKind = 'image' | 'video' | 'raw' | 'market';
 
-function endpoint(kind: 'image' | 'video' | 'raw') {
-  if (!CLOUD_NAME) throw new Error('Cloudinary cloud name is required');
-  const resourceType = kind === 'video' ? 'auto' : kind;
-  return `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
+function extensionFor(asset: UploadableAsset, kind: UploadKind) {
+  const fromName = asset.fileName?.split('.').pop();
+  const fromUri = asset.uri.split('?')[0].split('.').pop();
+  const extension = (fromName || fromUri || '').toLowerCase();
+  if (extension && extension.length <= 5) return extension;
+  if (kind === 'video') return 'mp4';
+  if (kind === 'raw') return 'bin';
+  return 'jpg';
 }
 
-function fileNameFor(asset: UploadableAsset, kind: 'image' | 'video' | 'raw') {
+function defaultMimeType(kind: UploadKind) {
+  if (kind === 'video') return 'video/mp4';
+  if (kind === 'raw') return 'application/octet-stream';
+  return 'image/jpeg';
+}
+
+function normalizeFolder(folder: string) {
+  return folder.replace(/^\/+|\/+$/g, '');
+}
+
+function storageFolder(kind: UploadKind, options: UploadOptions) {
+  if (options.folder) return normalizeFolder(options.folder);
+  if (kind === 'market') return 'surf/marketplace';
+  if (kind === 'raw') return 'surf/files';
+  return `surf/${kind}s`;
+}
+
+function generateFileName(asset: UploadableAsset, kind: UploadKind, index?: number) {
   if (asset.fileName) return asset.fileName;
-  const extension = kind === 'video' ? 'mp4' : kind === 'raw' ? 'bin' : 'jpg';
-  return `surf-upload-${Date.now()}.${extension}`;
+  const ts = Date.now();
+  const randomStr = Math.random().toString(36).substring(2, 8);
+  const prefix = kind === 'market' ? `marketplace-${index ?? 0}` : `surf-${kind}`;
+  return `${prefix}-${ts}-${randomStr}.${extensionFor(asset, kind)}`;
 }
 
-function withMediaSize(url: string, asset: UploadableAsset) {
-  if (!asset.width || !asset.height) return url;
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}mw=${Math.round(asset.width)}&mh=${Math.round(asset.height)}`;
-}
+async function uploadAsset(asset: UploadableAsset, kind: UploadKind, options: UploadOptions = {}, index?: number) {
+  const response = await fetch(asset.uri);
+  const blob = await response.blob();
 
-async function uploadAsset(asset: UploadableAsset, kind: 'image' | 'video', options: UploadOptions = {}) {
-  if (!API_KEY || !UPLOAD_PRESET) {
-    throw new Error('Cloudinary upload config is missing');
-  }
-
-  const formData = new FormData();
-  formData.append('file', {
-    uri: asset.uri,
-    name: fileNameFor(asset, kind),
-    type: asset.mimeType || (kind === 'video' ? 'video/mp4' : 'image/jpeg'),
-  } as unknown as Blob);
-  formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('api_key', API_KEY);
-  if (options.folder) formData.append('folder', options.folder);
-
-  const res = await fetch(endpoint(kind), {
-    method: 'POST',
-    body: formData,
+  const storage = getStorage(app);
+  const filename = generateFileName(asset, kind, index);
+  const storageRef = ref(storage, `${storageFolder(kind, options)}/${filename}`);
+  const snapshot = await uploadBytesResumable(storageRef, blob, {
+    contentType: asset.mimeType || blob.type || defaultMimeType(kind),
+    customMetadata: {
+      source: 'surf-mobile',
+      mediaType: kind,
+      ...(asset.width ? { width: String(Math.round(asset.width)) } : {}),
+      ...(asset.height ? { height: String(Math.round(asset.height)) } : {}),
+    },
   });
-  const data = (await res.json().catch(() => ({}))) as CloudinaryUploadResponse;
 
-  if (!res.ok || data.error || !data.secure_url) {
-    if (res.status === 413) {
-      throw new Error('Video vượt giới hạn upload trực tiếp 100MB của Cloudinary.');
-    }
-    throw new Error(data.error?.message || `Cloudinary upload failed (${res.status})`);
-  }
-
-  return withMediaSize(data.secure_url, asset);
-}
-
-async function uploadRawAsset(asset: UploadableAsset, options: UploadOptions = {}) {
-  if (!API_KEY || !UPLOAD_PRESET) {
-    throw new Error('Cloudinary upload config is missing');
-  }
-
-  const formData = new FormData();
-  formData.append('file', {
-    uri: asset.uri,
-    name: fileNameFor(asset, 'raw'),
-    type: asset.mimeType || 'application/octet-stream',
-  } as unknown as Blob);
-  formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('api_key', API_KEY);
-  if (options.folder) formData.append('folder', options.folder);
-
-  const res = await fetch(endpoint('raw'), {
-    method: 'POST',
-    body: formData,
-  });
-  const data = (await res.json().catch(() => ({}))) as CloudinaryUploadResponse;
-
-  if (!res.ok || data.error || !data.secure_url) {
-    throw new Error(data.error?.message || `Cloudinary raw upload failed (${res.status})`);
-  }
-
-  return data.secure_url;
+  return getDownloadURL(snapshot.ref);
 }
 
 export function uploadImage(asset: UploadableAsset, options?: UploadOptions) {
@@ -110,64 +80,16 @@ export function uploadVideo(asset: UploadableAsset, options?: UploadOptions) {
 }
 
 export function uploadFile(asset: UploadableAsset, options?: UploadOptions) {
-  return uploadRawAsset(asset, options);
+  return uploadAsset(asset, 'raw', options);
 }
 
 export function isVideoAsset(asset: UploadableAsset) {
   return asset.type === 'video' || asset.mimeType?.startsWith('video/');
 }
 
-function getMarketplaceFileName(asset: UploadableAsset, index: number) {
-  if (asset.fileName) return asset.fileName;
-  const extension = asset.uri.split('.').pop()?.split('?')[0] || 'jpg';
-  return `marketplace-${Date.now()}-${index}.${extension}`;
-}
-
-function getMarketplaceMimeType(asset: UploadableAsset) {
-  if (asset.mimeType) return asset.mimeType;
-  const extension = asset.uri.split('.').pop()?.toLowerCase().split('?')[0];
-  if (extension === 'png') return 'image/png';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'heic') return 'image/heic';
-  return 'image/jpeg';
-}
-
 export async function uploadMarketplaceImages(assets: UploadableAsset[]) {
-  if (assets.length === 0) return [];
-  if (!CLOUD_NAME || !UPLOAD_PRESET) {
-    throw new Error('Chưa cấu hình Cloudinary cho mobile. Vui lòng thêm EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME và EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET.');
-  }
-
-  const uploads = assets.slice(0, 10).map(async (asset, index) => {
-    const formData = new FormData();
-    formData.append('file', {
-      uri: asset.uri,
-      name: getMarketplaceFileName(asset, index),
-      type: getMarketplaceMimeType(asset),
-    } as unknown as Blob);
-    formData.append('upload_preset', UPLOAD_PRESET);
-    formData.append('folder', 'surf/marketplace');
-
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    const text = await response.text();
-    let data: CloudinaryUploadResponse = {};
-    if (text) {
-      try {
-        data = JSON.parse(text) as CloudinaryUploadResponse;
-      } catch {
-        data = { error: { message: text } };
-      }
-    }
-
-    if (!response.ok || (!data.secure_url && !data.url)) {
-      throw new Error(data.error?.message ?? 'Không thể tải ảnh sản phẩm lên Cloudinary.');
-    }
-
-    return data.secure_url ?? data.url!;
-  });
-
+  const uploads = assets.slice(0, 10).map((asset, index) =>
+    uploadAsset(asset, 'market', { folder: 'surf/marketplace' }, index)
+  );
   return Promise.all(uploads);
 }

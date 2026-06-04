@@ -4,7 +4,7 @@ import { getDb } from '../config/firebase-admin.js';
 import { emitPostReacted } from '../realtime/emitters/post.emitter.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getIo } from '../realtime/io.js';
-import { moderatePost } from '../services/aiModeration.js';
+import { moderatePost, moderateReportedPost } from '../services/aiModeration.js';
 import { groupRepository } from '../repositories/group.repository.js';
 import {
   createNotification,
@@ -675,7 +675,7 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
       res.status(400).json({ error: 'Bạn không thể báo cáo bài viết của chính mình' });
       return;
     }
-    const { reason } = req.body as { reason?: string };
+    const { reason, details } = req.body as { reason?: string; details?: string };
     if (!reason || !VALID_REASONS.includes(reason)) {
       res.status(400).json({ error: 'Lý do báo cáo không hợp lệ' });
       return;
@@ -692,16 +692,118 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
     const postData = postDoc.data()!;
-    await db.collection('reports').add({
+    const reportRef = await db.collection('reports').add({
       postId: req.params.id,
       reporterId: req.uid,
       postAuthorId: postData.authorId ?? null,
       postContentSnippet: String(postData.content ?? '').substring(0, 150),
       reason,
+      details: details ?? '',
       status: 'pending',
       createdAt: new Date(),
     });
-    res.status(201).json({ success: true });
+
+    // Chạy AI tự động kiểm duyệt nội dung bài viết dựa trên báo cáo
+    const postContent = String(postData.content ?? '');
+    const mediaUrls = Array.isArray(postData.mediaUrls) ? postData.mediaUrls : [];
+
+    const VIETNAMESE_REASONS: Record<string, string> = {
+      spam: 'Spam / Rác tin',
+      inappropriate: 'Nội dung không phù hợp / Nhạy cảm',
+      misinformation: 'Thông tin sai lệch / Tin giả',
+      hate_speech: 'Ngôn từ kích động thù hận',
+      harassment: 'Quấy rối / Công kích cá nhân',
+      violence: 'Bạo lực / Gây nguy hiểm',
+      copyright: 'Vi phạm bản quyền',
+      other: 'Lý do khác',
+    };
+    const reasonLabel = VIETNAMESE_REASONS[reason] || reason;
+    const reportFullReason = details ? `${reasonLabel} (${details})` : reasonLabel;
+
+    const aiModeration = await moderateReportedPost(postContent, mediaUrls, reportFullReason);
+
+    if (aiModeration.violation) {
+      // 1. Gỡ bỏ bài viết
+      await db.collection('posts').doc(req.params.id).update({
+        deleted: true,
+        deletedAt: new Date(),
+        deletedReason: `AI_MODERATION: ${aiModeration.reason}`,
+      });
+
+      // Cập nhật trạng thái báo cáo
+      await reportRef.update({
+        status: 'resolved_removed',
+        moderationResult: {
+          violation: true,
+          reason: aiModeration.reason,
+          moderatedAt: new Date(),
+        }
+      });
+
+      // 2. Cảnh báo qua thông báo đến tác giả
+      if (postData.authorId) {
+        try {
+          const authorNotifRef = db.collection('notifications').doc();
+          const authorNotifData = {
+            id: authorNotifRef.id,
+            type: 'system',
+            recipientId: postData.authorId,
+            actorId: 'system',
+            actorName: 'Hệ thống AI',
+            actorPhoto: null,
+            message: `Bài viết của bạn đã bị gỡ bỏ tự động vì vi phạm tiêu chuẩn cộng đồng: ${aiModeration.reason}`,
+            read: false,
+            createdAt: new Date(),
+          };
+          await authorNotifRef.set(authorNotifData);
+          getIo().to(`user:${postData.authorId}`).emit('notification:new', {
+            ...authorNotifData,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (warn) {
+          console.warn('⚠️ Lỗi gửi thông báo cảnh báo gỡ bài viết cho tác giả:', warn);
+        }
+      }
+
+      // 3. Thông báo kết quả cho người báo cáo
+      try {
+        const reporterNotifRef = db.collection('notifications').doc();
+        const reporterNotifData = {
+          id: reporterNotifRef.id,
+          type: 'system',
+          recipientId: req.uid!,
+          actorId: 'system',
+          actorName: 'Hệ thống AI',
+          actorPhoto: null,
+          message: `Báo cáo của bạn về bài viết của ${postData.authorDisplayName || 'người dùng'} đã được xử lý. AI xác nhận bài viết vi phạm và đã tự động gỡ bỏ.`,
+          link: '/feed/settings?detail=reports',
+          read: false,
+          createdAt: new Date(),
+        };
+        await reporterNotifRef.set(reporterNotifData);
+        getIo().to(`user:${req.uid}`).emit('notification:new', {
+          ...reporterNotifData,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (warn) {
+        console.warn('⚠️ Lỗi gửi thông báo kết quả cho người báo cáo:', warn);
+      }
+
+      res.status(201).json({ success: true, action: 'removed', reason: aiModeration.reason });
+      return;
+    }
+
+    // Nếu AI đánh giá bài viết không vi phạm (giữ lại)
+    await reportRef.update({
+      status: 'resolved_kept',
+      moderationResult: {
+        violation: false,
+        reason: aiModeration.reason,
+        moderatedAt: new Date(),
+      }
+    });
+
+    res.status(201).json({ success: true, action: 'kept', reason: aiModeration.reason });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
