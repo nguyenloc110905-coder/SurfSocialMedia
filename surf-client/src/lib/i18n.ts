@@ -195,6 +195,7 @@ const dict = {
     feed_all_caught_up: 'Bạn đã xem hết bảng tin 🎉',
     feed_error_building: '⏳ Database đang chuẩn bị... Vui lòng đợi 1-2 phút và reload lại trang!',
     feed_error_load: 'Không thể tải bảng tin. Vui lòng thử lại!',
+    feed_error_refresh: 'Không thể làm mới bảng tin. Đang hiển thị dữ liệu lưu tạm.',
 
     // --- Notifications (extended) ---
     notif_tagged: 'đã gắn thẻ bạn trong một bài viết',
@@ -521,6 +522,7 @@ const dict = {
     feed_all_caught_up: "You're all caught up 🎉",
     feed_error_building: '⏳ Database is preparing... Please wait 1-2 minutes and reload the page!',
     feed_error_load: 'Unable to load feed. Please try again!',
+    feed_error_refresh: 'Unable to refresh feed. Displaying cached posts.',
 
     // --- Notifications ---
     notif_tagged: 'tagged you in a post',

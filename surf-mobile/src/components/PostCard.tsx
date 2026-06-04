@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
 import {
   View,
   Text,
@@ -14,12 +13,13 @@ import {
   Keyboard,
   Share,
   Platform,
+  Alert,
   ActivityIndicator,
   StyleSheet,
   useColorScheme,
   Dimensions,
-  Alert,
 } from 'react-native';
+import type { TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -27,10 +27,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { useFeedStore, type FeedPost } from '@/stores/feedStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useUserStore } from '@/stores/userStore';
 import { useMediaPlaybackStore } from '@/stores/mediaPlaybackStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/lib/api';
-import { isVideoAsset, uploadImage, uploadVideo } from '@/lib/cloudinary';
 import { gestureState, setReactionPickerActive } from '@/lib/gestureState';
 import { useT, type I18nKey } from '@/lib/i18n';
 
@@ -51,6 +51,29 @@ type Comment = {
 
 const REACTIONS = ['❤️', '🌊', '😂', '😮', '😢', '👍'] as const;
 
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
+] as const;
+
+function normalizeReportReason(reason: string): string {
+  switch (reason) {
+    case 'hate':
+      return 'hate_speech';
+    case 'fake_news':
+      return 'misinformation';
+    case 'illegal':
+      return 'inappropriate';
+    default:
+      return reason;
+  }
+}
+
 function parseMentions(text: string): string {
   return text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
 }
@@ -65,6 +88,8 @@ export type PostCardProps = {
   post: FeedPost;
   isVisible: boolean;
   navigation: NativeStackNavigationProp<RootStackParamList, any>;
+  onPostRemoved?: (postId: string) => void;
+  hideOptions?: boolean;
 };
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -85,58 +110,49 @@ const LIGHT = {
   placeholder: '#e2e8f0', accent: '#0ea5e9', inputBg: '#f1f5f9',
 };
 
+type PostTextFont = 'system' | 'serif' | 'rounded' | 'bold' | 'mono';
+
+const POST_TEXT_COLORS = new Set([
+  '#0f172a',
+  '#f8fafc',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+]);
+
+function postFontStyle(font?: PostTextFont): TextStyle {
+  switch (font) {
+    case 'serif':
+      return { fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }) };
+    case 'rounded':
+      return {
+        fontFamily: Platform.select({ ios: 'Avenir Next', android: 'sans-serif-medium', default: undefined }),
+        fontWeight: '700',
+      };
+    case 'bold':
+      return { fontWeight: '900' };
+    case 'mono':
+      return { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) };
+    default:
+      return {};
+  }
+}
+
+function postContentTextStyle(post: FeedPost, fallbackColor: string): TextStyle {
+  const color = post.textStyle?.color && POST_TEXT_COLORS.has(post.textStyle.color)
+    ? post.textStyle.color
+    : fallbackColor;
+  return { ...postFontStyle(post.textStyle?.font), color };
+}
+
 const FEELING_STR: Record<string, string> = {
   happy: '😊', excited: '🎉', sad: '😢', angry: '😠', loved: '❤️', grateful: '🙏',
 };
-
-const REPORT_CATEGORIES = [
-  { key: 'spam', label: 'Spam hoặc lừa đảo' },
-  { key: 'inappropriate', label: 'Nội dung không phù hợp' },
-  { key: 'misinformation', label: 'Thông tin sai lệch' },
-  { key: 'hate_speech', label: 'Ngôn từ thù ghét' },
-  { key: 'harassment', label: 'Quấy rối' },
-  { key: 'violence', label: 'Bạo lực' },
-  { key: 'copyright', label: 'Vi phạm bản quyền' },
-  { key: 'other', label: 'Lý do khác' },
-] as const;
-
-type ReportReason = (typeof REPORT_CATEGORIES)[number]['key'];
-type PostPrivacy = NonNullable<FeedPost['privacy']>;
-type PickedAsset = ImagePicker.ImagePickerAsset;
-
-const PRIVACY_OPTIONS: Array<{ value: PostPrivacy; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { value: 'public', label: 'Công khai', icon: 'globe-outline' },
-  { value: 'friends', label: 'Bạn bè', icon: 'people-outline' },
-  { value: 'only-me', label: 'Chỉ mình tôi', icon: 'lock-closed-outline' },
-  { value: 'custom', label: 'Tùy chỉnh', icon: 'options-outline' },
-];
-
-const FEELING_OPTIONS = [
-  { emoji: '😊', label: 'Vui vẻ' },
-  { emoji: '😍', label: 'Yêu thích' },
-  { emoji: '😎', label: 'Ngầu' },
-  { emoji: '😢', label: 'Buồn' },
-  { emoji: '😡', label: 'Giận dữ' },
-  { emoji: '🥳', label: 'Hào hứng' },
-  { emoji: '😴', label: 'Mệt mỏi' },
-  { emoji: '🤔', label: 'Suy nghĩ' },
-  { emoji: '🥰', label: 'Biết ơn' },
-  { emoji: '😤', label: 'Tự hào' },
-];
-
-async function ensureLibraryPermission() {
-  const current = await ImagePicker.getMediaLibraryPermissionsAsync();
-  if (current.granted) return true;
-  const next = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  return next.granted;
-}
-
-async function ensureCameraPermission() {
-  const current = await ImagePicker.getCameraPermissionsAsync();
-  if (current.granted) return true;
-  const next = await ImagePicker.requestCameraPermissionsAsync();
-  return next.granted;
-}
 
 function timeAgo(raw: Post['createdAt'], t: (key: I18nKey, params?: Record<string, string | number>) => string): string {
   let ms = 0;
@@ -163,22 +179,15 @@ function isVideoUrl(url: string): boolean {
 }
 
 function optimizeCloudinaryImage(url: string, reduceDataUsage = false): string {
-  if (!reduceDataUsage || !url.includes('res.cloudinary.com') || !url.includes('/image/upload/')) return url;
-  return url.replace('/image/upload/', '/image/upload/q_auto:eco,w_720,f_auto/');
+  return url;
 }
 
 function optimizeCloudinaryVideo(url: string, reduceDataUsage = false): string {
-  if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return url;
-  const transform = reduceDataUsage ? 'q_auto:eco,w_480,f_auto' : 'q_auto:eco,w_720,f_auto';
-  return url.replace('/video/upload/', `/video/upload/${transform}/`);
+  return url;
 }
 
 function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false): string | null {
-  if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload/')) return null;
-  const transform = reduceDataUsage ? 'w_480,q_auto:eco,f_jpg,so_0' : 'w_720,q_auto,f_jpg,so_0';
-  return url
-    .replace('/video/upload/', `/image/upload/${transform}/`)
-    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+  return null;
 }
 
 function mediaOrientationForSize(width: number, height: number): MediaOrientation {
@@ -252,7 +261,6 @@ function fmtCount(n: number): string {
 function privacyIcon(p?: string): keyof typeof Ionicons.glyphMap {
   if (p === 'friends') return 'people-outline';
   if (p === 'only-me') return 'lock-closed-outline';
-  if (p === 'custom') return 'options-outline';
   return 'globe-outline';
 }
 
@@ -796,6 +804,8 @@ function CommentSheet({ postId, onClose, onCountChange }: {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
+  const profile = useUserStore((state) => state.profile);
+  const avatarUrl = profile?.photoURL || user?.photoURL || '';
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1027,8 +1037,8 @@ function CommentSheet({ postId, onClose, onCountChange }: {
               </View>
             )}
             <View style={[cs.inputRow, { borderTopColor: C.border }]}>
-              {user?.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={cs.inputAvatar} />
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={cs.inputAvatar} />
               ) : (
                 <View style={[cs.inputAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
                   <Ionicons name="person" size={12} color={C.subtext} />
@@ -1402,13 +1412,226 @@ const sm = StyleSheet.create({
 });
 
 // ── PostCard ──────────────────────────────────────────────────────────────────
-function PostCard({ post, isVisible, navigation }: PostCardProps) {
+function PostOptionsSheet({
+  visible,
+  saved,
+  canReport,
+  canManage,
+  C,
+  onClose,
+  onToggleSave,
+  onReport,
+  onArchive,
+  onDelete,
+}: {
+  visible: boolean;
+  saved: boolean;
+  canReport: boolean;
+  canManage: boolean;
+  C: typeof LIGHT;
+  onClose: () => void;
+  onToggleSave: () => void;
+  onReport: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      </TouchableOpacity>
+      <View style={[os.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 10 }]}>
+        <View style={[os.handle, { backgroundColor: C.border }]} />
+        <TouchableOpacity
+          style={[os.item, { borderBottomColor: C.border }]}
+          activeOpacity={0.75}
+          onPress={() => {
+            onClose();
+            onToggleSave();
+          }}
+        >
+          <View style={[os.iconWrap, { backgroundColor: saved ? C.accent + '22' : C.card2 }]}>
+            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? C.accent : C.text} />
+          </View>
+          <Text style={[os.itemText, { color: C.text }]}>{saved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}</Text>
+          {saved ? <Ionicons name="checkmark" size={18} color={C.accent} /> : null}
+        </TouchableOpacity>
+        {canReport ? (
+          <TouchableOpacity
+            style={os.item}
+            activeOpacity={0.75}
+            onPress={() => {
+              onClose();
+              onReport();
+            }}
+          >
+            <View style={[os.iconWrap, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="warning-outline" size={20} color="#ef4444" />
+            </View>
+            <Text style={[os.itemText, { color: '#ef4444' }]}>Báo cáo bài viết</Text>
+          </TouchableOpacity>
+        ) : null}
+        {canManage ? (
+          <>
+            <TouchableOpacity
+              style={[os.item, { borderBottomColor: C.border }]}
+              activeOpacity={0.75}
+              onPress={() => {
+                onClose();
+                onArchive();
+              }}
+            >
+              <View style={[os.iconWrap, { backgroundColor: C.card2 }]}>
+                <Ionicons name="archive-outline" size={20} color={C.text} />
+              </View>
+              <Text style={[os.itemText, { color: C.text }]}>Lưu trữ bài viết</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={os.item}
+              activeOpacity={0.75}
+              onPress={() => {
+                onClose();
+                onDelete();
+              }}
+            >
+              <View style={[os.iconWrap, { backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              </View>
+              <Text style={[os.itemText, { color: '#ef4444' }]}>Xóa bài viết</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function ReportPostModal({
+  visible,
+  C,
+  submitting,
+  reason,
+  details,
+  onClose,
+  onReasonChange,
+  onDetailsChange,
+  onSubmit,
+}: {
+  visible: boolean;
+  C: typeof LIGHT;
+  submitting: boolean;
+  reason: string;
+  details: string;
+  onClose: () => void;
+  onReasonChange: (value: string) => void;
+  onDetailsChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <View style={reportStyles.backdrop}>
+        <View style={[reportStyles.panel, { backgroundColor: C.card }]}>
+          <View style={[reportStyles.header, { borderBottomColor: C.border }]}>
+            <Text style={[reportStyles.title, { color: C.text }]}>Báo cáo bài viết</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={C.subtext} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[reportStyles.desc, { color: C.subtext }]}>Hãy cho chúng tôi biết vấn đề với bài viết này.</Text>
+          <ScrollView style={reportStyles.reasonList} showsVerticalScrollIndicator={false}>
+            {REPORT_CATEGORIES.map((category) => {
+              const selected = reason === category.key;
+              return (
+                <TouchableOpacity
+                  key={category.key}
+                  style={[
+                    reportStyles.reasonRow,
+                    {
+                      backgroundColor: selected ? C.accent + '16' : C.card2,
+                      borderColor: selected ? C.accent : C.border,
+                    },
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => onReasonChange(category.key)}
+                >
+                  <Ionicons
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={19}
+                    color={selected ? C.accent : C.subtext}
+                  />
+                  <Text style={[reportStyles.reasonText, { color: C.text }]}>{category.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          {reason ? (
+            <TextInput
+              style={[reportStyles.detailsInput, { backgroundColor: C.inputBg, color: C.text, borderColor: C.border }]}
+              placeholder="Chi tiết bổ sung (không bắt buộc)"
+              placeholderTextColor={C.placeholder}
+              value={details}
+              onChangeText={onDetailsChange}
+              multiline
+              maxLength={500}
+              textAlignVertical="top"
+            />
+          ) : null}
+          <View style={reportStyles.footer}>
+            <TouchableOpacity style={[reportStyles.cancelBtn, { backgroundColor: C.card2 }]} onPress={onClose}>
+              <Text style={[reportStyles.cancelText, { color: C.text }]}>Hủy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[reportStyles.submitBtn, { backgroundColor: C.accent, opacity: submitting || !reason ? 0.55 : 1 }]}
+              onPress={onSubmit}
+              disabled={submitting || !reason}
+            >
+              {submitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={reportStyles.submitText}>Gửi báo cáo</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const os = StyleSheet.create({
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8 },
+  handle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 6 },
+  item: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, borderBottomWidth: StyleSheet.hairlineWidth },
+  iconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  itemText: { flex: 1, fontSize: 15, fontWeight: '700' },
+});
+
+const reportStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', paddingHorizontal: 18 },
+  panel: { borderRadius: 18, overflow: 'hidden', maxHeight: '86%' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  title: { fontSize: 18, fontWeight: '800' },
+  desc: { fontSize: 13, lineHeight: 18, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
+  reasonList: { maxHeight: 290, paddingHorizontal: 14 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8 },
+  reasonText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  detailsInput: { marginHorizontal: 14, marginTop: 4, minHeight: 84, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  footer: { flexDirection: 'row', gap: 10, padding: 14 },
+  cancelBtn: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { fontSize: 14, fontWeight: '800' },
+  submitBtn: { flex: 1.2, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  submitText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+});
+
+function PostCard({ post, isVisible, navigation, onPostRemoved, hideOptions = false }: PostCardProps) {
   const scheme = useColorScheme();
   const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
   const uid = user?.uid;
   const updatePost = useFeedStore((s) => s.updatePost);
+  const removePost = useFeedStore((s) => s.removePost);
+  const isOwnPost = !!uid && uid === post.authorId;
 
   const [liked, setLiked] = useState(uid ? (post.likedBy?.includes(uid) ?? false) : false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(uid ? (post.reactions?.[uid] ?? null) : null);
@@ -1418,60 +1641,16 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const [commentCount, setCommentCount] = useState(post.replyCount ?? 0);
   const [showComments, setShowComments] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showOptionsSheet, setShowOptionsSheet] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [showReactionsSheet, setShowReactionsSheet] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
   const [hoveredEmoji, setHoveredEmoji] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
-
-  const [showOptions, setShowOptions] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [reportReason, setReportReason] = useState<ReportReason | ''>('');
-  const [reportDetails, setReportDetails] = useState('');
-  const [reportSubmitting, setReportSubmitting] = useState(false);
-  const [reportToast, setReportToast] = useState<string | null>(null);
-
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editContent, setEditContent] = useState(post.content || '');
-  const [editPrivacy, setEditPrivacy] = useState<PostPrivacy>(post.privacy ?? 'public');
-  const [editFeeling, setEditFeeling] = useState(post.feeling || '');
-  const [editLocation, setEditLocation] = useState(post.location || '');
-  const [editExistingMedia, setEditExistingMedia] = useState<string[]>(post.mediaUrls ?? []);
-  const [editNewAssets, setEditNewAssets] = useState<PickedAsset[]>([]);
-  const [editUploadProgress, setEditUploadProgress] = useState(0);
-  const [showEditPrivacyModal, setShowEditPrivacyModal] = useState(false);
-  const [showEditFeelingPicker, setShowEditFeelingPicker] = useState(false);
-  const [showEditLocationInput, setShowEditLocationInput] = useState(Boolean(post.location));
-  const [isEditing, setIsEditing] = useState(false);
-
-  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-  const [currentPrivacy, setCurrentPrivacy] = useState<PostPrivacy>(post.privacy ?? 'public');
-  const isAuthor = uid === post.authorId;
-
-  const [friendsList, setFriendsList] = useState<any[]>([]);
-  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>(post.allowedUserIds ?? []);
-  const [editAllowedUserIds, setEditAllowedUserIds] = useState<string[]>(post.allowedUserIds ?? []);
-  const [loadingFriends, setLoadingFriends] = useState(false);
-  const [showCustomFriendSelector, setShowCustomFriendSelector] = useState(false);
-  const [friendSelectorTarget, setFriendSelectorTarget] = useState<'edit' | 'privacy'>('privacy');
-  const [searchFriendQuery, setSearchFriendQuery] = useState('');
-
-  const loadFriends = async () => {
-    if (friendsList.length > 0) return;
-    try {
-      setLoadingFriends(true);
-      const res = await api.get<{ friends: any[] }>('/api/friends');
-      setFriendsList(res.friends ?? []);
-    } catch (e) {
-      console.warn('Failed to load friends:', e);
-    } finally {
-      setLoadingFriends(false);
-    }
-  };
-
-  useEffect(() => {
-    setCurrentPrivacy(post.privacy ?? 'public');
-  }, [post.privacy]);
   const likeButtonRef = useRef<View>(null);
   const pickerActiveRef = useRef(false);
   const pickerAnchorRef = useRef<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
@@ -1480,136 +1659,117 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const handleLikePressRef = useRef<() => void>(() => {});
   const handleReactRef = useRef<(e: string) => void>(() => {});
 
+  useEffect(() => {
+    setSaved(uid ? (post.savedBy?.includes(uid) ?? false) : false);
+  }, [post.savedBy, uid]);
+
   const handleShare = () => setShowShareModal(true);
 
+  const removeCurrentPost = useCallback(() => {
+    removePost(post.id);
+    onPostRemoved?.(post.id);
+  }, [onPostRemoved, post.id, removePost]);
+
   const handleSave = async () => {
-    if (!uid) return;
+    if (!uid) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để lưu bài viết.');
+      return;
+    }
     const next = !saved;
+    const prevSavedBy = post.savedBy ?? [];
+    const nextSavedBy = next
+      ? Array.from(new Set([...prevSavedBy, uid]))
+      : prevSavedBy.filter((id) => id !== uid);
+
     setSaved(next);
+    updatePost({ id: post.id, savedBy: nextSavedBy });
     try {
       if (next) await api.post(`/api/posts/${post.id}/save`, {});
       else await api.delete(`/api/posts/${post.id}/save`);
-    } catch { setSaved(!next); }
-  };
-
-  const openEditPost = () => {
-    setEditContent(post.content || '');
-    setEditPrivacy(post.privacy ?? 'public');
-    setEditFeeling(post.feeling || '');
-    setEditLocation(post.location || '');
-    setEditExistingMedia(post.mediaUrls ?? []);
-    setEditNewAssets([]);
-    setEditUploadProgress(0);
-    setEditAllowedUserIds(post.allowedUserIds ?? []);
-    setShowEditFeelingPicker(false);
-    setShowEditLocationInput(Boolean(post.location));
-    setShowEditModal(true);
-  };
-
-  const pickEditMedia = async () => {
-    const granted = await ensureLibraryPermission();
-    if (!granted) {
-      Alert.alert('Quyền truy cập', 'Cần quyền truy cập thư viện ảnh để chọn media.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsMultipleSelection: true,
-      selectionLimit: Math.max(1, 10 - editExistingMedia.length - editNewAssets.length),
-      quality: 0.85,
-    });
-    if (!result.canceled) {
-      setEditNewAssets((prev) => [...prev, ...result.assets].slice(0, Math.max(0, 10 - editExistingMedia.length)));
+    } catch {
+      setSaved(!next);
+      updatePost({ id: post.id, savedBy: prevSavedBy });
+      Alert.alert('Chưa thể lưu', 'Vui lòng kiểm tra kết nối và thử lại.');
     }
   };
 
-  const captureEditMedia = async () => {
-    const granted = await ensureCameraPermission();
-    if (!granted) {
-      Alert.alert('Quyền truy cập', 'Cần quyền truy cập camera để chụp ảnh.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      quality: 0.85,
-    });
-    if (!result.canceled) {
-      setEditNewAssets((prev) => [...prev, ...result.assets].slice(0, Math.max(0, 10 - editExistingMedia.length)));
-    }
+  const closeReportModal = () => {
+    if (reportSubmitting) return;
+    setShowReportModal(false);
+    setReportReason('');
+    setReportDetails('');
+  };
+
+  const handleArchivePost = () => {
+    if (!isOwnPost) return;
+    Alert.alert(
+      'Lưu trữ bài viết?',
+      'Bài viết sẽ không còn hiển thị trên trang cá nhân/feed và chỉ bạn xem được trong kho lưu trữ.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Lưu trữ',
+          onPress: async () => {
+            try {
+              await api.post(`/api/posts/${post.id}/archive`, {});
+              removeCurrentPost();
+            } catch {
+              Alert.alert('Không thể lưu trữ', 'Vui lòng thử lại sau.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeletePost = () => {
+    if (!isOwnPost) return;
+    Alert.alert(
+      'Xóa bài viết?',
+      'Bài viết sẽ được chuyển vào thùng rác theo cài đặt hiện tại.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/api/posts/${post.id}`);
+              removeCurrentPost();
+            } catch {
+              Alert.alert('Không thể xóa bài viết', 'Vui lòng thử lại sau.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleReport = async () => {
+    if (!uid) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để báo cáo bài viết.');
+      return;
+    }
     if (!reportReason || reportSubmitting) return;
     setReportSubmitting(true);
     try {
-      await api.post('/api/posts/' + post.id + '/report', {
-        reason: reportReason,
-        details: reportDetails.trim() || undefined,
+      await api.post(`/api/posts/${post.id}/report`, {
+        reason: normalizeReportReason(reportReason),
+        details: reportDetails.trim(),
       });
       setShowReportModal(false);
       setReportReason('');
       setReportDetails('');
-      setReportToast('Đã gửi báo cáo');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '';
-      setReportToast(msg.includes('đã báo cáo') ? 'Đã báo cáo bài viết này rồi' : 'Không thể gửi báo cáo');
+      Alert.alert('Đã gửi báo cáo', 'Cảm ơn bạn đã giúp Surf an toàn hơn.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const duplicate = /already|reported|đã báo cáo|da bao cao/i.test(msg);
+      Alert.alert(
+        duplicate ? 'Bạn đã báo cáo bài viết này rồi' : 'Không thể gửi báo cáo',
+        duplicate ? 'Báo cáo trước đó của bạn đang được xử lý.' : 'Vui lòng thử lại sau.'
+      );
     } finally {
       setReportSubmitting(false);
-      setTimeout(() => setReportToast(null), 3000);
-    }
-  };
-
-  const handleEditSubmit = async () => {
-    if (!editContent.trim() && editExistingMedia.length === 0 && editNewAssets.length === 0) return;
-    setIsEditing(true);
-    setEditUploadProgress(0);
-    try {
-      const uploadedMedia: string[] = [];
-      for (let i = 0; i < editNewAssets.length; i++) {
-        const asset = editNewAssets[i];
-        const url = isVideoAsset(asset)
-          ? await uploadVideo(asset, { folder: 'surf/posts/videos' })
-          : await uploadImage(asset, { folder: 'surf/posts' });
-        uploadedMedia.push(url);
-        setEditUploadProgress(Math.round(((i + 1) / editNewAssets.length) * 100));
-      }
-      const updated = await api.patch<FeedPost>('/api/posts/' + post.id, {
-        content: editContent.trim(),
-        mediaUrls: [...editExistingMedia, ...uploadedMedia],
-        feeling: editFeeling || null,
-        location: editLocation.trim() || null,
-        taggedFriends: post.taggedFriends ?? [],
-        privacy: editPrivacy,
-        allowedUserIds: editPrivacy === 'custom' ? editAllowedUserIds : [],
-      });
-      setCurrentPrivacy(updated.privacy ?? editPrivacy);
-      updatePost(updated);
-      setShowEditModal(false);
-    } catch {
-      Alert.alert(t('error'), 'Không thể chỉnh sửa bài viết.');
-    } finally {
-      setIsEditing(false);
-      setEditUploadProgress(0);
-    }
-  };
-
-  const handlePrivacySubmit = async (newPrivacy: PostPrivacy, allowedIds: string[] = []) => {
-    const previousPrivacy = currentPrivacy;
-    const previousAllowed = post.allowedUserIds ?? [];
-    setCurrentPrivacy(newPrivacy);
-    updatePost({ id: post.id, privacy: newPrivacy, allowedUserIds: allowedIds });
-    setShowPrivacyModal(false);
-    try {
-      const updated = await api.patch<FeedPost>('/api/posts/' + post.id, {
-        privacy: newPrivacy,
-        allowedUserIds: newPrivacy === 'custom' ? allowedIds : [],
-      });
-      setCurrentPrivacy(updated.privacy ?? newPrivacy);
-      updatePost(updated);
-    } catch {
-      setCurrentPrivacy(previousPrivacy);
-      updatePost({ id: post.id, privacy: previousPrivacy, allowedUserIds: previousAllowed });
-      Alert.alert(t('error'), 'Không thể cập nhật quyền riêng tư.');
     }
   };
 
@@ -1618,6 +1778,8 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const displayText = expanded
     ? post.content
     : long ? post.content.slice(0, MAX_CHARS).trimEnd() + '…' : post.content;
+
+  const contentTextStyle = useMemo(() => postContentTextStyle(post, C.text), [C.text, post]);
 
   const handleReact = async (emoji: string) => {
     if (!uid) return;
@@ -1773,18 +1935,25 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
                   <Text style={[s.metaText, { color: C.subtext }]} numberOfLines={1}>{post.location}</Text></>
               : null}
             {post.isEdited && <Text style={[s.metaText, { color: C.subtext }]}>· {t('post_edited')}</Text>}
-            <Ionicons name={privacyIcon(currentPrivacy)} size={11} color={C.subtext} />
+            <Ionicons name={privacyIcon(post.privacy)} size={11} color={C.subtext} />
           </View>
         </View>
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => setShowOptions(true)}>
+        {hideOptions ? null : (
+        <TouchableOpacity
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          onPress={() => setShowOptionsSheet(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Mở tùy chọn bài viết"
+        >
           <Ionicons name="ellipsis-horizontal" size={18} color={C.subtext} />
         </TouchableOpacity>
+        )}
       </View>
 
       {/* Content */}
       {post.content ? (
         <View style={s.contentWrap}>
-          <Text style={[s.contentText, { color: C.text }]}>{displayText}</Text>
+          <Text style={[s.contentText, contentTextStyle]}>{displayText}</Text>
           {long && (
             <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
               <Text style={[s.seeMore, { color: C.accent }]}>{expanded ? t('post_see_less') : t('post_see_more')}</Text>
@@ -1862,6 +2031,31 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
         <ReactionsSheet postId={post.id} onClose={() => setShowReactionsSheet(false)} C={C} />
       )}
 
+      <PostOptionsSheet
+        visible={showOptionsSheet}
+        saved={saved}
+        canReport={!isOwnPost}
+        canManage={isOwnPost}
+        C={C}
+        onClose={() => setShowOptionsSheet(false)}
+        onToggleSave={handleSave}
+        onReport={() => setShowReportModal(true)}
+        onArchive={handleArchivePost}
+        onDelete={handleDeletePost}
+      />
+
+      <ReportPostModal
+        visible={showReportModal}
+        C={C}
+        submitting={reportSubmitting}
+        reason={reportReason}
+        details={reportDetails}
+        onClose={closeReportModal}
+        onReasonChange={setReportReason}
+        onDetailsChange={setReportDetails}
+        onSubmit={handleReport}
+      />
+
       {showComments && (
         <CommentSheet
           postId={post.id}
@@ -1871,398 +2065,6 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
             updatePost({ id: post.id, replyCount: n });
           }}
         />
-      )}
-
-      {/* Options Menu Sheet */}
-      <Modal visible={showOptions} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowOptions(false)}>
-        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowOptions(false)} />
-        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
-          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
-          <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); void handleSave(); }}>
-            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? C.accent : C.text} />
-            <Text style={[s.sheetActionText, { color: C.text }]}>{saved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}</Text>
-          </TouchableOpacity>
-          {isAuthor && (
-            <>
-              <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); openEditPost(); }}>
-                <Ionicons name="create-outline" size={22} color={C.text} />
-                <Text style={[s.sheetActionText, { color: C.text }]}>Chỉnh sửa bài viết</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); setShowPrivacyModal(true); }}>
-                <Ionicons name={privacyIcon(currentPrivacy)} size={22} color={C.text} />
-                <Text style={[s.sheetActionText, { color: C.text }]}>Quyền riêng tư</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {!isAuthor && (
-            <TouchableOpacity style={s.sheetAction} onPress={() => { setShowOptions(false); setShowReportModal(true); }}>
-              <Ionicons name="flag-outline" size={22} color="#ef4444" />
-              <Text style={[s.sheetActionText, { color: '#ef4444' }]}>Báo cáo bài viết</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </Modal>
-
-      {/* Edit Post Modal */}
-      <Modal visible={showEditModal} transparent={false} statusBarTranslucent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
-        <View style={[s.fullModal, { backgroundColor: C.bg }]}>
-          <View style={[s.modalHeader, { borderBottomColor: C.border, backgroundColor: C.card }]}>
-            <TouchableOpacity onPress={() => setShowEditModal(false)}>
-              <Ionicons name="close" size={24} color={C.text} />
-            </TouchableOpacity>
-            <Text style={[s.modalTitle, { color: C.text }]}>Chỉnh sửa bài viết</Text>
-            <TouchableOpacity
-              onPress={handleEditSubmit}
-              disabled={isEditing || (!editContent.trim() && editExistingMedia.length === 0 && editNewAssets.length === 0)}
-            >
-              <Text style={[s.modalSaveBtn, { color: editContent.trim() || editExistingMedia.length || editNewAssets.length ? C.accent : C.subtext }]}>
-                {isEditing ? t('loading') : t('save')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          {isEditing && editNewAssets.length > 0 && (
-            <View style={[s.progressBar, { backgroundColor: C.border }]}>
-              <View style={[s.progressFill, { backgroundColor: C.accent, width: `${editUploadProgress}%` as any }]} />
-            </View>
-          )}
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 18 }}>
-            <View style={s.editAuthorRow}>
-              {post.authorPhotoURL ? (
-                <Image source={{ uri: post.authorPhotoURL }} style={s.editAvatar} />
-              ) : (
-                <View style={[s.editAvatar, { backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }]}>
-                  <Text style={s.editAvatarText}>{(post.authorDisplayName || 'U')[0].toUpperCase()}</Text>
-                </View>
-              )}
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={[s.authorName, { color: C.text }]} numberOfLines={2}>
-                  {post.authorDisplayName}
-                  {editFeeling ? <Text style={{ color: C.subtext, fontWeight: '400' }}> đang cảm thấy {editFeeling}</Text> : null}
-                  {editLocation ? <Text style={{ color: C.subtext, fontWeight: '400' }}> tại 📍{editLocation}</Text> : null}
-                </Text>
-                <TouchableOpacity style={[s.editPrivacyBtn, { borderColor: C.border }]} onPress={() => setShowEditPrivacyModal(true)}>
-                  <Ionicons name={privacyIcon(editPrivacy)} size={13} color={C.accent} />
-                  <Text style={[s.editPrivacyText, { color: C.accent }]}>{PRIVACY_OPTIONS.find((option) => option.value === editPrivacy)?.label}</Text>
-                  <Ionicons name="caret-down" size={11} color={C.accent} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <TextInput
-              value={editContent}
-              onChangeText={setEditContent}
-              multiline
-              autoFocus
-              placeholder={t('feed_composer_placeholder')}
-              placeholderTextColor={C.subtext}
-              style={[s.editComposerInput, { color: C.text }]}
-            />
-
-            {post.sharedFrom && (
-              <SharedPostEmbed
-                sf={post.sharedFrom}
-                C={C}
-                isVisible={false}
-              />
-            )}
-
-            {(editExistingMedia.length > 0 || editNewAssets.length > 0) && (
-              <View style={s.editMediaGrid}>
-                {editExistingMedia.map((url) => (
-                  <View key={url} style={[s.editMediaTile, { backgroundColor: C.inputBg }]}>
-                    {isVideoUrl(url) ? (
-                      <View style={s.editVideoTile}>
-                        <Ionicons name="play-circle" size={34} color="#fff" />
-                        <Text style={s.editVideoLabel}>Video</Text>
-                      </View>
-                    ) : (
-                      <Image source={{ uri: url }} style={s.editMediaImage} />
-                    )}
-                    <TouchableOpacity style={s.removeMediaBtn} onPress={() => setEditExistingMedia((prev) => prev.filter((item) => item !== url))}>
-                      <Ionicons name="close" size={14} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                {editNewAssets.map((asset) => (
-                  <View key={asset.uri} style={[s.editMediaTile, { backgroundColor: C.inputBg }]}>
-                    {isVideoAsset(asset) ? (
-                      <View style={s.editVideoTile}>
-                        <Ionicons name="play-circle" size={34} color="#fff" />
-                        <Text style={s.editVideoLabel} numberOfLines={1}>{asset.fileName || 'Video'}</Text>
-                      </View>
-                    ) : (
-                      <Image source={{ uri: asset.uri }} style={s.editMediaImage} />
-                    )}
-                    <TouchableOpacity style={s.removeMediaBtn} onPress={() => setEditNewAssets((prev) => prev.filter((item) => item.uri !== asset.uri))}>
-                      <Ionicons name="close" size={14} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {showEditLocationInput && (
-              <View style={[s.editLocationRow, { borderColor: C.border, backgroundColor: C.inputBg }]}>
-                <Ionicons name="location-outline" size={18} color={C.accent} />
-                <TextInput
-                  style={[s.editLocationInput, { color: C.text }]}
-                  placeholder="Nhập vị trí..."
-                  placeholderTextColor={C.subtext}
-                  value={editLocation}
-                  onChangeText={setEditLocation}
-                  returnKeyType="done"
-                />
-                {editLocation ? (
-                  <TouchableOpacity onPress={() => setEditLocation('')}>
-                    <Ionicons name="close-circle" size={18} color={C.subtext} />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            )}
-
-            {showEditFeelingPicker && (
-              <View style={[s.editFeelingGrid, { borderTopColor: C.border }]}>
-                {FEELING_OPTIONS.map((feelingOption) => {
-                  const value = `${feelingOption.emoji} ${feelingOption.label}`;
-                  const selected = editFeeling === value;
-                  return (
-                    <TouchableOpacity
-                      key={value}
-                      style={[s.editFeelingChip, { backgroundColor: selected ? `${C.accent}33` : C.inputBg, borderColor: selected ? C.accent : C.border }]}
-                      onPress={() => {
-                        setEditFeeling((prev) => (prev === value ? '' : value));
-                        setShowEditFeelingPicker(false);
-                      }}
-                    >
-                      <Text style={s.editFeelingEmoji}>{feelingOption.emoji}</Text>
-                      <Text style={[s.editFeelingLabel, { color: C.text }]}>{feelingOption.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </ScrollView>
-
-          <View style={[s.editActionBar, { borderTopColor: C.border, backgroundColor: C.card }]}>
-            <TouchableOpacity style={s.editActionBtn} onPress={pickEditMedia}>
-              <Ionicons name="images-outline" size={24} color="#22c55e" />
-              <Text style={[s.editActionLabel, { color: C.subtext }]}>Ảnh/Video</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.editActionBtn} onPress={captureEditMedia}>
-              <Ionicons name="camera-outline" size={24} color="#f59e0b" />
-              <Text style={[s.editActionLabel, { color: C.subtext }]}>Camera</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.editActionBtn} onPress={() => { setShowEditFeelingPicker((value) => !value); setShowEditLocationInput(false); }}>
-              <Ionicons name="happy-outline" size={24} color="#a855f7" />
-              <Text style={[s.editActionLabel, { color: C.subtext }]}>Cảm xúc</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.editActionBtn} onPress={() => { setShowEditLocationInput((value) => !value); setShowEditFeelingPicker(false); }}>
-              <Ionicons name="location-outline" size={24} color="#ef4444" />
-              <Text style={[s.editActionLabel, { color: C.subtext }]}>Vị trí</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Edit Privacy Selection Modal */}
-      <Modal visible={showEditPrivacyModal} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowEditPrivacyModal(false)}>
-        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowEditPrivacyModal(false)} />
-        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
-          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
-          <Text style={[s.sheetTitle, { color: C.text }]}>Quyền riêng tư</Text>
-          {PRIVACY_OPTIONS.map((option) => (
-            <TouchableOpacity
-              key={option.value}
-              style={s.sheetAction}
-              onPress={() => {
-                if (option.value === 'custom') {
-                  setFriendSelectorTarget('edit');
-                  setSelectedFriendIds(editAllowedUserIds);
-                  void loadFriends().then(() => {
-                    setShowEditPrivacyModal(false);
-                    setShowCustomFriendSelector(true);
-                  });
-                } else {
-                  setEditPrivacy(option.value);
-                  setShowEditPrivacyModal(false);
-                }
-              }}
-            >
-              <Ionicons name={option.icon} size={22} color={C.text} />
-              <Text style={[s.sheetActionText, { color: C.text }]}>{option.label}</Text>
-              {editPrivacy === option.value && <Ionicons name="checkmark" size={20} color={C.accent} style={{ marginLeft: 'auto' }} />}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Modal>
-
-      {/* Change Privacy Modal */}
-      <Modal visible={showPrivacyModal} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowPrivacyModal(false)}>
-        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowPrivacyModal(false)} />
-        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
-          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
-          <Text style={[s.sheetTitle, { color: C.text }]}>Quyền riêng tư</Text>
-          {PRIVACY_OPTIONS.map((option) => (
-            <TouchableOpacity
-              key={option.value}
-              style={s.sheetAction}
-              onPress={() => {
-                if (option.value === 'custom') {
-                  setFriendSelectorTarget('privacy');
-                  setSelectedFriendIds(post.allowedUserIds ?? []);
-                  void loadFriends().then(() => {
-                    setShowPrivacyModal(false);
-                    setShowCustomFriendSelector(true);
-                  });
-                } else {
-                  void handlePrivacySubmit(option.value);
-                }
-              }}
-            >
-              <Ionicons name={option.icon} size={22} color={C.text} />
-              <Text style={[s.sheetActionText, { color: C.text }]}>{option.label}</Text>
-              {currentPrivacy === option.value && <Ionicons name="checkmark" size={20} color={C.accent} style={{ marginLeft: 'auto' }} />}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Modal>
-
-      {/* Custom Friend Selector Modal */}
-      <Modal visible={showCustomFriendSelector} transparent={false} statusBarTranslucent animationType="slide" onRequestClose={() => {
-        setShowCustomFriendSelector(false);
-        if (friendSelectorTarget === 'privacy') setShowPrivacyModal(true);
-        else setShowEditPrivacyModal(true);
-      }}>
-        <View style={[s.fullModal, { backgroundColor: C.bg }]}>
-          <View style={[s.modalHeader, { borderBottomColor: C.border, backgroundColor: C.card, height: 56, marginTop: Platform.OS === 'ios' ? 40 : 0 }]}>
-            <TouchableOpacity onPress={() => {
-              setShowCustomFriendSelector(false);
-              if (friendSelectorTarget === 'privacy') setShowPrivacyModal(true);
-              else setShowEditPrivacyModal(true);
-            }}>
-              <Ionicons name="arrow-back" size={24} color={C.text} />
-            </TouchableOpacity>
-            <Text style={[s.modalTitle, { color: C.text }]}>Hiển thị với...</Text>
-            <TouchableOpacity onPress={() => {
-              setShowCustomFriendSelector(false);
-              if (friendSelectorTarget === 'privacy') {
-                void handlePrivacySubmit('custom', selectedFriendIds);
-              } else {
-                setEditPrivacy('custom');
-                setEditAllowedUserIds(selectedFriendIds);
-              }
-            }}>
-              <Text style={[s.modalSaveBtn, { color: C.accent }]}>Xong</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Search bar */}
-          <View style={[fs.searchRow, { backgroundColor: C.card2 }]}>
-            <Ionicons name="search-outline" size={18} color={C.subtext} />
-            <TextInput
-              style={[fs.searchInput, { color: C.text }]}
-              placeholder="Tìm kiếm bạn bè..."
-              placeholderTextColor={C.subtext}
-              value={searchFriendQuery}
-              onChangeText={setSearchFriendQuery}
-            />
-            {searchFriendQuery ? (
-              <TouchableOpacity onPress={() => setSearchFriendQuery('')}>
-                <Ionicons name="close-circle" size={18} color={C.subtext} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {loadingFriends ? (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-              <ActivityIndicator color={C.accent} size="large" />
-            </View>
-          ) : (() => {
-            const filtered = friendsList.filter(f =>
-              (f.name || '').toLowerCase().includes(searchFriendQuery.toLowerCase())
-            );
-            return (
-              <FlatList
-                data={filtered}
-                keyExtractor={item => item.id}
-                contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}
-                renderItem={({ item }) => {
-                  const isChecked = selectedFriendIds.includes(item.id);
-                  const toggleCheck = () => {
-                    if (isChecked) {
-                      setSelectedFriendIds(prev => prev.filter(id => id !== item.id));
-                    } else {
-                      setSelectedFriendIds(prev => [...prev, item.id]);
-                    }
-                  };
-                  return (
-                    <TouchableOpacity style={fs.friendItem} onPress={toggleCheck} activeOpacity={0.8}>
-                      {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={fs.friendAvatar} />
-                      ) : (
-                        <View style={[fs.friendAvatar, { backgroundColor: C.placeholder, justifyContent: 'center', alignItems: 'center' }]}>
-                          <Ionicons name="person" size={18} color={C.subtext} />
-                        </View>
-                      )}
-                      <Text style={[fs.friendName, { color: C.text }]}>{item.name}</Text>
-                      <Ionicons
-                        name={isChecked ? "checkbox" : "square-outline"}
-                        size={22}
-                        color={isChecked ? C.accent : C.subtext}
-                      />
-                    </TouchableOpacity>
-                  );
-                }}
-                ListEmptyComponent={
-                  <View style={{ alignItems: 'center', paddingVertical: 48 }}>
-                    <Ionicons name="people-outline" size={48} color={C.subtext} />
-                    <Text style={{ color: C.subtext, marginTop: 8, fontSize: 14 }}>Không tìm thấy bạn bè</Text>
-                  </View>
-                }
-              />
-            );
-          })()}
-        </View>
-      </Modal>
-
-      {/* Report Post Modal */}
-      <Modal visible={showReportModal} transparent statusBarTranslucent animationType="none" onRequestClose={() => setShowReportModal(false)}>
-        <TouchableOpacity style={s.modalScrim} activeOpacity={1} onPress={() => setShowReportModal(false)} />
-        <View style={[s.actionSheet, { backgroundColor: C.card, borderColor: C.border }]}>
-          <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
-          <Text style={[s.sheetTitle, { color: C.text }]}>Báo cáo bài viết</Text>
-          <Text style={[s.sheetSubtitle, { color: C.subtext }]}>Chọn lý do để đội ngũ Surf xem xét bài viết này.</Text>
-          <ScrollView style={{ maxHeight: SH * 0.42 }} showsVerticalScrollIndicator={false}>
-            {REPORT_CATEGORIES.map((category) => (
-              <TouchableOpacity key={category.key} style={s.sheetAction} onPress={() => setReportReason(category.key)}>
-                <Ionicons name={reportReason === category.key ? 'radio-button-on' : 'radio-button-off'} size={22} color={reportReason === category.key ? C.accent : C.subtext} />
-                <Text style={[s.sheetActionText, { color: C.text }]}>{category.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <TextInput
-            value={reportDetails}
-            onChangeText={setReportDetails}
-            multiline
-            placeholder="Chi tiết bổ sung (không bắt buộc)"
-            placeholderTextColor={C.subtext}
-            style={[s.reportInput, { backgroundColor: C.inputBg, color: C.text }]}
-          />
-          <TouchableOpacity
-            style={[s.submitBtn, { backgroundColor: reportReason ? C.accent : C.border, marginHorizontal: 0, marginBottom: 8 }]}
-            disabled={!reportReason || reportSubmitting}
-            onPress={() => void handleReport()}
-          >
-            <Text style={s.submitText}>{reportSubmitting ? t('loading') : 'Gửi báo cáo'}</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-
-      {/* Report Toast Alert */}
-      {reportToast && (
-        <View style={s.toast}>
-          <Text style={s.toastText}>{reportToast}</Text>
-        </View>
       )}
     </View>
   );
@@ -2284,7 +2086,16 @@ const s = StyleSheet.create({
   mediaArea: { width: MEDIA_W, height: MEDIA_W / 1.91, alignSelf: 'center' },
   videoContainer: { alignSelf: 'center', backgroundColor: '#000', overflow: 'hidden', borderRadius: 4 },
   videoPlaceholderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.18)' },
-  muteBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, padding: 6 },
+  muteBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 3,
+    elevation: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 14,
+    padding: 6,
+  },
   videoBuffering: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1 },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 },
@@ -2293,53 +2104,4 @@ const s = StyleSheet.create({
   reactionsBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth },
   reactionsEmoji: { fontSize: 14 },
   reactionsCount: { fontSize: 12, fontWeight: '500' },
-  modalScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.08)' },
-  actionSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, paddingBottom: 24, paddingHorizontal: 16 },
-  sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginVertical: 12 },
-  sheetTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
-  sheetSubtitle: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
-  sheetAction: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
-  sheetActionText: { fontSize: 16, fontWeight: '500' },
-  fullModal: { flex: 1 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, height: 56, borderBottomWidth: 1, marginTop: 40 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
-  modalSaveBtn: { fontSize: 16, fontWeight: 'bold' },
-  editInput: { fontSize: 16, padding: 12, borderRadius: 8, minHeight: 120, textAlignVertical: 'top' },
-  progressBar: { height: 3, width: '100%' },
-  progressFill: { height: 3 },
-  editAuthorRow: { flexDirection: 'row', padding: 16, alignItems: 'center' },
-  editAvatar: { width: 46, height: 46, borderRadius: 23 },
-  editAvatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
-  editPrivacyBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', gap: 4, marginTop: 5 },
-  editPrivacyText: { fontSize: 12, fontWeight: '600' },
-  editComposerInput: { minHeight: 120, paddingHorizontal: 16, fontSize: 18, lineHeight: 26, textAlignVertical: 'top' },
-  editMediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, marginTop: 8 },
-  editMediaTile: { width: '48.5%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden' },
-  editMediaImage: { width: '100%', height: '100%' },
-  editVideoTile: { flex: 1, backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  editVideoLabel: { color: '#fff', fontSize: 11, maxWidth: '90%', textAlign: 'center' },
-  removeMediaBtn: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.75)', alignItems: 'center', justifyContent: 'center' },
-  editLocationRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 10, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  editLocationInput: { flex: 1, fontSize: 15 },
-  editFeelingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 16, borderTopWidth: 1 },
-  editFeelingChip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, gap: 5 },
-  editFeelingEmoji: { fontSize: 16 },
-  editFeelingLabel: { fontSize: 13, fontWeight: '500' },
-  editActionBar: { flexDirection: 'row', borderTopWidth: 1, paddingVertical: 10, paddingHorizontal: 8 },
-  editActionBtn: { flex: 1, alignItems: 'center', gap: 3 },
-  editActionLabel: { fontSize: 11 },
-  reportInput: { marginTop: 8, marginBottom: 12, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, minHeight: 72, textAlignVertical: 'top' },
-  submitBtn: { paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
-  submitText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  toast: { position: 'absolute', left: 16, right: 16, bottom: 14, borderRadius: 999, backgroundColor: 'rgba(15,23,42,0.92)', paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center' },
-  toastText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });
-
-const fs = StyleSheet.create({
-  searchRow: { flexDirection: 'row', alignItems: 'center', margin: 12, paddingHorizontal: 12, borderRadius: 10, height: 42, gap: 8 },
-  searchInput: { flex: 1, fontSize: 15, padding: 0 },
-  friendItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.06)' },
-  friendAvatar: { width: 36, height: 36, borderRadius: 18 },
-  friendName: { flex: 1, marginLeft: 12, fontSize: 15, fontWeight: '500' },
-});
-

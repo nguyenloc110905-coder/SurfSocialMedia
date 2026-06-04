@@ -42,7 +42,7 @@ type TextOverlayDraft = {
   placement: TextPlacement;
 };
 
-const MAX_VIDEO_BYTES = 100 * 1000 * 1000;
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 const TEXT_COLORS = ['#ffffff', '#facc15', '#38bdf8', '#fb7185', '#111827'];
 
 const DARK = {
@@ -97,7 +97,7 @@ const TOOL_ACTIONS: Array<{
 
 function formatFileSize(bytes?: number) {
   if (!bytes) return '';
-  const mb = bytes / (1000 * 1000);
+  const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(mb >= 10 ? 0 : 1)}MB`;
 }
 
@@ -234,7 +234,7 @@ export default function CreateClipScreen({ navigation }: Props) {
   const validateAsset = (nextAsset: PickedAsset) => {
     const fileSize = (nextAsset as PickedAsset & { fileSize?: number }).fileSize;
     if (fileSize && fileSize > MAX_VIDEO_BYTES) {
-      setError(`Video ${formatFileSize(fileSize)} vượt giới hạn upload trực tiếp 100MB. Vui lòng chọn video ngắn hơn hoặc nén video trước khi đăng.`);
+      setError(`Video ${formatFileSize(fileSize)} vượt giới hạn upload 200MB. Vui lòng chọn video ngắn hơn hoặc nén video trước khi đăng.`);
       return false;
     }
     return true;
@@ -254,9 +254,11 @@ export default function CreateClipScreen({ navigation }: Props) {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: ['videos'],
       allowsEditing: false,
-      quality: 0.9,
+      quality: 0.8,
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
     });
     if (!result.canceled && result.assets[0]) acceptAsset(result.assets[0]);
   };
@@ -268,10 +270,12 @@ export default function CreateClipScreen({ navigation }: Props) {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: ['videos'],
       allowsEditing: false,
-      quality: 0.9,
+      quality: 0.8,
       videoMaxDuration: 180,
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
     });
     if (!result.canceled && result.assets[0]) acceptAsset(result.assets[0]);
   };
@@ -948,3 +952,4 @@ const s = StyleSheet.create({
   sheetTitle: { fontSize: 20, fontWeight: '900', marginBottom: 8 },
   privacyOption: { minHeight: 72, borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
 });
+

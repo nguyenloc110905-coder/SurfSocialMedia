@@ -10,29 +10,43 @@ export type FeedPost = {
   authorDisplayName: string;
   authorPhotoURL: string | null;
   content: string;
+  textStyle?: {
+    font?: 'system' | 'serif' | 'rounded' | 'bold' | 'mono';
+    color?: string;
+  } | null;
   mediaUrls: string[];
   createdAt: { _seconds?: number; seconds?: number } | string | number | null;
   likeCount: number;
   replyCount: number;
+  shareCount?: number;
   likedBy: string[];
   reactions?: Record<string, string>;
   savedBy?: string[];
+  archived?: boolean;
+  archivedAt?: string | null;
   sharedFrom?: {
     id: string;
     authorId: string | null;
     authorDisplayName: string;
     authorPhotoURL: string | null;
     content: string;
+    textStyle?: FeedPost['textStyle'];
     mediaUrls: string[];
     createdAt: FeedPost['createdAt'];
   };
   feeling?: string;
   location?: string;
-  taggedFriends?: Array<{ uid: string; displayName: string }>;
+  taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
   allowedUserIds?: string[];
   isEdited?: boolean;
+  pinnedAt?: string | null;
   _discover?: boolean;
+  group?: {
+    id: string;
+    name: string;
+    coverImageUrl?: string | null;
+  };
 };
 
 type FeedState = {
@@ -49,6 +63,7 @@ type FeedState = {
   setRefreshing: (v: boolean) => void;
   updatePost: (updated: Partial<FeedPost> & { id: string }) => void;
   addPost: (post: FeedPost) => void;
+  removePost: (postId: string) => void;
 };
 
 const FEED_CACHE_KEY = 'surf_mobile_feed_cache_v1';
@@ -112,6 +127,11 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     set((s) => ({
       posts: [post, ...s.posts.filter((p) => p.id !== post.id)],
       lastFetched: Date.now(),
+    })),
+
+  removePost: (postId) =>
+    set((s) => ({
+      posts: s.posts.filter((p) => p.id !== postId),
     })),
 
   fetch: async (force = false) => {

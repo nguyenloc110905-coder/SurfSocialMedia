@@ -578,8 +578,8 @@ export default function EditProfileScreen({ navigation }: Props) {
     }
     const aspect: [number, number] = kind === 'avatar' ? [1, 1] : [16, 9];
     const result = isCamera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85, allowsEditing: true, aspect })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85, allowsEditing: true, aspect });
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: true, aspect })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: true, aspect });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (kind === 'avatar') setUploadingAvatar(true); else setUploadingCover(true);
@@ -945,3 +945,4 @@ const sh = StyleSheet.create({
     borderWidth: 1, alignItems: 'center',
   },
 });
+

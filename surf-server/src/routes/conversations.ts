@@ -7,6 +7,7 @@ import {
   getGroupMembers,
   getUnreadConversationCount,
   listMessagesForConversation,
+  listMediaForConversation,
   listConversationsForUser,
   listReadReceiptsForConversation,
   markConversationRead,
@@ -261,6 +262,57 @@ router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     res.status(500).json({ error: (e as Error).message });
   }
 });
+
+/**
+ * @swagger
+ * /api/conversations/{id}/media:
+ *   get:
+ *     tags: [Conversations]
+ *     summary: Danh sách tin nhắn media trong cuộc trò chuyện (cursor pagination)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Không phải thành viên }
+ */
+router.get('/:id/media', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.uid!;
+    const limit = Math.min(parseIntSafe(req.query.limit, 20), 50);
+    const cursor = parseCursorSafe(req.query.cursor);
+
+    const result = await listMediaForConversation(
+      uid,
+      req.params.id,
+      limit,
+      cursor
+    );
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      res.status(403).json({ error: 'You are not a member of this conversation' });
+      return;
+    }
+
+    res.json({ items: result.items.map(toApiMessage), nextCursor: result.nextCursor });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 
 /**
  * @swagger

@@ -13,6 +13,17 @@ type Report = {
   resolvedAt?: string;
 };
 
+const VIETNAMESE_REASONS: Record<string, string> = {
+  spam: 'Spam / Rác tin',
+  inappropriate: 'Nội dung không phù hợp / Nhạy cảm',
+  misinformation: 'Thông tin sai lệch / Tin giả',
+  hate_speech: 'Ngôn từ kích động thù hận',
+  harassment: 'Quấy rối / Công kích cá nhân',
+  violence: 'Bạo lực / Gây nguy hiểm',
+  copyright: 'Vi phạm bản quyền',
+  other: 'Lý do khác',
+};
+
 export default function ReportsPanel() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +58,7 @@ export default function ReportsPanel() {
                   <span className="inline-block px-2.5 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-lg mb-2">
                     {report.type === 'comment' ? 'Bình luận' : 'Bài viết'}
                   </span>
-                  <p className="font-bold text-slate-800 dark:text-slate-200">Lý do: {report.reason}</p>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Lý do: {VIETNAMESE_REASONS[report.reason] || report.reason}</p>
                   <p className="text-xs text-slate-500 mt-1">{new Date(report.createdAt).toLocaleString('vi-VN')}</p>
                 </div>
                 <div className={`px-3 py-1 rounded-full text-xs font-bold ${

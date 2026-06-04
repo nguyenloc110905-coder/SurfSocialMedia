@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/firebase/auth';
 
@@ -313,7 +314,9 @@ interface MarketplaceState {
   rejectListing: (id: string, reason: string) => Promise<Listing>;
 }
 
-export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
+export const useMarketplaceStore = create<MarketplaceState>()(
+  persist(
+    (set, get) => ({
   listings: [],
   loading: false,
   refreshing: false,
@@ -339,7 +342,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     const { loading, nextCursor, activeCategory } = get();
     if (loading && !reset) return;
     if (!reset && !nextCursor) return;
-    set({ loading: true, ...(reset ? { refreshing: true, listings: [], nextCursor: null } : {}) });
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      set({ loading: false, refreshing: false });
+      return;
+    }
+    set({ loading: true, ...(reset ? { refreshing: true, nextCursor: null } : {}) });
     try {
       const params = new URLSearchParams();
       if (activeCategory !== 'all') params.set('category', activeCategory);
@@ -729,4 +736,14 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }));
     return updated;
   },
-}));
+    }),
+    {
+      name: 'surf-market-cache',
+      partialize: (state) => ({
+        // Chỉ lưu activeCategory và 15 listings đầu tiên
+        listings: state.listings.slice(0, 15),
+        activeCategory: state.activeCategory,
+      }),
+    }
+  )
+);

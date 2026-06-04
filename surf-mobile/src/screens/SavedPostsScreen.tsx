@@ -31,6 +31,10 @@ export default function SavedPostsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const removePost = useCallback((postId: string) => {
+    setPosts((current) => current.filter((post) => post.id !== postId));
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -79,7 +83,7 @@ export default function SavedPostsScreen({ navigation }: Props) {
           keyExtractor={(p) => p.id}
           contentContainerStyle={{ paddingVertical: 8 }}
           renderItem={({ item }) => (
-            <PostCard post={item} isVisible navigation={navigation as any} />
+            <PostCard post={item} isVisible navigation={navigation as any} onPostRemoved={removePost} />
           )}
         />
       )}

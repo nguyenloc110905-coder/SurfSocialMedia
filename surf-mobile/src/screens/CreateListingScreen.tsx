@@ -103,7 +103,7 @@ export default function CreateListingScreen({ navigation }: Props) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       selectionLimit: 5 - selectedImages.length,
       quality: 0.85,
@@ -443,3 +443,4 @@ const s = StyleSheet.create({
   },
   condBtnText: { fontSize: 12, fontWeight: '600' },
 });
+

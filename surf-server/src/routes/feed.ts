@@ -130,6 +130,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       isAnonymous?: boolean;
       group?: any;
       [key: string]: unknown;
+      archived?: boolean;
     };
 
     const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PostDoc);
@@ -137,6 +138,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     // Loại bỏ bài đã xóa hoặc bài trong nhóm mà chưa tham gia
     const activeDocs = allDocs.filter((p) => {
       if (p.deleted === true) return false;
+      if (p.archived === true) return false;
       if (p.groupId && !joinedGroupIds.has(p.groupId)) return false;
       return true;
     });
@@ -217,9 +219,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       
       // Ưu tiên bài cá nhân hóa (bạn bè, follow) hơn khám phá
       if (!p._discover) score += 20;
+      if (p.authorId === uid) score += 1500;
       
       // Phạt nặng nếu đã đọc rồi (để rơi xuống đáy)
-      if (seenPosts.has(p.id)) score -= 1000;
+      if (p.authorId !== uid && seenPosts.has(p.id)) score -= 1000;
 
       // Yếu tố ngẫu nhiên nhỏ để làm mới feed
       score += Math.random() * 5;

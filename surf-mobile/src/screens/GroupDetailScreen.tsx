@@ -284,7 +284,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.85,
     });
     if (result.canceled || !result.assets[0]) return;
@@ -807,3 +807,4 @@ const s = StyleSheet.create({
   copyText: { fontSize: 13, fontWeight: '800' },
   sendInviteBtn: { flex: 1, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });
+
