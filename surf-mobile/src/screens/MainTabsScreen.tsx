@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -103,6 +103,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const C = scheme === 'dark' ? DARK : LIGHT;
   const isFocused = useIsFocused();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((state) => state.user);
   usePresence();
 
@@ -770,7 +771,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   );
 
   const clipsOverlay = (
-    <View style={s.clipsOverlay} pointerEvents="box-none">
+    <View style={[s.clipsOverlay, { top: hideClipsChrome ? 0 : insets.top }]} pointerEvents="box-none">
       <View style={s.floatingClipsHeader} pointerEvents="box-none">
         <TouchableOpacity hitSlop={HIT} onPress={toggleSidebar} accessibilityRole="button" accessibilityLabel={t('open_menu')}>
           <Ionicons name="menu-outline" size={26} color="#fff" style={s.floatingIconShadow} />
@@ -1120,6 +1121,7 @@ export default function MainTabsScreen({ navigation }: Props) {
           style={[
             s.feedFloatingHeader,
             {
+              top: insets.top,
               backgroundColor: C.bg,
               opacity: feedFloatingHeader.interpolate({
                 inputRange: [0, 1],

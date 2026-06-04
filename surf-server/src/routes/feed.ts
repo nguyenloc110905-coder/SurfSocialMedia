@@ -130,6 +130,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
       isAnonymous?: boolean;
       group?: any;
       [key: string]: unknown;
+      archived?: boolean;
     };
 
     const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PostDoc);
@@ -137,6 +138,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     // Loại bỏ bài đã xóa hoặc bài trong nhóm mà chưa tham gia
     const activeDocs = allDocs.filter((p) => {
       if (p.deleted === true) return false;
+      if (p.archived === true) return false;
       if (p.groupId && !joinedGroupIds.has(p.groupId)) return false;
       return true;
     });

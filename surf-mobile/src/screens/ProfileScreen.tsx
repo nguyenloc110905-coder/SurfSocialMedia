@@ -13,7 +13,9 @@ import {
   Alert,
   Modal,
   Pressable,
+  TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,6 +25,7 @@ import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import { api } from '@/lib/api';
+import { getRecentAccounts, type RecentAccount } from '@/lib/recentAccounts';
 import { useT, type I18nKey } from '@/lib/i18n';
 import PostCard from '@/components/PostCard';
 import type { FeedPost } from '@/stores/feedStore';
@@ -191,6 +194,7 @@ export default function ProfileScreen({
   const C = scheme === 'dark' ? DARK : LIGHT;
   const insets = useSafeAreaInsets();
   const { user: authUser } = useAuthStore();
+  const resetAuth = useAuthStore((state) => state.resetAuth);
   const toggleSidebar = useSidebarStore((state) => state.toggleSidebar);
   const scrollRef = useRef<ScrollView>(null);
   const lastScrollYRef = useRef(0);
@@ -200,6 +204,8 @@ export default function ProfileScreen({
 
   const targetUid = route.params?.userId ?? authUser?.uid ?? '';
   const isOwn = !route.params?.userId || route.params.userId === authUser?.uid;
+  const [viewAsPublic, setViewAsPublic] = useState(false);
+  const canEditProfile = isOwn && !viewAsPublic;
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -215,6 +221,11 @@ export default function ProfileScreen({
   const [mediaSheet, setMediaSheet] = useState<'avatar' | 'cover' | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPost, setPreviewPost] = useState<FeedPost | null>(null);
+  const [friendsModalOpen, setFriendsModalOpen] = useState(false);
+  const [friendsQuery, setFriendsQuery] = useState('');
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
+  const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([]);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
   const [visiblePostIds, setVisiblePostIds] = useState<Set<string>>(() => new Set());
 
@@ -386,9 +397,28 @@ export default function ProfileScreen({
       ? t(GENDER_KEYS[profile.gender] ?? 'gender')
       : '';
 
-  const imagePosts = useMemo(() => posts.filter((post) => firstMedia(post, 'image')), [posts]);
-  const reelPosts = useMemo(() => posts.filter((post) => firstMedia(post, 'video')), [posts]);
+  const visiblePosts = useMemo(
+    () => viewAsPublic ? posts.filter((post) => (post.privacy ?? 'public') === 'public') : posts,
+    [posts, viewAsPublic]
+  );
+  const imagePosts = useMemo(() => visiblePosts.filter((post) => firstMedia(post, 'image')), [visiblePosts]);
+  const reelPosts = useMemo(() => visiblePosts.filter((post) => firstMedia(post, 'video')), [visiblePosts]);
   const mutualPreview = friends.slice(0, 3);
+  const filteredFriends = useMemo(() => {
+    const q = friendsQuery.trim().toLowerCase();
+    if (!q) return friends;
+    return friends.filter((friend) => (friend.displayName ?? '').toLowerCase().includes(q));
+  }, [friends, friendsQuery]);
+
+  const showViewModeNotice = useCallback(() => {
+    Alert.alert('Không thể thao tác', 'Bạn không thể thao tác trong trạng thái này.');
+  }, []);
+
+  const blockIfViewMode = useCallback(() => {
+    if (!viewAsPublic) return false;
+    showViewModeNotice();
+    return true;
+  }, [showViewModeNotice, viewAsPublic]);
 
   function friendBtnLabel() {
     if (friendStatus === 'friends') return t('friend_status_friends');
@@ -403,6 +433,7 @@ export default function ProfileScreen({
   }
 
   const handleFriendAction = async () => {
+    if (blockIfViewMode()) return;
     if (actionLoading) return;
     setActionLoading(true);
     try {
@@ -426,6 +457,7 @@ export default function ProfileScreen({
   };
 
   const handleStartChat = async () => {
+    if (blockIfViewMode()) return;
     if (chatLoading || !targetUid) return;
     setChatLoading(true);
     try {
@@ -446,13 +478,15 @@ export default function ProfileScreen({
   };
 
   const handlePickProfileImage = (slot: 'avatar' | 'cover') => {
-    if (!isOwn) return;
+    if (blockIfViewMode()) return;
+    if (!canEditProfile) return;
     setMediaSheet(slot);
   };
 
   const closeMediaSheet = () => setMediaSheet(null);
 
   const openPreview = (url: string | null) => {
+    if (blockIfViewMode()) return;
     closeMediaSheet();
     if (!url) {
       Alert.alert(t('no_photo_title'), t('no_photo_message'));
@@ -471,7 +505,58 @@ export default function ProfileScreen({
     setPreviewPost(null);
   };
 
+  const openAccountSheet = useCallback(async () => {
+    if (blockIfViewMode()) return;
+    if (!isOwn) return;
+    setRecentAccounts(await getRecentAccounts());
+    setAccountSheetOpen(true);
+  }, [blockIfViewMode, isOwn]);
+
+  const switchToAccount = useCallback(async (account: RecentAccount) => {
+    if (account.uid === authUser?.uid) {
+      setAccountSheetOpen(false);
+      return;
+    }
+    if (account.email) await AsyncStorage.setItem('surf_last_email', account.email);
+    await AsyncStorage.setItem('surf_next_auth_tab', 'login');
+    setAccountSheetOpen(false);
+    await resetAuth();
+  }, [authUser?.uid, resetAuth]);
+
+  const createNewAccount = useCallback(async () => {
+    await AsyncStorage.setItem('surf_next_auth_tab', 'register');
+    setAccountSheetOpen(false);
+    await resetAuth();
+  }, [resetAuth]);
+
+  const openProfileMenu = useCallback(() => {
+    if (blockIfViewMode()) return;
+    if (!isOwn) {
+      navigation.navigate('Search');
+      return;
+    }
+    setProfileMenuOpen(true);
+  }, [blockIfViewMode, isOwn, navigation]);
+
+  const enableViewAsPublic = useCallback(() => {
+    setProfileMenuOpen(false);
+    setViewAsPublic(true);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+
+  const removePostFromProfile = useCallback((postId: string) => {
+    setPosts((current) => current.filter((post) => post.id !== postId));
+    const cached = profilePostsCache.get(targetUid);
+    if (cached) {
+      profilePostsCache.set(targetUid, {
+        ...cached,
+        posts: cached.posts.filter((post) => post.id !== postId),
+      });
+    }
+  }, [targetUid]);
+
   const openPhotoPicker = (mode: 'avatarUpload' | 'coverUpload' | 'coverPosted') => {
+    if (blockIfViewMode()) return;
     closeMediaSheet();
     navigation.navigate('ProfilePhotoPicker', { mode });
   };
@@ -489,10 +574,19 @@ export default function ProfileScreen({
         <View style={s.coverShade} />
         <Pressable
           style={StyleSheet.absoluteFill}
-          onPress={() => isOwn ? handlePickProfileImage('cover') : openPreview(coverUrl)}
+          onPress={() => {
+            if (blockIfViewMode()) return;
+            canEditProfile ? handlePickProfileImage('cover') : openPreview(coverUrl);
+          }}
         />
         <View style={s.coverTools}>
-          <TouchableOpacity style={s.coverIconBtn} onPress={() => showBackButton ? navigation.goBack() : toggleSidebar()}>
+          <TouchableOpacity
+            style={s.coverIconBtn}
+            onPress={() => {
+              if (blockIfViewMode()) return;
+              showBackButton ? navigation.goBack() : toggleSidebar();
+            }}
+          >
             {showBackButton ? (
               <Ionicons name="arrow-back-outline" size={24} color="#fff" style={s.coverIconShadow} />
             ) : (
@@ -500,20 +594,26 @@ export default function ProfileScreen({
             )}
           </TouchableOpacity>
           <View style={s.coverToolRight}>
-            {isOwn && (
+            {canEditProfile && (
               <TouchableOpacity style={s.coverIconBtn} onPress={() => navigation.navigate('EditProfile')}>
                 <Ionicons name="pencil-outline" size={23} color="#fff" style={s.coverIconShadow} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={s.coverIconBtn}>
+            <TouchableOpacity
+              style={s.coverIconBtn}
+              onPress={() => {
+                if (blockIfViewMode()) return;
+                navigation.navigate('Search');
+              }}
+            >
               <Ionicons name="search-outline" size={24} color="#fff" style={s.coverIconShadow} />
             </TouchableOpacity>
-            <TouchableOpacity style={s.coverIconBtn}>
+            <TouchableOpacity style={s.coverIconBtn} onPress={openProfileMenu}>
               <Ionicons name="ellipsis-horizontal" size={24} color="#fff" style={s.coverIconShadow} />
             </TouchableOpacity>
           </View>
         </View>
-        {isOwn && (
+        {canEditProfile && (
           <TouchableOpacity style={s.coverImageBtn} onPress={() => handlePickProfileImage('cover')}>
             <Ionicons name="camera-outline" size={27} color="#fff" style={s.coverIconShadow} />
           </TouchableOpacity>
@@ -524,8 +624,11 @@ export default function ProfileScreen({
         <View style={s.identityPanel}>
           <TouchableOpacity
             style={s.avatarWrap}
-            activeOpacity={isOwn ? 0.85 : 1}
-            onPress={isOwn ? () => handlePickProfileImage('avatar') : undefined}
+            activeOpacity={canEditProfile ? 0.85 : 1}
+            onPress={() => {
+              if (blockIfViewMode()) return;
+              if (canEditProfile) handlePickProfileImage('avatar');
+            }}
           >
             {photoURL ? (
               <Image source={{ uri: photoURL }} style={s.avatarImg} />
@@ -534,7 +637,7 @@ export default function ProfileScreen({
                 <Text style={s.avatarInitial}>{initial}</Text>
               </View>
             )}
-            {isOwn && (
+            {canEditProfile && (
               <TouchableOpacity style={[s.avatarCamera, { backgroundColor: C.muted }]} onPress={() => handlePickProfileImage('avatar')}>
                 <Ionicons name="camera" size={20} color={C.text} />
               </TouchableOpacity>
@@ -544,11 +647,11 @@ export default function ProfileScreen({
           <View style={s.nameBlock}>
             <Text style={[s.displayName, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
             <Text style={[s.statsInline, { color: C.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              {t('friends_count_posts_count', { friends: friends.length, posts: posts.length })}
+              {t('friends_count_posts_count', { friends: friends.length, posts: visiblePosts.length })}
             </Text>
           </View>
 
-          <TouchableOpacity style={[s.roundAction, { backgroundColor: C.muted }]}>
+          <TouchableOpacity style={[s.roundAction, { backgroundColor: C.muted }]} onPress={openAccountSheet}>
             <Ionicons name="chevron-down" size={19} color={C.text} />
           </TouchableOpacity>
         </View>
@@ -581,11 +684,11 @@ export default function ProfileScreen({
           ) : null}
 
           <View style={s.actionRow}>
-            {isOwn ? (
+            {canEditProfile ? (
               <>
-                <TouchableOpacity style={[s.storyButton, { backgroundColor: C.accent }]} onPress={() => navigation.navigate('CreatePost')}>
-                  <Ionicons name="add-circle-outline" size={20} color="#fff" />
-                  <Text style={s.storyButtonText} numberOfLines={1} adjustsFontSizeToFit>{t('add_to_story')}</Text>
+                <TouchableOpacity style={[s.storyButton, { backgroundColor: C.accent }]} onPress={() => navigation.navigate('CreateMoment')}>
+                  <Ionicons name="sparkles-outline" size={20} color="#fff" />
+                  <Text style={s.storyButtonText} numberOfLines={1} adjustsFontSizeToFit>To Moments</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[s.editButton, { backgroundColor: C.muted }]} onPress={() => navigation.navigate('EditProfile')}>
                   <Ionicons name="create" size={18} color={C.text} />
@@ -594,7 +697,7 @@ export default function ProfileScreen({
                   </Text>
                 </TouchableOpacity>
               </>
-            ) : (
+            ) : !isOwn ? (
               <>
                 <TouchableOpacity
                   style={[s.storyButton, { backgroundColor: friendStatus === 'friends' ? C.muted : C.accent }]}
@@ -617,7 +720,7 @@ export default function ProfileScreen({
                   <Text style={[s.editButtonText, { color: C.text }]} numberOfLines={1}>{t('message')}</Text>
                 </TouchableOpacity>
               </>
-            )}
+            ) : null}
           </View>
         </View>
 
@@ -626,7 +729,10 @@ export default function ProfileScreen({
             <TouchableOpacity
               key={tab.key}
               style={[s.tabChip, activeTab === tab.key && { backgroundColor: C.accentSoft }]}
-              onPress={() => setActiveTab(tab.key)}
+              onPress={() => {
+                if (blockIfViewMode()) return;
+                setActiveTab(tab.key);
+              }}
             >
               <Text style={[s.tabText, { color: activeTab === tab.key ? C.accent : C.subtext }]}>
                 {t(tab.labelKey)}
@@ -705,6 +811,154 @@ export default function ProfileScreen({
     </Modal>
   );
 
+  const renderFriendsModal = () => (
+    <Modal visible={friendsModalOpen} transparent animationType="slide" onRequestClose={() => setFriendsModalOpen(false)}>
+      <View style={s.sheetOverlay}>
+        <View style={[s.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 22 }]}>
+          <View style={s.sheetHandle} />
+          <View style={s.modalHeader}>
+            <Text style={[s.modalTitle, { color: C.text }]}>Tất cả bạn bè</Text>
+            <TouchableOpacity onPress={() => setFriendsModalOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            value={friendsQuery}
+            onChangeText={setFriendsQuery}
+            placeholder="Tìm bạn bè..."
+            placeholderTextColor={C.subtext}
+            style={[s.searchInput, { backgroundColor: C.chip, color: C.text }]}
+          />
+          <ScrollView style={s.modalList} showsVerticalScrollIndicator={false}>
+            {filteredFriends.length === 0 ? (
+              <Text style={[s.emptyText, { color: C.subtext }]}>Không tìm thấy bạn bè</Text>
+            ) : filteredFriends.map((friend) => (
+              <TouchableOpacity
+                key={friend.id}
+                style={s.modalListRow}
+                onPress={() => {
+                  setFriendsModalOpen(false);
+                  navigation.navigate('Profile', { userId: friend.id });
+                }}
+              >
+                {friend.photoURL ? (
+                  <Image source={{ uri: friend.photoURL }} style={s.modalAvatar} />
+                ) : (
+                  <View style={[s.modalAvatar, s.avatarFallback]}>
+                    <Text style={s.friendInitial}>{(friend.displayName ?? '?').charAt(0).toUpperCase()}</Text>
+                  </View>
+                )}
+                <Text style={[s.modalRowText, { color: C.text }]} numberOfLines={1}>
+                  {friend.displayName ?? t('user_fallback')}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={C.subtext} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderAccountSheet = () => (
+    <Modal visible={accountSheetOpen} transparent animationType="slide" onRequestClose={() => setAccountSheetOpen(false)}>
+      <View style={s.sheetOverlay}>
+        <View style={[s.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 22 }]}>
+          <View style={s.sheetHandle} />
+          <View style={s.modalHeader}>
+            <Text style={[s.modalTitle, { color: C.text }]}>Tài khoản Surf</Text>
+            <TouchableOpacity onPress={() => setAccountSheetOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={s.modalList} showsVerticalScrollIndicator={false}>
+            {recentAccounts.map((account) => {
+              const activeAccount = account.uid === authUser?.uid;
+              return (
+                <TouchableOpacity
+                  key={account.uid}
+                  style={s.modalListRow}
+                  onPress={() => switchToAccount(account)}
+                >
+                  {account.photoURL ? (
+                    <Image source={{ uri: account.photoURL }} style={s.modalAvatar} />
+                  ) : (
+                    <View style={[s.modalAvatar, s.avatarFallback]}>
+                      <Text style={s.friendInitial}>{(account.displayName ?? account.email ?? '?').charAt(0).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.modalRowText, { color: C.text }]} numberOfLines={1}>
+                      {account.displayName ?? account.email ?? t('user_fallback')}
+                    </Text>
+                    {account.email ? <Text style={[s.modalSubText, { color: C.subtext }]} numberOfLines={1}>{account.email}</Text> : null}
+                  </View>
+                  {activeAccount ? <Ionicons name="checkmark-circle" size={20} color={C.accent} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity style={s.modalListRow} onPress={createNewAccount}>
+              <View style={[s.modalAvatar, { backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }]}>
+                <Ionicons name="add" size={24} color="#fff" />
+              </View>
+              <Text style={[s.modalRowText, { color: C.text }]}>Tạo tài khoản Surf mới</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderProfileMenu = () => (
+    <Modal visible={profileMenuOpen} transparent animationType="slide" onRequestClose={() => setProfileMenuOpen(false)}>
+      <View style={s.sheetOverlay}>
+        <View style={[s.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 22 }]}>
+          <View style={s.sheetHandle} />
+          <View style={s.modalHeader}>
+            <Text style={[s.modalTitle, { color: C.text }]}>Cài đặt trang cá nhân</Text>
+            <TouchableOpacity onPress={() => setProfileMenuOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={C.text} />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={s.sheetRow}
+            onPress={() => {
+              setProfileMenuOpen(false);
+              navigation.navigate('ArchivedPosts');
+            }}
+          >
+            <View style={[s.sheetIcon, { backgroundColor: C.chip }]}><Ionicons name="archive-outline" size={24} color={C.text} /></View>
+            <Text style={[s.sheetText, { color: C.text }]}>Kho lưu trữ</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.sheetRow}
+            onPress={() => {
+              setProfileMenuOpen(false);
+              navigation.navigate('Settings');
+            }}
+          >
+            <View style={[s.sheetIcon, { backgroundColor: C.chip }]}><Ionicons name="settings-outline" size={24} color={C.text} /></View>
+            <Text style={[s.sheetText, { color: C.text }]}>Cài đặt và quyền riêng tư</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.sheetRow} onPress={enableViewAsPublic}>
+            <View style={[s.sheetIcon, { backgroundColor: C.chip }]}><Ionicons name="eye-outline" size={24} color={C.text} /></View>
+            <Text style={[s.sheetText, { color: C.text }]}>Chế độ xem</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.sheetRow}
+            onPress={() => {
+              setProfileMenuOpen(false);
+              navigation.navigate('Search');
+            }}
+          >
+            <View style={[s.sheetIcon, { backgroundColor: C.chip }]}><Ionicons name="search-outline" size={24} color={C.text} /></View>
+            <Text style={[s.sheetText, { color: C.text }]}>Tìm kiếm</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
   const renderAboutSection = () => {
     const workItems: WorkItem[] = Array.isArray(profile?.work) ? profile.work : [];
     const educationItems: EducationItem[] = Array.isArray(profile?.education) ? profile.education : [];
@@ -730,7 +984,7 @@ export default function ProfileScreen({
       <View style={[s.section, { backgroundColor: C.card }]}>
         <View style={s.sectionHeader}>
           <Text style={[s.sectionTitle, { color: C.text }]}>{t('about')}</Text>
-          {isOwn && (
+          {canEditProfile && (
             <TouchableOpacity onPress={() => navigation.navigate('EditProfile')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="create-outline" size={22} color={C.subtext} />
             </TouchableOpacity>
@@ -755,7 +1009,12 @@ export default function ProfileScreen({
       <View style={s.sectionHeader}>
         <Text style={[s.sectionTitle, { color: C.text }]}>{t('friends_title')}</Text>
         {friends.length > 6 ? (
-          <TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              if (blockIfViewMode()) return;
+              setFriendsModalOpen(true);
+            }}
+          >
             <Text style={[s.seeAllText, { color: C.accent }]}>{t('see_all')}</Text>
           </TouchableOpacity>
         ) : null}
@@ -770,7 +1029,10 @@ export default function ProfileScreen({
             <TouchableOpacity
               key={friend.id}
               style={s.friendItem}
-              onPress={() => navigation.navigate('Profile', { userId: friend.id })}
+              onPress={() => {
+                if (blockIfViewMode()) return;
+                navigation.navigate('Profile', { userId: friend.id });
+              }}
             >
               {friend.photoURL ? (
                 <Image source={{ uri: friend.photoURL }} style={s.friendAvatar} />
@@ -814,7 +1076,14 @@ export default function ProfileScreen({
             if (!media) return null;
             const thumbnail = kind === 'video' ? videoThumbnailUrl(media) : media;
             return (
-              <TouchableOpacity key={post.id} style={s.mediaTile} onPress={() => navigation.navigate('NotificationPost', { postId: post.id })}>
+              <TouchableOpacity
+                key={post.id}
+                style={s.mediaTile}
+                onPress={() => {
+                  if (blockIfViewMode()) return;
+                  navigation.navigate('NotificationPost', { postId: post.id });
+                }}
+              >
                 {thumbnail ? (
                   <Image source={{ uri: thumbnail }} style={s.mediaImage} resizeMode="cover" />
                 ) : (
@@ -843,7 +1112,7 @@ export default function ProfileScreen({
         </View>
       );
     }
-    if (posts.length === 0) {
+    if (visiblePosts.length === 0) {
       return (
         <View style={s.emptyBlock}>
           <Ionicons name="newspaper-outline" size={38} color={C.subtext} />
@@ -851,15 +1120,25 @@ export default function ProfileScreen({
         </View>
       );
     }
-    return posts.map((post) => (
+    return visiblePosts.map((post) => (
       <View
         key={post.id}
+        style={s.postCardWrap}
         onLayout={(event) => {
           postLayoutRef.current[post.id] = event.nativeEvent.layout;
           updateVisibleProfilePosts(lastScrollYRef.current);
         }}
       >
-        <PostCard post={post} isVisible={isActive && activeTab === 'all' && visiblePostIds.has(post.id)} navigation={navigation} />
+        <PostCard
+          post={post}
+          isVisible={isActive && activeTab === 'all' && visiblePostIds.has(post.id)}
+          navigation={navigation}
+          onPostRemoved={removePostFromProfile}
+          hideOptions={viewAsPublic}
+        />
+        {viewAsPublic ? (
+          <Pressable style={s.postInteractionOverlay} onPress={showViewModeNotice} />
+        ) : null}
       </View>
     ));
   };
@@ -874,7 +1153,7 @@ export default function ProfileScreen({
         {renderFriendsSection()}
         <View style={[s.postSectionHeader, { backgroundColor: C.card, borderTopColor: C.border }]}>
           <Text style={[s.sectionTitle, { color: C.text }]}>{t('posts')}</Text>
-          {isOwn && (
+          {canEditProfile && (
             <TouchableOpacity style={[s.createPostPill, { backgroundColor: C.chip }]} onPress={() => navigation.navigate('CreatePost')}>
               <Ionicons name="add" size={16} color={C.text} />
               <Text style={[s.createPostText, { color: C.text }]}>{t('create_post')}</Text>
@@ -898,6 +1177,19 @@ export default function ProfileScreen({
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
+      {viewAsPublic && (
+        <View style={[s.viewModeBar, { backgroundColor: C.card, borderBottomColor: C.border }]}>
+          <TouchableOpacity onPress={() => setViewAsPublic(false)} style={[s.viewModeBtn, { backgroundColor: C.chip }]}>
+            <Ionicons name="close" size={16} color={C.text} />
+            <Text style={[s.viewModeText, { color: C.text }]}>Thoát</Text>
+          </TouchableOpacity>
+          <Text style={[s.viewModeTitle, { color: C.text }]} numberOfLines={1}>Đang xem như người khác</Text>
+          <TouchableOpacity onPress={() => { setViewAsPublic(false); navigation.navigate('EditProfile'); }} style={[s.viewModeBtn, { backgroundColor: C.accent }]}>
+            <Ionicons name="create-outline" size={16} color="#fff" />
+            <Text style={[s.viewModeText, { color: '#fff' }]}>Chỉnh sửa</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
@@ -908,7 +1200,17 @@ export default function ProfileScreen({
         }}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.accent} colors={[C.accent]} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              if (blockIfViewMode()) return;
+              handleRefresh();
+            }}
+            tintColor={C.accent}
+            colors={[C.accent]}
+          />
+        }
       >
         {renderHeader()}
         <View
@@ -923,6 +1225,9 @@ export default function ProfileScreen({
       </ScrollView>
       {renderMediaSheet()}
       {renderPreviewModal()}
+      {renderFriendsModal()}
+      {renderAccountSheet()}
+      {renderProfileMenu()}
     </SafeAreaView>
   );
 }
@@ -1167,6 +1472,8 @@ const s = StyleSheet.create({
     gap: 4,
   },
   createPostText: { fontSize: 13, fontWeight: '700' },
+  postCardWrap: { position: 'relative' },
+  postInteractionOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
   loadingBlock: { paddingVertical: 34, alignItems: 'center' },
   emptyBlock: { paddingVertical: 38, alignItems: 'center', gap: 8 },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
@@ -1257,4 +1564,49 @@ const s = StyleSheet.create({
     paddingHorizontal: 0,
     paddingBottom: 28,
   },
+  modalHeader: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  modalTitle: { fontSize: 19, fontWeight: '900' },
+  searchInput: {
+    minHeight: 44,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    marginBottom: 10,
+  },
+  modalList: { maxHeight: SCREEN_H * 0.62 },
+  modalListRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  modalAvatar: { width: 42, height: 42, borderRadius: 21 },
+  modalRowText: { flex: 1, fontSize: 15, fontWeight: '800' },
+  modalSubText: { marginTop: 2, fontSize: 12, fontWeight: '500' },
+  viewModeBar: {
+    minHeight: 52,
+    borderBottomWidth: 1,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  viewModeTitle: { flex: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  viewModeBtn: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  viewModeText: { fontSize: 12, fontWeight: '800' },
 });

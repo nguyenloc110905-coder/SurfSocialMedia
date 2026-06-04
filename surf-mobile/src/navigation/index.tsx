@@ -29,12 +29,13 @@ import MyListingsScreen from '@/screens/MyListingsScreen';
 import { NotificationPostDetailScreen } from '@/screens/NotificationCenterScreen';
 import SearchScreen from '@/screens/SearchScreen';
 import SavedPostsScreen from '@/screens/SavedPostsScreen';
+import ArchivedPostsScreen from '@/screens/ArchivedPostsScreen';
 import GroupsScreen from '@/screens/GroupsScreen';
 import GroupDetailScreen from '@/screens/GroupDetailScreen';
 import { getSocket } from '@/lib/socket';
 
 export type RootStackParamList = {
-  Auth: { initialTab?: 'login' | 'register' };
+  Auth: { initialTab?: 'login' | 'register'; initialEmail?: string };
   ForgotPassword: undefined;
   MainTabs: undefined;
   Home: undefined;
@@ -71,6 +72,7 @@ export type RootStackParamList = {
   NotificationPost: { postId: string };
   Search: undefined;
   SavedPosts: undefined;
+  ArchivedPosts: undefined;
   Groups: undefined;
   GroupDetail: { groupId: string };
   Call: {
@@ -192,6 +194,7 @@ export default function Navigation() {
             />
             <Stack.Screen name="MyListings" component={MyListingsScreen} />
             <Stack.Screen name="SavedPosts" component={SavedPostsScreen} />
+            <Stack.Screen name="ArchivedPosts" component={ArchivedPostsScreen} />
             <Stack.Screen name="Groups" component={GroupsScreen} />
             <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
           </>

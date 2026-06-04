@@ -13,6 +13,7 @@ import {
   Keyboard,
   Share,
   Platform,
+  Alert,
   ActivityIndicator,
   StyleSheet,
   useColorScheme,
@@ -50,6 +51,29 @@ type Comment = {
 
 const REACTIONS = ['❤️', '🌊', '😂', '😮', '😢', '👍'] as const;
 
+const REPORT_CATEGORIES = [
+  { key: 'spam', label: 'Spam hoặc lừa đảo' },
+  { key: 'hate', label: 'Ngôn từ thù ghét hoặc quấy rối' },
+  { key: 'violence', label: 'Ảnh khỏa thân hoặc bạo lực' },
+  { key: 'fake_news', label: 'Thông tin sai lệch' },
+  { key: 'illegal', label: 'Bán hàng trái phép' },
+  { key: 'copyright', label: 'Vi phạm bản quyền (IP)' },
+  { key: 'other', label: 'Lý do khác' },
+] as const;
+
+function normalizeReportReason(reason: string): string {
+  switch (reason) {
+    case 'hate':
+      return 'hate_speech';
+    case 'fake_news':
+      return 'misinformation';
+    case 'illegal':
+      return 'inappropriate';
+    default:
+      return reason;
+  }
+}
+
 function parseMentions(text: string): string {
   return text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
 }
@@ -64,6 +88,8 @@ export type PostCardProps = {
   post: FeedPost;
   isVisible: boolean;
   navigation: NativeStackNavigationProp<RootStackParamList, any>;
+  onPostRemoved?: (postId: string) => void;
+  hideOptions?: boolean;
 };
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -1386,13 +1412,226 @@ const sm = StyleSheet.create({
 });
 
 // ── PostCard ──────────────────────────────────────────────────────────────────
-function PostCard({ post, isVisible, navigation }: PostCardProps) {
+function PostOptionsSheet({
+  visible,
+  saved,
+  canReport,
+  canManage,
+  C,
+  onClose,
+  onToggleSave,
+  onReport,
+  onArchive,
+  onDelete,
+}: {
+  visible: boolean;
+  saved: boolean;
+  canReport: boolean;
+  canManage: boolean;
+  C: typeof LIGHT;
+  onClose: () => void;
+  onToggleSave: () => void;
+  onReport: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      </TouchableOpacity>
+      <View style={[os.sheet, { backgroundColor: C.card, paddingBottom: insets.bottom + 10 }]}>
+        <View style={[os.handle, { backgroundColor: C.border }]} />
+        <TouchableOpacity
+          style={[os.item, { borderBottomColor: C.border }]}
+          activeOpacity={0.75}
+          onPress={() => {
+            onClose();
+            onToggleSave();
+          }}
+        >
+          <View style={[os.iconWrap, { backgroundColor: saved ? C.accent + '22' : C.card2 }]}>
+            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? C.accent : C.text} />
+          </View>
+          <Text style={[os.itemText, { color: C.text }]}>{saved ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}</Text>
+          {saved ? <Ionicons name="checkmark" size={18} color={C.accent} /> : null}
+        </TouchableOpacity>
+        {canReport ? (
+          <TouchableOpacity
+            style={os.item}
+            activeOpacity={0.75}
+            onPress={() => {
+              onClose();
+              onReport();
+            }}
+          >
+            <View style={[os.iconWrap, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="warning-outline" size={20} color="#ef4444" />
+            </View>
+            <Text style={[os.itemText, { color: '#ef4444' }]}>Báo cáo bài viết</Text>
+          </TouchableOpacity>
+        ) : null}
+        {canManage ? (
+          <>
+            <TouchableOpacity
+              style={[os.item, { borderBottomColor: C.border }]}
+              activeOpacity={0.75}
+              onPress={() => {
+                onClose();
+                onArchive();
+              }}
+            >
+              <View style={[os.iconWrap, { backgroundColor: C.card2 }]}>
+                <Ionicons name="archive-outline" size={20} color={C.text} />
+              </View>
+              <Text style={[os.itemText, { color: C.text }]}>Lưu trữ bài viết</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={os.item}
+              activeOpacity={0.75}
+              onPress={() => {
+                onClose();
+                onDelete();
+              }}
+            >
+              <View style={[os.iconWrap, { backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              </View>
+              <Text style={[os.itemText, { color: '#ef4444' }]}>Xóa bài viết</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function ReportPostModal({
+  visible,
+  C,
+  submitting,
+  reason,
+  details,
+  onClose,
+  onReasonChange,
+  onDetailsChange,
+  onSubmit,
+}: {
+  visible: boolean;
+  C: typeof LIGHT;
+  submitting: boolean;
+  reason: string;
+  details: string;
+  onClose: () => void;
+  onReasonChange: (value: string) => void;
+  onDetailsChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={onClose}>
+      <View style={reportStyles.backdrop}>
+        <View style={[reportStyles.panel, { backgroundColor: C.card }]}>
+          <View style={[reportStyles.header, { borderBottomColor: C.border }]}>
+            <Text style={[reportStyles.title, { color: C.text }]}>Báo cáo bài viết</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color={C.subtext} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[reportStyles.desc, { color: C.subtext }]}>Hãy cho chúng tôi biết vấn đề với bài viết này.</Text>
+          <ScrollView style={reportStyles.reasonList} showsVerticalScrollIndicator={false}>
+            {REPORT_CATEGORIES.map((category) => {
+              const selected = reason === category.key;
+              return (
+                <TouchableOpacity
+                  key={category.key}
+                  style={[
+                    reportStyles.reasonRow,
+                    {
+                      backgroundColor: selected ? C.accent + '16' : C.card2,
+                      borderColor: selected ? C.accent : C.border,
+                    },
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => onReasonChange(category.key)}
+                >
+                  <Ionicons
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={19}
+                    color={selected ? C.accent : C.subtext}
+                  />
+                  <Text style={[reportStyles.reasonText, { color: C.text }]}>{category.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          {reason ? (
+            <TextInput
+              style={[reportStyles.detailsInput, { backgroundColor: C.inputBg, color: C.text, borderColor: C.border }]}
+              placeholder="Chi tiết bổ sung (không bắt buộc)"
+              placeholderTextColor={C.placeholder}
+              value={details}
+              onChangeText={onDetailsChange}
+              multiline
+              maxLength={500}
+              textAlignVertical="top"
+            />
+          ) : null}
+          <View style={reportStyles.footer}>
+            <TouchableOpacity style={[reportStyles.cancelBtn, { backgroundColor: C.card2 }]} onPress={onClose}>
+              <Text style={[reportStyles.cancelText, { color: C.text }]}>Hủy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[reportStyles.submitBtn, { backgroundColor: C.accent, opacity: submitting || !reason ? 0.55 : 1 }]}
+              onPress={onSubmit}
+              disabled={submitting || !reason}
+            >
+              {submitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={reportStyles.submitText}>Gửi báo cáo</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const os = StyleSheet.create({
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8 },
+  handle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 6 },
+  item: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, borderBottomWidth: StyleSheet.hairlineWidth },
+  iconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  itemText: { flex: 1, fontSize: 15, fontWeight: '700' },
+});
+
+const reportStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', paddingHorizontal: 18 },
+  panel: { borderRadius: 18, overflow: 'hidden', maxHeight: '86%' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  title: { fontSize: 18, fontWeight: '800' },
+  desc: { fontSize: 13, lineHeight: 18, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
+  reasonList: { maxHeight: 290, paddingHorizontal: 14 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8 },
+  reasonText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  detailsInput: { marginHorizontal: 14, marginTop: 4, minHeight: 84, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  footer: { flexDirection: 'row', gap: 10, padding: 14 },
+  cancelBtn: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { fontSize: 14, fontWeight: '800' },
+  submitBtn: { flex: 1.2, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  submitText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+});
+
+function PostCard({ post, isVisible, navigation, onPostRemoved, hideOptions = false }: PostCardProps) {
   const scheme = useColorScheme();
   const t = useT();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const { user } = useAuthStore();
   const uid = user?.uid;
   const updatePost = useFeedStore((s) => s.updatePost);
+  const removePost = useFeedStore((s) => s.removePost);
+  const isOwnPost = !!uid && uid === post.authorId;
 
   const [liked, setLiked] = useState(uid ? (post.likedBy?.includes(uid) ?? false) : false);
   const [selectedReaction, setSelectedReaction] = useState<string | null>(uid ? (post.reactions?.[uid] ?? null) : null);
@@ -1402,6 +1641,11 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const [commentCount, setCommentCount] = useState(post.replyCount ?? 0);
   const [showComments, setShowComments] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showOptionsSheet, setShowOptionsSheet] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [showReactionsSheet, setShowReactionsSheet] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ px: 0, py: 0, pw: 0, ph: 0 });
@@ -1415,16 +1659,118 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
   const handleLikePressRef = useRef<() => void>(() => {});
   const handleReactRef = useRef<(e: string) => void>(() => {});
 
+  useEffect(() => {
+    setSaved(uid ? (post.savedBy?.includes(uid) ?? false) : false);
+  }, [post.savedBy, uid]);
+
   const handleShare = () => setShowShareModal(true);
 
+  const removeCurrentPost = useCallback(() => {
+    removePost(post.id);
+    onPostRemoved?.(post.id);
+  }, [onPostRemoved, post.id, removePost]);
+
   const handleSave = async () => {
-    if (!uid) return;
+    if (!uid) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để lưu bài viết.');
+      return;
+    }
     const next = !saved;
+    const prevSavedBy = post.savedBy ?? [];
+    const nextSavedBy = next
+      ? Array.from(new Set([...prevSavedBy, uid]))
+      : prevSavedBy.filter((id) => id !== uid);
+
     setSaved(next);
+    updatePost({ id: post.id, savedBy: nextSavedBy });
     try {
       if (next) await api.post(`/api/posts/${post.id}/save`, {});
       else await api.delete(`/api/posts/${post.id}/save`);
-    } catch { setSaved(!next); }
+    } catch {
+      setSaved(!next);
+      updatePost({ id: post.id, savedBy: prevSavedBy });
+      Alert.alert('Chưa thể lưu', 'Vui lòng kiểm tra kết nối và thử lại.');
+    }
+  };
+
+  const closeReportModal = () => {
+    if (reportSubmitting) return;
+    setShowReportModal(false);
+    setReportReason('');
+    setReportDetails('');
+  };
+
+  const handleArchivePost = () => {
+    if (!isOwnPost) return;
+    Alert.alert(
+      'Lưu trữ bài viết?',
+      'Bài viết sẽ không còn hiển thị trên trang cá nhân/feed và chỉ bạn xem được trong kho lưu trữ.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Lưu trữ',
+          onPress: async () => {
+            try {
+              await api.post(`/api/posts/${post.id}/archive`, {});
+              removeCurrentPost();
+            } catch {
+              Alert.alert('Không thể lưu trữ', 'Vui lòng thử lại sau.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeletePost = () => {
+    if (!isOwnPost) return;
+    Alert.alert(
+      'Xóa bài viết?',
+      'Bài viết sẽ được chuyển vào thùng rác theo cài đặt hiện tại.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/api/posts/${post.id}`);
+              removeCurrentPost();
+            } catch {
+              Alert.alert('Không thể xóa bài viết', 'Vui lòng thử lại sau.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleReport = async () => {
+    if (!uid) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để báo cáo bài viết.');
+      return;
+    }
+    if (!reportReason || reportSubmitting) return;
+    setReportSubmitting(true);
+    try {
+      await api.post(`/api/posts/${post.id}/report`, {
+        reason: normalizeReportReason(reportReason),
+        details: reportDetails.trim(),
+      });
+      setShowReportModal(false);
+      setReportReason('');
+      setReportDetails('');
+      Alert.alert('Đã gửi báo cáo', 'Cảm ơn bạn đã giúp Surf an toàn hơn.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      const duplicate = /already|reported|đã báo cáo|da bao cao/i.test(msg);
+      Alert.alert(
+        duplicate ? 'Bạn đã báo cáo bài viết này rồi' : 'Không thể gửi báo cáo',
+        duplicate ? 'Báo cáo trước đó của bạn đang được xử lý.' : 'Vui lòng thử lại sau.'
+      );
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   const MAX_CHARS = 150;
@@ -1592,9 +1938,16 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
             <Ionicons name={privacyIcon(post.privacy)} size={11} color={C.subtext} />
           </View>
         </View>
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        {hideOptions ? null : (
+        <TouchableOpacity
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          onPress={() => setShowOptionsSheet(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Mở tùy chọn bài viết"
+        >
           <Ionicons name="ellipsis-horizontal" size={18} color={C.subtext} />
         </TouchableOpacity>
+        )}
       </View>
 
       {/* Content */}
@@ -1677,6 +2030,31 @@ function PostCard({ post, isVisible, navigation }: PostCardProps) {
       {showReactionsSheet && (
         <ReactionsSheet postId={post.id} onClose={() => setShowReactionsSheet(false)} C={C} />
       )}
+
+      <PostOptionsSheet
+        visible={showOptionsSheet}
+        saved={saved}
+        canReport={!isOwnPost}
+        canManage={isOwnPost}
+        C={C}
+        onClose={() => setShowOptionsSheet(false)}
+        onToggleSave={handleSave}
+        onReport={() => setShowReportModal(true)}
+        onArchive={handleArchivePost}
+        onDelete={handleDeletePost}
+      />
+
+      <ReportPostModal
+        visible={showReportModal}
+        C={C}
+        submitting={reportSubmitting}
+        reason={reportReason}
+        details={reportDetails}
+        onClose={closeReportModal}
+        onReasonChange={setReportReason}
+        onDetailsChange={setReportDetails}
+        onSubmit={handleReport}
+      />
 
       {showComments && (
         <CommentSheet

@@ -22,6 +22,8 @@ export type FeedPost = {
   likedBy: string[];
   reactions?: Record<string, string>;
   savedBy?: string[];
+  archived?: boolean;
+  archivedAt?: string | null;
   sharedFrom?: {
     id: string;
     authorId: string | null;
@@ -60,6 +62,7 @@ type FeedState = {
   setRefreshing: (v: boolean) => void;
   updatePost: (updated: Partial<FeedPost> & { id: string }) => void;
   addPost: (post: FeedPost) => void;
+  removePost: (postId: string) => void;
 };
 
 const FEED_CACHE_KEY = 'surf_mobile_feed_cache_v1';
@@ -123,6 +126,11 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     set((s) => ({
       posts: [post, ...s.posts.filter((p) => p.id !== post.id)],
       lastFetched: Date.now(),
+    })),
+
+  removePost: (postId) =>
+    set((s) => ({
+      posts: s.posts.filter((p) => p.id !== postId),
     })),
 
   fetch: async (force = false) => {

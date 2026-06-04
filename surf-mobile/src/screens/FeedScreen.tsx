@@ -137,7 +137,7 @@ export default function FeedScreen({
   useEffect(() => { fetchFeed(); }, [fetchFeed]);
 
   const setFloatingHeader = useCallback((visible: boolean, immediate = false) => {
-    if (floatingHeaderVisibleRef.current === visible && !immediate) return;
+    if (floatingHeaderVisibleRef.current === visible) return;
     floatingHeaderVisibleRef.current = visible;
     pullIntentRef.current = 0;
     onFloatingHeaderChange?.(visible, immediate);
