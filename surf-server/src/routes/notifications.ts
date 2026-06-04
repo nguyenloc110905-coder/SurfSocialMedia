@@ -44,18 +44,14 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const limit = Math.min(parseIntSafe(req.query.limit, 30), 100);
-    // All inline notifications are stored with recipientId (comments, posts, reactions, mentions)
+    // Use index-supported order and limit to prevent downloading all notification documents
     const snap = await getDb()
       .collection('notifications')
       .where('recipientId', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
       .get();
-    const notifications = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as RawNotif[])
-      .sort((a, b) => {
-        const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
-        const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
-        return bT - aT;
-      })
-      .slice(0, limit);
+    const notifications = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json({ notifications });
   } catch (e) {
     console.error('❌ GET /api/notifications error:', e);
@@ -83,8 +79,14 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 router.get('/unread-count', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const snap = await getDb().collection('notifications').where('recipientId', '==', uid).get();
-    const count = snap.docs.filter((doc) => !doc.data().read).length;
+    // Use Firestore count aggregation query for massive read cost optimization
+    const countSnap = await getDb()
+      .collection('notifications')
+      .where('recipientId', '==', uid)
+      .where('read', '==', false)
+      .count()
+      .get();
+    const count = countSnap.data().count;
     res.json({ count });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

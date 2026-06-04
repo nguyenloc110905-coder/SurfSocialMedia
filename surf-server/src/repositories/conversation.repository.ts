@@ -4,6 +4,8 @@ import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 
 const col = () => getDb().collection('conversations');
+const localUnreadCache = new Map<string, { count: number; expiresAt: number }>();
+
 
 const toDate = (value: unknown): Date | undefined => {
   if (!value) return undefined;
@@ -255,6 +257,11 @@ export const conversationRepository = {
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return parseInt(cached, 10) || 0;
+    } else {
+      const localCached = localUnreadCache.get(userId);
+      if (localCached && localCached.expiresAt > Date.now()) {
+        return localCached.count;
+      }
     }
 
     const snap = await col().where('memberIds', 'array-contains', userId).get();
@@ -265,6 +272,8 @@ export const conversationRepository = {
     
     if (redis) {
       await redis.set(cacheKey, total.toString(), { EX: 3600 }); // cache for 1 hour
+    } else {
+      localUnreadCache.set(userId, { count: total, expiresAt: Date.now() + 5000 }); // cache for 5 seconds fallback
     }
     
     return total;
@@ -279,6 +288,8 @@ export const conversationRepository = {
     const redis = getRedis();
     if (redis) {
       await redis.del(`unreadCount:${userId}`);
+    } else {
+      localUnreadCache.delete(userId);
     }
   },
 
@@ -322,6 +333,8 @@ export const conversationRepository = {
     const redis = getRedis();
     if (redis) {
       await Promise.all(newMemberIds.map(uid => redis.del(`unreadCount:${uid}`)));
+    } else {
+      newMemberIds.forEach(uid => localUnreadCache.delete(uid));
     }
   },
 
