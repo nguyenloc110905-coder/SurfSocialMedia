@@ -1,14 +1,22 @@
-import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
+async function initSentry() {
+  const dsn = process.env.SENTRY_DSN || '';
+  if (!dsn) return;
 
-Sentry.init({
-  dsn: process.env.SENTRY_DSN || '',
-  integrations: [
-    nodeProfilingIntegration(),
-  ],
-  // Performance Monitoring
-  tracesSampleRate: 1.0, //  Capture 100% of the transactions
+  try {
+    const sentryPackage = '@sentry/node';
+    const profilingPackage = '@sentry/profiling-node';
+    const Sentry = await import(sentryPackage);
+    const { nodeProfilingIntegration } = await import(profilingPackage);
 
-  // Set sampling rate for profiling - this is relative to tracesSampleRate
-  profilesSampleRate: 1.0,
-});
+    Sentry.init({
+      dsn,
+      integrations: [nodeProfilingIntegration()],
+      tracesSampleRate: 1.0,
+      profilesSampleRate: 1.0,
+    });
+  } catch (error) {
+    console.warn('[Sentry] Optional Sentry packages are not installed; skipping Sentry init.');
+  }
+}
+
+void initSentry();

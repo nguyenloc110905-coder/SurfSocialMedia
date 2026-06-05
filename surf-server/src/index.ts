@@ -136,6 +136,11 @@ app.use(
 );
 
 // Mọi request /api đều cần đăng nhập; ensureUser tạo doc user nếu chưa có (để xuất hiện trong Gợi ý kết bạn)
+app.use('/api', (_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 app.use('/api', (req, res, next) => {
   const publicPaths = ['/auth/register/send-otp', '/auth/register/verify', '/docs.json', '/health'];
   // req.path ở đây là subpath sau '/api', ví dụ: req.path = '/auth/register/send-otp'
@@ -174,6 +179,22 @@ initRedis()
     console.error('Failed to initialize Redis:', err);
   });
 app.use('/api/notifications', notificationsRoutes);
+
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    error: 'API endpoint not found',
+    path: req.originalUrl,
+  });
+});
+
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  logger.error(err.message, { stack: err.stack });
+  if (req.originalUrl.startsWith('/api')) {
+    res.status(500).json({ error: 'Internal server error' });
+    return;
+  }
+  res.status(500).send('Internal server error');
+});
 
 function startHttpServer(port: number, retryCount = 0) {
   const onError = (err: NodeJS.ErrnoException) => {

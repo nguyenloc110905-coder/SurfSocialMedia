@@ -2,6 +2,8 @@ import { auth } from '@/lib/firebase/auth';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+const DEVICE_ID = `mobile-${Platform.OS}`;
+
 function getDevServerHost(): string | null {
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.manifest2?.extra?.expoGo?.debuggerHost;
   if (!hostUri) return null;
@@ -72,10 +74,30 @@ type RequestOptions = {
   requireAuth?: boolean;
 };
 
+function isHtmlResponse(text: string): boolean {
+  return /^\s*<!doctype html/i.test(text) || /^\s*<html[\s>]/i.test(text);
+}
+
+function readableApiError(text: string, statusText: string, url: string): string {
+  if (!text) return statusText || 'Request failed';
+
+  try {
+    const error = JSON.parse(text) as { message?: string; error?: string };
+    return error.message ?? error.error ?? statusText;
+  } catch {
+    if (isHtmlResponse(text)) {
+      return `API trả về HTML thay vì JSON. Kiểm tra EXPO_PUBLIC_API_URL hoặc deploy server cho endpoint này: ${url}`;
+    }
+    return text.length > 240 ? `${text.slice(0, 240)}...` : text;
+  }
+}
+
 async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
   const headers: Record<string, string> = {
+    Accept: 'application/json',
     'Content-Type': 'application/json',
+    'x-device-id': DEVICE_ID,
     ...options.headers,
   };
 
@@ -95,22 +117,21 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let message = res.statusText;
-    if (text) {
-      try {
-        const error = JSON.parse(text) as { message?: string; error?: string };
-        message = error.message ?? error.error ?? message;
-      } catch {
-        message = text;
-      }
-    }
+    const message = readableApiError(text, res.statusText, url);
     throw new Error(message || 'Request failed');
   }
 
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    if (isHtmlResponse(text)) {
+      throw new Error(`API trả về HTML thay vì JSON. Kiểm tra EXPO_PUBLIC_API_URL hoặc deploy server cho endpoint này: ${url}`);
+    }
+    throw new Error(`Không đọc được phản hồi API từ ${url}`);
+  }
 }
 
 export const api = {

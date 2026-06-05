@@ -1,17 +1,113 @@
 import { Router, Request, Response } from 'express';
-import OpenAI from 'openai';
 import { AuthRequest } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
 
 const router = Router();
+const DEFAULT_OPENAI_CHAT_MODEL = 'gpt-4o-mini';
+const MAX_HISTORY_MESSAGES = 100;
+const MAX_REQUEST_HISTORY_MESSAGES = 30;
+const MAX_MESSAGE_LENGTH = 4000;
+
+type AiChatMessage = {
+  role: 'user' | 'model';
+  text: string;
+};
+
+type OpenAIChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
 
 function getOpenAIApiKey() {
   return (process.env.OPENAI_API_KEY ?? '').trim();
 }
 
-function getOpenAIClient() {
-  return new OpenAI({ apiKey: getOpenAIApiKey() });
+function getOpenAIChatModel() {
+  return (process.env.OPENAI_CHAT_MODEL ?? process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_CHAT_MODEL).trim() || DEFAULT_OPENAI_CHAT_MODEL;
 }
+
+function normalizeMessage(raw: unknown): AiChatMessage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Record<string, unknown>;
+  const role = item.role === 'user' ? 'user' : item.role === 'model' || item.role === 'assistant' ? 'model' : null;
+  const text = typeof item.text === 'string'
+    ? item.text
+    : typeof item.content === 'string'
+      ? item.content
+      : '';
+  const trimmed = text.trim();
+  if (!role || !trimmed) return null;
+  return { role, text: trimmed.slice(0, MAX_MESSAGE_LENGTH) };
+}
+
+function normalizeHistory(raw: unknown, limit = MAX_REQUEST_HISTORY_MESSAGES): AiChatMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const messages = raw
+    .map(normalizeMessage)
+    .filter((item): item is AiChatMessage => item != null)
+    .slice(-limit);
+
+  while (messages[0]?.role === 'model') {
+    messages.shift();
+  }
+
+  return messages;
+}
+
+async function callOpenAIChat(messages: OpenAIChatMessage[]) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getOpenAIApiKey()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: getOpenAIChatModel(),
+      messages,
+    }),
+  });
+
+  const rawText = await response.text();
+  let payload: any = null;
+  try {
+    payload = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    const message = payload?.error?.message || payload?.message || rawText || `OpenAI request failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return payload?.choices?.[0]?.message?.content ?? '';
+}
+
+/**
+ * @swagger
+ * /api/ai-chat/status:
+ *   get:
+ *     tags: [AI Chat]
+ *     summary: Kiểm tra trạng thái Surf AI
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: OK
+ */
+router.get('/status', async (req: Request, res: Response): Promise<void> => {
+  const uid = (req as AuthRequest).uid;
+  if (!uid) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  res.json({
+    available: Boolean(getOpenAIApiKey()),
+    provider: 'openai',
+    model: getOpenAIChatModel(),
+  });
+});
 
 /**
  * @swagger
@@ -33,10 +129,37 @@ router.get('/history', async (req: Request, res: Response): Promise<void> => {
   }
   try {
     const doc = await getDb().collection('users').doc(uid).collection('ai_history').doc('chat').get();
-    res.json({ messages: doc.data()?.messages ?? [] });
+    res.json({ messages: normalizeHistory(doc.data()?.messages, MAX_HISTORY_MESSAGES) });
   } catch (error) {
     console.error('[AI Chat] Failed to fetch history:', error);
     res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/ai-chat/history:
+ *   delete:
+ *     tags: [AI Chat]
+ *     summary: Xóa lịch sử chat với AI
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       204:
+ *         description: Deleted
+ */
+router.delete('/history', async (req: Request, res: Response): Promise<void> => {
+  const uid = (req as AuthRequest).uid;
+  if (!uid) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  try {
+    await getDb().collection('users').doc(uid).collection('ai_history').doc('chat').delete();
+    res.status(204).send();
+  } catch (error) {
+    console.error('[AI Chat] Failed to delete history:', error);
+    res.status(500).json({ error: 'Failed to delete history' });
   }
 });
 
@@ -79,8 +202,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
   }
 
   const { message, history } = req.body;
+  const prompt = typeof message === 'string' ? message.trim().slice(0, MAX_MESSAGE_LENGTH) : '';
 
-  if (!message) {
+  if (!prompt) {
     res.status(400).json({ error: 'Message is required' });
     return;
   }
@@ -92,8 +216,6 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const openai = getOpenAIClient();
-
     let userContext = '';
     try {
       const userDoc = await getDb().collection('users').doc(uid).get();
@@ -114,32 +236,28 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       console.error('[AI Chat] Failed to fetch user profile:', err);
     }
 
-    const formattedHistory = Array.isArray(history) ? history.map((h: any) => ({
-      role: h.role === 'model' || h.role === 'assistant' ? 'assistant' : 'user',
-      content: h.text || h.content || '',
-    })) : [];
+    const normalizedHistory = normalizeHistory(history);
+    const formattedHistory = normalizedHistory.map((h) => ({
+      role: h.role === 'model' ? 'assistant' as const : 'user' as const,
+      content: h.text,
+    }));
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const responseText = await callOpenAIChat([
         { role: 'system', content: `Bạn là Surf AI, trợ lý AI thân thiện dành riêng cho mạng xã hội Surf. Hãy trả lời người dùng một cách ngắn gọn, súc tích và hữu ích.${userContext}` },
         ...formattedHistory,
-        { role: 'user', content: message }
-      ],
-    });
-
-    const responseText = response.choices[0]?.message?.content ?? '';
+        { role: 'user', content: prompt }
+      ]);
     res.json({ text: responseText });
 
     // Save history to Firestore in background
     try {
       const newMessages = [
-        ...(Array.isArray(history) ? history : []),
-        { role: 'user', text: message },
+        ...normalizedHistory,
+        { role: 'user', text: prompt },
         { role: 'model', text: responseText }
       ];
       // Keep only last 100 messages to prevent document size from getting too large
-      const trimmedMessages = newMessages.slice(-100);
+      const trimmedMessages = newMessages.slice(-MAX_HISTORY_MESSAGES);
 
       await getDb()
         .collection('users')
