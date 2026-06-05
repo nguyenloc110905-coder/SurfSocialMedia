@@ -6,10 +6,10 @@ import {
   RTCSessionDescription,
   MediaStream,
   mediaDevices,
-} from 'react-native-webrtc';
-import WebRTCLogger from 'react-native-webrtc/lib/module/Logger';
-import RTCIceCandidateEvent from 'react-native-webrtc/lib/typescript/RTCIceCandidateEvent';
-import RTCTrackEvent from 'react-native-webrtc/lib/typescript/RTCTrackEvent';
+} from '@livekit/react-native-webrtc';
+import WebRTCLogger from '@livekit/react-native-webrtc/lib/module/Logger';
+import RTCIceCandidateEvent from '@livekit/react-native-webrtc/lib/typescript/RTCIceCandidateEvent';
+import RTCTrackEvent from '@livekit/react-native-webrtc/lib/typescript/RTCTrackEvent';
 import { getSocket } from '@/lib/socket';
 import { useAuthStore } from '@/stores/authStore';
 

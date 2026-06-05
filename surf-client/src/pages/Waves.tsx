@@ -3576,7 +3576,7 @@ export default function Waves() {
                         .map(([uid]) => uid);
                       const typingText = getTypingIndicatorText(conversation, typingUserIds);
                       const displayName = marketplace
-                        ? marketplace.title
+                        ? (conversation.peer?.name ?? 'Người mua')
                         : conversation.type === 'group'
                           ? (conversation.title ?? 'Nhóm')
                           : (conversation.peer?.name ?? 'Unknown Wave');
@@ -3600,7 +3600,7 @@ export default function Waves() {
                             <WaveAvatar
                               src={avatarSrc}
                               uid={conversation.peer?.uid}
-                              name={displayName}
+                              name={marketplace?.title ?? displayName}
                               showPresence={!marketplace}
                               presenceSize="md"
                               className="h-14 w-14 rounded-full object-cover"
@@ -3630,7 +3630,7 @@ export default function Waves() {
                               {typingText ? (
                                 <TypingIndicator label={typingText} />
                               ) : marketplace ? (
-                                `${conversation.peer?.name ?? 'Người mua'} · ${
+                                `${marketplace.title} · ${
                                   normalizeConversationPreview(conversation.lastMessagePreview) ||
                                   'Bắt đầu trao đổi về bài niêm yết'
                                 }`
@@ -3692,14 +3692,14 @@ export default function Waves() {
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-white">
                       {activeMarketplace
-                        ? activeMarketplace.title
+                        ? `${activeConversation.peer?.name ?? 'Người mua'} · ${activeMarketplace.title}`
                         : activeConversation.type === 'group'
                           ? (activeConversation.title ?? 'Nhóm')
                           : (activeConversation.peer?.name ?? 'Unknown Wave')}
                     </h2>
                     {activeMarketplace ? (
                       <p className="mt-1 truncate text-xs font-semibold text-cyan-600 dark:text-cyan-300">
-                        {activeConversation.peer?.name ?? 'Người mua'} · {formatBoostListingPrice(activeMarketplace.price)}
+                        Surf Market · {formatBoostListingPrice(activeMarketplace.price)}
                       </p>
                     ) : (
                       activeConversation.type === 'dm' &&

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -47,11 +47,20 @@ type CommentItem = {
 };
 
 function optimizeCloudinaryVideo(url: string, reduceDataUsage = false) {
-  return url;
+  if (!url.includes('/video/upload/')) return url;
+  const transform = reduceDataUsage
+    ? 'q_auto:eco,vc_auto,w_540'
+    : 'q_auto:good,vc_auto,w_720';
+  if (url.includes(`/video/upload/${transform}/`)) return url;
+  return url.replace('/video/upload/', `/video/upload/${transform}/`);
 }
 
 function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false) {
-  return null;
+  if (!url.includes('/video/upload/')) return null;
+  const transform = reduceDataUsage ? 'so_0,f_jpg,q_auto:eco,w_360' : 'so_0,f_jpg,q_auto:good,w_540';
+  return url
+    .replace('/video/upload/', `/video/upload/${transform}/`)
+    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
 function commentsPathFor(item: ShortVideo) {
@@ -79,6 +88,7 @@ function overlayPosition(placement?: 'top' | 'center' | 'bottom') {
 function VideoItem({
   item,
   active,
+  renderPlayer,
   height,
   liked,
   onLike,
@@ -90,6 +100,7 @@ function VideoItem({
 }: {
   item: ShortVideo;
   active: boolean;
+  renderPlayer: boolean;
   height: number;
   liked: boolean;
   onLike: () => void;
@@ -103,9 +114,17 @@ function VideoItem({
   const videosMuted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const muted = videosMuted || item.editOptions?.mutedOriginal === true;
-  const player = useVideoPlayer(optimizeCloudinaryVideo(item.videoUrl, reduceDataUsage), (p) => {
+  const player = useVideoPlayer(
+    renderPlayer ? optimizeCloudinaryVideo(item.videoUrl, reduceDataUsage) : null,
+    (p) => {
     p.loop = true;
     p.muted = muted;
+    p.timeUpdateEventInterval = active ? 0.5 : 0;
+    p.bufferOptions = {
+      preferredForwardBufferDuration: reduceDataUsage ? 3 : 6,
+      waitsToMinimizeStalling: true,
+      prioritizeTimeOverSizeThreshold: false,
+    };
   });
   const [buffering, setBuffering] = useState(true);
   const [landscape, setLandscape] = useState(false);
@@ -143,7 +162,15 @@ function VideoItem({
   }, [player]);
 
   useEffect(() => {
-    player.timeUpdateEventInterval = 0.25;
+    if (!renderPlayer) {
+      setBuffering(false);
+      setPaused(true);
+      setCurrentTime(0);
+      setDuration(0);
+      return;
+    }
+
+    player.timeUpdateEventInterval = active ? 0.5 : 0;
     const sub = player.addListener('statusChange', (payload: { status: string }) => {
       setBuffering(payload.status === 'idle' || payload.status === 'loading');
     });
@@ -177,7 +204,7 @@ function VideoItem({
       if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
       dimSub?.remove?.();
     };
-  }, [pausePlayer, player]);
+  }, [active, pausePlayer, player, renderPlayer]);
 
   useEffect(() => {
     if (!active) {
@@ -194,26 +221,32 @@ function VideoItem({
       }
     }
 
+    if (!renderPlayer) {
+      pausePlayer();
+      return;
+    }
+
     try {
       if (active && autoPlay && !userPausedRef.current) player.play();
       else pausePlayer();
     } catch {
       // Native player can be mid-transition while FlatList recycles rows.
     }
-  }, [active, autoPlay, landscape, onLandscapeModeChange, pausePlayer, player]);
+  }, [active, autoPlay, landscape, onLandscapeModeChange, pausePlayer, player, renderPlayer]);
 
   useEffect(() => {
+    if (!renderPlayer) return;
     player.muted = muted;
-  }, [muted, player]);
+  }, [muted, player, renderPlayer]);
 
   useEffect(() => {
-    if (!thumbnail) return;
+    if (!active || !thumbnail) return;
     Image.getSize(
       thumbnail,
       (width, imageHeight) => setIsLandscapeVideo(width > imageHeight),
       () => {}
     );
-  }, [thumbnail]);
+  }, [active, thumbnail]);
 
   // Auto-hide controls when playing
   useEffect(() => {
@@ -374,14 +407,19 @@ function VideoItem({
         onLongPress={startFastForward}
         delayLongPress={260}
       >
-        <VideoView
-          player={player}
-          style={StyleSheet.absoluteFill}
-          contentFit={contentFit}
-          nativeControls={false}
-          fullscreenOptions={{ enable: false }}
-          allowsPictureInPicture={false}
-        />
+        {renderPlayer ? (
+          <VideoView
+            player={player}
+            style={StyleSheet.absoluteFill}
+            contentFit={contentFit}
+            nativeControls={false}
+            fullscreenOptions={{ enable: false }}
+            allowsPictureInPicture={false}
+            surfaceType="surfaceView"
+          />
+        ) : thumbnail ? (
+          <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode={contentFit} />
+        ) : null}
         {(item.textOverlays ?? []).map((overlay, idx) => {
           if (!overlay.text) return null;
           return (
@@ -534,6 +572,17 @@ function VideoItem({
     </View>
   );
 }
+
+const MemoizedVideoItem = memo(VideoItem, (prev, next) =>
+  prev.item === next.item &&
+  prev.active === next.active &&
+  prev.renderPlayer === next.renderPlayer &&
+  prev.height === next.height &&
+  prev.liked === next.liked &&
+  prev.showTitle === next.showTitle &&
+  prev.autoPlay === next.autoPlay &&
+  prev.reduceDataUsage === next.reduceDataUsage
+);
 
 type ShortVideoScreenProps = {
   isActive?: boolean;
@@ -770,11 +819,13 @@ export default function ShortVideoScreen({
 
   const renderItem = useCallback(({ item, index }: { item: ShortVideo; index: number }) => {
     const liked = !!user?.uid && (item.likedBy ?? []).includes(user.uid);
+    const isCurrent = isActive && index === activeIndex;
     return (
-      <VideoItem
+      <MemoizedVideoItem
         key={`${item._source}:${item.id}:${reduceDataUsage}`}
         item={item}
-        active={isActive && index === activeIndex}
+        active={isCurrent}
+        renderPlayer={isCurrent}
         height={height}
         liked={liked}
         onLike={() => like(item)}
@@ -785,7 +836,7 @@ export default function ShortVideoScreen({
         onLandscapeModeChange={setLandscapeLocked}
       />
     );
-  }, [activeIndex, autoplayClips, height, isActive, reduceDataUsage, showTitle, user?.uid, items]);
+  }, [activeIndex, autoplayClips, height, isActive, reduceDataUsage, showTitle, user?.uid]);
 
   const getItemLayout = useCallback((_: unknown, index: number) => ({
     length: height,
@@ -820,9 +871,10 @@ export default function ShortVideoScreen({
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 72 }}
         getItemLayout={getItemLayout}
-        windowSize={3}
-        initialNumToRender={2}
-        maxToRenderPerBatch={3}
+        windowSize={2}
+        initialNumToRender={1}
+        maxToRenderPerBatch={1}
+        updateCellsBatchingPeriod={80}
         removeClippedSubviews
         ListEmptyComponent={empty}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#fff" />}

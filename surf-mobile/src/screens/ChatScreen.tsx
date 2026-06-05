@@ -1143,7 +1143,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       console.log('📦 Loading messages from cache for conversation:', conversationId);
       const cached = await messagesCache.getMessages(conversationId);
       console.log('📦 Cached messages:', cached?.length || 0);
-      
+
       let hasCache = false;
       if (cached && cached.length > 0) {
         const cachedMessages = uniqueMessages(cached.map(cachedMessageToApiMessage));
@@ -1641,12 +1641,12 @@ export default function ChatScreen({ navigation, route }: Props) {
     const result = isCamera
       ? await ImagePicker.launchCameraAsync({
           mediaTypes: source === 'camera-video'
-            ? ImagePicker.MediaTypeOptions.Videos
-            : ImagePicker.MediaTypeOptions.Images,
+            ? 'videos'
+            : 'images',
           quality: 0.85,
         })
       : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.All,
+          mediaTypes: ['images', 'videos'],
           quality: 0.85,
           allowsMultipleSelection: true,
           selectionLimit: DRAFT_IMAGE_ATTACHMENT_LIMIT,

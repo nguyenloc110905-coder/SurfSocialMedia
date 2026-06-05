@@ -92,7 +92,8 @@
           "icon": "./assets/icon.png",
           "color": "#0c1929"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "owner": "datshroud",
     "extra": {
