@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useNavigate, useLocation } from 'react-router-dom';
-import MultiplexAd from '../ui/MultiplexAd';
 
 type DiscoverGroup = {
   id: string;
@@ -183,15 +182,6 @@ export default function MainRightSidebar() {
           </section>
         )}
 
-        {/* Quảng cáo Multiplex / Autorelaxed ở dưới cùng thanh bên */}
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-[13px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Gợi ý cho bạn
-            </h3>
-          </div>
-          <MultiplexAd />
-        </section>
       </div>
     </aside>
   );

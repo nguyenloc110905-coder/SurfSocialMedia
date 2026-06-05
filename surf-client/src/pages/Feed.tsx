@@ -9,7 +9,6 @@ import CreatePost from '../components/feed/CreatePost';
 import MomentsBar from '../components/feed/MomentsBar';
 import PostCard from '../components/feed/PostCard';
 import Avatar from '../components/ui/Avatar';
-import AdBanner from '../components/ui/AdBanner';
 
 type Post = FeedPost;
 
@@ -327,8 +326,6 @@ export default function Feed() {
             {idx === 6 && feedBoostListings[2] && (
               <FeedBoostPlacement listing={feedBoostListings[2]} onOpen={handleOpenBoostListing} />
             )}
-            {/* Hiện quảng cáo Google AdSense sau mỗi 4 bài viết */}
-            {(idx + 1) % 4 === 0 && <AdBanner />}
           </div>
         ))}
 
