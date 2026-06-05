@@ -5,6 +5,7 @@ import { getSocket } from '../../lib/socket';
 import { useAuthStore } from '../../stores/authStore';
 import SurfMusicPlayer from './SurfMusicPlayer';
 import MiniChatPanel from './MiniChatPanel';
+import AIChatPanel from './AIChatPanel';
 import PresenceBadge from '../ui/PresenceBadge';
 import { musicStore, type TrackItem, type Playlist } from '../../lib/musicStore';
 import { usePresenceStore } from '../../stores/presenceStore';
@@ -125,6 +126,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
   const [showSearch, setShowSearch] = useState(false);
   const [showMusic, setShowMusic] = useState(false);
   const [showYoutube, setShowYoutube] = useState(false);
+  const [showAiChat, setShowAiChat] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [openChats, setOpenChats] = useState<string[]>([]);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -292,6 +294,15 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
           }`}
         >
           <MiniChatPanel key="sidebar-list" onClose={() => { setShowChat(false); }} />
+        </div>
+
+        {/* ── AI Chat panel ── */}
+        <div
+          className={`transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0 ${
+            showAiChat ? 'w-[360px] opacity-100' : 'w-0 opacity-0 pointer-events-none'
+          }`}
+        >
+          {showAiChat && <AIChatPanel onClose={() => setShowAiChat(false)} />}
         </div>
 
         {/* ── YouTube panel ── */}
@@ -895,9 +906,25 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
             </span>
           </button>
 
-          {/* 0. YouTube — toggles youtube panel */}
+          {/* 0. AI Chat */}
           <button
-            onClick={() => { setShowYoutube((v) => !v); setShowMusic(false); setShowSearch(false); }}
+            onClick={() => { setShowAiChat((v) => !v); setShowYoutube(false); setShowMusic(false); setShowSearch(false); setShowChat(false); }}
+            title="Surf AI"
+            className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showAiChat ? 'bg-fuchsia-50 dark:bg-fuchsia-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
+          >
+            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-fuchsia-400 to-pink-500 shadow-sm shadow-fuchsia-500/30">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </span>
+            <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarExpanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0'}`}>
+              Surf AI
+            </span>
+          </button>
+
+          {/* 1. YouTube — toggles youtube panel */}
+          <button
+            onClick={() => { setShowYoutube((v) => !v); setShowAiChat(false); setShowMusic(false); setShowSearch(false); setShowChat(false); }}
             title="YouTube"
             className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showYoutube ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
@@ -911,9 +938,9 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
             </span>
           </button>
 
-          {/* 1. Music — toggles music panel */}
+          {/* 2. Music — toggles music panel */}
           <button
-            onClick={() => { setShowMusic((v) => !v); setShowSearch(false); setShowYoutube(false); }}
+            onClick={() => { setShowMusic((v) => !v); setShowAiChat(false); setShowSearch(false); setShowYoutube(false); setShowChat(false); }}
             title="Surf Music"
             className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showMusic ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
@@ -929,7 +956,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
 
           {/* Message */}
           <button
-            onClick={() => { setShowChat((v) => !v); setShowMusic(false); setShowSearch(false); setShowYoutube(false); }}
+            onClick={() => { setShowChat((v) => !v); setShowAiChat(false); setShowMusic(false); setShowSearch(false); setShowYoutube(false); }}
             title="Tin nhắn"
             className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showChat ? 'bg-cyan-50 dark:bg-cyan-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
@@ -945,7 +972,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
 
           {/* Search — toggles panel */}
           <button
-            onClick={() => { setShowSearch((v) => !v); setShowMusic(false); setShowYoutube(false); }}
+            onClick={() => { setShowSearch((v) => !v); setShowAiChat(false); setShowMusic(false); setShowYoutube(false); setShowChat(false); }}
             title="Tìm kiếm"
             className={`flex items-center gap-2.5 w-full px-1 py-1 rounded-xl transition-colors duration-150 flex-shrink-0 ${showSearch ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}
           >
@@ -978,7 +1005,7 @@ export default function QuickContactBar({ isShortVideo = false }: { isShortVideo
               key={friend.id}
               onClick={() => {
                 setOpenChats((prev) => prev.includes(friend.id) ? prev : [...prev, friend.id].slice(-3));
-                setShowMusic(false); setShowSearch(false); setShowYoutube(false);
+                setShowAiChat(false); setShowMusic(false); setShowSearch(false); setShowYoutube(false); setShowChat(false);
                 setUnreadByFriend((prev) => { const next = { ...prev }; delete next[friend.id]; return next; });
               }}
               title={friend.name}
