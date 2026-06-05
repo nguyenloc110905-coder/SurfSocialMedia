@@ -2923,6 +2923,11 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
       brand,
       productType,
       material,
+      availability,
+      tags,
+      sku,
+      meetingPreferences,
+      hideFromFriends,
     } = req.body;
     const update: Record<string, unknown> = { updatedAt: new Date() };
 
@@ -2941,6 +2946,25 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
     if (brand !== undefined) update.brand = String(brand).trim();
     if (productType !== undefined) update.productType = String(productType).trim();
     if (material !== undefined) update.material = String(material).trim();
+    if (availability !== undefined) update.availability = availability === 'single_item' ? 'single_item' : 'in_stock';
+    if (tags !== undefined) {
+      update.tags = Array.isArray(tags)
+        ? tags
+            .map((tag) => String(tag).trim())
+            .filter(Boolean)
+            .slice(0, 20)
+        : [];
+    }
+    if (sku !== undefined) update.sku = String(sku).trim();
+    if (meetingPreferences !== undefined) {
+      update.meetingPreferences = Array.isArray(meetingPreferences)
+        ? meetingPreferences
+            .map((item) => String(item).trim())
+            .filter(Boolean)
+            .slice(0, 3)
+        : [];
+    }
+    if (hideFromFriends !== undefined) update.hideFromFriends = Boolean(hideFromFriends);
     if (
       title !== undefined ||
       description !== undefined ||
@@ -2948,7 +2972,8 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
       location !== undefined ||
       brand !== undefined ||
       productType !== undefined ||
-      material !== undefined
+      material !== undefined ||
+      tags !== undefined
     ) {
       update.searchTokens = getMarketplaceSearchTokens(
         update.title ?? currentListing.title,
@@ -2958,7 +2983,7 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
         update.productType ?? currentListing.productType,
         update.material ?? currentListing.material,
         update.location ?? currentListing.location,
-        (currentListing.tags ?? []).join(' ')
+        Array.isArray(update.tags) ? update.tags.join(' ') : (currentListing.tags ?? []).join(' ')
       );
     }
     if (status === 'sold' && currentListing.status === 'active') {

@@ -78,7 +78,7 @@ export type RootStackParamList = {
   CreateClip: undefined;
   Marketplace: undefined;
   MarketplaceDetail: { listingId: string };
-  CreateListing: undefined;
+  CreateListing: { listingId?: string } | undefined;
   MyListings: undefined;
   NotificationPost: { postId: string };
   Search: undefined;
