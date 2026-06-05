@@ -1,5 +1,5 @@
 import React from 'react';
-import { RTCView } from 'react-native-webrtc';
+import { RTCView } from '@livekit/react-native-webrtc';
 
 type Props = {
   streamURL: string;
