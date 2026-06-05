@@ -27,6 +27,7 @@ import liveStreamsRoutes from './routes/live-streams.js';
 import eventsRoutes from './routes/events.js';
 import hashtagsRoutes from './routes/hashtags.js';
 import supportRoutes from './routes/support.js';
+import aiChatRoutes from './routes/ai-chat.js';
 import { initRedis, initSocketRedisAdapter } from './config/redis.js';
 import { initIo } from './realtime/io.js';
 import { registerSocketHandlers } from './realtime/register-socket-handlers.js';
@@ -165,6 +166,7 @@ app.use('/api/live-streams', liveStreamsRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/hashtags', hashtagsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/ai-chat', aiChatRoutes);
 
 initRedis()
   .then((redisReady) => (redisReady ? initSocketRedisAdapter(io) : undefined))
