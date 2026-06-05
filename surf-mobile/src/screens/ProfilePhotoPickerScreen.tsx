@@ -175,6 +175,7 @@ export default function ProfilePhotoPickerScreen({ navigation, route }: Props) {
       }
       navigation.goBack();
     } catch (error) {
+      console.warn('Failed to update profile photo:', error);
       const message = error instanceof Error ? error.message : 'Ảnh chưa được cập nhật. Vui lòng thử lại.';
       Alert.alert('Cập nhật thất bại', message);
     } finally {

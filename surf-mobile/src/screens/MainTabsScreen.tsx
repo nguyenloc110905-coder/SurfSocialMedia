@@ -38,9 +38,9 @@ import MessagesScreen from './MessagesScreen';
 import NotificationCenterScreen from './NotificationCenterScreen';
 import FriendsScreen from './FriendsScreen';
 import ProfileScreen from './ProfileScreen';
-import MarketplaceScreen from './MarketplaceScreen';
 
-type Tab = 'home' | 'feed' | 'video' | 'friends' | 'market' | 'messages' | 'notifications' | 'profile';
+type Tab = 'home' | 'feed' | 'video' | 'friends' | 'messages' | 'notifications' | 'profile';
+type BadgeTab = Extract<Tab, 'friends' | 'messages' | 'notifications'>;
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -81,22 +81,25 @@ const TABS: TabDef[] = [
   { key: 'feed', icon: 'home-outline', iconActive: 'home', labelKey: 'nav_feed' },
   { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', labelKey: 'nav_surf_clips' },
   { key: 'friends', icon: 'people-outline', iconActive: 'people', labelKey: 'nav_friends' },
-  { key: 'market', icon: 'storefront-outline', iconActive: 'storefront', labelKey: 'nav_market' },
   { key: 'messages', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', labelKey: 'nav_messages' },
   { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', labelKey: 'nav_notifications' },
   { key: 'profile', icon: 'person-circle-outline', iconActive: 'person-circle', labelKey: 'nav_profile' },
 ];
 
-const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'market', 'messages', 'notifications', 'profile'];
+const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'messages', 'notifications', 'profile'];
 const TOP_TAB_COUNT = TABS.length;
 const TAB_PRESS_TRANSITION_MS = 240;
 const FEED_BRAND_HEADER_H = 44;
 const FEED_TAB_HEADER_H = 46;
+const EMPTY_SEEN_BADGE_COUNTS: Record<BadgeTab, number> = {
+  friends: 0,
+  messages: 0,
+  notifications: 0,
+};
 
 const TAB_TITLE_KEYS: Record<Exclude<Tab, 'home' | 'feed'>, I18nKey> = {
   video: 'nav_surf_clips',
   friends: 'nav_friends',
-  market: 'nav_market',
   messages: 'nav_messages',
   notifications: 'nav_notifications',
   profile: 'nav_profile',
@@ -129,7 +132,6 @@ export default function MainTabsScreen({ navigation }: Props) {
     feed: true,
     video: true,
     friends: true,
-    market: true,
     messages: true,
     notifications: true,
     profile: true,
@@ -140,7 +142,6 @@ export default function MainTabsScreen({ navigation }: Props) {
     feed: 0,
     video: 0,
     friends: 0,
-    market: 0,
     messages: 0,
     notifications: 0,
     profile: 0,
@@ -150,11 +151,11 @@ export default function MainTabsScreen({ navigation }: Props) {
     feed: 0,
     video: 0,
     friends: 0,
-    market: 0,
     messages: 0,
     notifications: 0,
     profile: 0,
   });
+  const [seenBadgeCounts, setSeenBadgeCounts] = useState<Record<BadgeTab, number>>(EMPTY_SEEN_BADGE_COUNTS);
   const unreadNotifications = useNotificationStore((state) => state.unreadCount);
   const setNotificationUnreadCount = useNotificationStore((state) => state.setUnreadCount);
   const upsertNotification = useNotificationStore((state) => state.upsertNotification);
@@ -165,6 +166,9 @@ export default function MainTabsScreen({ navigation }: Props) {
   const refreshFeed = useFeedStore((state) => state.fetch);
   const incomingFriendRequests = useFriendStore((state) => state.incomingRequests.length);
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
+  const visibleFriendRequests = Math.max(0, incomingFriendRequests - seenBadgeCounts.friends);
+  const visibleUnreadMessages = Math.max(0, unreadMessages - seenBadgeCounts.messages);
+  const visibleUnreadNotifications = Math.max(0, unreadNotifications - seenBadgeCounts.notifications);
 
   const activeRef = useRef<Tab>('home');
   const tabHistoryRef = useRef<Tab[]>(['home']);
@@ -272,6 +276,33 @@ export default function MainTabsScreen({ navigation }: Props) {
     }
   }, [pushTabHistory, setTransition, tabSlideX]);
 
+  const acknowledgeTabBadge = useCallback((tab: Tab) => {
+    if (tab !== 'friends' && tab !== 'messages' && tab !== 'notifications') return;
+
+    const count =
+      tab === 'friends'
+        ? incomingFriendRequests
+        : tab === 'messages'
+          ? unreadMessages
+          : unreadNotifications;
+
+    setSeenBadgeCounts((current) => (
+      current[tab] >= count ? current : { ...current, [tab]: count }
+    ));
+
+    if (tab === 'notifications' && unreadNotifications > 0) {
+      markAllNotificationsRead();
+      setNotificationUnreadCount(0);
+      void api.patch('/api/notifications/read-all').catch(() => undefined);
+    }
+  }, [
+    incomingFriendRequests,
+    markAllNotificationsRead,
+    setNotificationUnreadCount,
+    unreadMessages,
+    unreadNotifications,
+  ]);
+
   const activateTab = useCallback((
     tab: Tab,
     source: 'tap' | 'back' | 'fade' = 'tap',
@@ -300,8 +331,9 @@ export default function MainTabsScreen({ navigation }: Props) {
   }, [indicatorProgress, reloadCurrentTab, scrollCurrentTabToTop, setTransition, tabAtTop, tabSlideX, visited]);
 
   const handleTab = useCallback((tab: Tab) => {
+    acknowledgeTabBadge(tab);
     activateTab(tab, 'tap');
-  }, [activateTab]);
+  }, [acknowledgeTabBadge, activateTab]);
 
   const handleSurfPress = useCallback(() => {
     activateTab(activeRef.current === 'home' ? 'feed' : 'home', 'fade');
@@ -525,6 +557,10 @@ export default function MainTabsScreen({ navigation }: Props) {
       lastUnreadRefreshAtRef.current = Date.now();
     }
   }, [setNotificationUnreadCount, setUnreadMessages, user?.uid]);
+
+  useEffect(() => {
+    setSeenBadgeCounts(EMPTY_SEEN_BADGE_COUNTS);
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user?.uid || !isFocused) return;
@@ -780,19 +816,19 @@ export default function MainTabsScreen({ navigation }: Props) {
                 color={color}
                 style={floating ? s.floatingIconShadow : undefined}
               />
-            {tab.key === 'messages' && unreadMessages > 0 && (
+            {tab.key === 'messages' && visibleUnreadMessages > 0 && (
               <View style={[s.topBadge, { backgroundColor: C.danger }]}>
-                <Text style={s.badgeText}>{unreadMessages > 99 ? '99+' : unreadMessages}</Text>
+                <Text style={s.badgeText}>{visibleUnreadMessages > 99 ? '99+' : visibleUnreadMessages}</Text>
               </View>
             )}
-            {tab.key === 'notifications' && unreadNotifications > 0 && (
+            {tab.key === 'notifications' && visibleUnreadNotifications > 0 && (
               <View style={[s.topBadge, { backgroundColor: C.danger }]}>
-                <Text style={s.badgeText}>{unreadNotifications > 99 ? '99+' : unreadNotifications}</Text>
+                <Text style={s.badgeText}>{visibleUnreadNotifications > 99 ? '99+' : visibleUnreadNotifications}</Text>
               </View>
             )}
-            {tab.key === 'friends' && incomingFriendRequests > 0 && (
+            {tab.key === 'friends' && visibleFriendRequests > 0 && (
               <View style={[s.topBadge, { backgroundColor: C.danger }]}>
-                <Text style={s.badgeText}>{incomingFriendRequests > 99 ? '99+' : incomingFriendRequests}</Text>
+                <Text style={s.badgeText}>{visibleFriendRequests > 99 ? '99+' : visibleFriendRequests}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -1098,18 +1134,6 @@ export default function MainTabsScreen({ navigation }: Props) {
               safeTop={false}
               showTitleBlock={false}
               onScrollPositionChange={(atTop) => updateTabAtTop('friends', atTop)}
-            />
-          </Animated.View>
-        )}
-
-        {shouldRenderTab('market') && (
-          <Animated.View style={sceneStyleFor('market')} pointerEvents={active === 'market' ? 'auto' : 'none'}>
-            <MarketplaceScreen
-              navigation={navigation as any}
-              resetSignal={resetSignals.market}
-              safeTop={false}
-              showBackButton={false}
-              onScrollPositionChange={(atTop) => updateTabAtTop('market', atTop)}
             />
           </Animated.View>
         )}

@@ -1702,7 +1702,8 @@ export default function ChatScreen({ navigation, route }: Props) {
         setMessages(prev => prev.filter(m => m.id !== optimisticId));
         throw new Error('missing_message_id');
       }
-    } catch {
+    } catch (error) {
+      console.warn('Failed to send media attachment:', error);
       setMessages(prev => prev.filter(m => m.id !== optimisticId));
       throw new Error(isVideo ? 'cannot_send_video' : 'cannot_send_image');
     }

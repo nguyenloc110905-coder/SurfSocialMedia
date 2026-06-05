@@ -166,6 +166,7 @@ export default function CreateMomentScreen({ navigation }: Props) {
       });
       navigation.goBack();
     } catch (err) {
+      console.warn('Failed to create moment:', err);
       setError(err instanceof Error ? err.message : 'Không thể tạo Moment.');
     } finally {
       setSubmitting(false);

@@ -288,6 +288,7 @@ export default function CreatePostScreen({ navigation, route }: Props) {
       }
       navigation.goBack();
     } catch (e) {
+      console.warn('Failed to create post with media:', e);
       const msg = e instanceof Error ? e.message : 'Kh\u00f4ng th\u1ec3 \u0111\u0103ng b\u00e0i. Vui l\u00f2ng th\u1eed l\u1ea1i!';
       setError(msg);
     } finally {

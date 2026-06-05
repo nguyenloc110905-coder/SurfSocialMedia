@@ -345,6 +345,7 @@ export default function CreateClipScreen({ navigation }: Props) {
       requestClipRefresh();
       navigation.goBack();
     } catch (e) {
+      console.warn('Failed to create short video:', e);
       const message = (e as Error).message || '';
       setError(
         message.includes('413')
