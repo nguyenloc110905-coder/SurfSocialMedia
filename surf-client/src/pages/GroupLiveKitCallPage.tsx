@@ -33,6 +33,7 @@ type MeetingTileItem = {
   isScreenShare: boolean;
   displayName: string;
   identity: string;
+  isLocal: boolean;
   trackRef: TrackReferenceOrPlaceholder;
 };
 
@@ -128,6 +129,7 @@ function MeetingTile({
   const publishedTrackRef = isTrackReference(tile.trackRef) ? tile.trackRef : undefined;
   const hasTrack = Boolean(publishedTrackRef);
   const showContain = tile.source === Track.Source.ScreenShare;
+  const mirrorLocalCamera = tile.isLocal && tile.source === Track.Source.Camera;
 
   return (
     <button
@@ -145,7 +147,7 @@ function MeetingTile({
             trackRef={publishedTrackRef}
             className={`h-full w-full bg-black ${
               showContain ? 'object-contain' : large ? 'object-cover' : 'object-cover'
-            }`}
+            } ${mirrorLocalCamera ? 'scale-x-[-1]' : ''}`}
           />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[radial-gradient(circle_at_50%_40%,rgba(56,189,248,0.22),transparent_55%),#0b121a]">
@@ -280,6 +282,7 @@ function MeetingWorkspace({
         isScreenShare,
         displayName,
         identity: trackRef.participant.identity,
+        isLocal: trackRef.participant.identity === localParticipant.identity,
         trackRef,
       };
     });
@@ -335,6 +338,17 @@ function MeetingWorkspace({
     }
   };
 
+  const returnToSurf = () => {
+    if (typeof window === 'undefined') return;
+
+    if (window.opener && !window.opener.closed) {
+      window.opener.focus();
+      return;
+    }
+
+    window.open('/feed/waves', '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <>
       <RoomAudioRenderer />
@@ -366,6 +380,18 @@ function MeetingWorkspace({
                   <h1 className="truncate text-sm font-semibold text-slate-100 sm:text-base">{title}</h1>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={returnToSurf}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/85 px-3 text-xs font-semibold text-slate-100 transition hover:bg-slate-700"
+                    aria-label="Về Surf và giữ cuộc gọi"
+                    title="Về Surf"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                      <path d="M10.6 5.4 12 6.8 7.8 11H20v2H7.8l4.2 4.2-1.4 1.4L4 12Z" />
+                    </svg>
+                    Về Surf
+                  </button>
                   <button
                     type="button"
                     onClick={() => setWorkspaceAppearance('light')}

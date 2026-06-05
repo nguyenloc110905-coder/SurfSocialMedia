@@ -26,9 +26,11 @@ import PostCard from '@/components/PostCard';
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showHeader?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type NotificationResponse = {
@@ -173,7 +175,15 @@ function NotificationAvatar({ item, C }: { item: NotificationItem; C: typeof DAR
   );
 }
 
-export default function NotificationCenterScreen({ navigation, isActive = true, resetSignal = 0, safeTop = true, showHeader = true }: Props) {
+export default function NotificationCenterScreen({
+  navigation,
+  isActive = true,
+  scrollTopSignal = 0,
+  resetSignal = 0,
+  safeTop = true,
+  showHeader = true,
+  onScrollPositionChange,
+}: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
   const listRef = useRef<FlatList<NotificationItem>>(null);
@@ -186,9 +196,14 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>('all');
+  const lastLoadedAtRef = useRef(0);
+  const inFlightRef = useRef(false);
 
-  const load = useCallback(async (isRefresh = false) => {
+  const load = useCallback(async (isRefresh = false, force = false) => {
     if (!user) return;
+    if (inFlightRef.current) return;
+    if (!force && lastLoadedAtRef.current && Date.now() - lastLoadedAtRef.current < 60_000) return;
+    inFlightRef.current = true;
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     setError(null);
@@ -199,36 +214,43 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
         .filter((item): item is NotificationItem => item != null && typeof item.id === 'string')
         .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
       setItems(next);
+      lastLoadedAtRef.current = Date.now();
     } catch (e) {
       setError((e as Error).message || 'Không thể tải thông báo');
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user]);
+  }, [setItems, user]);
 
   useEffect(() => {
-    load();
+    void load(false, true);
   }, [load]);
 
   useEffect(() => {
-    if (isActive) load(true);
+    if (isActive) void load(true);
   }, [isActive, load]);
 
   useEffect(() => {
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
-  }, [resetSignal]);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   useEffect(() => {
     if (!isActive || !user) return;
-    const interval = setInterval(() => load(true), 15_000);
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') load(true);
+      if (state === 'active') void load(true);
     });
 
     return () => {
-      clearInterval(interval);
       subscription.remove();
     };
   }, [isActive, load, user]);
@@ -252,7 +274,7 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
     try {
       await api.patch('/api/notifications/read-all');
     } catch {
-      load(true);
+      void load(true, true);
     }
   }, [load, markAllItemsRead, unreadCount]);
 
@@ -267,9 +289,11 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
     if (conversationId) {
       navigation.navigate('Chat', {
         conversationId,
-        title: item.actorName ?? 'Tin nhắn',
+        title: item.actorName ?? 'Waves',
         peerUid: item.actorId ?? null,
+        peerName: item.actorName ?? null,
         peerAvatar: getActorPhoto(item),
+        marketplace: null,
       });
       return;
     }
@@ -329,6 +353,10 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
     );
   };
 
+  const handleScroll = (event: any) => {
+    onScrollPositionChange?.(Math.max(0, event.nativeEvent.contentOffset.y) < 12);
+  };
+
   return (
     <SafeAreaView style={[s.root, { backgroundColor: C.bg }]} edges={safeTop ? ['top'] : []}>
       {showHeader && <View style={[s.header, { borderBottomColor: C.border }]}>
@@ -380,7 +408,7 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
           <Ionicons name="cloud-offline-outline" size={54} color={C.subtext} />
           <Text style={[s.emptyTitle, { color: C.text }]}>Không thể tải thông báo</Text>
           <Text style={[s.emptyText, { color: C.subtext }]}>{error}</Text>
-          <TouchableOpacity style={[s.retryBtn, { borderColor: C.accent }]} onPress={() => load()}>
+          <TouchableOpacity style={[s.retryBtn, { borderColor: C.accent }]} onPress={() => void load(false, true)}>
             <Text style={[s.retryText, { color: C.accent }]}>Thử lại</Text>
           </TouchableOpacity>
         </View>
@@ -390,10 +418,12 @@ export default function NotificationCenterScreen({ navigation, isActive = true, 
           data={visibleItems}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => load(true)}
+              onRefresh={() => void load(true, true)}
               tintColor={C.accent}
               colors={[C.accent]}
             />

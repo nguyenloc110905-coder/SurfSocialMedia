@@ -21,6 +21,7 @@ import type { RootStackParamList } from '@/navigation';
 import { useMarketplaceStore } from '@/stores/marketplaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguage, useT, type I18nKey } from '@/lib/i18n';
+import { api } from '@/lib/api';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MarketplaceDetail'>;
@@ -92,8 +93,10 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
 
   const [activeImg, setActiveImg] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
+  const [contactLoading, setContactLoading] = useState(false);
 
   const scrollX = useRef(new Animated.Value(0)).current;
+  const contactOpeningRef = useRef(false);
 
   useEffect(() => {
     fetchDetail(listingId);
@@ -117,6 +120,48 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
       title: detailListing.title,
       message: `${detailListing.title} — ${formatPrice(detailListing.price, language, t)}`,
     });
+  };
+
+  const handleContactSeller = async () => {
+    if (!detailListing || contactOpeningRef.current) return;
+    contactOpeningRef.current = true;
+    setContactLoading(true);
+    try {
+      const res = await api.post<{ item?: { id: string; muted?: boolean } }>(
+        `/api/marketplace/${encodeURIComponent(detailListing.id)}/contact`,
+        {}
+      );
+      const conversationId = res.item?.id;
+      if (!conversationId) throw new Error('missing_conversation_id');
+
+      navigation.navigate('Chat', {
+        conversationId,
+        title: detailListing.title,
+        peerUid: detailListing.sellerId,
+        peerName: detailListing.sellerDisplayName,
+        peerAvatar: detailListing.sellerPhotoURL,
+        muted: Boolean(res.item?.muted),
+        members: [{
+          uid: detailListing.sellerId,
+          name: detailListing.sellerDisplayName,
+          avatarUrl: detailListing.sellerPhotoURL,
+        }],
+        memberCount: 2,
+        marketplace: {
+          listingId: detailListing.id,
+          title: detailListing.title,
+          imageUrl: detailListing.mediaUrls?.[0] ?? null,
+          price: detailListing.price,
+          location: detailListing.location,
+          sellerId: detailListing.sellerId,
+        },
+      });
+    } catch {
+      Alert.alert(t('cannot_open_messages'), t('try_again_later'));
+    } finally {
+      contactOpeningRef.current = false;
+      setContactLoading(false);
+    }
   };
 
   const isOwner = detailListing?.sellerId === user?.uid;
@@ -381,9 +426,14 @@ export default function MarketplaceDetailScreen({ navigation, route }: Props) {
         <View style={[s.bottomBar, { backgroundColor: C.card, borderTopColor: C.border }]}>
           <TouchableOpacity
             style={[s.contactBtn, { backgroundColor: C.accent }]}
-            onPress={() => navigation.navigate('Messages')}
+            onPress={handleContactSeller}
+            disabled={contactLoading}
           >
-            <Ionicons name="chatbubble-outline" size={20} color="#fff" />
+            {contactLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="chatbubble-outline" size={20} color="#fff" />
+            )}
             <Text style={s.contactBtnText}>{t('market_message_seller')}</Text>
           </TouchableOpacity>
         </View>

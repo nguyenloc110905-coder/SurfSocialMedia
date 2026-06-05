@@ -10,28 +10,42 @@ export type FeedPost = {
   authorDisplayName: string;
   authorPhotoURL: string | null;
   content: string;
+  textStyle?: {
+    font?: 'system' | 'serif' | 'rounded' | 'bold' | 'mono';
+    color?: string;
+  } | null;
   mediaUrls: string[];
   createdAt: { _seconds?: number; seconds?: number } | string | number | null;
   likeCount: number;
   replyCount: number;
+  shareCount?: number;
   likedBy: string[];
   reactions?: Record<string, string>;
   savedBy?: string[];
+  archived?: boolean;
+  archivedAt?: string | null;
   sharedFrom?: {
     id: string;
     authorId: string | null;
     authorDisplayName: string;
     authorPhotoURL: string | null;
     content: string;
+    textStyle?: FeedPost['textStyle'];
     mediaUrls: string[];
     createdAt: FeedPost['createdAt'];
   };
   feeling?: string;
   location?: string;
-  taggedFriends?: Array<{ uid: string; displayName: string }>;
+  taggedFriends?: Array<{ uid: string; displayName: string; photoURL?: string | null }>;
   privacy?: 'public' | 'friends' | 'only-me' | 'custom';
   isEdited?: boolean;
+  pinnedAt?: string | null;
   _discover?: boolean;
+  group?: {
+    id: string;
+    name: string;
+    coverImageUrl?: string | null;
+  };
 };
 
 type FeedState = {
@@ -48,9 +62,12 @@ type FeedState = {
   setRefreshing: (v: boolean) => void;
   updatePost: (updated: Partial<FeedPost> & { id: string }) => void;
   addPost: (post: FeedPost) => void;
+  removePost: (postId: string) => void;
 };
 
 const FEED_CACHE_KEY = 'surf_mobile_feed_cache_v1';
+const FEED_STALE_MS = 30_000;
+const FEED_CACHE_LIMIT = 30;
 
 type FeedCachePayload = {
   posts: FeedPost[];
@@ -68,6 +85,17 @@ async function saveFeedCache(payload: FeedCachePayload) {
     // Cache is best-effort.
   }
 }
+
+function persistFeedSnapshot(posts: FeedPost[], hasMore: boolean, nextCursor: string | null) {
+  void saveFeedCache({
+    posts: posts.slice(0, FEED_CACHE_LIMIT),
+    hasMore,
+    nextCursor,
+    savedAt: Date.now(),
+  });
+}
+
+let feedFetchPromise: Promise<void> | null = null;
 
 async function readFeedCache(): Promise<FeedCachePayload | null> {
   if (!useSettingsStore.getState().prefs.feedCache) return null;
@@ -103,53 +131,77 @@ export const useFeedStore = create<FeedState>((set, get) => ({
   setRefreshing: (v) => set({ refreshing: v }),
 
   updatePost: (updated) =>
-    set((s) => ({
-      posts: s.posts.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
-    })),
+    set((s) => {
+      const posts = s.posts.map((p) => (p.id === updated.id ? { ...p, ...updated } : p));
+      persistFeedSnapshot(posts, s.hasMore, s.nextCursor);
+      return { posts };
+    }),
 
   addPost: (post) =>
-    set((s) => ({
-      posts: [post, ...s.posts.filter((p) => p.id !== post.id)],
-      lastFetched: Date.now(),
-    })),
+    set((s) => {
+      const posts = [post, ...s.posts.filter((p) => p.id !== post.id)];
+      persistFeedSnapshot(posts, s.hasMore, s.nextCursor);
+      return { posts, lastFetched: Date.now() };
+    }),
+
+  removePost: (postId) =>
+    set((s) => {
+      const posts = s.posts.filter((p) => p.id !== postId);
+      persistFeedSnapshot(posts, s.hasMore, s.nextCursor);
+      return { posts };
+    }),
 
   fetch: async (force = false) => {
     const { loading, lastFetched } = get();
     if (loading) return;
-    if (!force && lastFetched && Date.now() - lastFetched < 30_000) return;
+    if (!force && lastFetched && Date.now() - lastFetched < FEED_STALE_MS) return;
+    if (feedFetchPromise) return feedFetchPromise;
 
-    set({ loading: true, error: null });
-    const cached = await readFeedCache();
-    if (cached && get().posts.length === 0) {
-      set({
-        posts: cached.posts,
-        hasMore: cached.hasMore,
-        nextCursor: cached.nextCursor,
-        lastFetched: cached.savedAt,
-      });
-    }
+    feedFetchPromise = (async () => {
+      let cached: FeedCachePayload | null = null;
+      if (get().posts.length === 0) {
+        cached = await readFeedCache();
+        if (cached) {
+          set({
+            posts: cached.posts,
+            hasMore: cached.hasMore,
+            nextCursor: cached.nextCursor,
+            lastFetched: cached.savedAt,
+            error: null,
+          });
+        }
+      }
 
-    try {
-      const data = await api.get<{ posts: FeedPost[]; nextLastId?: string; hasMore?: boolean }>(
-        '/api/feed'
-      );
-      const posts = (data.posts ?? []).filter((p): p is FeedPost => p != null && typeof p.id === 'string');
-      const hasMore = data.hasMore ?? !!data.nextLastId;
-      const nextCursor = data.nextLastId ?? null;
-      const lastFetched = Date.now();
-      set({ posts, hasMore, nextCursor, lastFetched });
-      await saveFeedCache({ posts, hasMore, nextCursor, savedAt: lastFetched });
+      if (get().posts.length === 0) set({ loading: true, error: null });
+      else set({ error: null });
 
-      const toPreload = posts
-        .flatMap((p) => p.mediaUrls)
-        .filter((u) => !u.includes('/video/upload/') && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(u))
-        .slice(0, 20);
-      toPreload.forEach((u) => Image.prefetch(u).catch(() => {}));
-    } catch (e) {
-      set({ error: cached ? null : (e as Error).message ?? 'Khong the tai feed' });
-    } finally {
-      set({ loading: false, refreshing: false });
-    }
+      try {
+        const data = await api.get<{ posts: FeedPost[]; nextLastId?: string; hasMore?: boolean }>(
+          '/api/feed'
+        );
+        const incoming = (data.posts ?? []).filter((p): p is FeedPost => p != null && typeof p.id === 'string');
+        const currentById = new Map(get().posts.map((p) => [p.id, p]));
+        const posts = incoming.map((post) => ({ ...(currentById.get(post.id) ?? {}), ...post }));
+        const hasMore = data.hasMore ?? !!data.nextLastId;
+        const nextCursor = data.nextLastId ?? null;
+        const lastFetched = Date.now();
+        set({ posts, hasMore, nextCursor, lastFetched });
+        await saveFeedCache({ posts: posts.slice(0, FEED_CACHE_LIMIT), hasMore, nextCursor, savedAt: lastFetched });
+
+        const toPreload = posts
+          .flatMap((p) => p.mediaUrls)
+          .filter((u) => !u.includes('/video/upload/') && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(u))
+          .slice(0, 20);
+        toPreload.forEach((u) => Image.prefetch(u).catch(() => {}));
+      } catch (e) {
+        set({ error: cached || get().posts.length > 0 ? null : (e as Error).message ?? 'Khong the tai feed' });
+      } finally {
+        set({ loading: false, refreshing: false });
+        feedFetchPromise = null;
+      }
+    })();
+
+    return feedFetchPromise;
   },
 
   fetchMore: async () => {
@@ -174,7 +226,7 @@ export const useFeedStore = create<FeedState>((set, get) => ({
         nextCursor: nextCursorValue,
       });
       await saveFeedCache({
-        posts: nextPosts,
+        posts: nextPosts.slice(0, FEED_CACHE_LIMIT),
         hasMore: nextHasMore,
         nextCursor: nextCursorValue,
         savedAt: Date.now(),

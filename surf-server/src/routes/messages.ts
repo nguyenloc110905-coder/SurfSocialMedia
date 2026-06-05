@@ -22,6 +22,7 @@ import {
   toApiMessage,
   toRealtimeMessagePayload,
 } from '../services/conversations.js';
+import { conversationRepository } from '../repositories/conversation.repository.js';
 
 const router = Router();
 
@@ -268,7 +269,14 @@ router.post('/:id/forward', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(result.item);
-    emitMessageNewToTargets([uid, ...result.recipientIds], result.conversationId, payload);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(result.conversationId);
+    const mutedBy = Object.entries(muteSettingsByUser)
+      .filter(([, settings]) => settings.muteMessages)
+      .map(([userId]) => userId);
+    emitMessageNewToTargets([uid, ...result.recipientIds], result.conversationId, {
+      ...payload,
+      mutedBy,
+    });
 
     await Promise.all(
       result.recipientIds.map(async (recipientId) => {

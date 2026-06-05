@@ -31,6 +31,7 @@ import {
   emitMessageUnreadCount,
 } from '../realtime/emitters/message.emitter.js';
 import type { MarketplaceConversationContext } from '../types/conversation.js';
+import { conversationRepository } from '../repositories/conversation.repository.js';
 
 const router = Router();
 
@@ -2863,10 +2864,14 @@ router.post('/:id/contact', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(messageResult.item);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(conversationResult.item.id);
+    const mutedBy = Object.entries(muteSettingsByUser)
+      .filter(([, settings]) => settings.muteMessages)
+      .map(([userId]) => userId);
     emitMessageNewToTargets(
       [req.uid!, ...messageResult.recipientIds],
       conversationResult.item.id,
-      payload
+      { ...payload, mutedBy }
     );
     const recipientCounts = await Promise.all(
       messageResult.recipientIds.map(async (uid) => ({

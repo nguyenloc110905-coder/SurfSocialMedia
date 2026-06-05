@@ -43,6 +43,27 @@ async function getRelationship(viewerUid: string, targetUid: string) {
   };
 }
 
+function normalizeRecentSearches(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const item of input) {
+    const value =
+      typeof item === 'string'
+        ? item
+        : item && typeof item === 'object'
+          ? ((item as { query?: unknown; name?: unknown }).query ?? (item as { query?: unknown; name?: unknown }).name)
+          : null;
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    output.push(trimmed);
+    if (output.length >= 10) break;
+  }
+  return output;
+}
+
 function canViewByPrivacySetting(
   viewerUid: string,
   targetUid: string,
@@ -598,7 +619,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
 router.get('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => {
   try {
     const doc = await getDb().collection('users').doc(req.uid!).get();
-    const recentSearches = doc.exists ? (doc.data()?.recentSearches ?? []) : [];
+    const recentSearches = normalizeRecentSearches(doc.exists ? doc.data()?.recentSearches : []);
     res.json({ recentSearches });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -714,7 +735,7 @@ router.put('/me/recent-searches', requireAuth, async (req: AuthRequest, res) => 
       res.status(400).json({ error: 'recentSearches must be an array' });
       return;
     }
-    const trimmed = recentSearches.slice(0, 8);
+    const trimmed = normalizeRecentSearches(recentSearches).slice(0, 8);
     await getDb()
       .collection('users')
       .doc(req.uid!)
@@ -1179,8 +1200,8 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
 
     let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Record<string, unknown>);
 
-    // Filter out deleted posts and reply posts (parentId set) — only top-level posts and shares
-    posts = posts.filter((p) => !p.deleted && !p.parentId);
+    // Filter out deleted/archived posts and reply posts (parentId set) — only top-level posts and shares
+    posts = posts.filter((p) => !p.deleted && !p.archived && !p.parentId);
 
     const userDoc = await getDb().collection('users').doc(targetUid).get();
     const targetPrivacySettings = userDoc.exists ? userDoc.data()?.privacySettings : {};
@@ -1307,6 +1328,7 @@ router.get('/:uid/photos', requireAuth, async (req: AuthRequest, res) => {
     snap.docs.forEach((doc) => {
       const data = doc.data();
       if (data.deleted) return;
+      if (data.archived) return;
       const privacy = data.privacy ?? 'public';
       if (privacy === 'only-me') return;
       if (privacy === 'friends' && !isFriend && req.uid !== targetUid) return;
@@ -1375,6 +1397,7 @@ router.get('/:uid/clips', requireAuth, async (req: AuthRequest, res) => {
     snap.docs.forEach((doc) => {
       const data = doc.data();
       if (data.deleted) return;
+      if (data.archived) return;
       const privacy = data.privacy ?? 'public';
       if (privacy === 'only-me') return;
       if (privacy === 'friends' && !isFriend && req.uid !== targetUid) return;

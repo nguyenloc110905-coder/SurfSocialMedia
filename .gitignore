@@ -2,6 +2,8 @@
 node_modules/
 .expo/
 **/.expo/
+**/.expo-check/
+.eas-tmp/
 
 # Env (never commit secrets)
 .env
@@ -35,6 +37,7 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+.logs/
 
 serviceAccountKey.json
 docs/plans/*
@@ -42,6 +45,10 @@ docs/plans/*
 !docs/plans/mkcert-https-lan-setup.txt
 !docs/plans/oracle-coturn-setup.txt
 
+# Local diagrams / generated docs
+docs/surf-db-class-diagram.html
+docs/surf-mobile-class-diagram.mdj
+docs/waves-marketplace-diagram-guide.md
 # Ignored folders
 Reports/
 scratch/

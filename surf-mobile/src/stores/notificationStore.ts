@@ -28,6 +28,9 @@ export type RealtimeMessagePayload = {
     conversationId?: string;
     text?: string | null;
     type?: string;
+    fileName?: string | null;
+    isRecalled?: boolean;
+    recalledForEveryone?: boolean;
     createdAt?: string;
   };
   conversation?: {
@@ -35,6 +38,7 @@ export type RealtimeMessagePayload = {
     lastMessagePreview?: string | null;
     lastMessageAt?: string | null;
   };
+  mutedBy?: string[];
 };
 
 export type FriendRequestPayload = {
@@ -84,12 +88,43 @@ function upsert(items: NotificationItem[], item: NotificationItem): Notification
   return sortNotifications([normalized, ...withoutDuplicate]);
 }
 
+function trimMessagePreview(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
+}
+
+function stripReplyMetadata(value: string): string {
+  return value
+    .replace(/^__reply_to:[^\n]+__\n?/u, '')
+    .replace(/^__reply_sender:[^\n]+__\n?/u, '')
+    .replace(/__reply_to:[^\s]+__/gu, ' ')
+    .replace(/__reply_sender:[^\s]+__/gu, ' ')
+    .replace(/^↪\s*.+?:\s*.+\n/u, '')
+    .trim();
+}
+
+function messagePreview(payload: RealtimeMessagePayload): string {
+  const message = payload.message;
+  const serverPreview = payload.conversation?.lastMessagePreview;
+  if (serverPreview) return trimMessagePreview(serverPreview);
+  if (!message) return 'Tin nhắn mới';
+  if (message.isRecalled || message.recalledForEveryone) return 'Tin nhắn đã được thu hồi';
+
+  const text = stripReplyMetadata(message.text ?? '');
+  if (text) return trimMessagePreview(text);
+  if (message.type === 'image') return '📷 Hình ảnh';
+  if (message.type === 'audio') return '🎤 Tin nhắn thoại';
+  if (message.type === 'file') return message.fileName ? `📎 ${message.fileName}` : '📎 Tệp đính kèm';
+  if (message.type === 'call_log') return trimMessagePreview(message.text ?? 'Cuộc gọi Surf');
+  return 'Tin nhắn mới';
+}
+
 function messageToNotification(payload: RealtimeMessagePayload, currentUserId: string): NotificationItem | null {
   const message = payload?.message;
   const conversationId = message?.conversationId ?? payload?.conversation?.id;
   if (!message?.id || !conversationId || message.senderId === currentUserId) return null;
 
-  const preview = payload.conversation?.lastMessagePreview ?? message.text ?? 'Tin nhắn mới';
+  const preview = messagePreview(payload);
   return normalizeNotification({
     id: `message-${message.id}`,
     type: 'message',
@@ -123,7 +158,9 @@ function friendRequestToNotification(payload: FriendRequestPayload): Notificatio
 
 type NotificationState = {
   items: NotificationItem[];
+  unreadCount: number;
   setItems: (items: NotificationItem[]) => void;
+  setUnreadCount: (count: number) => void;
   upsertNotification: (item: NotificationItem) => void;
   upsertMessage: (payload: RealtimeMessagePayload, currentUserId: string) => void;
   upsertFriendRequest: (payload: FriendRequestPayload) => void;
@@ -132,33 +169,52 @@ type NotificationState = {
   clear: () => void;
 };
 
+const countUnread = (items: NotificationItem[]): number =>
+  items.filter((item) => !(item.read ?? item.isRead)).length;
+
+const normalizeCount = (count: number): number =>
+  Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+
 export const useNotificationStore = create<NotificationState>((set) => ({
   items: [],
+  unreadCount: 0,
   setItems: (items) =>
     set((state) => {
       const merged = new Map<string, NotificationItem>();
       state.items.forEach((item) => merged.set(item.id, item));
       items.map(normalizeNotification).forEach((item) => merged.set(item.id, item));
-      return { items: sortNotifications(Array.from(merged.values())) };
+      const nextItems = sortNotifications(Array.from(merged.values()));
+      return { items: nextItems, unreadCount: countUnread(nextItems) };
     }),
-  upsertNotification: (item) => set((state) => ({ items: upsert(state.items, item) })),
+  setUnreadCount: (count) => set({ unreadCount: normalizeCount(count) }),
+  upsertNotification: (item) =>
+    set((state) => {
+      const items = upsert(state.items, item);
+      return { items, unreadCount: countUnread(items) };
+    }),
   upsertMessage: (payload, currentUserId) =>
     set((state) => {
       const notification = messageToNotification(payload, currentUserId);
-      return notification ? { items: upsert(state.items, notification) } : state;
+      if (!notification) return state;
+      const items = upsert(state.items, notification);
+      return { items, unreadCount: countUnread(items) };
     }),
   upsertFriendRequest: (payload) =>
     set((state) => {
       const notification = friendRequestToNotification(payload);
-      return notification ? { items: upsert(state.items, notification) } : state;
+      if (!notification) return state;
+      const items = upsert(state.items, notification);
+      return { items, unreadCount: countUnread(items) };
     }),
   markItemRead: (id) =>
-    set((state) => ({
-      items: state.items.map((item) => item.id === id ? { ...item, read: true, isRead: true } : item),
-    })),
+    set((state) => {
+      const items = state.items.map((item) => item.id === id ? { ...item, read: true, isRead: true } : item);
+      return { items, unreadCount: countUnread(items) };
+    }),
   markAllRead: () =>
     set((state) => ({
       items: state.items.map((item) => ({ ...item, read: true, isRead: true })),
+      unreadCount: 0,
     })),
-  clear: () => set({ items: [] }),
+  clear: () => set({ items: [], unreadCount: 0 }),
 }));

@@ -31,9 +31,11 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
   route: RouteProp<RootStackParamList, 'Profile'>;
   isActive?: boolean;
+  scrollTopSignal?: number;
   resetSignal?: number;
   safeTop?: boolean;
   showBackButton?: boolean;
+  onScrollPositionChange?: (atTop: boolean) => void;
 };
 
 type UserProfile = {
@@ -164,9 +166,11 @@ export default function ProfileScreen({
   navigation,
   route,
   isActive = true,
+  scrollTopSignal = 0,
   resetSignal = 0,
   safeTop = true,
   showBackButton = true,
+  onScrollPositionChange,
 }: Props) {
   const t = useT();
   const scheme = useColorScheme();
@@ -190,6 +194,7 @@ export default function ProfileScreen({
   const [friendStatus, setFriendStatus] = useState<'loading' | 'friends' | 'request_sent' | 'stranger'>('loading');
   const [actionLoading, setActionLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const chatOpeningRef = useRef(false);
   const [mediaSheet, setMediaSheet] = useState<'avatar' | 'cover' | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPost, setPreviewPost] = useState<FeedPost | null>(null);
@@ -265,7 +270,14 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!resetSignal) return;
     scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }, [resetSignal]);
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, resetSignal]);
+
+  useEffect(() => {
+    if (!scrollTopSignal) return;
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    onScrollPositionChange?.(true);
+  }, [onScrollPositionChange, scrollTopSignal]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -334,7 +346,8 @@ export default function ProfileScreen({
   };
 
   const handleStartChat = async () => {
-    if (chatLoading || !targetUid) return;
+    if (chatOpeningRef.current || !targetUid) return;
+    chatOpeningRef.current = true;
     setChatLoading(true);
     try {
       const res = await api.post<{ item: { id: string } }>('/api/conversations', { peerUid: targetUid });
@@ -344,11 +357,13 @@ export default function ProfileScreen({
         conversationId: convId,
         title: displayName,
         peerUid: targetUid,
+        peerName: displayName,
         peerAvatar: photoURL ?? null,
       });
     } catch {
       Alert.alert(t('cannot_open_messages'), t('try_again_later'));
     } finally {
+      chatOpeningRef.current = false;
       setChatLoading(false);
     }
   };
@@ -812,6 +827,8 @@ export default function ProfileScreen({
         ref={scrollRef}
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        onScroll={(event) => onScrollPositionChange?.(event.nativeEvent.contentOffset.y <= 8)}
+        scrollEventThrottle={64}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.accent} colors={[C.accent]} />}
       >
         {renderHeader()}

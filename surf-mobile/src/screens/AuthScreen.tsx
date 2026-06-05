@@ -53,7 +53,7 @@ function validatePassword(pw: string): I18nKey | null {
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Auth'>;
-  route: { params?: { initialTab?: 'login' | 'register' } };
+  route: { params?: { initialTab?: 'login' | 'register'; initialEmail?: string } };
 };
 
 export default function AuthScreen({ navigation, route }: Props) {
@@ -101,12 +101,19 @@ export default function AuthScreen({ navigation, route }: Props) {
   useEffect(() => {
     const loadLastEmail = async () => {
       try {
-        const [lastEmail, persistMode] = await Promise.all([
+        const [lastEmail, nextTab, persistMode] = await Promise.all([
           AsyncStorage.getItem('surf_last_email'),
+          AsyncStorage.getItem('surf_next_auth_tab'),
           getAuthPersistMode(),
         ]);
-        if (lastEmail) {
-          setLoginEmail(lastEmail);
+        const initialEmail = route.params?.initialEmail ?? lastEmail;
+        if (initialEmail) {
+          setLoginEmail(initialEmail);
+          setRegisterEmail(initialEmail);
+        }
+        if (nextTab === 'login' || nextTab === 'register') {
+          setActiveTab(nextTab);
+          await AsyncStorage.removeItem('surf_next_auth_tab');
         }
         setRememberMe(persistMode !== 'session');
       } catch (e) {
