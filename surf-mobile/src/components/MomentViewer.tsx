@@ -51,11 +51,31 @@ function ago(raw: MomentItem['createdAt']) {
   return `${Math.floor(hrs / 24)} ngày`;
 }
 
-function MomentVideo({ uri, active, muted }: { uri: string; active: boolean; muted: boolean }) {
-  const player = useVideoPlayer(uri, (p) => {
+function posterForMoment(moment: MomentItem) {
+  if (moment.thumbnailUrl || moment.posterUrl) return moment.thumbnailUrl || moment.posterUrl || null;
+  if (!moment.mediaUrl.includes('res.cloudinary.com')) return null;
+  return moment.mediaUrl
+    .replace('/video/upload/', '/image/upload/w_360,q_auto,f_jpg,so_0/')
+    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+
+function MomentVideo({ moment, active, muted }: { moment: MomentItem; active: boolean; muted: boolean }) {
+  const [buffering, setBuffering] = useState(true);
+  const player = useVideoPlayer(moment.mediaUrl, (p) => {
     p.loop = true;
     p.muted = muted;
   });
+
+  const poster = posterForMoment(moment);
+
+  useEffect(() => {
+    const sub = player.addListener('statusChange', (payload: { status: string }) => {
+      setBuffering(payload.status === 'idle' || payload.status === 'loading');
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [player]);
 
   useEffect(() => {
     player.muted = muted;
@@ -78,14 +98,19 @@ function MomentVideo({ uri, active, muted }: { uri: string; active: boolean; mut
   }, [active, player]);
 
   return (
-    <VideoView
-      player={player}
-      style={StyleSheet.absoluteFill}
-      contentFit="cover"
-      nativeControls={false}
-      fullscreenOptions={{ enable: false }}
-      allowsPictureInPicture={false}
-    />
+    <View style={StyleSheet.absoluteFill}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        nativeControls={false}
+        fullscreenOptions={{ enable: false }}
+        allowsPictureInPicture={false}
+      />
+      {(buffering || !active) && poster && (
+        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      )}
+    </View>
   );
 }
 
@@ -246,7 +271,7 @@ export default function MomentViewer({
             onLoadEnd={() => setMediaReady(true)}
           />
         ) : (
-          <MomentVideo uri={moment.mediaUrl} active={visible && !paused} muted={muted || moment.audioMode === 'music'} />
+          <MomentVideo moment={moment} active={visible && !paused} muted={muted || moment.audioMode === 'music'} />
         )}
         <View style={s.topShade} />
         <View style={s.bottomShade} />

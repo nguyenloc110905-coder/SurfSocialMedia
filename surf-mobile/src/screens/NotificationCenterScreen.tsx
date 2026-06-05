@@ -198,14 +198,23 @@ export default function NotificationCenterScreen({
   const [filter, setFilter] = useState<FilterKey>('all');
   const lastLoadedAtRef = useRef(0);
   const inFlightRef = useRef(false);
+  const handledResetSignalRef = useRef(resetSignal);
+  const handledScrollTopSignalRef = useRef(scrollTopSignal);
 
-  const load = useCallback(async (isRefresh = false, force = false) => {
+  const load = useCallback(async (
+    isRefresh = false,
+    force = false,
+    options: { showRefreshControl?: boolean } = {}
+  ) => {
     if (!user) return;
     if (inFlightRef.current) return;
     if (!force && lastLoadedAtRef.current && Date.now() - lastLoadedAtRef.current < 60_000) return;
     inFlightRef.current = true;
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    if (isRefresh) {
+      if (options.showRefreshControl !== false) setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -229,17 +238,22 @@ export default function NotificationCenterScreen({
   }, [load]);
 
   useEffect(() => {
-    if (isActive) void load(true);
+    if (isActive) void load(true, false, { showRefreshControl: false });
   }, [isActive, load]);
 
   useEffect(() => {
     if (!resetSignal) return;
+    if (handledResetSignalRef.current === resetSignal) return;
+    handledResetSignalRef.current = resetSignal;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     onScrollPositionChange?.(true);
-  }, [onScrollPositionChange, resetSignal]);
+    void load(true, true);
+  }, [load, onScrollPositionChange, resetSignal]);
 
   useEffect(() => {
     if (!scrollTopSignal) return;
+    if (handledScrollTopSignalRef.current === scrollTopSignal) return;
+    handledScrollTopSignalRef.current = scrollTopSignal;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     onScrollPositionChange?.(true);
   }, [onScrollPositionChange, scrollTopSignal]);
@@ -247,7 +261,7 @@ export default function NotificationCenterScreen({
   useEffect(() => {
     if (!isActive || !user) return;
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void load(true);
+      if (state === 'active') void load(true, false, { showRefreshControl: false });
     });
 
     return () => {

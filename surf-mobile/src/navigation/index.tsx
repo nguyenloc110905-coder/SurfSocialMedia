@@ -55,6 +55,9 @@ export type RootStackParamList = {
     peerName?: string | null;
     peerAvatar?: string | null;
     muted?: boolean;
+    muteMessages?: boolean;
+    muteCalls?: boolean;
+    muteExpiresAt?: string | null;
     members?: Array<{ uid: string; name: string; avatarUrl: string | null }>;
     memberCount?: number;
     marketplace?: {

@@ -22,7 +22,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/navigation';
 import { uploadVideo } from '@/lib/cloudinary';
 import { api } from '@/lib/api';
-import { useClipStore } from '@/stores/clipStore';
+import { useClipStore, type ClipFeedItem } from '@/stores/clipStore';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'CreateClip'>;
@@ -204,7 +204,7 @@ function ClipPreview({
 export default function CreateClipScreen({ navigation }: Props) {
   const scheme = useColorScheme();
   const C = scheme === 'dark' ? DARK : LIGHT;
-  const requestClipRefresh = useClipStore((state) => state.requestRefresh);
+  const replaceClipItems = useClipStore((state) => state.replaceItems);
 
   const [step, setStep] = useState<Step>(1);
   const [asset, setAsset] = useState<PickedAsset | null>(null);
@@ -325,7 +325,7 @@ export default function CreateClipScreen({ navigation }: Props) {
       setProgress(20);
       const videoUrl = await uploadVideo(asset, { folder: 'surf/clips' });
       setProgress(85);
-      await api.post('/api/videos', {
+      const created = await api.post<ClipFeedItem>('/api/videos', {
         title: title.trim(),
         description: description.trim(),
         videoUrl,
@@ -342,7 +342,10 @@ export default function CreateClipScreen({ navigation }: Props) {
         textOverlays: overlays,
       });
       setProgress(100);
-      requestClipRefresh();
+      replaceClipItems((items) => [
+        { ...created, _source: 'clip' },
+        ...items.filter((item) => item.id !== created.id || item._source !== 'clip'),
+      ]);
       navigation.goBack();
     } catch (e) {
       console.warn('Failed to create short video:', e);

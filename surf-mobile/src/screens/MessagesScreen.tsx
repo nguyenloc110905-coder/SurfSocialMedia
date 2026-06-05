@@ -57,6 +57,9 @@ type ConversationItem = {
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
   muted?: boolean;
+  muteMessages?: boolean;
+  muteCalls?: boolean;
+  muteExpiresAt?: string | null;
 };
 
 type ActiveTab = 'all' | 'unread' | 'groups';
@@ -90,6 +93,9 @@ type CreatedConversationItem = {
   members?: Array<{ uid: string; name: string; avatarUrl: string | null }>;
   memberCount?: number;
   muted?: boolean;
+  muteMessages?: boolean;
+  muteCalls?: boolean;
+  muteExpiresAt?: string | null;
 };
 
 const DARK = { bg: '#0f172a', card: '#1e293b', border: '#334155', text: '#e2e8f0', subtext: '#64748b', accent: '#0ea5e9', input: '#1e293b' };
@@ -151,6 +157,12 @@ function buildConversationPreview(conv: ConversationItem, message: RealtimeListM
 function getConversationLastMessageAtMs(item: ConversationItem): number {
   const timestamp = item.lastMessageAt ? new Date(item.lastMessageAt).getTime() : 0;
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isMuteActive(item: Pick<ConversationItem, 'muted' | 'muteExpiresAt'>): boolean {
+  if (!item.muted) return false;
+  if (!item.muteExpiresAt) return true;
+  return new Date(item.muteExpiresAt).getTime() > Date.now();
 }
 
 function uniqueConversations(items: ConversationItem[]): ConversationItem[] {
@@ -231,6 +243,7 @@ function SwipeableConvRow({
   const avatar = item.marketplace?.imageUrl ?? (item.type === 'group' ? null : (item.peer?.avatarUrl ?? null));
   const isUnread = (item.unreadCount ?? 0) > 0;
   const isTyping = Boolean(typingText);
+  const muted = isMuteActive(item);
 
   return (
     <View style={{ overflow: 'hidden' }}>
@@ -240,8 +253,8 @@ function SwipeableConvRow({
           style={[s.actionBtn, { backgroundColor: '#6366f1' }]}
           onPress={() => { snap(0); onToggleMute(); }}
         >
-          <Ionicons name={item.muted ? 'notifications-outline' : 'notifications-off-outline'} size={20} color="#fff" />
-          <Text style={s.actionLabel}>{item.muted ? t('unmute_notifications') : t('mute_notifications')}</Text>
+          <Ionicons name={muted ? 'notifications-outline' : 'notifications-off-outline'} size={20} color="#fff" />
+          <Text style={s.actionLabel}>{muted ? t('unmute_notifications') : t('mute_notifications')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.actionBtn, { backgroundColor: '#ef4444' }]}
@@ -280,9 +293,9 @@ function SwipeableConvRow({
                 <Ionicons name="storefront" size={10} color="#fff" />
               </View>
             )}
-            {item.muted && (
-              <View style={[s.muteBadge, { backgroundColor: C.border }]}>
-                <Ionicons name="notifications-off" size={9} color={C.subtext} />
+            {muted && (
+              <View style={[s.muteBadge, { backgroundColor: C.card, borderColor: C.border }]}>
+                <Ionicons name="notifications-off" size={13} color={C.subtext} />
               </View>
             )}
           </View>
@@ -402,7 +415,9 @@ export default function MessagesScreen({
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     onScrollPositionChange?.(true);
-  }, [onScrollPositionChange, resetSignal]);
+    setRefreshing(true);
+    load().finally(() => setRefreshing(false));
+  }, [load, onScrollPositionChange, resetSignal]);
 
   useEffect(() => {
     if (!scrollTopSignal) return;
@@ -711,6 +726,9 @@ export default function MessagesScreen({
         peerName: null,
         peerAvatar: null,
         muted: Boolean(item.muted),
+        muteMessages: item.muteMessages,
+        muteCalls: item.muteCalls,
+        muteExpiresAt: item.muteExpiresAt,
         members,
         memberCount: item.memberCount ?? members.length,
         marketplace: null,
@@ -746,6 +764,9 @@ export default function MessagesScreen({
       peerName: conv.peer?.name ?? null,
       peerAvatar: getConvAvatar(conv),
       muted: Boolean(conv.muted),
+      muteMessages: conv.muteMessages,
+      muteCalls: conv.muteCalls,
+      muteExpiresAt: conv.muteExpiresAt,
       members: conv.members ?? (conv.peer ? [conv.peer] : []),
       memberCount: conv.memberCount,
       marketplace: conv.marketplace
@@ -797,6 +818,9 @@ export default function MessagesScreen({
         peerName: friend.name,
         peerAvatar: friend.avatarUrl,
         muted: Boolean(item.muted),
+        muteMessages: item.muteMessages,
+        muteCalls: item.muteCalls,
+        muteExpiresAt: item.muteExpiresAt,
         members: [{ uid: friend.id, name: friend.name, avatarUrl: friend.avatarUrl }],
         memberCount: 2,
         marketplace: null,
@@ -815,9 +839,25 @@ export default function MessagesScreen({
   };
 
   const toggleMute = async (item: ConversationItem) => {
-    const muted = !item.muted;
-    setConversations(prev => uniqueConversations(prev.map(c => c.id === item.id ? { ...c, muted } : c)));
-    try { await api.patch(`/api/conversations/${item.id}/mute`, { muted }); } catch { load(); }
+    const muted = !isMuteActive(item);
+    const patch = muted
+      ? { muted: true, muteMessages: true, muteCalls: true, muteExpiresAt: null }
+      : { muted: false, muteMessages: false, muteCalls: false, muteExpiresAt: null };
+    setConversations(prev => uniqueConversations(prev.map(c => c.id === item.id ? { ...c, ...patch } : c)));
+    try {
+      const data = await api.patch<{
+        muted: boolean;
+        muteMessages: boolean;
+        muteCalls: boolean;
+        muteExpiresAt: string | null;
+      }>(`/api/conversations/${item.id}/mute`, {
+        muted,
+        muteMessages: muted,
+        muteCalls: muted,
+        expiresAt: null,
+      });
+      setConversations(prev => uniqueConversations(prev.map(c => c.id === item.id ? { ...c, ...data } : c)));
+    } catch { load(); }
   };
 
   const renderItem = ({ item }: { item: ConversationItem }) => {
@@ -1173,8 +1213,8 @@ const s = StyleSheet.create({
     width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
   },
   muteBadge: {
-    position: 'absolute', bottom: -2, left: -2,
-    width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', bottom: -3, left: -3,
+    width: 22, height: 22, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   convContent: { flex: 1, gap: 3 },
   convTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

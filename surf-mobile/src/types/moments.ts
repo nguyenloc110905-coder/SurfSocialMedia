@@ -12,6 +12,8 @@ export type MomentItem = {
   userDisplayName: string;
   userPhotoURL: string | null;
   mediaUrl: string;
+  thumbnailUrl?: string | null;
+  posterUrl?: string | null;
   mediaType: 'image' | 'video';
   caption?: string | null;
   filter?: string | null;

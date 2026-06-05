@@ -201,7 +201,9 @@ export default function FeedScreen({
     if (!resetSignal || resetSignal === lastResetSignalRef.current) return;
     lastResetSignalRef.current = resetSignal;
     scrollToTopFromTabPress();
-  }, [resetSignal, scrollToTopFromTabPress]);
+    setRefreshing(true);
+    fetchFeed(true);
+  }, [fetchFeed, resetSignal, scrollToTopFromTabPress, setRefreshing]);
 
   useEffect(() => () => {
     if (suppressFloatingHeaderTimerRef.current) clearTimeout(suppressFloatingHeaderTimerRef.current);

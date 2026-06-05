@@ -326,7 +326,10 @@ export default function ProfileScreen({
     if (!resetSignal) return;
     scrollRef.current?.scrollTo({ y: 0, animated: true });
     onScrollPositionChange?.(true);
-  }, [onScrollPositionChange, resetSignal]);
+    setRefreshing(true);
+    Promise.all([loadProfile(true), loadPosts(true), loadFriends(true), !isOwn ? loadFriendStatus() : Promise.resolve()])
+      .finally(() => setRefreshing(false));
+  }, [isOwn, loadFriendStatus, loadFriends, loadPosts, loadProfile, onScrollPositionChange, resetSignal]);
 
   useEffect(() => {
     if (!scrollTopSignal) return;
@@ -485,10 +488,11 @@ export default function ProfileScreen({
 
   const closeMediaSheet = () => setMediaSheet(null);
 
-  const openPreview = (url: string | null) => {
+  const openPreview = (url: string | null, options: { silentWhenMissing?: boolean } = {}) => {
     if (blockIfViewMode()) return;
     closeMediaSheet();
     if (!url) {
+      if (options.silentWhenMissing) return;
       Alert.alert(t('no_photo_title'), t('no_photo_message'));
       return;
     }
@@ -576,7 +580,7 @@ export default function ProfileScreen({
           style={StyleSheet.absoluteFill}
           onPress={() => {
             if (blockIfViewMode()) return;
-            canEditProfile ? handlePickProfileImage('cover') : openPreview(coverUrl);
+            canEditProfile ? handlePickProfileImage('cover') : openPreview(coverUrl, { silentWhenMissing: true });
           }}
         />
         <View style={s.coverTools}>

@@ -445,7 +445,7 @@ function VideoItem({
           );
         })}
         {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="contain" />}
-        {buffering && (
+        {active && buffering && (
           <View style={s.center}>
             <ActivityIndicator size="large" color="#fff" />
           </View>
@@ -629,6 +629,7 @@ export default function ShortVideoScreen({
   const [landscapeLocked, setLandscapeLocked] = useState(false);
   const viewedRef = useRef<Set<string>>(new Set());
   const scrollPositionChangeRef = useRef(onScrollPositionChange);
+  const handledClipRefreshSignalRef = useRef(clipRefreshSignal);
 
   useEffect(() => {
     scrollPositionChangeRef.current = onScrollPositionChange;
@@ -667,13 +668,16 @@ export default function ShortVideoScreen({
     onScrollPositionChange?.(true);
   }, [onScrollPositionChange, scrollTopSignal]);
 
-  const load = useCallback(async (mode: 'initial' | 'refresh' | 'more' = 'initial') => {
+  const load = useCallback(async (
+    mode: 'initial' | 'refresh' | 'more' = 'initial',
+    options: { showRefreshControl?: boolean } = {}
+  ) => {
     if (mode === 'initial' && items.length > 0 && lastFetched && Date.now() - lastFetched < 90_000) {
       setLoading(false);
       return;
     }
     if (mode === 'more') setLoadingMore(true);
-    else if (mode === 'refresh') setRefreshing(true);
+    else if (mode === 'refresh' && options.showRefreshControl !== false) setRefreshing(true);
     else setLoading(items.length === 0);
 
     try {
@@ -707,17 +711,23 @@ export default function ShortVideoScreen({
 
   useEffect(() => {
     if (!clipRefreshSignal) return;
+    if (!isActive) return;
+    if (handledClipRefreshSignalRef.current === clipRefreshSignal) return;
+    handledClipRefreshSignalRef.current = clipRefreshSignal;
     setActiveIndex(0);
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
-    load('refresh').catch(() => setRefreshing(false));
-  }, [clipRefreshSignal, load]);
+    load('refresh', { showRefreshControl: true }).catch(() => setRefreshing(false));
+  }, [clipRefreshSignal, isActive, load]);
 
   useEffect(() => {
     if (!isActive) return;
     const active = items[activeIndex];
     const next = items[activeIndex + 1];
+    const previous = items[activeIndex - 1];
     const nextThumb = next?.thumbnailUrl || (next?.videoUrl ? cloudinaryVideoThumbnail(next.videoUrl, reduceDataUsage) : null);
+    const previousThumb = previous?.thumbnailUrl || (previous?.videoUrl ? cloudinaryVideoThumbnail(previous.videoUrl, reduceDataUsage) : null);
     if (nextThumb) Image.prefetch(nextThumb).catch(() => {});
+    if (previousThumb) Image.prefetch(previousThumb).catch(() => {});
 
     if (!active || active._source === 'post') return;
     const key = `${active._source}:${active.id}`;
@@ -725,6 +735,13 @@ export default function ShortVideoScreen({
     viewedRef.current.add(key);
     api.post(`/api/videos/${active.id}/view`, {}).catch(() => {});
   }, [activeIndex, isActive, items, reduceDataUsage]);
+
+  useEffect(() => {
+    if (!isActive || loadingMore || !hasMore || items.length === 0) return;
+    if (activeIndex >= items.length - 3) {
+      load('more').catch(() => setLoadingMore(false));
+    }
+  }, [activeIndex, hasMore, isActive, items.length, load, loadingMore]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((token) => token.isViewable && typeof token.index === 'number');
@@ -738,7 +755,7 @@ export default function ShortVideoScreen({
     setHeight(Math.max(1, event.nativeEvent.layout.height));
   };
 
-  const refresh = () => load('refresh').catch(() => setRefreshing(false));
+  const refresh = () => load('refresh', { showRefreshControl: true }).catch(() => setRefreshing(false));
 
   const like = async (item: ShortVideo) => {
     const uid = user?.uid;
@@ -820,12 +837,13 @@ export default function ShortVideoScreen({
   const renderItem = useCallback(({ item, index }: { item: ShortVideo; index: number }) => {
     const liked = !!user?.uid && (item.likedBy ?? []).includes(user.uid);
     const isCurrent = isActive && index === activeIndex;
+    const shouldPreparePlayer = isActive && Math.abs(index - activeIndex) <= 1;
     return (
       <MemoizedVideoItem
         key={`${item._source}:${item.id}:${reduceDataUsage}`}
         item={item}
         active={isCurrent}
-        renderPlayer={isCurrent}
+        renderPlayer={shouldPreparePlayer}
         height={height}
         liked={liked}
         onLike={() => like(item)}
@@ -871,17 +889,17 @@ export default function ShortVideoScreen({
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 72 }}
         getItemLayout={getItemLayout}
-        windowSize={2}
-        initialNumToRender={1}
-        maxToRenderPerBatch={1}
-        updateCellsBatchingPeriod={80}
+        windowSize={5}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        updateCellsBatchingPeriod={40}
         removeClippedSubviews
         ListEmptyComponent={empty}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#fff" />}
         onEndReached={() => {
           if (!loadingMore && hasMore) load('more').catch(() => setLoadingMore(false));
         }}
-        onEndReachedThreshold={0.6}
+        onEndReachedThreshold={1.5}
       />
       <Modal
         visible={!!commentTarget}

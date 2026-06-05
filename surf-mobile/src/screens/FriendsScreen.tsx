@@ -133,7 +133,8 @@ export default function FriendsScreen({
     if (!resetSignal) return;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     onScrollPositionChange?.(true);
-  }, [resetSignal]);
+    void refreshAll();
+  }, [onScrollPositionChange, refreshAll, resetSignal]);
 
   useEffect(() => {
     if (!scrollTopSignal) return;

@@ -38,6 +38,14 @@ import { useT, type I18nKey } from '@/lib/i18n';
 export type { FeedPost };
 
 type Post = FeedPost;
+type VideoPosterMap = Record<string, string | null> | string[] | null | undefined;
+type VideoPosterSource = {
+  mediaThumbnails?: VideoPosterMap;
+  thumbnailUrls?: VideoPosterMap;
+  posterUrls?: VideoPosterMap;
+  thumbnailUrl?: string | null;
+  posterUrl?: string | null;
+};
 type Comment = {
   id: string;
   authorDisplayName: string;
@@ -195,7 +203,27 @@ function optimizeCloudinaryVideo(url: string, reduceDataUsage = false): string {
 }
 
 function cloudinaryVideoThumbnail(url: string, reduceDataUsage = false): string | null {
-  return null;
+  if (!url || !url.includes('res.cloudinary.com')) return null;
+  return url
+    .replace('/video/upload/', '/image/upload/w_360,q_auto,f_jpg,so_0/')
+    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+
+function mappedPosterForUrl(map: VideoPosterMap, url: string, index: number) {
+  if (!map) return null;
+  if (Array.isArray(map)) return map[index] || null;
+  return map[url] || null;
+}
+
+function postVideoPoster(post: VideoPosterSource | undefined, url: string, index: number, reduceDataUsage = false) {
+  return (
+    mappedPosterForUrl(post?.mediaThumbnails, url, index) ||
+    mappedPosterForUrl(post?.thumbnailUrls, url, index) ||
+    mappedPosterForUrl(post?.posterUrls, url, index) ||
+    post?.thumbnailUrl ||
+    post?.posterUrl ||
+    cloudinaryVideoThumbnail(url, reduceDataUsage)
+  );
 }
 
 function mediaOrientationForSize(width: number, height: number): MediaOrientation {
@@ -466,11 +494,11 @@ const iv = StyleSheet.create({
 });
 
 // ── VideoPlaceholder ──────────────────────────────────────────────────────────
-function VideoPlaceholder({ url }: { url?: string }) {
+function VideoPlaceholder({ url, thumbnailUrl }: { url?: string; thumbnailUrl?: string | null }) {
   const scheme = useColorScheme();
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const bg = scheme === 'dark' ? '#1a2535' : '#d1d5db';
-  const thumbnail = url ? cloudinaryVideoThumbnail(url, reduceDataUsage) : null;
+  const thumbnail = thumbnailUrl || (url ? cloudinaryVideoThumbnail(url, reduceDataUsage) : null);
   const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', MEDIA_W, url);
   return (
     <View style={[s.videoContainer, mediaStyle, { backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }]}>
@@ -482,12 +510,12 @@ function VideoPlaceholder({ url }: { url?: string }) {
 }
 
 // ── VideoMediaItem ────────────────────────────────────────────────────────────
-function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean }) {
+function VideoMediaItem({ url, isVisible, thumbnailUrl }: { url: string; isVisible: boolean; thumbnailUrl?: string | null }) {
   const [buffering, setBuffering] = useState(true);
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
-  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const thumbnail = thumbnailUrl || cloudinaryVideoThumbnail(url, reduceDataUsage);
   const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', MEDIA_W, url);
   const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
 
@@ -522,7 +550,7 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
         allowsPictureInPicture={false}
         contentFit="cover"
       />
-      {buffering && thumbnail && (
+      {(buffering || !isVisible) && thumbnail && (
         <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       )}
       {buffering && (
@@ -538,7 +566,7 @@ function VideoMediaItem({ url, isVisible }: { url: string; isVisible: boolean })
 }
 
 // ── MediaGrid ─────────────────────────────────────────────────────────────────
-function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) {
+function MediaGrid({ urls, isVisible, post }: { urls: string[]; isVisible: boolean; post?: FeedPost }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const count = urls.length;
@@ -546,9 +574,10 @@ function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) 
 
   if (count === 1) {
     if (isVideoUrl(urls[0])) {
+      const thumbnail = postVideoPoster(post, urls[0], 0, reduceDataUsage);
       return isVisible
-        ? <VideoMediaItem key={`${urls[0]}:${reduceDataUsage}`} url={urls[0]} isVisible />
-        : <VideoPlaceholder url={urls[0]} />;
+        ? <VideoMediaItem key={`${urls[0]}:${reduceDataUsage}`} url={urls[0]} isVisible thumbnailUrl={thumbnail} />
+        : <VideoPlaceholder url={urls[0]} thumbnailUrl={thumbnail} />;
     }
     return (
       <>
@@ -562,7 +591,7 @@ function MediaGrid({ urls, isVisible }: { urls: string[]; isVisible: boolean }) 
 
   const Tile = ({ url, idx, style }: { url: string; idx: number; style: object }) => (
     <TouchableOpacity onPress={() => setViewerIndex(idx)} activeOpacity={0.88} style={style}>
-      <FeedImage uri={url} style={StyleSheet.absoluteFill} />
+      <FeedImage uri={isVideoUrl(url) ? postVideoPoster(post, url, idx, reduceDataUsage) || url : url} style={StyleSheet.absoluteFill} />
       {isVideoUrl(url) && (
         <View style={mg.playOverlay}>
           <Ionicons name="play-circle" size={36} color="rgba(255,255,255,0.9)" />
@@ -1225,12 +1254,12 @@ const rs = StyleSheet.create({
 });
 
 // ── EmbedVideoItem ─────────────────────────────────────────────────────────
-function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean }) {
+function EmbedVideoItem({ url, isVisible, thumbnailUrl }: { url: string; isVisible: boolean; thumbnailUrl?: string | null }) {
   const [buffering, setBuffering] = useState(true);
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
   const setVideosMuted = useMediaPlaybackStore((state) => state.setVideosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
-  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const thumbnail = thumbnailUrl || cloudinaryVideoThumbnail(url, reduceDataUsage);
   const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', SHARED_MEDIA_W, url);
   const player = useVideoPlayer(optimizeCloudinaryVideo(url, reduceDataUsage), (p) => { p.loop = true; p.muted = muted; });
   useEffect(() => {
@@ -1250,7 +1279,7 @@ function EmbedVideoItem({ url, isVisible }: { url: string; isVisible: boolean })
         fullscreenOptions={{ enable: true }}
         allowsPictureInPicture={false}
       />
-      {buffering && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+      {(buffering || !isVisible) && thumbnail && <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
       {buffering && <View style={ev.loader}><ActivityIndicator color="#fff" size="small" /></View>}
       <TouchableOpacity style={s.muteBtn} onPress={() => setVideosMuted(!muted)}>
         <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={15} color="#fff" />
@@ -1279,9 +1308,9 @@ function SharedImageMedia({ uri }: { uri: string }) {
   return <FeedImage uri={uri} style={mediaStyle} resizeMode="cover" />;
 }
 
-function EmbedVideoPlaceholder({ url }: { url: string }) {
+function EmbedVideoPlaceholder({ url, thumbnailUrl }: { url: string; thumbnailUrl?: string | null }) {
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
-  const thumbnail = cloudinaryVideoThumbnail(url, reduceDataUsage);
+  const thumbnail = thumbnailUrl || cloudinaryVideoThumbnail(url, reduceDataUsage);
   const mediaStyle = useResponsiveMediaBox(thumbnail, 'portrait', SHARED_MEDIA_W, url);
   return (
     <View style={[ev.wrap, mediaStyle]}>
@@ -1303,7 +1332,9 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const text = parseMentions(sf.content ?? '');
   const firstMedia = sf.mediaUrls?.find(u => u && !isVideoUrl(u));
-  const firstVideo = sf.mediaUrls?.find(u => u && isVideoUrl(u));
+  const firstVideoIndex = sf.mediaUrls?.findIndex(u => u && isVideoUrl(u)) ?? -1;
+  const firstVideo = firstVideoIndex >= 0 ? sf.mediaUrls[firstVideoIndex] : undefined;
+  const firstVideoThumbnail = firstVideo ? postVideoPoster(sf, firstVideo, firstVideoIndex, reduceDataUsage) : null;
   const hasVideo = !!firstVideo;
   return (
     <View style={[se.wrap, { borderColor: C.border, borderLeftColor: C.accent }]}>
@@ -1320,8 +1351,8 @@ function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sh
         {text ? <Text style={[se.content, { color: C.text }]} numberOfLines={5}>{text}</Text> : null}
         {hasVideo && !firstMedia && (
           isVisible
-            ? <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible />
-            : <EmbedVideoPlaceholder url={firstVideo} />
+            ? <EmbedVideoItem key={`${firstVideo}:${reduceDataUsage}`} url={firstVideo} isVisible thumbnailUrl={firstVideoThumbnail} />
+            : <EmbedVideoPlaceholder url={firstVideo} thumbnailUrl={firstVideoThumbnail} />
         )}
         {firstMedia && <SharedImageMedia uri={firstMedia} />}
       </View>
@@ -2022,7 +2053,7 @@ function PostCard({ post, isVisible, navigation, onPostRemoved, hideOptions = fa
       {/* Media */}
       {post.mediaUrls?.length > 0 && (
         <View style={{ marginVertical: 4 }}>
-          <MediaGrid urls={post.mediaUrls} isVisible={isVisible} />
+          <MediaGrid urls={post.mediaUrls} isVisible={isVisible} post={post} />
         </View>
       )}
 

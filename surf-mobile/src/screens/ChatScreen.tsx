@@ -17,6 +17,9 @@ import {
   Modal,
   Pressable,
   Linking,
+  PanResponder,
+  Keyboard,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -276,14 +279,14 @@ type InfoSectionKey = 'members' | 'media' | 'files' | 'links' | 'security';
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 const DARK = {
-  bg: '#0f172a', card: '#111827', border: '#334155',
+  bg: '#0b1120', card: '#111827', border: '#334155',
   text: '#e2e8f0', subtext: '#64748b', accent: '#0ea5e9',
   ownBubble: '#0ea5e9', otherBubble: '#1e293b',
   ownText: '#fff', otherText: '#e2e8f0',
   input: '#1e293b', inputBorder: '#334155', soft: '#0b1220',
 };
 const LIGHT = {
-  bg: '#f8fafc', card: '#ffffff', border: '#e5edf5',
+  bg: '#f3f7fb', card: '#ffffff', border: '#e5edf5',
   text: '#1f2937', subtext: '#8ba0b7', accent: '#0ea5e9',
   ownBubble: '#0ea5e9', otherBubble: '#f1f7fb',
   ownText: '#fff', otherText: '#27364a',
@@ -654,6 +657,80 @@ function ActionRow({
   );
 }
 
+const SwipeableMessage = React.memo(({
+  item,
+  isOwn,
+  onReply,
+  children
+}: {
+  item: ApiMessage;
+  isOwn: boolean;
+  onReply: (item: ApiMessage) => void;
+  children: React.ReactNode;
+}) => {
+  const pan = useRef(new Animated.Value(0)).current;
+  const hasTriggeredRef = useRef(false);
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+      if (isOwn && gestureState.dx < -20 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) return true;
+      if (!isOwn && gestureState.dx > 20 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) return true;
+      return false;
+    },
+    onPanResponderGrant: () => {
+      hasTriggeredRef.current = false;
+    },
+    onPanResponderMove: (_, gestureState) => {
+      let dx = gestureState.dx;
+      if (isOwn) {
+        if (dx > 0) dx = 0;
+        else if (dx < -60) {
+          dx = -60 - Math.sqrt(-dx - 60);
+          if (!hasTriggeredRef.current && dx < -65) {
+            hasTriggeredRef.current = true;
+            Vibration.vibrate(50);
+          }
+        }
+      } else {
+        if (dx < 0) dx = 0;
+        else if (dx > 60) {
+          dx = 60 + Math.sqrt(dx - 60);
+          if (!hasTriggeredRef.current && dx > 65) {
+            hasTriggeredRef.current = true;
+            Vibration.vibrate(50);
+          }
+        }
+      }
+      pan.setValue(dx);
+    },
+    onPanResponderRelease: () => {
+      if (hasTriggeredRef.current) {
+        onReply(item);
+      }
+      Animated.spring(pan, {
+        toValue: 0,
+        useNativeDriver: true,
+        bounciness: 10,
+      }).start();
+    },
+    onPanResponderTerminate: () => {
+      Animated.spring(pan, {
+        toValue: 0,
+        useNativeDriver: true,
+      }).start();
+    }
+  }), [isOwn, item, onReply, pan]);
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={{ transform: [{ translateX: pan }] }}
+    >
+      {children}
+    </Animated.View>
+  );
+});
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ChatScreen({ navigation, route }: Props) {
@@ -730,6 +807,9 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [inviteSearch, setInviteSearch] = useState('');
   const [selectedInviteMemberIds, setSelectedInviteMemberIds] = useState<string[]>([]);
   const [inviteSending, setInviteSending] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(true);
+  const [androidKeyboardHeight, setAndroidKeyboardHeight] = useState(0);
   const isGroupConversation = !peerUid && !marketplace;
 
   const flatRef = useRef<FlatList>(null);
@@ -896,6 +976,13 @@ export default function ChatScreen({ navigation, route }: Props) {
         ? current.filter(id => id !== friend.id)
         : [...current, friend.id]
     );
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setAndroidKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setAndroidKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
   }, []);
 
   const submitInviteMembers = useCallback(async () => {
@@ -2273,8 +2360,9 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   // ── Send message ───────────────────────────────────────────────────────────
 
-  const handleSend = async () => {
-    const text = draft.trim();
+  const handleSend = async (overrideText?: string | null) => {
+    const rawText = typeof overrideText === 'string' ? overrideText : draft;
+    const text = rawText.trim();
     const pendingImages = draftImageAttachments;
     if (sendingRef.current || (!text && pendingImages.length === 0)) return;
 
@@ -4207,8 +4295,9 @@ export default function ChatScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         ) : (
-        <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
-          {!isOwn && (
+        <SwipeableMessage item={item} isOwn={isOwn} onReply={startReplyToMessage}>
+          <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
+            {!isOwn && (
             <TouchableOpacity
               style={s.msgAvatarWrap}
               activeOpacity={0.78}
@@ -4323,6 +4412,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             {renderSeenReceipts(receiptMembers)}
           </View>
         </View>
+        </SwipeableMessage>
         )}
       </>
     );
@@ -4377,21 +4467,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         </TouchableOpacity>
         <View style={s.headerActions}>
           <TouchableOpacity
-            style={[s.headerIconBtn, { backgroundColor: C.soft }]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            onPress={() => setConversationInfoOpen(true)}
-          >
-            <Ionicons name="information-circle-outline" size={21} color={C.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.headerIconBtn, { backgroundColor: C.soft }]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            onPress={() => setMessageSearchOpen(true)}
-          >
-            <Ionicons name="search-outline" size={20} color={C.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.headerIconBtn, { backgroundColor: C.soft }]}
+            style={[s.headerIconBtn]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={() => startCall('audio')}
             disabled={!canStartCall || Boolean(callingMode)}
@@ -4399,11 +4475,11 @@ export default function ChatScreen({ navigation, route }: Props) {
             {callingMode === 'audio' ? (
               <ActivityIndicator size={16} color={C.accent} />
             ) : (
-              <Ionicons name="call-outline" size={20} color={C.text} />
+              <Ionicons name="call" size={26} color={C.accent} />
             )}
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.headerIconBtn, { backgroundColor: C.soft }]}
+            style={[s.headerIconBtn]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={() => startCall('video')}
             disabled={!canStartCall || Boolean(callingMode)}
@@ -4411,8 +4487,15 @@ export default function ChatScreen({ navigation, route }: Props) {
             {callingMode === 'video' ? (
               <ActivityIndicator size={16} color={C.accent} />
             ) : (
-              <Ionicons name="videocam-outline" size={21} color={C.text} />
+              <Ionicons name="videocam" size={28} color={C.accent} />
             )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.headerIconBtn]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => setConversationInfoOpen(true)}
+          >
+            <Ionicons name="information-circle" size={28} color={C.accent} />
           </TouchableOpacity>
         </View>
       </View>
@@ -4495,7 +4578,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       {/* Messages */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <FlatList
@@ -4576,59 +4659,6 @@ export default function ChatScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             </View>
           )}
-          {!composerEditingMessage ? (
-            <View style={s.composerTools}>
-              <TouchableOpacity
-                style={[s.composerToolBtn, { backgroundColor: C.soft }]}
-                onPress={handlePickFile}
-                disabled={sending}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="document-attach-outline" size={18} color={sending ? C.border : C.accent} />
-                <Text style={[s.composerToolText, { color: sending ? C.border : C.accent }]}>File</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  s.composerToolBtn,
-                  { backgroundColor: recording ? '#fee2e2' : C.soft },
-                ]}
-                onPress={toggleVoiceRecording}
-                disabled={sending}
-                activeOpacity={0.75}
-              >
-                <Ionicons name={recording ? 'stop-circle' : 'mic-outline'} size={19} color={recording ? '#ef4444' : sending ? C.border : C.accent} />
-                <Text style={[s.composerToolText, { color: recording ? '#ef4444' : sending ? C.border : C.accent }]}>
-                  {recording ? 'Dừng' : 'Ghi âm'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.composerToolBtn, { backgroundColor: C.soft }]}
-                onPress={() => appendDraftToken('😊')}
-                disabled={sending}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="happy-outline" size={19} color={sending ? C.border : C.accent} />
-                <Text style={[s.composerToolText, { color: sending ? C.border : C.accent }]}>Emoji</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.composerToolBtn, { backgroundColor: C.soft }]}
-                onPress={() => appendDraftToken('🙂')}
-                disabled={sending}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="chatbubble-ellipses-outline" size={18} color={sending ? C.border : C.accent} />
-                <Text style={[s.composerToolText, { color: sending ? C.border : C.accent }]}>Sticker</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.composerToolBtn, { backgroundColor: C.soft }]}
-                onPress={() => appendDraftToken('GIF')}
-                disabled={sending}
-                activeOpacity={0.75}
-              >
-                <Text style={[s.composerGifText, { color: sending ? C.border : C.accent }]}>GIF</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
           {!composerEditingMessage && draftImageAttachments.length > 0 ? (
             <View style={[s.draftImageTray, { backgroundColor: C.soft, borderColor: C.border }]}>
               <FlatList
@@ -4667,32 +4697,73 @@ export default function ChatScreen({ navigation, route }: Props) {
             </View>
           ) : null}
           <View style={s.composerInputRow}>
-            <TouchableOpacity style={s.mediaBtn} onPress={handlePickMedia} activeOpacity={0.7} disabled={sending || Boolean(composerEditingMessage)}>
-              <Ionicons name="image-outline" size={24} color={sending || composerEditingMessage ? C.border : C.subtext} />
-            </TouchableOpacity>
+            {!composerEditingMessage && (
+              <>
+                {composerExpanded ? (
+                  <>
+                    <TouchableOpacity style={s.composerActionBtn} onPress={() => setPlusMenuOpen(true)} activeOpacity={0.7} disabled={sending}>
+                      <Ionicons name="add-circle" size={26} color={C.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.composerActionBtn} onPress={() => pickImageAttachments('camera-photo')} activeOpacity={0.7} disabled={sending}>
+                      <Ionicons name="camera" size={24} color={C.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.composerActionBtn} onPress={() => pickImageAttachments('library')} activeOpacity={0.7} disabled={sending}>
+                      <Ionicons name="image" size={24} color={C.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.composerActionBtn} onPress={toggleVoiceRecording} activeOpacity={0.7} disabled={sending}>
+                      <Ionicons name="mic" size={24} color={recording ? '#ef4444' : C.accent} />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity style={s.composerActionBtn} onPress={() => setComposerExpanded(true)} activeOpacity={0.7} disabled={sending}>
+                    <Ionicons name="chevron-forward" size={26} color={C.accent} />
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
             <View style={[s.inputWrap, { backgroundColor: C.input, borderColor: C.inputBorder }]}>
               <TextInput
                 ref={inputRef}
-                style={[s.input, { color: C.text }]}
-                placeholder={composerEditingMessage ? 'Sửa tin nhắn...' : t('chat_placeholder')}
+                style={[s.input, { color: C.text, paddingRight: composerEditingMessage ? 12 : 40 }]}
+                placeholder={composerEditingMessage ? 'Sửa tin nhắn...' : 'Nhắn tin'}
                 placeholderTextColor={C.subtext}
                 value={draft}
                 onChangeText={handleDraftChange}
+                onFocus={() => setComposerExpanded(false)}
                 multiline
                 maxLength={2000}
                 returnKeyType="default"
               />
+              {!composerEditingMessage && (
+                <TouchableOpacity 
+                  style={s.emojiBtnInside} 
+                  onPress={() => appendDraftToken('😊')} 
+                  activeOpacity={0.7} 
+                  disabled={sending}
+                >
+                  <Ionicons name="happy-outline" size={22} color={C.accent} />
+                </TouchableOpacity>
+              )}
             </View>
+
             <TouchableOpacity
-              style={[s.sendBtn, { backgroundColor: canSubmitComposer ? C.accent : C.border }]}
-              onPress={handleSend}
-              disabled={!canSubmitComposer || sending}
+              style={s.sendBtnLike}
+              onPress={() => {
+                if (canSubmitComposer) handleSend();
+                else handleSend('🌊');
+              }}
+              disabled={sending}
               activeOpacity={0.8}
             >
               {sending ? (
-                <ActivityIndicator size={16} color="#fff" />
+                <ActivityIndicator size={16} color={C.accent} />
               ) : (
-                <Ionicons name={composerEditingMessage ? 'checkmark' : 'send'} size={18} color="#fff" />
+                <Ionicons 
+                  name={composerEditingMessage ? 'checkmark-circle' : canSubmitComposer ? 'send' : 'water'} 
+                  size={26} 
+                  color={C.accent} 
+                />
               )}
             </TouchableOpacity>
           </View>
@@ -4707,6 +4778,20 @@ export default function ChatScreen({ navigation, route }: Props) {
       {renderMessageSearchModal()}
       {renderConversationInfoModal()}
       {renderInviteMembersModal()}
+      <Modal visible={plusMenuOpen} transparent animationType="fade" onRequestClose={() => setPlusMenuOpen(false)}>
+        <Pressable style={s.modalBackdrop} onPress={() => setPlusMenuOpen(false)}>
+          <Pressable style={[s.plusMenuSheet, { backgroundColor: C.card, borderColor: C.border }]}>
+            <View style={s.plusMenuGrid}>
+              <TouchableOpacity style={s.plusMenuItem} onPress={() => { setPlusMenuOpen(false); handlePickFile(); }}>
+                <View style={[s.plusMenuIconWrap, { backgroundColor: C.soft }]}>
+                  <Ionicons name="document-attach-outline" size={24} color={C.accent} />
+                </View>
+                <Text style={[s.plusMenuText, { color: C.text }]}>File</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
       {renderMediaPreviewModal()}
     </SafeAreaView>
   );
@@ -4719,6 +4804,7 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10,
+    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3,
   },
   headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, overflow: 'hidden' },
@@ -4867,12 +4953,20 @@ const s = StyleSheet.create({
   dateHeader: { alignItems: 'center', marginVertical: 12 },
   dateHeaderText: { fontSize: 12, fontWeight: '500' },
   pinnedBar: {
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   pinnedIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   pinnedCopy: { flex: 1, minWidth: 0 },
@@ -5454,4 +5548,12 @@ const s = StyleSheet.create({
   mediaPreviewBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingBottom: 24 },
   mediaPreviewFrame: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   mediaPreviewImage: { width: '100%', height: '100%' },
+  plusMenuSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10 },
+  plusMenuGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 16 },
+  plusMenuItem: { width: '20%', alignItems: 'center', gap: 8 },
+  plusMenuIconWrap: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  plusMenuText: { fontSize: 11, textAlign: 'center', fontWeight: '500' },
+  emojiBtnInside: { position: 'absolute', right: 10, bottom: 8, padding: 4 },
+  sendBtnLike: { padding: 4, marginLeft: 2, alignSelf: 'center' },
+  composerActionBtn: { paddingHorizontal: 4, alignSelf: 'center' },
 });

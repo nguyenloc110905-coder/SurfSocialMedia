@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
-import type { MomentGroup } from '@/types/moments';
+import type { MomentGroup, MomentItem } from '@/types/moments';
 import MomentViewer from './MomentViewer';
 
 type Props = {
@@ -81,6 +81,11 @@ function videoPoster(url: string) {
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
+function momentPoster(moment?: MomentItem | null) {
+  if (!moment) return null;
+  return moment.thumbnailUrl || moment.posterUrl || videoPoster(moment.mediaUrl);
+}
+
 function prefetchMomentMedia(groups: MomentGroup[]) {
   groups
     .flatMap((group) => group.moments)
@@ -90,7 +95,7 @@ function prefetchMomentMedia(groups: MomentGroup[]) {
         Image.prefetch(moment.mediaUrl).catch(() => {});
         return;
       }
-      const poster = videoPoster(moment.mediaUrl);
+      const poster = momentPoster(moment);
       if (poster) Image.prefetch(poster).catch(() => {});
     });
 }
@@ -193,7 +198,7 @@ export default function MomentsBar({ navigation }: Props) {
 
           const latest = item.group.moments[0];
           const mediaUrl = latest?.mediaUrl;
-          const poster = mediaUrl && isVideoUrl(mediaUrl) ? videoPoster(mediaUrl) : mediaUrl;
+          const poster = latest?.mediaType === 'video' ? momentPoster(latest) : mediaUrl;
           const own = item.group.userId === user?.uid;
 
           return (

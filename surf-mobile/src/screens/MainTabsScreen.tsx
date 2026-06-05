@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   AppState,
   Animated,
   BackHandler,
@@ -28,6 +27,7 @@ import { useNotificationStore, type NotificationItem, type RealtimeMessagePayloa
 import { useFriendStore } from '@/stores/friendStore';
 import { useMessageStore } from '@/stores/messageStore';
 import { useFeedStore } from '@/stores/feedStore';
+import { useClipStore } from '@/stores/clipStore';
 import Sidebar from '@/components/Sidebar';
 import { useT, type I18nKey } from '@/lib/i18n';
 
@@ -125,7 +125,6 @@ export default function MainTabsScreen({ navigation }: Props) {
     mode: 'tap' | 'drag' | 'back' | 'fade';
     trackHistory: boolean;
   } | null>(null);
-  const [reloadingTab, setReloadingTab] = useState<Tab | null>(null);
   const [feedFloatingHeaderVisible, setFeedFloatingHeaderVisible] = useState(false);
   const [tabAtTop, setTabAtTop] = useState<Record<Tab, boolean>>({
     home: true,
@@ -164,6 +163,7 @@ export default function MainTabsScreen({ navigation }: Props) {
   const unreadMessages = useMessageStore((state) => state.unreadConversations);
   const setUnreadMessages = useMessageStore((state) => state.setUnreadConversations);
   const refreshFeed = useFeedStore((state) => state.fetch);
+  const requestClipRefresh = useClipStore((state) => state.requestRefresh);
   const incomingFriendRequests = useFriendStore((state) => state.incomingRequests.length);
   const { isOpen: sidebarOpen, toggleSidebar, closeSidebar } = useSidebarStore();
   const visibleFriendRequests = Math.max(0, incomingFriendRequests - seenBadgeCounts.friends);
@@ -174,7 +174,6 @@ export default function MainTabsScreen({ navigation }: Props) {
   const tabHistoryRef = useRef<Tab[]>(['home']);
   const tabSlideX = useRef(new Animated.Value(0)).current;
   const indicatorProgress = useRef(new Animated.Value(0)).current;
-  const reloadDrop = useRef(new Animated.Value(0)).current;
   const feedHeaderCollapse = useRef(new Animated.Value(0)).current;
   const feedChromeCollapse = useRef(new Animated.Value(0)).current;
   const feedFloatingHeader = useRef(new Animated.Value(1)).current;
@@ -243,28 +242,11 @@ export default function MainTabsScreen({ navigation }: Props) {
 
   const reloadCurrentTab = useCallback((tab: Tab) => {
     setResetSignals((signals) => ({ ...signals, [tab]: signals[tab] + 1 }));
-    reloadDrop.stopAnimation();
-    reloadDrop.setValue(0);
-    setReloadingTab(tab);
-    Animated.sequence([
-      Animated.timing(reloadDrop, {
-        toValue: 1,
-        duration: 170,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(reloadDrop, {
-        toValue: 2,
-        duration: 260,
-        delay: 180,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setReloadingTab((current) => (current === tab ? null : current));
-      reloadDrop.setValue(0);
-    });
-  }, [reloadDrop]);
+  }, []);
+
+  const reloadClipsTab = useCallback(() => {
+    requestClipRefresh();
+  }, [requestClipRefresh]);
 
   const finishTabTransition = useCallback((tab: Tab, trackHistory: boolean) => {
     activeRef.current = tab;
@@ -312,6 +294,10 @@ export default function MainTabsScreen({ navigation }: Props) {
 
     visited.add(tab);
     if (tab === current) {
+      if (tab === 'video') {
+        reloadClipsTab();
+        return;
+      }
       if (tabAtTop[tab]) reloadCurrentTab(tab);
       else scrollCurrentTabToTop(tab);
       return;
@@ -328,7 +314,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     indicatorProgress.stopAnimation();
     tabSlideX.setValue(0);
     setTransition({ from: current, to: tab, direction, mode, trackHistory });
-  }, [indicatorProgress, reloadCurrentTab, scrollCurrentTabToTop, setTransition, tabAtTop, tabSlideX, visited]);
+  }, [indicatorProgress, reloadClipsTab, reloadCurrentTab, scrollCurrentTabToTop, setTransition, tabAtTop, tabSlideX, visited]);
 
   const handleTab = useCallback((tab: Tab) => {
     acknowledgeTabBadge(tab);
@@ -763,40 +749,6 @@ export default function MainTabsScreen({ navigation }: Props) {
             },
           ]}
         />
-      )}
-      {reloadingTab && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            s.reloadDrop,
-            {
-              opacity: reloadDrop.interpolate({
-                inputRange: [0, 0.18, 1.45, 2],
-                outputRange: [0, 1, 1, 0],
-                extrapolate: 'clamp',
-              }),
-              transform: [
-                {
-                  translateY: reloadDrop.interpolate({
-                    inputRange: [0, 1, 2],
-                    outputRange: [-12, 10, 20],
-                    extrapolate: 'clamp',
-                  }),
-                },
-                {
-                  rotate: reloadDrop.interpolate({
-                    inputRange: [0, 2],
-                    outputRange: ['0deg', '280deg'],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <View style={[s.reloadBubble, { backgroundColor: floating ? 'rgba(15,23,42,0.72)' : C.bg }]}>
-            <ActivityIndicator size="small" color={floating ? '#fff' : C.accent} />
-          </View>
-        </Animated.View>
       )}
       {TABS.map((tab) => {
         const isActive = visualActive === tab.key;
@@ -1324,25 +1276,6 @@ const s = StyleSheet.create({
     bottom: 0,
     height: 3,
     borderRadius: 2,
-  },
-  reloadDrop: {
-    position: 'absolute',
-    left: '50%',
-    bottom: -2,
-    marginLeft: -15,
-    zIndex: 3,
-  },
-  reloadBubble: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.14,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
   },
   topBadge: {
     position: 'absolute',

@@ -15,6 +15,11 @@ export type FeedPost = {
     color?: string;
   } | null;
   mediaUrls: string[];
+  mediaThumbnails?: Record<string, string | null> | string[] | null;
+  thumbnailUrls?: Record<string, string | null> | string[] | null;
+  posterUrls?: Record<string, string | null> | string[] | null;
+  thumbnailUrl?: string | null;
+  posterUrl?: string | null;
   createdAt: { _seconds?: number; seconds?: number } | string | number | null;
   likeCount: number;
   replyCount: number;
@@ -32,6 +37,11 @@ export type FeedPost = {
     content: string;
     textStyle?: FeedPost['textStyle'];
     mediaUrls: string[];
+    mediaThumbnails?: FeedPost['mediaThumbnails'];
+    thumbnailUrls?: FeedPost['thumbnailUrls'];
+    posterUrls?: FeedPost['posterUrls'];
+    thumbnailUrl?: string | null;
+    posterUrl?: string | null;
     createdAt: FeedPost['createdAt'];
   };
   feeling?: string;
