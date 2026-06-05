@@ -10,7 +10,7 @@ import {
   markTabAuthAction,
   auth,
 } from '@/lib/firebase/auth';
-import { fetchSignInMethodsForEmail } from 'firebase/auth';
+import { fetchSignInMethodsForEmail, signInWithCustomToken } from 'firebase/auth';
 import { syncUserProfile, api } from '@/lib/api';
 import { PHONE_COUNTRIES } from '@/lib/phone-countries';
 
@@ -227,6 +227,8 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showOtp, setShowOtp] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
   const loginFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -237,12 +239,24 @@ export default function AuthPage() {
     setRegName('');
     setRegPhone('');
     setError('');
+    setShowOtp(false);
+    setOtpCode('');
     loginFormRef.current?.reset();
   }, []);
 
   useEffect(() => {
     setMode(isRegister ? 'register' : 'login');
   }, [isRegister]);
+
+  // Handle URL errors (e.g. from forced signout)
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.get('error') === 'account_disabled') {
+      setError('Tài khoản của bạn đã bị vô hiệu hóa hoặc xóa!');
+      // Xoá param khỏi URL để tránh báo lỗi mãi
+      window.history.replaceState({}, document.title, location.pathname);
+    }
+  }, [location]);
 
 
   /* ─── Auth executors ─────────────────────────────────────────────────── */
@@ -266,18 +280,47 @@ export default function AuthPage() {
     }
   };
 
-  const executeRegister = async () => {
+  const executeRegisterSendOtp = async () => {
+    setLoading(true);
+    try {
+      const payload = {
+        email: regEmail.trim(),
+        password: regPassword,
+        displayName: regName.trim(),
+      };
+      // Gửi request lên backend để sinh OTP và gửi email
+      const res = await api.post<{ sent: boolean }>('/api/auth/register/send-otp', payload, { requireAuth: false });
+      if (res.sent) {
+        setShowOtp(true);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Không thể gửi mã xác nhận. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const executeRegisterVerifyOtp = async () => {
     markTabAuthAction();
     setLoading(true);
     try {
-      const result = await signUp(regEmail.trim(), regPassword, regName.trim());
-      await result.user.getIdToken();
-      await new Promise((r) => setTimeout(r, 800));
-      await syncUserProfile();
-      api.post('/api/auth/notify-register').catch(() => { });
-      navigate('/onboarding', { replace: true });
-    } catch (err: unknown) {
-      setError(getAuthErrorMessage(err, 'Đăng ký thất bại. Vui lòng thử lại.'));
+      // Backend xác minh OTP và tạo user, trả về customToken
+      const res = await api.post<{ customToken?: string }>('/api/auth/register/verify', {
+        email: regEmail.trim(),
+        code: otpCode,
+      }, { requireAuth: false });
+      
+      if (res.customToken) {
+        // Đăng nhập bằng custom token từ backend
+        const result = await signInWithCustomToken(auth, res.customToken);
+        await result.user.getIdToken();
+        await new Promise((r) => setTimeout(r, 800));
+        await syncUserProfile();
+        api.post('/api/auth/notify-register').catch(() => { });
+        navigate('/onboarding', { replace: true });
+      }
+    } catch (err: any) {
+      setError(err.message || 'Mã xác nhận không đúng hoặc đã hết hạn.');
     } finally {
       setLoading(false);
     }
@@ -421,7 +464,17 @@ export default function AuthPage() {
       setError('Mật khẩu nhập lại không khớp.');
       return;
     }
-    await executeRegister();
+    await executeRegisterSendOtp();
+  };
+
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (otpCode.length < 6) {
+      setError('Vui lòng nhập đủ 6 số.');
+      return;
+    }
+    await executeRegisterVerifyOtp();
   };
 
   const handleGoogleSignIn = async () => {
@@ -437,6 +490,8 @@ export default function AuthPage() {
   const switchMode = (to: 'login' | 'register') => {
     setError('');
     setMode(to);
+    setShowOtp(false);
+    setOtpCode('');
     navigate(to === 'register' ? '/register' : '/login', { replace: true });
   };
 
@@ -601,129 +656,161 @@ export default function AuthPage() {
               <div
                 className={`auth-slide ${mode === 'register' ? 'auth-slide-active' : 'auth-slide-right'}`}
               >
-                <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Tên hiển thị
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Nguyễn Văn A"
-                      value={regName}
-                      onChange={(e) => setRegName(e.target.value)}
-                      className={INPUT}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      placeholder="you@example.com"
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                      className={INPUT}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Mật khẩu
-                    </label>
-                    <PasswordInput
-                      value={regPassword}
-                      onChange={setRegPassword}
-                      placeholder="Ít nhất 6 ký tự"
-                      autoComplete="new-password"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Nhập lại mật khẩu
-                    </label>
-                    <PasswordInput
-                      value={regConfirmPassword}
-                      onChange={setRegConfirmPassword}
-                      placeholder="Xác nhận mật khẩu"
-                      autoComplete="new-password"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Số điện thoại <span className="text-white/30">(tuỳ chọn)</span>
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        value={regPhoneCountry}
-                        onChange={(e) => setRegPhoneCountry(e.target.value)}
-                        className="w-28 px-2 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] text-white/80 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 text-sm"
-                      >
-                        {PHONE_COUNTRIES.map(({ iso, code }) => (
-                          <option key={iso} value={iso} className="bg-slate-800 text-white">
-                            {iso} ({code})
-                          </option>
-                        ))}
-                      </select>
+                {!showOtp ? (
+                  <>
+                    <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
+                          Tên hiển thị
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Nguyễn Văn A"
+                          value={regName}
+                          onChange={(e) => setRegName(e.target.value)}
+                          className={INPUT}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
+                          Email
+                        </label>
+                        <input
+                          type="email"
+                          autoComplete="email"
+                          placeholder="you@example.com"
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                          className={INPUT}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
+                          Mật khẩu
+                        </label>
+                        <PasswordInput
+                          value={regPassword}
+                          onChange={setRegPassword}
+                          placeholder="Ít nhất 6 ký tự"
+                          autoComplete="new-password"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
+                          Nhập lại mật khẩu
+                        </label>
+                        <PasswordInput
+                          value={regConfirmPassword}
+                          onChange={setRegConfirmPassword}
+                          placeholder="Xác nhận mật khẩu"
+                          autoComplete="new-password"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
+                          Số điện thoại <span className="text-white/30">(tuỳ chọn)</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={regPhoneCountry}
+                            onChange={(e) => setRegPhoneCountry(e.target.value)}
+                            className="w-28 px-2 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] text-white/80 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 text-sm"
+                          >
+                            {PHONE_COUNTRIES.map(({ iso, code }) => (
+                              <option key={iso} value={iso} className="bg-slate-800 text-white">
+                                {iso} ({code})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="tel"
+                            placeholder="Số điện thoại"
+                            value={regPhone}
+                            onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
+                            className={`${INPUT} flex-1`}
+                          />
+                        </div>
+                      </div>
+                      <button type="submit" disabled={loading} className={`${BTN_PRIMARY} mt-1`}>
+                        {loading ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Đang xử lý...
+                          </span>
+                        ) : (
+                          'Tiếp tục'
+                        )}
+                      </button>
+                    </form>
+
+                    <div className="flex items-center gap-3 my-4">
+                      <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                      <span className="text-xs text-white/30 uppercase tracking-widest">hoặc</span>
+                      <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGoogleSignIn}
+                      disabled={loading}
+                      className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] hover:bg-white/[0.12] transition-all duration-200 disabled:opacity-50 text-white/80 font-medium"
+                    >
+                      <GoogleIcon /> Đăng ký với Google
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleFacebookSignIn}
+                      disabled={loading}
+                      className="w-full flex items-center justify-center gap-2.5 py-3 mt-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] transition-all duration-200 disabled:opacity-50 text-white font-medium"
+                    >
+                      <FacebookIcon /> Đăng ký với Facebook
+                    </button>
+                  </>
+                ) : (
+                  <form onSubmit={handleVerifyOtpSubmit} className="flex flex-col gap-4 py-4">
+                    <div className="text-center mb-2">
+                      <h3 className="text-white text-lg font-semibold">Xác thực Email</h3>
+                      <p className="text-white/60 text-sm mt-1">Mã xác nhận 6 số đã được gửi tới <strong>{regEmail}</strong>.</p>
+                    </div>
+                    <div>
                       <input
-                        type="tel"
-                        placeholder="Số điện thoại"
-                        value={regPhone}
-                        onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
-                        className={`${INPUT} flex-1`}
+                        type="text"
+                        placeholder="Nhập mã 6 số"
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        className={`${INPUT} text-center tracking-[0.5em] font-mono text-xl py-4`}
+                        required
+                        maxLength={6}
                       />
                     </div>
-                  </div>
-                  <button type="submit" disabled={loading} className={`${BTN_PRIMARY} mt-1`}>
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                          />
-                        </svg>
-                        Đang xử lý...
-                      </span>
-                    ) : (
-                      'Tạo tài khoản'
-                    )}
-                  </button>
-                </form>
-
-                <div className="flex items-center gap-3 my-4">
-                  <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                  <span className="text-xs text-white/30 uppercase tracking-widest">hoặc</span>
-                  <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] hover:bg-white/[0.12] transition-all duration-200 disabled:opacity-50 text-white/80 font-medium"
-                >
-                  <GoogleIcon /> Đăng ký với Google
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleFacebookSignIn}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2.5 py-3 mt-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] transition-all duration-200 disabled:opacity-50 text-white font-medium"
-                >
-                  <FacebookIcon /> Đăng ký với Facebook
-                </button>
+                    <button type="submit" disabled={loading || otpCode.length < 6} className={`${BTN_PRIMARY} mt-2`}>
+                      {loading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Đang xác thực...
+                        </span>
+                      ) : (
+                        'Xác nhận mã OTP'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => setShowOtp(false)}
+                      className="text-white/50 text-sm hover:text-white transition-colors"
+                    >
+                      Quay lại chỉnh sửa thông tin
+                    </button>
+                  </form>
+                )}
 
                 {mode === 'register' && <ErrorBanner message={error} />}
               </div>

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomInt } from 'crypto';
 import { logger } from '../config/logger.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { sendLoginNotification, sendWelcomeEmail, sendOtpEmail } from '../services/email.js';
+import { sendLoginNotification, sendWelcomeEmail, sendOtpEmail, sendRegisterOtpEmail } from '../services/email.js';
 import { getAuth } from '../config/firebase-admin.js';
 import { setOtp, verifyAndConsumeOtp } from '../utils/otp-store.js';
 
@@ -267,6 +267,115 @@ router.delete('/account', requireAuth, async (req: AuthRequest, res) => {
     res.json({ success: true });
   } catch (e) {
     logger.error('❌ delete-account error:', { stack: e instanceof Error ? e.stack : String(e) });
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/register/send-otp:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Gửi OTP xác nhận trước khi tạo tài khoản
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password, displayName]
+ *             properties:
+ *               email: { type: string }
+ *               password: { type: string }
+ *               displayName: { type: string }
+ *     responses:
+ *       200: { description: Đã gửi OTP }
+ *       400: { description: Email đã tồn tại hoặc lỗi khác }
+ */
+router.post('/register/send-otp', async (req, res) => {
+  try {
+    const { email, password, displayName } = req.body;
+    if (!email || !password || !displayName) {
+      res.status(400).json({ error: 'Thiếu thông tin.' });
+      return;
+    }
+
+    try {
+      await getAuth().getUserByEmail(email);
+      res.status(400).json({ error: 'Email này đã được sử dụng.' });
+      return;
+    } catch (e: any) {
+      // Bỏ qua lỗi user-not-found, nếu có lỗi khác thì trả về
+      if (e.code !== 'auth/user-not-found') {
+        res.status(500).json({ error: 'Lỗi kiểm tra email: ' + e.message });
+        return;
+      }
+    }
+
+    const code = randomInt(100000, 1000000).toString();
+    const payload = { email: String(email), password: String(password), displayName: String(displayName) };
+    
+    // Lưu OTP bằng email thay vì uid
+    setOtp(email, 'register', code, payload);
+
+    await sendRegisterOtpEmail(email, code);
+
+    res.json({ sent: true });
+  } catch (e) {
+    logger.error('❌ register send-otp error:', { stack: e instanceof Error ? e.stack : String(e) });
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/register/verify:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Xác minh OTP và tạo tài khoản Firebase
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, code]
+ *             properties:
+ *               email: { type: string }
+ *               code: { type: string }
+ *     responses:
+ *       200: { description: Trả về customToken để client đăng nhập }
+ *       400: { description: Mã OTP sai hoặc hết hạn }
+ */
+router.post('/register/verify', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      res.status(400).json({ error: 'Thiếu thông tin.' });
+      return;
+    }
+
+    const payload = verifyAndConsumeOtp(email, 'register', String(code).trim());
+    if (!payload) {
+      res.status(400).json({ error: 'Mã xác nhận không đúng hoặc đã hết hạn.' });
+      return;
+    }
+
+    // Tạo user
+    const userRecord = await getAuth().createUser({
+      email: payload.email,
+      password: payload.password,
+      displayName: payload.displayName,
+      emailVerified: true
+    });
+
+    // Tạo custom token
+    const customToken = await getAuth().createCustomToken(userRecord.uid);
+    res.json({ success: true, customToken });
+  } catch (e) {
+    logger.error('❌ register verify error:', { stack: e instanceof Error ? e.stack : String(e) });
     res.status(500).json({ error: (e as Error).message });
   }
 });

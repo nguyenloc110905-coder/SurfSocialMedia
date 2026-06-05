@@ -4,6 +4,9 @@ import { subscribeAuth, isRecentTabAuthAction, auth } from '@/lib/firebase/auth'
 import { syncUserProfile } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 import { musicStore } from '@/lib/musicStore';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
+import { app } from '@/lib/firebase/config';
+import { signOut } from 'firebase/auth';
 
 interface AuthState {
   user: User | null;
@@ -45,6 +48,41 @@ function stopTokenRefresh() {
   }
 }
 
+let userStatusUnsubscribe: (() => void) | null = null;
+
+function startUserStatusListener(user: User) {
+  if (userStatusUnsubscribe) {
+    userStatusUnsubscribe();
+  }
+  const db = getFirestore(app);
+  const userRef = doc(db, 'users', user.uid);
+  
+  userStatusUnsubscribe = onSnapshot(userRef, (docSnap) => {
+    // Chỉ kích hoạt nếu document có trường status báo hiệu bị khóa
+    if (docSnap.exists() && (docSnap.data()?.status === 'banned' || docSnap.data()?.status === 'disabled')) {
+      console.warn('⚠️ Phát hiện tài khoản bị vô hiệu hóa qua field status realtime!');
+      signOut(auth).then(() => {
+        window.location.href = '/login?error=account_disabled';
+      });
+    }
+  }, (error) => {
+    // Nếu bị mất quyền đọc (Permission Denied do tài khoản Auth bị disable trên console)
+    if (error.code === 'permission-denied') {
+       console.warn('⚠️ Mất quyền truy cập Firebase, tài khoản đã bị vô hiệu hóa.');
+       signOut(auth).then(() => {
+          window.location.href = '/login?error=account_disabled';
+       });
+    }
+  });
+}
+
+function stopUserStatusListener() {
+  if (userStatusUnsubscribe) {
+    userStatusUnsubscribe();
+    userStatusUnsubscribe = null;
+  }
+}
+
 // Đồng bộ user từ Firebase vào store
 subscribeAuth((user) => {
   const prevState = useAuthStore.getState();
@@ -74,10 +112,12 @@ subscribeAuth((user) => {
   if (user) {
     connectSocket(user.uid);
     startTokenRefresh(user);
+    startUserStatusListener(user);
     musicStore.setUserId(user.uid);
   } else {
     disconnectSocket();
     stopTokenRefresh();
+    stopUserStatusListener();
     musicStore.setUserId(null);
   }
 

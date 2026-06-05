@@ -134,7 +134,14 @@ app.use(
 );
 
 // Mọi request /api đều cần đăng nhập; ensureUser tạo doc user nếu chưa có (để xuất hiện trong Gợi ý kết bạn)
-app.use('/api', requireAuth, ensureUser);
+app.use('/api', (req, res, next) => {
+  const publicPaths = ['/auth/register/send-otp', '/auth/register/verify', '/docs.json', '/health'];
+  // req.path ở đây là subpath sau '/api', ví dụ: req.path = '/auth/register/send-otp'
+  if (publicPaths.includes(req.path)) {
+    return next();
+  }
+  return requireAuth(req, res, () => ensureUser(req, res, next));
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);

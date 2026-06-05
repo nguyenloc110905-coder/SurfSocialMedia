@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { api, DEVICE_ID } from '@/lib/api';
 
-const HEARTBEAT_INTERVAL = 2 * 60 * 1000; // 2 minutes
+const HEARTBEAT_INTERVAL = 1 * 60 * 1000; // Kiểm tra mỗi 1 phút để cập nhật trạng thái nhanh hơn
 
 export function useSessionHeartbeat() {
   const user = useAuthStore((s) => s.user);
@@ -16,6 +16,12 @@ export function useSessionHeartbeat() {
 
     const sendHeartbeat = async () => {
       try {
+        const authUser = useAuthStore.getState().user;
+        if (authUser) {
+          // Ép Firebase kiểm tra xem tài khoản còn hoạt động không trên server
+          await authUser.reload();
+        }
+
         const ua = navigator.userAgent;
         let os = 'Unknown';
         if (ua.includes('Win')) os = 'Windows';
@@ -44,8 +50,16 @@ export function useSessionHeartbeat() {
           init: isFirst,
         });
         isFirst = false;
-      } catch (err) {
-        // If it throws an error and it's SESSION_LIMIT_EXCEEDED, api.ts already logs the user out.
+      } catch (err: any) {
+        // Bắt lỗi nếu tài khoản bị Vô hiệu hóa (Disable) hoặc Xóa (Delete) trên Console
+        if (err.code === 'auth/user-disabled' || err.code === 'auth/user-not-found' || err.code === 'auth/user-token-expired') {
+          console.warn('Tài khoản đã bị vô hiệu hóa hoặc xóa từ Firebase Console');
+          const { auth } = await import('@/lib/firebase/auth');
+          const { signOut } = await import('firebase/auth');
+          await signOut(auth);
+          window.location.href = '/login?error=account_disabled';
+          return; // Dừng heartbeat lại
+        }
         console.warn('Session heartbeat failed:', err);
       } finally {
         timeoutId = setTimeout(sendHeartbeat, HEARTBEAT_INTERVAL);
