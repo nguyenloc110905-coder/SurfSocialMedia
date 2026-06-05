@@ -141,8 +141,13 @@ export interface UpdateListingInput {
   brand?: string;
   productType?: string;
   material?: string;
+  availability?: ListingAvailability;
   status?: Extract<ListingStatus, 'active' | 'sold'>;
   saleStatus?: SellerSaleStatus;
+  tags?: string[];
+  sku?: string;
+  meetingPreferences?: string[];
+  hideFromFriends?: boolean;
 }
 
 export interface BoostListingInput {

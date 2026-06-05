@@ -38,8 +38,9 @@ import MessagesScreen from './MessagesScreen';
 import NotificationCenterScreen from './NotificationCenterScreen';
 import FriendsScreen from './FriendsScreen';
 import ProfileScreen from './ProfileScreen';
+import MarketplaceScreen from './MarketplaceScreen';
 
-type Tab = 'home' | 'feed' | 'video' | 'friends' | 'messages' | 'notifications' | 'profile';
+type Tab = 'home' | 'feed' | 'video' | 'friends' | 'market' | 'messages' | 'notifications' | 'profile';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -80,12 +81,13 @@ const TABS: TabDef[] = [
   { key: 'feed', icon: 'home-outline', iconActive: 'home', labelKey: 'nav_feed' },
   { key: 'video', icon: 'videocam-outline', iconActive: 'videocam', labelKey: 'nav_surf_clips' },
   { key: 'friends', icon: 'people-outline', iconActive: 'people', labelKey: 'nav_friends' },
+  { key: 'market', icon: 'storefront-outline', iconActive: 'storefront', labelKey: 'nav_market' },
   { key: 'messages', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', labelKey: 'nav_messages' },
   { key: 'notifications', icon: 'notifications-outline', iconActive: 'notifications', labelKey: 'nav_notifications' },
   { key: 'profile', icon: 'person-circle-outline', iconActive: 'person-circle', labelKey: 'nav_profile' },
 ];
 
-const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'messages', 'notifications', 'profile'];
+const TAB_ORDER: Tab[] = ['home', 'feed', 'video', 'friends', 'market', 'messages', 'notifications', 'profile'];
 const TOP_TAB_COUNT = TABS.length;
 const TAB_PRESS_TRANSITION_MS = 240;
 const FEED_BRAND_HEADER_H = 44;
@@ -94,6 +96,7 @@ const FEED_TAB_HEADER_H = 46;
 const TAB_TITLE_KEYS: Record<Exclude<Tab, 'home' | 'feed'>, I18nKey> = {
   video: 'nav_surf_clips',
   friends: 'nav_friends',
+  market: 'nav_market',
   messages: 'nav_messages',
   notifications: 'nav_notifications',
   profile: 'nav_profile',
@@ -126,6 +129,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     feed: true,
     video: true,
     friends: true,
+    market: true,
     messages: true,
     notifications: true,
     profile: true,
@@ -136,6 +140,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     feed: 0,
     video: 0,
     friends: 0,
+    market: 0,
     messages: 0,
     notifications: 0,
     profile: 0,
@@ -145,6 +150,7 @@ export default function MainTabsScreen({ navigation }: Props) {
     feed: 0,
     video: 0,
     friends: 0,
+    market: 0,
     messages: 0,
     notifications: 0,
     profile: 0,
@@ -1092,6 +1098,18 @@ export default function MainTabsScreen({ navigation }: Props) {
               safeTop={false}
               showTitleBlock={false}
               onScrollPositionChange={(atTop) => updateTabAtTop('friends', atTop)}
+            />
+          </Animated.View>
+        )}
+
+        {shouldRenderTab('market') && (
+          <Animated.View style={sceneStyleFor('market')} pointerEvents={active === 'market' ? 'auto' : 'none'}>
+            <MarketplaceScreen
+              navigation={navigation as any}
+              resetSignal={resetSignals.market}
+              safeTop={false}
+              showBackButton={false}
+              onScrollPositionChange={(atTop) => updateTabAtTop('market', atTop)}
             />
           </Animated.View>
         )}
