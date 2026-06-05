@@ -1,10 +1,8 @@
-import React, { useEffect, useRef } from 'react';
-import { NavigationContainer, NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
+import React from 'react';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { useAuthStore } from '@/stores/authStore';
-import { useCallStore } from '@/stores/callStore';
-import IncomingCallModal from '@/components/call/IncomingCallModal';
 import AuthScreen from '@/screens/AuthScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import AIScreen from '@/screens/AIScreen';
@@ -32,7 +30,6 @@ import SavedPostsScreen from '@/screens/SavedPostsScreen';
 import ArchivedPostsScreen from '@/screens/ArchivedPostsScreen';
 import GroupsScreen from '@/screens/GroupsScreen';
 import GroupDetailScreen from '@/screens/GroupDetailScreen';
-import { getSocket } from '@/lib/socket';
 
 export type RootStackParamList = {
   Auth: { initialTab?: 'login' | 'register'; initialEmail?: string };
@@ -55,7 +52,19 @@ export type RootStackParamList = {
     conversationId: string;
     title: string;
     peerUid?: string | null;
+    peerName?: string | null;
     peerAvatar?: string | null;
+    muted?: boolean;
+    members?: Array<{ uid: string; name: string; avatarUrl: string | null }>;
+    memberCount?: number;
+    marketplace?: {
+      listingId: string;
+      title: string;
+      imageUrl: string | null;
+      price?: number;
+      location?: string;
+      sellerId?: string;
+    } | null;
     conversationType?: 'dm' | 'group' | 'marketplace';
     marketplaceTitle?: string | null;
     initialSearch?: boolean;
@@ -79,48 +88,33 @@ export type RootStackParamList = {
   GroupDetail: { groupId: string };
   Call: {
     conversationId: string;
-    peerUid: string;
-    isHost?: boolean;
-    callId?: string;
-    peerName?: string;
+    peerUid?: string | null;
+    peerName: string;
     peerAvatar?: string | null;
-    mode?: 'audio' | 'video';
+    mode: 'audio' | 'video';
+    callKind?: 'direct' | 'group';
+    callId?: string;
+    direction?: 'outgoing' | 'incoming';
+    autoAccept?: boolean;
+    resume?: boolean;
+    resumeState?: 'ringing' | 'connecting' | 'active';
+    conversationTitle?: string;
+    hostUserId?: string | null;
+    participantIds?: string[];
+    isHost?: boolean;
     acceptOnReady?: boolean;
   };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
 export default function Navigation() {
   const { user, loading } = useAuthStore();
-  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
   const devMode = isDevModeEnabled();
 
   console.log(`🧭 Navigation render - user=${user ? user.email : 'null'}, loading=${loading}, devMode=${devMode}`);
-
-  useEffect(() => {
-    if (!user) return;
-    const socket = getSocket();
-    
-    const onCallIncoming = (payload: any) => {
-      useCallStore.getState().setIncomingCall({
-        callId: payload.callId,
-        conversationId: payload.conversationId,
-        peer: {
-          uid: payload.fromUserId,
-          name: payload.fromName,
-          avatarUrl: payload.fromAvatarUrl,
-        },
-        mode: payload.mode,
-      });
-    };
-
-    socket.on('call:incoming', onCallIncoming);
-
-    return () => {
-      socket.off('call:incoming', onCallIncoming);
-    };
-  }, [user]);
 
   // Normal mode: auth flow
   // Chỉ hiện splash khi Firebase đang kiểm tra auth (~200-500ms thực tế)
@@ -162,7 +156,7 @@ export default function Navigation() {
             <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="ChatInfo" component={ChatInfoScreen} />
-            <Stack.Screen name="Call" component={CallScreen} options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="Call" component={CallScreen} options={{ animation: 'fade' }} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ProfilePhotoPicker" component={ProfilePhotoPickerScreen} />
@@ -210,7 +204,6 @@ export default function Navigation() {
           </>
         )}
       </Stack.Navigator>
-      <IncomingCallModal />
     </NavigationContainer>
   );
 }

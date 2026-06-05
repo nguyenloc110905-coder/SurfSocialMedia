@@ -104,7 +104,7 @@ export function useGoogleSignIn(onError?: (msg: string) => void) {
   const start = useCallback(async () => {
     if (isExpoGo) {
       onErrorRef.current?.(
-        'Google Auth không chạy ổn trong Expo Go. Hãy dùng development build hoặc bản EAS build để redirect URI khớp app.'
+        'Google Auth không hỗ trợ Expo Go với Expo SDK hiện tại. Hãy chạy development build: npm run android:dev hoặc npm run build:dev:android, rồi mở bằng npm run start:dev.'
       );
       return;
     }

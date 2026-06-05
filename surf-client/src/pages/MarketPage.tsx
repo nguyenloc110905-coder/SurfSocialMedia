@@ -69,12 +69,58 @@ const MEETING_OPTIONS = [
 ] as const;
 
 const BOOST_BUDGET_OPTIONS = [
-  { dailyBudget: 30000, reach: '0 - 991', durationDays: 3 },
-  { dailyBudget: 60000, reach: '0 - 1.077', durationDays: 3 },
-  { dailyBudget: 80000, reach: '0 - 1.133', durationDays: 3 },
-  { dailyBudget: 110000, reach: '0 - 1.216', durationDays: 3 },
-  { dailyBudget: 140000, reach: '0 - 1.298', durationDays: 3 },
+  {
+    id: 'starter',
+    name: 'Gói Khởi động',
+    dailyBudget: 30000,
+    reach: '500 - 900',
+    durationDays: 3,
+    placements: ['surf_market', 'surf_discovery'],
+    badge: 'Tiết kiệm',
+    summary: 'Phù hợp tin mới đăng, cần thử phản hồi ban đầu trong Market.',
+    benefits: ['Ưu tiên trong danh mục Market', 'Xuất hiện thêm ở khu Khám phá'],
+  },
+  {
+    id: 'standard',
+    name: 'Gói Tiêu chuẩn',
+    dailyBudget: 60000,
+    reach: '1.000 - 1.800',
+    durationDays: 5,
+    placements: ['surf_feed', 'surf_market', 'surf_discovery'],
+    badge: 'Khuyên dùng',
+    summary: 'Tăng độ phủ ổn định cho mặt hàng phổ thông trong tuần đầu.',
+    benefits: ['Thêm vị trí Surf Feed', 'Chạy dài hơn để gom lượt hỏi mua'],
+  },
+  {
+    id: 'accelerate',
+    name: 'Gói Tăng tốc',
+    dailyBudget: 90000,
+    reach: '1.800 - 3.200',
+    durationDays: 7,
+    placements: ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery'],
+    badge: 'Bán nhanh',
+    summary: 'Đẩy mạnh tiếp cận khi muốn bán nhanh hoặc cạnh tranh cao.',
+    benefits: ['Mở thêm vị trí Surf Chat', 'Boost score cao hơn trong danh sách'],
+  },
+  {
+    id: 'premium',
+    name: 'Gói Nổi bật',
+    dailyBudget: 140000,
+    reach: '3.200 - 5.500',
+    durationDays: 10,
+    placements: ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery', 'seller_profile'],
+    badge: 'Phủ rộng',
+    summary: 'Dành cho sản phẩm giá trị cao cần hiển thị lâu và rộng hơn.',
+    benefits: ['Có vị trí trang bán hàng', 'Thời lượng dài nhất trong các gói'],
+  },
 ] as const;
+const BOOST_PLACEMENT_LABELS: Record<string, string> = {
+  surf_feed: 'Surf Feed',
+  surf_market: 'Surf Market',
+  surf_chat: 'Surf Chat',
+  surf_discovery: 'Khám phá',
+  seller_profile: 'Trang bán hàng',
+};
 const BOOST_DAY_MS = 24 * 60 * 60 * 1000;
 
 const BOOST_SANDBOX_PAYMENT_METHODS = [
@@ -844,6 +890,56 @@ export default function MarketPage() {
           />
         </label>
       ))}
+    </div>
+  );
+  const renderBoostPlanOptions = (radioName: string) => (
+    <div className="grid gap-3 md:grid-cols-2">
+      {BOOST_BUDGET_OPTIONS.map((option) => {
+        const selected = boostDailyBudget === option.dailyBudget;
+        return (
+          <label
+            key={option.id}
+            className={`flex min-h-[210px] cursor-pointer flex-col rounded-xl border p-4 transition ${
+              selected
+                ? 'border-[#2d88ff] bg-[#2d88ff]/10 shadow-lg shadow-[#2d88ff]/10'
+                : 'border-white/[0.06] bg-[#18191a] hover:bg-white/[0.04]'
+            }`}
+          >
+            <span className="flex items-start justify-between gap-3">
+              <span>
+                <span className="block text-sm font-black text-white">{option.name}</span>
+                <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${option.badge === 'Khuyên dùng' ? 'bg-emerald-400/10 text-emerald-300' : 'bg-sky-400/10 text-sky-300'}`}>
+                  {option.badge}
+                </span>
+              </span>
+              <input
+                type="radio"
+                name={radioName}
+                checked={selected}
+                onChange={() => setBoostDailyBudget(option.dailyBudget)}
+                className="mt-1 h-4 w-4 accent-[#2d88ff]"
+              />
+            </span>
+            <span className="mt-4 block text-xl font-black text-[#2d88ff]">{formatPrice(option.dailyBudget)}/ngày</span>
+            <span className="mt-1 block text-xs font-bold text-slate-300">
+              {option.durationDays} ngày · Ước tính {option.reach} lượt hiển thị
+            </span>
+            <span className="mt-3 block text-xs leading-relaxed text-slate-400">{option.summary}</span>
+            <span className="mt-3 flex flex-wrap gap-1.5">
+              {option.placements.map((placement) => (
+                <span key={placement} className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold text-slate-300">
+                  {BOOST_PLACEMENT_LABELS[placement] ?? placement}
+                </span>
+              ))}
+            </span>
+            <span className="mt-3 space-y-1 text-[11px] font-semibold text-slate-400">
+              {option.benefits.map((benefit) => (
+                <span key={benefit} className="block">• {benefit}</span>
+              ))}
+            </span>
+          </label>
+        );
+      })}
     </div>
   );
 
@@ -1650,8 +1746,8 @@ export default function MarketPage() {
         boostPlan: withBoost
           ? {
               dailyBudget: boostDailyBudget,
-              durationDays: 3,
-              placements: ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery'],
+              durationDays: selectedBoostOption.durationDays,
+              placements: [...selectedBoostOption.placements],
             }
           : null,
         boostPaymentProvider: withBoost ? paymentMethod : null,
@@ -1773,7 +1869,7 @@ export default function MarketPage() {
         boostPlan: {
           dailyBudget: boostDailyBudget,
           durationDays: selectedBoostOption.durationDays,
-          placements: ['surf_feed', 'surf_market', 'surf_chat', 'surf_discovery'],
+          placements: [...selectedBoostOption.placements],
         },
         boostPaymentProvider: boostPaymentMethod,
         boostPaymentId,
@@ -2016,6 +2112,9 @@ export default function MarketPage() {
   const canShowCreatePreviewMap = matchesLocationSuggestion(newListing.location.trim(), selectedCreateLocation);
   const createCategoryLabel = CATEGORIES.find((c) => c.key === newListing.category)?.label ?? 'Khác';
   const selectedBoostOption = BOOST_BUDGET_OPTIONS.find((option) => option.dailyBudget === boostDailyBudget) ?? BOOST_BUDGET_OPTIONS[0];
+  const selectedBoostPlacementText = selectedBoostOption.placements
+    .map((placement) => BOOST_PLACEMENT_LABELS[placement] ?? placement)
+    .join(', ');
   const boostSubtotal = boostDailyBudget * selectedBoostOption.durationDays;
   const boostEstimatedTax = Math.round(boostSubtotal * 0.1);
   const boostTotal = boostSubtotal + boostEstimatedTax;
@@ -3458,22 +3557,10 @@ export default function MarketPage() {
                 <div className="space-y-4">
                   <section className="rounded-xl bg-[#242526] p-4">
                     <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-black text-white">Ngân sách hằng ngày</h3>
+                      <h3 className="text-sm font-black text-white">Chọn gói quảng bá</h3>
                       <span className="text-xs font-black text-slate-500">ⓘ</span>
                     </div>
-                    <div className="space-y-2">
-                      {BOOST_BUDGET_OPTIONS.map((option) => (
-                        <label key={option.dailyBudget} className={`flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition ${boostDailyBudget === option.dailyBudget ? 'border-[#2d88ff] bg-[#2d88ff]/10' : 'border-white/[0.06] bg-[#18191a] hover:bg-white/[0.04]'}`}>
-                          <span>
-                            <span className="block text-xl font-black text-[#2d88ff]">{formatPrice(option.dailyBudget)}</span>
-                            <span className="mt-1 block text-xs font-medium text-slate-400">Lượt hiển thị ước tính {option.reach}</span>
-                            <span className="mt-0.5 block text-xs font-medium text-slate-400">Chiến dịch chạy trong {option.durationDays} ngày</span>
-                          </span>
-                          <input type="radio" name="boostBudget" checked={boostDailyBudget === option.dailyBudget} onChange={() => setBoostDailyBudget(option.dailyBudget)} className="h-4 w-4 accent-[#2d88ff]" />
-                        </label>
-                      ))}
-                    </div>
-                    <button type="button" className="mt-3 w-full text-right text-xs font-black text-slate-400 hover:text-[#2d88ff]">Chọn ngân sách & khoảng thời gian tuỳ chỉnh ›</button>
+                    {renderBoostPlanOptions('boostBudget')}
                   </section>
 
                   <section className="rounded-xl bg-[#242526] p-4">
@@ -3481,9 +3568,11 @@ export default function MarketPage() {
                     <div className="flex items-start justify-between gap-4 border-t border-white/[0.08] pt-4">
                       <div>
                         <div className="text-sm font-black text-white">Vị trí quảng cáo</div>
-                        <div className="mt-2 text-xs font-black text-emerald-400">Khuyên dùng</div>
-                        <div className="mt-1 text-xs font-black text-white">Gói hiển thị Surf Boost</div>
-                        <p className="mt-2 text-xs leading-relaxed text-slate-400">Cho phép niêm yết xuất hiện ở Surf Feed, Surf Market, Surf Chat và khu Khám phá để tiếp cận nhiều người mua hơn.</p>
+                        <div className="mt-2 text-xs font-black text-emerald-400">{selectedBoostOption.badge}</div>
+                        <div className="mt-1 text-xs font-black text-white">{selectedBoostOption.name}</div>
+                        <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                          Gói này hiển thị ở {selectedBoostPlacementText}. {selectedBoostOption.summary}
+                        </p>
                       </div>
                       <input type="checkbox" checked readOnly className="mt-1 h-5 w-5 accent-[#2d88ff]" />
                     </div>
@@ -3614,34 +3703,24 @@ export default function MarketPage() {
             </div>
             <div className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
               <div className="space-y-4">
-                <section className="rounded-xl bg-[#242526] p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-black text-white">Ngân sách hằng ngày</h3>
+                  <section className="rounded-xl bg-[#242526] p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-black text-white">Chọn gói quảng bá</h3>
                     <span className="text-xs font-black text-slate-500">ⓘ</span>
                   </div>
-                  <div className="space-y-2">
-                    {BOOST_BUDGET_OPTIONS.map((option) => (
-                      <label key={option.dailyBudget} className={`flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition ${boostDailyBudget === option.dailyBudget ? 'border-[#2d88ff] bg-[#2d88ff]/10' : 'border-white/[0.06] bg-[#18191a] hover:bg-white/[0.04]'}`}>
-                        <span>
-                          <span className="block text-xl font-black text-[#2d88ff]">{formatPrice(option.dailyBudget)}</span>
-                          <span className="mt-1 block text-xs font-medium text-slate-400">Lượt hiển thị ước tính {option.reach}</span>
-                          <span className="mt-0.5 block text-xs font-medium text-slate-400">Chiến dịch chạy trong {option.durationDays} ngày</span>
-                        </span>
-                        <input type="radio" name="existingBoostBudget" checked={boostDailyBudget === option.dailyBudget} onChange={() => setBoostDailyBudget(option.dailyBudget)} className="h-4 w-4 accent-[#2d88ff]" />
-                      </label>
-                    ))}
-                  </div>
-                  <button type="button" className="mt-3 w-full text-right text-xs font-black text-slate-400 hover:text-[#2d88ff]">Chọn ngân sách & khoảng thời gian tuỳ chỉnh ›</button>
+                  {renderBoostPlanOptions('existingBoostBudget')}
                 </section>
 
                 <section className="rounded-xl bg-[#242526] p-4">
                   <div className="mb-3 text-sm font-black text-white">Kênh hiển thị</div>
                   <div className="flex items-start justify-between gap-4 border-t border-white/[0.08] pt-4">
-                    <div>
-                      <div className="text-sm font-black text-white">Vị trí quảng cáo</div>
-                      <div className="mt-2 text-xs font-black text-emerald-400">Khuyên dùng</div>
-                      <div className="mt-1 text-xs font-black text-white">Gói hiển thị Surf Boost</div>
-                      <p className="mt-2 text-xs leading-relaxed text-slate-400">Cho phép niêm yết xuất hiện ở Surf Feed, Surf Market, Surf Chat và khu Khám phá để tiếp cận nhiều người mua hơn.</p>
+                      <div>
+                        <div className="text-sm font-black text-white">Vị trí quảng cáo</div>
+                        <div className="mt-2 text-xs font-black text-emerald-400">{selectedBoostOption.badge}</div>
+                        <div className="mt-1 text-xs font-black text-white">{selectedBoostOption.name}</div>
+                        <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                          Gói này hiển thị ở {selectedBoostPlacementText}. {selectedBoostOption.summary}
+                        </p>
                     </div>
                     <input type="checkbox" checked readOnly className="mt-1 h-5 w-5 accent-[#2d88ff]" />
                   </div>

@@ -1,4 +1,3 @@
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -29,37 +28,36 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     });
   }
 
-  if (Device.isDevice) {
-    const existingStatus = await Notifications.getPermissionsAsync();
-    let isGranted = (existingStatus as any).granted || (existingStatus as any).status === 'granted';
+  if (Platform.OS === 'web') {
+    console.warn('Push notifications are not supported on web');
+    return null;
+  }
 
-    if (!isGranted) {
-      const newStatus = await Notifications.requestPermissionsAsync();
-      isGranted = (newStatus as any).granted || (newStatus as any).status === 'granted';
+  const existingStatus = await Notifications.getPermissionsAsync();
+  let isGranted = (existingStatus as any).granted || (existingStatus as any).status === 'granted';
+
+  if (!isGranted) {
+    const newStatus = await Notifications.requestPermissionsAsync();
+    isGranted = (newStatus as any).granted || (newStatus as any).status === 'granted';
+  }
+
+  if (!isGranted) {
+    console.warn('Failed to get push token for push notification!');
+    return null;
+  }
+
+  try {
+    const projectId =
+      Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    if (!projectId) {
+      throw new Error('Project ID not found in app.json');
     }
 
-    if (!isGranted) {
-      console.warn('Failed to get push token for push notification!');
-      return null;
-    }
-
-    try {
-      const projectId =
-        Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-      if (!projectId) {
-        throw new Error('Project ID not found in app.json');
-      }
-
-      // getExpoPushTokenAsync takes a bit of config.
-      // We can also get DevicePushToken (FCM token) directly:
-      const deviceTokenInfo = await Notifications.getDevicePushTokenAsync();
-      token = deviceTokenInfo.data;
-
-    } catch (error) {
-      console.error('Lỗi khi lấy Push Token:', error);
-    }
-  } else {
-    console.warn('Must use physical device for Push Notifications');
+    // We use the native FCM/APNS token because the server stores fcmToken.
+    const deviceTokenInfo = await Notifications.getDevicePushTokenAsync();
+    token = deviceTokenInfo.data;
+  } catch (error) {
+    console.error('Lỗi khi lấy Push Token:', error);
   }
 
   return token;

@@ -1436,7 +1436,7 @@ export default function MiniChatPanel({
                 <span className="flex min-w-0 items-center gap-1 text-sm font-semibold text-gray-900 dark:text-white">
                   <span className="truncate">
                     {activeMarketplace
-                      ? `${activeConv.peer?.name ?? 'Người mua'} · ${activeMarketplace.title}`
+                      ? activeMarketplace.title
                       : activeConv.type === 'group'
                         ? (activeConv.title ?? 'Nhóm')
                         : (activeConv.peer?.name ?? 'Chat')}
@@ -1453,7 +1453,7 @@ export default function MiniChatPanel({
                 </span>
                 {activeMarketplace ? (
                   <span className="mt-0.5 block truncate text-[11px] font-semibold text-cyan-600 dark:text-cyan-300">
-                    Surf Market · {formatMarketplacePrice(activeMarketplace.price)}
+                    {activeConv.peer?.name ?? 'Người mua'} · {formatMarketplacePrice(activeMarketplace.price)}
                   </span>
                 ) : (
                   activeConv.type !== 'group' &&
@@ -1559,7 +1559,8 @@ export default function MiniChatPanel({
           ) : (
             conversations.map((conv) => {
               const convName =
-                conv.type === 'group' ? (conv.title ?? 'Nhóm') : (conv.peer?.name ?? 'Unknown');
+                conv.marketplace?.title ??
+                (conv.type === 'group' ? (conv.title ?? 'Nhóm') : (conv.peer?.name ?? 'Unknown'));
               return (
                 <button
                   key={conv.id}
@@ -1574,7 +1575,10 @@ export default function MiniChatPanel({
                         </svg>
                       </span>
                     ) : (
-                      <Avatar src={conv.peer?.avatarUrl} name={conv.peer?.name} />
+                      <Avatar
+                        src={conv.marketplace?.imageUrl ?? conv.peer?.avatarUrl}
+                        name={convName}
+                      />
                     )}
                     {conv.unreadCount > 0 && (
                       <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-cyan-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white">
@@ -1602,7 +1606,7 @@ export default function MiniChatPanel({
                       className={`text-xs truncate mt-0.5 ${conv.unreadCount > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-slate-500'}`}
                     >
                       {normalizeConversationPreview(conv.lastMessagePreview) ||
-                        'Bắt đầu cuộc trò chuyện'}
+                        (conv.marketplace ? `${conv.peer?.name ?? 'Người mua'} · Surf Market` : 'Bắt đầu cuộc trò chuyện')}
                     </p>
                   </div>
                 </button>

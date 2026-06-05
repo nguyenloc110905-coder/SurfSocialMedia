@@ -291,7 +291,9 @@ export default function NotificationCenterScreen({
         conversationId,
         title: item.actorName ?? 'Waves',
         peerUid: item.actorId ?? null,
+        peerName: item.actorName ?? null,
         peerAvatar: getActorPhoto(item),
+        marketplace: null,
       });
       return;
     }

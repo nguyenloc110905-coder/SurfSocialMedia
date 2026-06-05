@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CACHE_PREFIX = 'cache_';
-const CACHE_EXPIRY_MS = 60 * 60 * 1000;
+const CACHE_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 export type CachedPost = {
   id: string;
@@ -20,12 +20,41 @@ export type CachedMessage = {
   id: string;
   conversationId: string;
   senderId: string;
+  type?: 'text' | 'image' | 'file' | 'audio' | 'call_log';
   text: string;
   mediaUrl: string | null;
+  fileName?: string;
   createdAt: string;
   senderName: string;
   senderAvatarUrl: string | null;
+  editedAt?: string;
+  isForwarded?: boolean;
+  isRecalled?: boolean;
+  recalledForEveryone?: boolean;
+  pinnedBy?: string[];
+  reactions?: Record<string, Record<string, { uid: string; name: string; avatarUrl: string | null }>>;
+  callMode?: 'audio' | 'video';
+  callOutcome?: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'ended' | 'started';
+  durationSeconds?: number;
 };
+
+function getCachedMessageCreatedAtMs(message: CachedMessage): number {
+  const timestamp = new Date(message.createdAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function uniqueCachedMessages(messages: CachedMessage[]): CachedMessage[] {
+  const byId = new Map<string, CachedMessage>();
+  messages.forEach(message => {
+    if (!message?.id) return;
+    const existing = byId.get(message.id);
+    byId.set(message.id, existing ? { ...existing, ...message } : message);
+  });
+
+  return Array.from(byId.values()).sort(
+    (a, b) => getCachedMessageCreatedAtMs(b) - getCachedMessageCreatedAtMs(a)
+  );
+}
 
 function getCacheKey(key: string): string {
   return `${CACHE_PREFIX}${key}`;
@@ -36,7 +65,7 @@ async function setItem(key: string, value: string): Promise<void> {
 }
 
 async function getItem(key: string): Promise<string | null> {
-  return AsyncStorage.getItem(getCacheKey(key));
+  return await AsyncStorage.getItem(getCacheKey(key));
 }
 
 async function removeItem(key: string): Promise<void> {
@@ -68,25 +97,7 @@ async function getItemWithExpiry(key: string): Promise<string | null> {
   }
 }
 
-function areSameCachedMessages(a: CachedMessage[], b: CachedMessage[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    const left = a[i];
-    const right = b[i];
-    if (
-      left.id !== right.id ||
-      left.conversationId !== right.conversationId ||
-      left.senderId !== right.senderId ||
-      left.text !== right.text ||
-      left.mediaUrl !== right.mediaUrl ||
-      left.createdAt !== right.createdAt
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
+// Feed cache
 export const feedCache = {
   setPosts: async (posts: CachedPost[]): Promise<void> => {
     await setItemWithExpiry('feed_posts', JSON.stringify(posts));
@@ -107,30 +118,43 @@ export const feedCache = {
   },
 };
 
+// Messages cache per conversation
 export const messagesCache = {
   setMessages: async (conversationId: string, messages: CachedMessage[]): Promise<void> => {
     const key = `messages_${conversationId}`;
-    const existing = await messagesCache.getMessages(conversationId);
-    if (existing && areSameCachedMessages(existing, messages)) return;
-    await setItemWithExpiry(key, JSON.stringify(messages));
+    const unique = uniqueCachedMessages(messages);
+    console.log('💾 Saving to cache key:', key, 'messages:', unique.length);
+    await setItemWithExpiry(key, JSON.stringify(unique));
   },
 
   getMessages: async (conversationId: string): Promise<CachedMessage[] | null> => {
-    const cached = await getItemWithExpiry(`messages_${conversationId}`);
-    if (!cached) return null;
+    const key = `messages_${conversationId}`;
+    console.log('📦 Reading from cache key:', key);
+    const cached = await getItemWithExpiry(key);
+    if (!cached) {
+      console.log('📦 Cache miss for key:', key);
+      return null;
+    }
     try {
-      return JSON.parse(cached) as CachedMessage[];
-    } catch {
+      const parsed = uniqueCachedMessages(JSON.parse(cached) as CachedMessage[]);
+      console.log('📦 Cache hit for key:', key, 'messages:', parsed.length);
+      return parsed;
+    } catch (e) {
+      console.log('📦 Cache parse error for key:', key, e);
       return null;
     }
   },
 
   addMessage: async (conversationId: string, message: CachedMessage): Promise<void> => {
     const existing = (await messagesCache.getMessages(conversationId)) || [];
-    const updated = [...existing, message].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-    await messagesCache.setMessages(conversationId, updated);
+    const updated = uniqueCachedMessages([message, ...existing]);
+    await setItemWithExpiry(`messages_${conversationId}`, JSON.stringify(updated));
+  },
+
+  removeMessage: async (conversationId: string, messageId: string): Promise<void> => {
+    const existing = (await messagesCache.getMessages(conversationId)) || [];
+    const updated = existing.filter((item) => item.id !== messageId);
+    await setItemWithExpiry(`messages_${conversationId}`, JSON.stringify(updated));
   },
 
   clearConversation: async (conversationId: string): Promise<void> => {
@@ -144,6 +168,7 @@ export const messagesCache = {
   },
 };
 
+// Clear all cache
 export const clearAllCache = async (): Promise<void> => {
   const allKeys = await AsyncStorage.getAllKeys();
   const cacheKeys = allKeys.filter((key) => key.startsWith(CACHE_PREFIX));

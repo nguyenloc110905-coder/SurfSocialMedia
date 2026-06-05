@@ -1,380 +1,863 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  AppState,
+  Image,
+  NativeModules,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getSocket } from '@/lib/socket';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '@/navigation';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
+import type { RootStackParamList } from '@/navigation';
 import { useAuthStore } from '@/stores/authStore';
-import { useWebRTC } from '@/hooks/useWebRTC';
-import RTCVideo from '@/components/RTCVideo';
+import { api } from '@/lib/api';
+import { connectSocket, getSocket } from '@/lib/socket';
+import {
+  dismissCallSystemNotification,
+  showOngoingCallSystemNotification,
+} from '@/lib/systemNotifications';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Call'>;
+type Props = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'Call'>;
+  route: RouteProp<RootStackParamList, 'Call'>;
+};
 
-export default function CallScreen({ route, navigation }: Props) {
-  const {
-    conversationId,
-    peerUid,
-    isHost: isHostParam,
-    callId: initialCallId,
-    peerName,
-    peerAvatar,
-    mode: initialMode,
-    acceptOnReady,
-  } = route.params;
+type CallMode = 'audio' | 'video';
+type CallPhase = 'incoming' | 'outgoing' | 'connecting' | 'connected' | 'ended';
 
-  const isHost = isHostParam ?? false;
+type TokenResponse = {
+  provider: 'livekit' | 'fallback';
+  serverUrl?: string;
+  token?: string;
+  roomName: string;
+  reason?: string;
+};
 
-  const user = useAuthStore((state) => state.user);
-  const socket = getSocket();
+const CALL_TIMEOUT_MS = 45_000;
+const CALL_NOTIFICATION_REFRESH_MS = 15_000;
+const LIVEKIT_CAMERA_SOURCE = 'camera';
+const LIVEKIT_CONNECTED_STATE = 'connected';
 
-  const [callState, setCallState] = useState<'ringing' | 'connected' | 'ended'>(
-    isHost ? 'ringing' : 'connected'
-  );
-  const [callId] = useState(initialCallId || `call_${Date.now()}`);
-  const [duration, setDuration] = useState(0);
-  const [callMode, setCallMode] = useState<'audio' | 'video'>(initialMode ?? 'audio');
+const makeCallId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const acceptSentRef = useRef(false);
+type LiveKitNativeModule = {
+  AudioSession: { startAudioSession: () => Promise<void>; stopAudioSession: () => Promise<void> };
+  LiveKitRoom: React.ComponentType<any>;
+  VideoTrack: React.ComponentType<any>;
+  isTrackReference: (value: unknown) => boolean;
+  registerGlobals: () => void;
+  useLocalParticipant: () => { localParticipant: any };
+  useRoomContext: () => any;
+  useTracks: (sources: unknown[]) => unknown[];
+};
 
-  const handleRtcReady = useCallback(() => {
-    if (isHost || !acceptOnReady || acceptSentRef.current || !user?.uid) return;
-    acceptSentRef.current = true;
-    socket.emit('call:accept', {
-      callId,
-      conversationId,
-      fromUserId: user.uid,
-      toUserId: peerUid,
-      mode: callMode,
-    });
-  }, [acceptOnReady, callId, callMode, conversationId, isHost, peerUid, socket, user?.uid]);
+let liveKitNative: LiveKitNativeModule | null | undefined;
 
-  // ── WebRTC ────────────────────────────────────────────────────────────────
-  const {
-    localStream,
-    remoteStream,
-    hasRemoteVideo,
-    callMode: rtcCallMode,
-    isMicMuted,
-    isCameraOff,
-    isFrontCamera,
-    connectionState,
-    toggleMic,
-    toggleCamera,
-    switchCamera,
-    upgradeToVideo,
-    endCall: endWebRTC,
-    createAndSendOffer,
-  } = useWebRTC({
-    callId,
-    conversationId,
-    peerUid,
-    isHost,
-    mode: callMode,
-    onReady: handleRtcReady,
-    onModeChange: setCallMode,
+function ensureLiveKitGlobals() {
+  const globalScope = globalThis as any;
+  if (!globalScope.DOMException) {
+    globalScope.DOMException = class DOMException extends Error {
+      constructor(message?: string, name = 'DOMException') {
+        super(message);
+        this.name = name;
+      }
+    };
+  }
+}
+
+function getLiveKitNative(): LiveKitNativeModule | null {
+  if (liveKitNative !== undefined) return liveKitNative;
+
+  try {
+    if (!NativeModules.WebRTCModule) {
+      liveKitNative = null;
+      return liveKitNative;
+    }
+
+    // Keep this require lazy. Existing dev builds do not contain LiveKit's native media module.
+    // A rebuilt development APK will load this path and enable native LiveKit calls.
+    ensureLiveKitGlobals();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    liveKitNative = require('@livekit/react-native') as LiveKitNativeModule;
+    liveKitNative.registerGlobals();
+  } catch {
+    liveKitNative = null;
+  }
+
+  return liveKitNative;
+}
+
+function initials(name: string) {
+  return (name.trim() || '?').charAt(0).toUpperCase();
+}
+
+function formatDuration(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function getUserName(user: ReturnType<typeof useAuthStore.getState>['user']) {
+  return user?.displayName || user?.email?.split('@')[0] || 'Surf user';
+}
+
+function phaseToNotificationState(phase: CallPhase): 'ringing' | 'connecting' | 'active' {
+  if (phase === 'connected') return 'active';
+  if (phase === 'connecting') return 'connecting';
+  return 'ringing';
+}
+
+function RemoteVideoStage({ lk, peerName, peerAvatar }: { lk: LiveKitNativeModule; peerName: string; peerAvatar?: string | null }) {
+  const tracks = lk.useTracks([LIVEKIT_CAMERA_SOURCE]);
+  const remoteTrack = tracks.find((track) => {
+    if (!lk.isTrackReference(track)) return false;
+    return !(track as any).participant?.isLocal;
   });
 
-  // ── Timer ─────────────────────────────────────────────────────────────────
-  const startTimer = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => setDuration((prev) => prev + 1), 1000);
-  }, []);
-
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
-  // ── Socket events ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    // Host emits invite when screen mounts
-    if (isHost) {
-      socket.emit('call:invite', {
-        callId,
-        conversationId,
-        fromUserId: user?.uid,
-        toUserId: peerUid,
-        fromName: user?.displayName ?? user?.email ?? 'Surf user',
-        fromAvatarUrl: user?.photoURL ?? null,
-        mode: callMode,
-      });
-    }
-
-    const onAccepted = (payload: { callId: string }) => {
-      if (payload.callId !== callId) return;
-      setCallState('connected');
-      startTimer();
-      // Only the host (caller) creates & sends SDP offer
-      if (isHost) createAndSendOffer();
-    };
-
-    const onDeclined = (payload: { callId: string }) => {
-      if (payload.callId !== callId) return;
-      setCallState('ended');
-      setTimeout(() => navigation.goBack(), 1500);
-    };
-
-    const onEnded = (payload: { callId: string }) => {
-      if (payload.callId !== callId) return;
-      setCallState('ended');
-      setTimeout(() => navigation.goBack(), 1500);
-    };
-
-    socket.on('call:accepted', onAccepted);
-    socket.on('call:declined', onDeclined);
-    socket.on('call:ended', onEnded);
-
-    return () => {
-      socket.off('call:accepted', onAccepted);
-      socket.off('call:declined', onDeclined);
-      socket.off('call:ended', onEnded);
-      if (timerRef.current) clearInterval(timerRef.current);
-      endWebRTC();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callId, conversationId, isHost, peerUid]);
-
-  // Callee: start timer immediately (call was already accepted before navigating here)
-  useEffect(() => {
-    if (!isHost && callState === 'connected') {
-      startTimer();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── End call ──────────────────────────────────────────────────────────────
-  const handleEnd = () => {
-    socket.emit('call:end', {
-      callId,
-      conversationId,
-      fromUserId: user?.uid,
-      toUserId: peerUid,
-      reason: 'ended',
-    });
-    setCallState('ended');
-    endWebRTC();
-    setTimeout(() => navigation.goBack(), 1500);
-  };
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  if (remoteTrack && lk.isTrackReference(remoteTrack)) {
+    const VideoTrack = lk.VideoTrack;
+    return <VideoTrack trackRef={remoteTrack} style={s.remoteVideo} objectFit="cover" />;
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Remote video (full screen background) */}
-      {rtcCallMode === 'video' && remoteStream && hasRemoteVideo && (
-        <RTCVideo
-          streamURL={remoteStream.toURL()}
-          style={styles.remoteVideo}
-          objectFit="cover"
-        />
-      )}
-
-      {/* Local video (picture-in-picture, top right) */}
-      {rtcCallMode === 'video' && localStream && !isCameraOff && (
-        <View style={styles.localVideoContainer}>
-          <RTCVideo
-            streamURL={localStream.toURL()}
-            style={styles.localVideo}
-            objectFit="cover"
-            zOrder={1}
-            mirror={isFrontCamera}
-          />
+    <View style={s.remoteFallback}>
+      {peerAvatar ? (
+        <Image source={{ uri: peerAvatar }} style={s.heroAvatar} />
+      ) : (
+        <View style={s.heroAvatarFallback}>
+          <Text style={s.heroInitial}>{initials(peerName)}</Text>
         </View>
       )}
-
-      {/* Overlay UI */}
-      <View style={styles.overlay}>
-        {/* Status bar */}
-        <View style={styles.header}>
-          <Text style={styles.peerNameText}>{peerName ?? 'Người dùng'}</Text>
-          <Text style={styles.statusText}>
-            {callState === 'ringing'
-              ? isHost
-                ? 'Đang gọi…'
-                : 'Đang kết nối…'
-              : callState === 'connected'
-              ? formatTime(duration)
-              : 'Đã kết thúc'}
-          </Text>
-          {callState === 'connected' &&
-            connectionState !== 'connected' &&
-            connectionState !== 'completed' && (
-              <Text style={styles.p2pStatus}>
-                Thiết lập kết nối P2P ({connectionState})…
-              </Text>
-            )}
-        </View>
-
-        {/* Avatar (shown when no remote video) */}
-        {(!hasRemoteVideo || rtcCallMode === 'audio') && (
-          <View style={styles.center}>
-            {peerAvatar ? (
-              <Image source={{ uri: peerAvatar }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Text style={styles.avatarText}>
-                  {(peerName ?? peerUid ?? '?').charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Controls */}
-        <View style={styles.footer}>
-          {callState !== 'ended' && (
-            <View style={styles.controlsRow}>
-              <TouchableOpacity
-                style={[styles.controlBtn, isMicMuted && styles.controlBtnActive]}
-                onPress={toggleMic}
-              >
-                <Ionicons name={isMicMuted ? 'mic-off' : 'mic'} size={26} color="#fff" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.btnEnd} onPress={handleEnd}>
-                <Ionicons
-                  name="call"
-                  size={30}
-                  color="#fff"
-                  style={{ transform: [{ rotate: '135deg' }] }}
-                />
-              </TouchableOpacity>
-
-              {rtcCallMode === 'audio' && (
-                <TouchableOpacity style={styles.controlBtnVideo} onPress={upgradeToVideo}>
-                  <Ionicons name="videocam" size={26} color="#fff" />
-                </TouchableOpacity>
-              )}
-
-              {rtcCallMode === 'video' && (
-                <>
-                  <TouchableOpacity
-                    style={[styles.controlBtn, isCameraOff && styles.controlBtnActive]}
-                    onPress={toggleCamera}
-                  >
-                    <Ionicons
-                      name={isCameraOff ? 'videocam-off' : 'videocam'}
-                      size={26}
-                      color="#fff"
-                    />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.controlBtn} onPress={switchCamera}>
-                    <Ionicons name="camera-reverse" size={26} color="#fff" />
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
-        </View>
-      </View>
-    </SafeAreaView>
+      <Text style={s.waitingVideoText}>Đang chờ video của {peerName}</Text>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+function LocalPreview({ lk, enabled }: { lk: LiveKitNativeModule; enabled: boolean }) {
+  const tracks = lk.useTracks([LIVEKIT_CAMERA_SOURCE]);
+  const localTrack = tracks.find((track) => {
+    if (!lk.isTrackReference(track)) return false;
+    return Boolean((track as any).participant?.isLocal);
+  });
 
+  if (!enabled || !localTrack || !lk.isTrackReference(localTrack)) {
+    return (
+      <View style={s.localPreviewOff}>
+        <Ionicons name="videocam-off" size={18} color="#dbeafe" />
+      </View>
+    );
+  }
+
+  const VideoTrack = lk.VideoTrack;
+  return (
+    <View style={s.localPreview}>
+      <VideoTrack trackRef={localTrack} style={s.localVideo} objectFit="cover" mirror zOrder={1} />
+    </View>
+  );
+}
+
+function LiveKitCallContent({
+  lk,
+  mode,
+  peerName,
+  peerAvatar,
+  phase,
+  seconds,
+  onConnected,
+  onEnd,
+}: {
+  lk: LiveKitNativeModule;
+  mode: CallMode;
+  peerName: string;
+  peerAvatar?: string | null;
+  phase: CallPhase;
+  seconds: number;
+  onConnected: () => void;
+  onEnd: () => void;
+}) {
+  const room = lk.useRoomContext();
+  const { localParticipant } = lk.useLocalParticipant();
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(mode === 'video');
+  const [speakerEnabled, setSpeakerEnabled] = useState(true);
+
+  useEffect(() => {
+    const update = () => {
+      if (room.state === LIVEKIT_CONNECTED_STATE) onConnected();
+    };
+
+    update();
+    room.on('connectionStateChanged' as any, update);
+    return () => {
+      room.off('connectionStateChanged' as any, update);
+    };
+  }, [onConnected, room]);
+
+  const toggleMic = async () => {
+    const next = !micEnabled;
+    setMicEnabled(next);
+    await localParticipant.setMicrophoneEnabled(next);
+  };
+
+  const toggleCamera = async () => {
+    const next = !cameraEnabled;
+    setCameraEnabled(next);
+    await localParticipant.setCameraEnabled(next);
+  };
+
+  const toggleSpeaker = async () => {
+    setSpeakerEnabled((current) => !current);
+  };
+
+  return (
+    <View style={s.liveRoot}>
+      {mode === 'video' ? (
+        <RemoteVideoStage lk={lk} peerName={peerName} peerAvatar={peerAvatar} />
+      ) : (
+        <View style={s.audioStage}>
+          {peerAvatar ? (
+            <Image source={{ uri: peerAvatar }} style={s.heroAvatar} />
+          ) : (
+            <View style={s.heroAvatarFallback}>
+              <Text style={s.heroInitial}>{initials(peerName)}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <SafeAreaView style={s.overlay} edges={['top', 'bottom']}>
+        <View style={s.topBlock}>
+          <Text style={s.peerName} numberOfLines={1}>{peerName}</Text>
+          <Text style={s.callStatus}>
+            {phase === 'connected'
+              ? formatDuration(seconds)
+              : phase === 'connecting'
+                ? 'Đang kết nối...'
+                : mode === 'video'
+                  ? 'Đang gọi video...'
+                  : 'Đang gọi thoại...'}
+          </Text>
+        </View>
+
+        {mode === 'video' ? <LocalPreview lk={lk} enabled={cameraEnabled} /> : null}
+
+        <View style={s.controls}>
+          <RoundButton
+            icon={micEnabled ? 'mic' : 'mic-off'}
+            label={micEnabled ? 'Mic' : 'Tắt mic'}
+            active={micEnabled}
+            onPress={toggleMic}
+          />
+          {mode === 'video' ? (
+            <RoundButton
+              icon={cameraEnabled ? 'videocam' : 'videocam-off'}
+              label={cameraEnabled ? 'Camera' : 'Tắt cam'}
+              active={cameraEnabled}
+              onPress={toggleCamera}
+            />
+          ) : (
+            <RoundButton
+              icon={speakerEnabled ? 'volume-high' : 'volume-mute'}
+              label="Loa"
+              active={speakerEnabled}
+              onPress={toggleSpeaker}
+            />
+          )}
+          <TouchableOpacity style={s.endButton} onPress={onEnd} activeOpacity={0.85}>
+            <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+function RoundButton({
+  icon,
+  label,
+  active,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={s.controlItem} onPress={onPress} activeOpacity={0.82}>
+      <View style={[s.roundButton, active ? s.roundButtonActive : s.roundButtonMuted]}>
+        <Ionicons name={icon} size={23} color="#fff" />
+      </View>
+      <Text style={s.controlLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+export default function CallScreen({ navigation, route }: Props) {
+  const {
+    conversationId,
+    peerUid,
+    peerName,
+    peerAvatar,
+    mode,
+    callKind = 'direct',
+    direction = 'outgoing',
+    autoAccept = false,
+    resume = false,
+    resumeState = 'connecting',
+    conversationTitle,
+    hostUserId,
+    participantIds = [],
+  } = route.params;
+  const user = useAuthStore((state) => state.user);
+  const isGroupCall = callKind === 'group';
+  const displayName = isGroupCall ? (conversationTitle || peerName || 'Cuộc gọi nhóm') : peerName;
+  const lk = useMemo(getLiveKitNative, []);
+  const [phase, setPhase] = useState<CallPhase>(
+    resume
+      ? resumeState === 'ringing'
+        ? direction === 'incoming'
+          ? 'incoming'
+          : 'outgoing'
+        : 'connecting'
+      : direction === 'incoming'
+        ? (autoAccept ? 'connecting' : 'incoming')
+        : 'outgoing'
+  );
+  const [tokenResponse, setTokenResponse] = useState<TokenResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const routeCallId = route.params.callId;
+  const callId = useMemo(() => routeCallId ?? makeCallId(), [routeCallId]);
+  const endedRef = useRef(false);
+  const connectedAtRef = useRef<number | null>(null);
+  const groupJoinedRef = useRef(false);
+  const outgoingInviteSentRef = useRef(false);
+  const liveKitTokenRequestRef = useRef(false);
+
+  const syncCallNotification = useCallback((state: 'ringing' | 'connecting' | 'active') => {
+    const notificationPeerId = peerUid || hostUserId || user?.uid;
+    if (!notificationPeerId) return;
+    void showOngoingCallSystemNotification({
+      callId,
+      conversationId,
+      peerUserId: notificationPeerId,
+      peerName: displayName,
+      peerAvatarUrl: peerAvatar,
+      conversationTitle: isGroupCall ? displayName : undefined,
+      mode,
+      direction,
+      callKind,
+      state,
+    });
+  }, [callId, callKind, conversationId, direction, displayName, hostUserId, mode, peerAvatar, peerUid, user?.uid]);
+
+  const finish = useCallback((reason: 'ended' | 'missed' | 'failed' = 'ended') => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+
+    const socket = getSocket();
+    if (user?.uid && isGroupCall) {
+      if (groupJoinedRef.current) {
+        socket.emit('call:group-participant-leave', {
+          callId,
+          conversationId,
+          userId: user.uid,
+          reason,
+        });
+      }
+    } else if (user?.uid && peerUid) {
+      socket.emit('call:end', {
+        callId,
+        conversationId,
+        fromUserId: user.uid,
+        toUserId: peerUid,
+        reason,
+      });
+    }
+
+    void dismissCallSystemNotification(callId);
+    setPhase('ended');
+    navigation.goBack();
+  }, [callId, conversationId, isGroupCall, navigation, peerUid, user?.uid]);
+
+  const connectLiveKit = useCallback(async () => {
+    if (!user?.uid || liveKitTokenRequestRef.current || tokenResponse) return;
+    liveKitTokenRequestRef.current = true;
+    const tokenPeerId = isGroupCall ? (hostUserId || peerUid || user.uid) : peerUid;
+    if (!tokenPeerId) {
+      liveKitTokenRequestRef.current = false;
+      setError('Thiếu dữ liệu người tham gia cuộc gọi.');
+      setTimeout(() => finish('failed'), 900);
+      return;
+    }
+    if (!lk) {
+      liveKitTokenRequestRef.current = false;
+      setError('Cần cài lại bản Android development build để bật LiveKit.');
+      setTimeout(() => finish('failed'), 1300);
+      return;
+    }
+
+    setPhase('connecting');
+    setError(null);
+
+    try {
+      const response = await api.post<TokenResponse>('/api/calls/livekit-token', {
+        callId,
+        conversationId,
+        peerId: tokenPeerId,
+        mode,
+        quality: mode === 'video' ? 'p720' : 'p480',
+        userName: getUserName(user),
+      });
+
+      if (response.provider !== 'livekit' || !response.serverUrl || !response.token) {
+        throw new Error(response.reason || 'livekit_not_available');
+      }
+
+      setTokenResponse(response);
+    } catch {
+      setError('LiveKit chưa sẵn sàng cho cuộc gọi này.');
+      setTimeout(() => finish('failed'), 900);
+    } finally {
+      liveKitTokenRequestRef.current = false;
+    }
+  }, [callId, conversationId, finish, hostUserId, isGroupCall, lk, mode, peerUid, tokenResponse, user]);
+
+  const acceptIncomingCall = useCallback(() => {
+    if (!user?.uid || endedRef.current) return;
+    connectSocket(user.uid);
+    if (isGroupCall) {
+      getSocket().emit('call:group-accept', {
+        callId,
+        conversationId,
+        fromUserId: user.uid,
+      });
+    } else if (peerUid) {
+      getSocket().emit('call:accept', {
+        callId,
+        conversationId,
+        fromUserId: user.uid,
+        toUserId: peerUid,
+        mode,
+      });
+    }
+    syncCallNotification('connecting');
+    if (isGroupCall) {
+      setTimeout(() => {
+        if (!endedRef.current) void connectLiveKit();
+      }, 350);
+    } else {
+      void connectLiveKit();
+    }
+  }, [callId, connectLiveKit, conversationId, isGroupCall, mode, peerUid, syncCallNotification, user?.uid]);
+
+  const declineIncomingCall = useCallback(() => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+
+    if (user?.uid) {
+      connectSocket(user.uid);
+      if (isGroupCall) {
+        getSocket().emit('call:group-decline', {
+          callId,
+          conversationId,
+          fromUserId: user.uid,
+          reason: 'declined',
+        });
+      } else if (peerUid) {
+        getSocket().emit('call:decline', {
+          callId,
+          conversationId,
+          fromUserId: user.uid,
+          toUserId: peerUid,
+          reason: 'declined',
+        });
+      }
+    }
+
+    void dismissCallSystemNotification(callId);
+    setPhase('ended');
+    navigation.goBack();
+  }, [callId, conversationId, isGroupCall, navigation, peerUid, user?.uid]);
+
+  useEffect(() => {
+    if (!lk) return;
+    void lk.AudioSession.startAudioSession();
+    return () => {
+      void lk.AudioSession.stopAudioSession();
+    };
+  }, [lk]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    connectSocket(user.uid);
+    const socket = getSocket();
+
+    if (resume) {
+      syncCallNotification(resumeState);
+      if (resumeState !== 'ringing') {
+        void connectLiveKit();
+      }
+    } else if (direction === 'incoming') {
+      if (autoAccept) {
+        acceptIncomingCall();
+      }
+    } else if (!outgoingInviteSentRef.current) {
+      outgoingInviteSentRef.current = true;
+      if (isGroupCall) {
+        const targets = Array.from(new Set(participantIds.map(id => id.trim()).filter(Boolean))).filter(id => id !== user.uid);
+        if (targets.length === 0) {
+          outgoingInviteSentRef.current = false;
+          setError('Nhóm chưa có thành viên khác để gọi.');
+          setTimeout(() => finish('failed'), 900);
+          return;
+        }
+        socket.emit('call:group-invite', {
+          callId,
+          conversationId,
+          fromUserId: user.uid,
+          fromName: getUserName(user),
+          fromAvatarUrl: user.photoURL ?? null,
+          conversationTitle: conversationTitle || displayName,
+          participantIds: targets,
+          mode,
+        });
+      } else if (peerUid) {
+        socket.emit('call:invite', {
+          callId,
+          conversationId,
+          fromUserId: user.uid,
+          toUserId: peerUid,
+          fromName: getUserName(user),
+          fromAvatarUrl: user.photoURL ?? null,
+          mode,
+        });
+      }
+      syncCallNotification('ringing');
+    }
+
+    const accepted = (payload: { callId?: string }) => {
+      if (isGroupCall || direction === 'incoming' || payload.callId !== callId || endedRef.current) return;
+      syncCallNotification('connecting');
+      void connectLiveKit();
+    };
+
+    const declined = (payload: { callId?: string; reason?: string }) => {
+      if (payload.callId !== callId || endedRef.current) return;
+      endedRef.current = true;
+      void dismissCallSystemNotification(callId);
+      setError(payload.reason === 'busy' ? 'Người nhận đang bận.' : 'Người nhận đã từ chối.');
+      setTimeout(() => navigation.goBack(), 900);
+    };
+
+    const ended = (payload: { callId?: string }) => {
+      if (isGroupCall || payload.callId !== callId || endedRef.current) return;
+      endedRef.current = true;
+      void dismissCallSystemNotification(callId);
+      navigation.goBack();
+    };
+
+    const groupRoomReady = (payload: { callId?: string; conversationId?: string; hostUserId?: string }) => {
+      if (!isGroupCall || payload.callId !== callId || payload.conversationId !== conversationId || endedRef.current) return;
+      syncCallNotification('connecting');
+      void connectLiveKit();
+    };
+
+    socket.on('call:accepted', accepted);
+    socket.on('call:declined', declined);
+    socket.on('call:ended', ended);
+    socket.on('call:group-room-ready', groupRoomReady);
+
+    return () => {
+      socket.off('call:accepted', accepted);
+      socket.off('call:declined', declined);
+      socket.off('call:ended', ended);
+      socket.off('call:group-room-ready', groupRoomReady);
+    };
+  }, [acceptIncomingCall, autoAccept, callId, connectLiveKit, conversationId, conversationTitle, direction, displayName, finish, isGroupCall, mode, navigation, participantIds, peerUid, resume, resumeState, syncCallNotification, user]);
+
+  useEffect(() => {
+    if (phase === 'ended' || endedRef.current) return;
+
+    const notificationState = phaseToNotificationState(phase);
+
+    syncCallNotification(notificationState);
+
+    const refresh = setInterval(() => {
+      if (!endedRef.current) {
+        syncCallNotification(notificationState);
+      }
+    }, CALL_NOTIFICATION_REFRESH_MS);
+
+    return () => clearInterval(refresh);
+  }, [phase, syncCallNotification]);
+
+  useEffect(() => {
+    if (phase === 'ended' || endedRef.current) return;
+
+    const restoreCurrentCallNotification = () => {
+      if (!endedRef.current) {
+        syncCallNotification(phaseToNotificationState(phase));
+      }
+    };
+
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        restoreCurrentCallNotification();
+      }
+    });
+    const focusUnsubscribe = navigation.addListener('focus', restoreCurrentCallNotification);
+
+    restoreCurrentCallNotification();
+
+    return () => {
+      appStateSubscription.remove();
+      focusUnsubscribe();
+    };
+  }, [navigation, phase, syncCallNotification]);
+
+  useEffect(() => {
+    if (phase !== 'incoming' && phase !== 'outgoing') return;
+
+    const timeout = setTimeout(() => {
+      if (!endedRef.current) {
+        finish('missed');
+      }
+    }, CALL_TIMEOUT_MS);
+
+    return () => clearTimeout(timeout);
+  }, [finish, phase]);
+
+  useEffect(() => {
+    if (phase !== 'connected') return;
+    const timer = setInterval(() => {
+      const startedAt = connectedAtRef.current ?? Date.now();
+      setSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
+
+  const handleConnected = useCallback(() => {
+    if (connectedAtRef.current) return;
+    connectedAtRef.current = Date.now();
+    if (isGroupCall && user?.uid && !groupJoinedRef.current) {
+      getSocket().emit('call:group-participant-join', {
+        callId,
+        conversationId,
+        userId: user.uid,
+      });
+      groupJoinedRef.current = true;
+    }
+    syncCallNotification('active');
+    setPhase('connected');
+  }, [callId, conversationId, isGroupCall, syncCallNotification, user?.uid]);
+
+  return (
+    <View style={s.root}>
+      {Platform.OS === 'android' ? <StatusBar barStyle="light-content" backgroundColor="#05070d" /> : null}
+      {phase === 'incoming' ? (
+        <SafeAreaView style={s.outgoingRoot} edges={['top', 'bottom']}>
+          <View style={s.topBlock}>
+            <Text style={s.callEyebrow}>{mode === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}</Text>
+            <Text style={s.peerName} numberOfLines={1}>{displayName}</Text>
+            <Text style={s.callStatus}>
+              {isGroupCall ? 'Đang mời bạn vào cuộc gọi nhóm Surf' : 'Đang gọi cho bạn qua Surf'}
+            </Text>
+          </View>
+          <View style={s.outgoingCenter}>
+            {peerAvatar ? (
+              <Image source={{ uri: peerAvatar }} style={s.heroAvatar} />
+            ) : (
+              <View style={s.heroAvatarFallback}>
+                <Text style={s.heroInitial}>{initials(displayName)}</Text>
+              </View>
+            )}
+          </View>
+          <View style={s.incomingControls}>
+            <TouchableOpacity style={[s.callActionButton, s.declineButton]} onPress={declineIncomingCall} activeOpacity={0.85}>
+              <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.callActionButton, s.acceptButton]} onPress={acceptIncomingCall} activeOpacity={0.85}>
+              <Ionicons name={mode === 'video' ? 'videocam' : 'call'} size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      ) : lk && tokenResponse?.serverUrl && tokenResponse.token ? (
+        <lk.LiveKitRoom
+          serverUrl={tokenResponse.serverUrl}
+          token={tokenResponse.token}
+          connect
+          audio
+          video={mode === 'video'}
+          options={{ adaptiveStream: { pixelDensity: 'screen' }, dynacast: true }}
+          onConnected={handleConnected}
+          onDisconnected={() => {
+            if (!endedRef.current) finish('ended');
+          }}
+          onError={() => {
+            if (!endedRef.current) finish('failed');
+          }}
+        >
+          <LiveKitCallContent
+            lk={lk}
+            mode={mode}
+            peerName={displayName}
+            peerAvatar={peerAvatar}
+            phase={phase}
+            seconds={seconds}
+            onConnected={handleConnected}
+            onEnd={() => finish('ended')}
+          />
+        </lk.LiveKitRoom>
+      ) : (
+        <SafeAreaView style={s.outgoingRoot} edges={['top', 'bottom']}>
+          <View style={s.topBlock}>
+            <Text style={s.peerName} numberOfLines={1}>{displayName}</Text>
+            <Text style={s.callStatus}>
+              {error ?? (mode === 'video' ? 'Đang gọi video...' : 'Đang gọi thoại...')}
+            </Text>
+          </View>
+          <View style={s.outgoingCenter}>
+            {peerAvatar ? (
+              <Image source={{ uri: peerAvatar }} style={s.heroAvatar} />
+            ) : (
+              <View style={s.heroAvatarFallback}>
+                <Text style={s.heroInitial}>{initials(displayName)}</Text>
+              </View>
+            )}
+            {!error ? <ActivityIndicator color="#fff" size="large" style={{ marginTop: 26 }} /> : null}
+          </View>
+          <View style={s.controls}>
+            <RoundButton icon="mic" label="Mic" active onPress={() => {}} />
+            <RoundButton icon={mode === 'video' ? 'videocam' : 'volume-high'} label={mode === 'video' ? 'Camera' : 'Loa'} active onPress={() => {}} />
+            <TouchableOpacity style={s.endButton} onPress={() => finish('ended')} activeOpacity={0.85}>
+              <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#05070d' },
+  liveRoot: { flex: 1, backgroundColor: '#05070d' },
+  outgoingRoot: { flex: 1, backgroundColor: '#05070d' },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
-    paddingTop: 20,
-    paddingBottom: 40,
-    paddingHorizontal: 16,
+    paddingHorizontal: 22,
   },
-
-  remoteVideo: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
-  localVideoContainer: {
-    position: 'absolute',
-    top: 60,
-    right: 16,
-    width: 110,
-    height: 160,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#1e293b',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-    elevation: 8,
-    zIndex: 10,
-  },
-  localVideo: {
-    flex: 1,
-  },
-
-  header: { alignItems: 'center', paddingTop: 8 },
-  peerNameText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  statusText: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 15,
-    fontWeight: '500',
-    marginTop: 4,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  p2pStatus: {
-    color: '#94a3b8',
+  topBlock: { alignItems: 'center', paddingTop: 28 },
+  callEyebrow: {
+    marginBottom: 10,
+    color: '#22d3ee',
     fontSize: 12,
-    marginTop: 6,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0,
   },
-
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 120, height: 120, borderRadius: 60 },
-  avatarPlaceholder: {
-    backgroundColor: '#3b82f6',
+  peerName: { maxWidth: '88%', color: '#fff', fontSize: 28, lineHeight: 34, fontWeight: '800' },
+  callStatus: { marginTop: 8, color: 'rgba(255,255,255,0.72)', fontSize: 15, fontWeight: '600' },
+  outgoingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  audioStage: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#05070d' },
+  remoteVideo: { flex: 1, width: '100%', height: '100%' },
+  remoteFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#05070d' },
+  waitingVideoText: { marginTop: 18, color: 'rgba(255,255,255,0.68)', fontSize: 14, fontWeight: '700' },
+  heroAvatar: { width: 142, height: 142, borderRadius: 71, backgroundColor: '#172033' },
+  heroAvatarFallback: {
+    width: 142,
+    height: 142,
+    borderRadius: 71,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarText: { color: '#fff', fontSize: 48, fontWeight: 'bold' },
-
-  footer: { alignItems: 'center' },
-  controlsRow: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.85)',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 50,
-  },
-  controlBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: 'rgba(51,65,85,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlBtnActive: { backgroundColor: 'rgba(203,213,225,0.85)' },
-  controlBtnVideo: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
     backgroundColor: '#0ea5e9',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  btnEnd: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    backgroundColor: '#ef4444',
+  heroInitial: { color: '#fff', fontSize: 58, fontWeight: '900' },
+  localPreview: {
+    position: 'absolute',
+    right: 22,
+    top: 116,
+    width: 104,
+    height: 146,
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: '#111827',
+  },
+  localVideo: { width: '100%', height: '100%' },
+  localPreviewOff: {
+    position: 'absolute',
+    right: 22,
+    top: 116,
+    width: 104,
+    height: 146,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(15,23,42,0.86)',
+  },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 8,
+    paddingBottom: 26,
+  },
+  incomingControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 44,
+    paddingBottom: 38,
+  },
+  callActionButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+  },
+  acceptButton: {
+    backgroundColor: '#22c55e',
+    shadowColor: '#22c55e',
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+  },
+  declineButton: {
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+  },
+  controlItem: { alignItems: 'center', gap: 8, minWidth: 74 },
+  roundButton: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
+  roundButtonActive: { backgroundColor: 'rgba(255,255,255,0.20)' },
+  roundButtonMuted: { backgroundColor: 'rgba(255,255,255,0.10)' },
+  controlLabel: { color: 'rgba(255,255,255,0.78)', fontSize: 11, fontWeight: '700' },
+  endButton: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.36,
+    shadowRadius: 18,
+    elevation: 7,
   },
 });

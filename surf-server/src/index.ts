@@ -37,6 +37,7 @@ const app = express();
 app.set('etag', false);
 const httpServer = createServer(app);
 const PORT = Number(process.env.PORT) || 4000;
+const PORT_RETRY_LIMIT = Number(process.env.PORT_RETRY_LIMIT) || 10;
 const lanOriginPattern = /^https?:\/\/(?:localhost|127\.0\.0\.1|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?$/;
 
 // Allowed CORS origins
@@ -165,12 +166,31 @@ initRedis()
   });
 app.use('/api/notifications', notificationsRoutes);
 
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`Surf API http://0.0.0.0:${PORT}`);
-  console.log(`🔌 Socket.io ready`);
-  console.log(`🏥 Health check: http://0.0.0.0:${PORT}/api/health`);
-  console.log(`📖 API docs: http://0.0.0.0:${PORT}/api/docs`);
-});
+function startHttpServer(port: number, retryCount = 0) {
+  const onError = (err: NodeJS.ErrnoException) => {
+    httpServer.off('error', onError);
+
+    if (err.code === 'EADDRINUSE' && retryCount < PORT_RETRY_LIMIT) {
+      const nextPort = port + 1;
+      console.warn(`Port ${port} is already in use. Trying ${nextPort}...`);
+      startHttpServer(nextPort, retryCount + 1);
+      return;
+    }
+
+    throw err;
+  };
+
+  httpServer.once('error', onError);
+  httpServer.listen(port, '0.0.0.0', () => {
+    httpServer.off('error', onError);
+    console.log(`Surf API http://0.0.0.0:${port}`);
+    console.log(`🔌 Socket.io ready`);
+    console.log(`🏥 Health check: http://0.0.0.0:${port}/api/health`);
+    console.log(`📖 API docs: http://0.0.0.0:${port}/api/docs`);
+  });
+}
+
+startHttpServer(PORT);
 
 // ── Dọn thùng rác: xóa vĩnh viễn bài viết đã xóa quá 36 ngày ─────────────
 async function cleanupTrash() {
