@@ -105,7 +105,6 @@ function VideoItem({
   const muted = videosMuted || item.editOptions?.mutedOriginal === true;
   const player = useVideoPlayer(optimizeCloudinaryVideo(item.videoUrl, reduceDataUsage), (p) => {
     p.loop = true;
-    p.muted = muted;
   });
   const [buffering, setBuffering] = useState(true);
   const [landscape, setLandscape] = useState(false);
@@ -144,31 +143,40 @@ function VideoItem({
 
   useEffect(() => {
     player.timeUpdateEventInterval = 0.25;
+    let isMounted = true;
+
     const sub = player.addListener('statusChange', (payload: { status: string }) => {
-      setBuffering(payload.status === 'idle' || payload.status === 'loading');
+      if (isMounted) setBuffering(payload.status === 'idle' || payload.status === 'loading');
     });
     const playSub = player.addListener('playingChange', (payload: { isPlaying: boolean }) => {
-      setPaused(!payload.isPlaying);
+      if (isMounted) setPaused(!payload.isPlaying);
     });
     const timeSub = player.addListener('timeUpdate', (payload: { currentTime: number }) => {
-      setCurrentTime(payload.currentTime);
-      setDuration(player.duration || 0);
+      if (isMounted) {
+        setCurrentTime(payload.currentTime);
+        setDuration(player.duration || 0);
+      }
     });
     const sourceSub = player.addListener(
       'sourceLoad',
       (payload: { duration: number; availableVideoTracks?: Array<{ size?: { width?: number; height?: number } }> }) => {
-        setDuration(payload.duration || 0);
-        const size = payload.availableVideoTracks?.[0]?.size;
-        if (size?.width && size?.height) setIsLandscapeVideo(size.width > size.height);
+        if (isMounted) {
+          setDuration(payload.duration || 0);
+          const size = payload.availableVideoTracks?.[0]?.size;
+          if (size?.width && size?.height) setIsLandscapeVideo(size.width > size.height);
+        }
       }
     );
     
     const dimSub = Dimensions.addEventListener('change', ({ screen }) => {
-      setScreenDim(screen);
+      if (isMounted) setScreenDim(screen);
     });
 
     return () => {
-      pausePlayer();
+      isMounted = false;
+      try {
+        pausePlayer();
+      } catch {}
       sub.remove();
       playSub.remove();
       timeSub.remove();
@@ -203,7 +211,11 @@ function VideoItem({
   }, [active, autoPlay, landscape, onLandscapeModeChange, pausePlayer, player]);
 
   useEffect(() => {
-    player.muted = muted;
+    try {
+      player.muted = muted;
+    } catch {
+      // ignore if player is being destroyed
+    }
   }, [muted, player]);
 
   useEffect(() => {
@@ -293,7 +305,7 @@ function VideoItem({
           try {
             next ? player.pause() : player.play();
           } catch {
-            // ignore player transition
+            // ignore if player is being destroyed
           }
           return next;
         });
@@ -309,7 +321,7 @@ function VideoItem({
     try {
       player.playbackRate = 2;
     } catch {
-      // ignore unsupported rate changes
+      // ignore if player is being destroyed or unsupported rate changes
     }
   };
 
@@ -320,7 +332,7 @@ function VideoItem({
     try {
       player.playbackRate = 1;
     } catch {
-      // ignore unsupported rate changes
+      // ignore if player is being destroyed or unsupported rate changes
     }
   };
 
@@ -353,11 +365,23 @@ function VideoItem({
       player.currentTime = nextTime;
       setCurrentTime(nextTime);
     } catch {
-      // ignore seek errors while loading
+      // ignore seek errors while loading or if player is being destroyed
     }
   };
 
   const caption = item.description || item.title || '';
+
+  useEffect(() => {
+    // Cleanup when component unmounts
+    return () => {
+      try {
+        player.pause();
+        player.playbackRate = 1;
+      } catch {
+        // ignore errors during cleanup
+      }
+    };
+  }, [player]);
 
   return (
     <View style={[s.item, { height }]}>
