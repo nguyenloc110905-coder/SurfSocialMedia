@@ -300,7 +300,7 @@ function privacyIcon(p?: string): keyof typeof Ionicons.glyphMap {
   return 'globe-outline';
 }
 
-// ── FeedImage ────────────────────────────────────────────────────────────────
+// FeedImage
 function FeedImage({ uri, style, resizeMode = 'cover' }: { uri: string; style: object; resizeMode?: 'cover' | 'contain' }) {
   const scheme = useColorScheme();
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
@@ -323,7 +323,7 @@ function FeedImage({ uri, style, resizeMode = 'cover' }: { uri: string; style: o
   );
 }
 
-// ── PinchZoomImage — pinch-to-zoom for lightbox images ────────────────────────
+// PinchZoomImage
 function PinchZoomImage({ uri }: { uri: string }) {
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const sourceUri = optimizeCloudinaryImage(uri, reduceDataUsage);
@@ -386,7 +386,7 @@ function PinchZoomImage({ uri }: { uri: string }) {
   );
 }
 
-// ── VideoViewerItem ───────────────────────────────────────────────────────────
+// VideoViewerItem
 function VideoViewerItem({ url, isActive }: { url: string; isActive: boolean }) {
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
@@ -413,7 +413,7 @@ function MediaViewerItem({ url, isActive }: { url: string; isActive: boolean }) 
   return <PinchZoomImage uri={url} />;
 }
 
-// ── ImageViewer — fullscreen lightbox, swipe-down to dismiss ─────────────────
+// ImageViewer
 function ImageViewer({ urls, initialIndex, onClose }: {
   urls: string[]; initialIndex: number; onClose: () => void;
 }) {
@@ -493,7 +493,7 @@ const iv = StyleSheet.create({
   counterText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });
 
-// ── VideoPlaceholder ──────────────────────────────────────────────────────────
+// VideoPlaceholder
 function VideoPlaceholder({ url, thumbnailUrl }: { url?: string; thumbnailUrl?: string | null }) {
   const scheme = useColorScheme();
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
@@ -509,7 +509,7 @@ function VideoPlaceholder({ url, thumbnailUrl }: { url?: string; thumbnailUrl?: 
   );
 }
 
-// ── VideoMediaItem ────────────────────────────────────────────────────────────
+// VideoMediaItem
 function VideoMediaItem({ url, isVisible, thumbnailUrl }: { url: string; isVisible: boolean; thumbnailUrl?: string | null }) {
   const [buffering, setBuffering] = useState(true);
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
@@ -565,7 +565,7 @@ function VideoMediaItem({ url, isVisible, thumbnailUrl }: { url: string; isVisib
   );
 }
 
-// ── MediaGrid ─────────────────────────────────────────────────────────────────
+// MediaGrid
 function MediaGrid({ urls, isVisible, post }: { urls: string[]; isVisible: boolean; post?: FeedPost }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
@@ -667,7 +667,7 @@ const mg = StyleSheet.create({
   moreText: { color: '#fff', fontSize: 24, fontWeight: '700' },
 });
 
-// ── ReactionPickerOverlay ─────────────────────────────────────────────────────
+// ReactionPickerOverlay
 type PickerAnchor = { px: number; py: number; pw: number; ph: number };
 
 function ReactionPickerOverlay({ visible, C, anchor, hovered }: {
@@ -733,7 +733,7 @@ const rp = StyleSheet.create({
   emojiHovered: { fontSize: 30 },
 });
 
-// ── CommentReactionButton ────────────────────────────────────────────────────
+// CommentReactionButton
 function CommentReactionButton({ liked, reaction, C, onShortPress, onPickReaction }: {
   liked: boolean;
   reaction: string | null;
@@ -832,7 +832,7 @@ function CommentReactionButton({ liked, reaction, C, onShortPress, onPickReactio
   );
 }
 
-// ── CommentSheet ──────────────────────────────────────────────────────────────
+// CommentSheet
 function CommentSheet({ postId, onClose, onCountChange }: {
   postId: string; onClose: () => void; onCountChange: (n: number) => void;
 }) {
@@ -852,6 +852,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
   const [commentReactions, setCommentReactions] = useState<Record<string, string | null>>({});
   const [replyTo, setReplyTo] = useState<{ commentId: string; authorDisplayName: string } | null>(null);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [submitError, setSubmitError] = useState('');
   const [kbHeight, setKbHeight] = useState(0);
   const slideY = useRef(new Animated.Value(SH * 0.75)).current;
   const inputRef = useRef<TextInput>(null);
@@ -978,13 +979,19 @@ function CommentSheet({ postId, onClose, onCountChange }: {
     );
   };
 
-  const clearReply = () => { setReplyTo(null); setText(''); };
+  const clearReply = () => { setReplyTo(null); setText(''); setSubmitError(''); };
+
+  const updateText = (value: string) => {
+    setText(value);
+    if (submitError) setSubmitError('');
+  };
 
   const submit = async () => {
     const tmp = text.trim();
     if (!tmp || submitting) return;
     setText('');
     setReplyTo(null);
+    setSubmitError('');
     setSubmitting(true);
     try {
       await api.post(`/api/comments/${postId}`, {
@@ -992,7 +999,16 @@ function CommentSheet({ postId, onClose, onCountChange }: {
         ...(replyTo ? { parentId: replyTo.commentId } : {}),
       });
       await loadComments();
-    } catch { setText(tmp); } finally { setSubmitting(false); }
+    } catch (err) {
+      setText(tmp);
+      const message = err instanceof Error ? err.message : 'Bình luận chưa được gửi. Vui lòng thử lại.';
+      const isModerationBlock = /tiêu chuẩn cộng đồng|vi phạm|không phù hợp|moderation/i.test(message);
+      setSubmitError(
+        isModerationBlock
+          ? message
+          : 'Bình luận chưa được gửi. Vui lòng kiểm tra kết nối và thử lại.'
+      );
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -1073,6 +1089,9 @@ function CommentSheet({ postId, onClose, onCountChange }: {
                 </TouchableOpacity>
               </View>
             )}
+            {!!submitError && (
+              <Text style={cs.submitError} numberOfLines={3}>{submitError}</Text>
+            )}
             <View style={[cs.inputRow, { borderTopColor: C.border }]}>
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} style={cs.inputAvatar} />
@@ -1087,7 +1106,7 @@ function CommentSheet({ postId, onClose, onCountChange }: {
                 placeholder={t('write_comment')}
                 placeholderTextColor={C.subtext}
                 value={text}
-                onChangeText={setText}
+                onChangeText={updateText}
                 multiline
                 maxLength={500}
               />
@@ -1132,13 +1151,14 @@ const cs = StyleSheet.create({
   replyAvatar: { width: 26, height: 26, borderRadius: 13 },
   replyChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth },
   replyChipText: { flex: 1, fontSize: 12 },
+  submitError: { color: '#ef4444', fontSize: 12, fontWeight: '700', lineHeight: 16, paddingHorizontal: 14, paddingTop: 8 },
   inputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, gap: 8 },
   inputAvatar: { width: 32, height: 32, borderRadius: 16 },
   input: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, maxHeight: 100 },
   sendBtn: { padding: 6 },
 });
 
-// ── ReactionsSheet ─────────────────────────────────────────────────────────
+// ReactionsSheet
 type Reactor = { uid: string; displayName: string; photoURL: string | null; reaction: string };
 
 function ReactionsSheet({ postId, onClose, C }: {
@@ -1253,7 +1273,7 @@ const rs = StyleSheet.create({
   reactionEmoji: { fontSize: 22 },
 });
 
-// ── EmbedVideoItem ─────────────────────────────────────────────────────────
+// EmbedVideoItem
 function EmbedVideoItem({ url, isVisible, thumbnailUrl }: { url: string; isVisible: boolean; thumbnailUrl?: string | null }) {
   const [buffering, setBuffering] = useState(true);
   const muted = useMediaPlaybackStore((state) => state.videosMuted);
@@ -1327,7 +1347,7 @@ const ev = StyleSheet.create({
   placeholderOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.18)' },
 });
 
-// ── SharedPostEmbed ─────────────────────────────────────────────────────────
+// SharedPostEmbed
 function SharedPostEmbed({ sf, C, isVisible = true }: { sf: NonNullable<Post['sharedFrom']>; C: typeof LIGHT; isVisible?: boolean }) {
   const reduceDataUsage = useSettingsStore((state) => state.prefs.reduceDataUsage);
   const text = parseMentions(sf.content ?? '');
@@ -1372,7 +1392,7 @@ const se = StyleSheet.create({
   videoText: { fontSize: 12 },
 });
 
-// ── SharePostModal ────────────────────────────────────────────────────────────
+// SharePostModal
 function SharePostModal({ post, C, onClose }: { post: Post; C: typeof LIGHT; onClose: () => void }) {
   const t = useT();
   const [caption, setCaption] = useState('');
@@ -1450,7 +1470,7 @@ const sm = StyleSheet.create({
   submitText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
-// ── PostCard ──────────────────────────────────────────────────────────────────
+// PostCard
 function PostOptionsSheet({
   visible,
   saved,

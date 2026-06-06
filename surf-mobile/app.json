@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "surf-mobile",
+    "name": "Surf",
     "slug": "surf-mobile",
     "version": "1.0.0",
     "scheme": [
@@ -8,7 +8,7 @@
       "com.surf.app"
     ],
     "orientation": "default",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/FullLogo_Transparent_NoBuffer.png",
     "backgroundColor": "#0c1929",
     "userInterfaceStyle": "automatic",
     "splash": {
@@ -50,9 +50,9 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0c1929",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "foregroundImage": "./assets/FullLogo_Transparent_NoBuffer.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/FullLogo_Transparent_NoBuffer.png"
       },
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json"
@@ -89,7 +89,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/FullLogo_Transparent_NoBuffer.png",
           "color": "#0c1929"
         }
       ],
