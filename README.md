@@ -65,6 +65,70 @@ Surf được thiết kế theo tiêu chuẩn Enterprise-grade, đảm bảo kh�
 
 ---
 
+## 📄 Hướng Dẫn Chấm Điểm & Chạy Dự Án (Dành Cho Giảng Viên)
+
+### 1. Công Nghệ Sử Dụng
+- **Mobile Framework:** React Native (Expo) - *(Lưu ý: Dự án sử dụng React Native/Expo thay vì Flutter/Dart)*
+- **Frontend Web:** ReactJS (Vite, TailwindCSS)
+- **Backend API:** Node.js (Express, TypeScript)
+- **Cơ sở dữ liệu:** Firebase Firestore (NoSQL) & Storage
+- **Realtime & Media:** Socket.io, Redis, LiveKit
+
+### 2. Các Bước Cài Đặt Và Chạy Project
+
+**Yêu cầu môi trường:**
+- Node.js (v18.x trở lên)
+- npm (v9.x trở lên)
+- Máy ảo Android (Android Studio) hoặc ứng dụng Expo Go trên điện thoại thật.
+
+**Bước 1: Clone repository**
+```bash
+git clone <LINK_REPO>
+cd Surf
+```
+
+**Bước 2: Chạy Server (Backend)**
+```bash
+cd surf-server
+npm install
+npm run dev
+```
+
+**Bước 3: Chạy Mobile App**
+Mở một terminal mới:
+```bash
+cd surf-mobile
+npm install
+npm start
+# Quét mã QR bằng ứng dụng Expo Go trên điện thoại, hoặc bấm 'a' để mở trên Android Emulator.
+```
+
+**Bước 4: Chạy Web App (Khuyến nghị để test đầy đủ tính năng)**
+Mở một terminal mới:
+```bash
+cd surf-client
+npm install
+npm run dev
+```
+
+### 3. Tài Khoản Test
+*(Giảng viên có thể tự đăng ký một tài khoản mới trực tiếp trên ứng dụng để trải nghiệm các luồng như OTP và tạo Profile).*
+
+### 4. Cấu Hình Firebase & Dữ Liệu
+- **File cấu hình:** 
+  - Android: `google-services.json` đã được tích hợp sẵn trong thư mục `surf-mobile/`.
+  - **Backend / Web / Mobile:** Tệp nén chứa các khóa bảo mật `.env` sẽ được sinh viên gửi kèm (hoặc gửi riêng). Giảng viên vui lòng giải nén và **chép đè các file này vào đúng vị trí** tương ứng bên dưới trước khi chạy lệnh `npm install`:
+    1. Chép file `.env` và `serviceAccountKey.json` vào thư mục `surf-server/`
+    2. Chép file `.env` vào thư mục `surf-client/`
+    3. Chép file `.env` vào thư mục `surf-mobile/`
+- **Cơ sở dữ liệu mẫu:** Do hệ thống sử dụng **Firebase Firestore (NoSQL)** hoạt động trên Cloud, toàn bộ schema (Collections: `users`, `posts`, `messages`,...), Rules và dữ liệu mẫu **đã tồn tại sẵn trực tuyến**. Hệ thống sẽ tự động fetch dữ liệu về khi ứng dụng chạy. **Không cần chạy script tạo database** hay import dữ liệu thủ công.
+- **Firebase Rules:** File cấu hình Rule gốc có thể kiểm chứng tại `firestore.rules` và `storage.rules` ở thư mục gốc của repo.
+
+### 5. Báo Cáo Đồ Án
+File báo cáo hoàn chỉnh (`.pdf`) đã được nộp đính kèm ngay trong Repository. Giảng viên vui lòng kiểm tra tại thư mục `Reports/` của mã nguồn.
+
+---
+
 <div align="center">
   <p><i>"Ride the wave of next-gen social networking."</i></p>
   <b>Developed with ❤️ by <a href="https://github.com/nguyenloc110905-coder">Nguyen Loc</a> & The Surf Team LDSK</b>
