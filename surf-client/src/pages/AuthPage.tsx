@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion, useMotionValue, useSpring } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   signIn,
@@ -139,10 +140,10 @@ const EyeIcon = ({ open }: { open: boolean }) => (
 
 /* ─── Shared UI tokens ─────────────────────────────────────────────────── */
 const INPUT =
-  'w-full px-4 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-transparent backdrop-blur-sm transition-all duration-200';
+  'w-full px-4 py-3 rounded-xl bg-[#1e293b] border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-surf-primary/60 focus:border-transparent transition-all duration-200';
 
 const BTN_PRIMARY =
-  'w-full py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-400/30 transition-all duration-300 disabled:opacity-50 disabled:hover:shadow-none';
+  'w-full py-3 rounded-xl font-bold text-white bg-surf-primary shadow-[0_0_40px_rgba(14,165,233,0.15)] hover:bg-surf-secondary transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-2';
 
 /* ─── Password field ───────────────────────────────────────────────────── */
 function PasswordInput({
@@ -210,6 +211,197 @@ function ErrorBanner({ message }: { message: string }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
+
+const TypewriterText = ({ text, className = '', delayStart = 0 }: { text: string, className?: string, delayStart?: number }) => {
+  return (
+    <span className={className}>
+      {text.split('').map((char, index) => (
+        <motion.span
+          key={index}
+          initial={{ opacity: 0, filter: 'blur(10px)' }}
+          whileInView={{ opacity: 1, filter: 'blur(0px)' }}
+          viewport={{ once: true, margin: "0px 0px -100px 0px" }}
+          transition={{ duration: 0.2, delay: delayStart + index * 0.03 }}
+        >
+          {char}
+        </motion.span>
+      ))}
+    </span>
+  );
+};
+
+
+const FAQItem = ({ question, answer }: { question: string, answer: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div className="border-b border-white/10 py-5">
+      <button onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center text-left focus:outline-none group">
+        <span className="text-xl font-bold group-hover:text-surf-primary transition-colors">{question}</span>
+        <span className="text-surf-primary text-3xl font-light transform transition-transform duration-300" style={{ transform: isOpen ? 'rotate(45deg)' : 'rotate(0)' }}>+</span>
+      </button>
+      <motion.div 
+        initial={false}
+        animate={{ height: isOpen ? 'auto' : 0, opacity: isOpen ? 1 : 0 }}
+        className="overflow-hidden"
+      >
+        <p className="pt-4 text-white/60 leading-relaxed text-lg pb-2">{answer}</p>
+      </motion.div>
+    </div>
+  );
+};
+
+const ParticleBackground = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let particles: any[] = [];
+    let mouse = { x: -1000, y: -1000 };
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    for (let i = 0; i < 80; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() * 2 + 0.5,
+        baseX: Math.random() * canvas.width,
+        baseY: Math.random() * canvas.height,
+        density: (Math.random() * 30) + 1,
+        color: Math.random() > 0.5 ? '#0ea5e9' : '#06b6d4',
+      });
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      for (let i = 0; i < particles.length; i++) {
+        let p = particles[i];
+        
+        let dx = mouse.x - p.x;
+        let dy = mouse.y - p.y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        let forceDirectionX = dx / distance;
+        let forceDirectionY = dy / distance;
+        
+        const maxDistance = 150;
+        let force = (maxDistance - distance) / maxDistance;
+        if (force < 0) force = 0;
+        
+        let directionX = (forceDirectionX * force * p.density);
+        let directionY = (forceDirectionY * force * p.density);
+
+        if (distance < maxDistance) {
+          p.x -= directionX;
+          p.y -= directionY;
+        } else {
+          if (p.x !== p.baseX) {
+            let dx = p.x - p.baseX;
+            p.x -= dx / 20;
+          }
+          if (p.y !== p.baseY) {
+            let dy = p.y - p.baseY;
+            p.y -= dy / 20;
+          }
+        }
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+      }
+      
+      requestAnimationFrame(animate);
+    };
+    animate();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none opacity-60" />;
+};
+
+
+const FollowCursorCTA = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  
+  const springX = useSpring(mouseX, { stiffness: 500, damping: 30 });
+  const springY = useSpring(mouseY, { stiffness: 500, damping: 30 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const { left, top } = ref.current.getBoundingClientRect();
+    mouseX.set(e.clientX - left);
+    mouseY.set(e.clientY - top);
+  };
+
+  return (
+    <section className="py-24 relative z-10 px-6">
+      <motion.div 
+        ref={ref}
+        onMouseMove={handleMouseMove}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+        initial={{ opacity: 0, scale: 0.9 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="max-w-[1280px] mx-auto bg-gradient-to-br from-surf-primary to-surf-secondary rounded-[3rem] py-32 px-6 text-center relative overflow-hidden cursor-none"
+      >
+        <div className="absolute inset-0 bg-black opacity-10" style={{ backgroundImage: 'radial-gradient(circle at center, transparent 0, #000 100%)' }}></div>
+        <h2 className="text-[clamp(40px,8vw,120px)] font-extrabold leading-none relative z-10 font-['Cal_Sans',sans-serif] tracking-tighter text-white pointer-events-none select-none drop-shadow-2xl">
+          SURFING<br/>EVERYTHING
+        </h2>
+        
+        {/* The Following Button */}
+        <motion.button 
+          style={{ 
+            x: springX, 
+            y: springY,
+            translateX: "-50%",
+            translateY: "-50%",
+            opacity: isHovering ? 1 : 0,
+            scale: isHovering ? 1 : 0.5,
+          }}
+          className="absolute top-0 left-0 bg-black text-white font-bold py-5 px-10 rounded-full text-xl shadow-[0_0_40px_rgba(0,0,0,0.5)] z-20 pointer-events-none whitespace-nowrap"
+        >
+          SIGN UP NOW
+        </motion.button>
+
+        {/* Clickable area */}
+        <div 
+          className="absolute inset-0 z-30 cursor-none"
+          onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        />
+      </motion.div>
+    </section>
+  );
+};
+
 export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -229,6 +421,19 @@ export default function AuthPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState('');
+  const [showRegisterDropdown, setShowRegisterDropdown] = useState(false);
+  const registerDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (registerDropdownRef.current && !registerDropdownRef.current.contains(event.target as Node)) {
+        setShowRegisterDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const loginFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -495,328 +700,430 @@ export default function AuthPage() {
     navigate(to === 'register' ? '/register' : '/login', { replace: true });
   };
 
+  const fadeUp: any = {
+    hidden: { opacity: 0, y: 40 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
+  };
+  const staggerContainer: any = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.15 }
+    }
+  };
+
   return (
-    <div className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      <AuthBackground />
-
-      <div className="auth-entrance relative z-10 w-full max-w-5xl mx-4 flex flex-col md:flex-row items-center gap-8 md:gap-12 lg:gap-20 py-8">
-        {/* Left: Logo */}
-        <div className="flex flex-col items-center md:flex-1 auth-logo-side">
-          <Link to="/" className="group">
-            <img
-              src="/SurfLogo.png"
-              alt="Surf"
-              className="h-28 md:h-64 lg:h-80 w-auto object-contain drop-shadow-[0_0_40px_rgba(6,182,212,0.3)] group-hover:drop-shadow-[0_0_60px_rgba(6,182,212,0.5)] transition-all duration-500 group-hover:scale-105"
-            />
-          </Link>
-          <p className="hidden md:block text-white/50 text-center mt-6 max-w-xs text-lg leading-relaxed">
-            Kết nối, chia sẻ và khám phá thế giới cùng{' '}
-            <span className="text-cyan-400 font-semibold">Surf</span>
-          </p>
-        </div>
-
-        {/* Right: Auth card */}
-        <div className="w-full max-w-md">
-          <div className="auth-glass rounded-3xl p-7 md:p-8">
-            {/* Mode tabs */}
-            <div className="flex bg-white/[0.06] rounded-2xl p-1 mb-6">
-              <button
-                type="button"
-                onClick={() => switchMode('login')}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${mode === 'login'
-                  ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20'
-                  : 'text-white/50 hover:text-white/80'
-                  }`}
-              >
-                Đăng nhập
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode('register')}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${mode === 'register'
-                  ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20'
-                  : 'text-white/50 hover:text-white/80'
-                  }`}
-              >
-                Đăng ký
-              </button>
-            </div>
-
-            {/* ─── Sliding content ────────────────────────────────────── */}
-            <div className="relative overflow-hidden">
-              {/* Login */}
-              <div
-                className={`auth-slide ${mode === 'login' ? 'auth-slide-active' : 'auth-slide-left'}`}
-              >
-                <form
-                  ref={loginFormRef}
-                  onSubmit={handleLoginSubmit}
-                  autoComplete={rememberMe ? 'on' : 'off'}
-                  className="flex flex-col gap-3.5"
-                >
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      name="login-email"
-                      autoComplete={rememberMe ? 'username' : 'one-time-code'}
-                      placeholder="you@example.com"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      className={INPUT}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                      Mật khẩu
-                    </label>
-                    <PasswordInput
-                      value={loginPassword}
-                      onChange={setLoginPassword}
-                      placeholder="••••••••"
-                      autoComplete={rememberMe ? 'current-password' : 'new-password'}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="w-4 h-4 rounded border-white/20 bg-white/10 text-cyan-500 focus:ring-cyan-400/50 accent-cyan-500"
-                      />
-                      <span className="text-sm text-white/50">Ghi nhớ</span>
-                    </label>
-                    <Link
-                      to="/forgot-password"
-                      className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
-                    >
-                      Quên mật khẩu?
-                    </Link>
-                  </div>
-
-                  <button type="submit" disabled={loading} className={BTN_PRIMARY}>
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                          />
-                        </svg>
-                        Đang xử lý...
-                      </span>
-                    ) : (
-                      'Đăng nhập'
-                    )}
-                  </button>
-                </form>
-
-                <div className="flex items-center gap-3 my-5">
-                  <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                  <span className="text-xs text-white/30 uppercase tracking-widest">hoặc</span>
-                  <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] hover:bg-white/[0.12] transition-all duration-200 disabled:opacity-50 text-white/80 font-medium"
-                >
-                  <GoogleIcon /> Đăng nhập với Google
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleFacebookSignIn}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2.5 py-3 mt-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] transition-all duration-200 disabled:opacity-50 text-white font-medium"
-                >
-                  <FacebookIcon /> Đăng nhập với Facebook
-                </button>
-
-                {mode === 'login' && <ErrorBanner message={error} />}
+    <div className="bg-surf-dark text-white font-sans min-h-screen overflow-x-hidden selection:bg-surf-primary selection:text-white pb-24">
+      {/* HEADER with Login Form */}
+      <motion.header 
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="fixed inset-x-0 top-0 z-50 bg-surf-dark/85 backdrop-blur-[16px] border-b border-white/5 py-4 px-6 transition-all duration-300"
+      >
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+          {/* Logo */}
+          <div className="flex items-center gap-3 w-full lg:w-auto justify-center lg:justify-start">
+            <img src="/logo.png" alt="Surf Logo" className="h-10 w-10 object-contain drop-shadow-lg" />
+            <span className="font-extrabold tracking-tight text-2xl uppercase font-['Cal_Sans',sans-serif] text-white">SURF</span>
+          </div>
+          
+          {/* Login Form */}
+          <div className="w-full lg:w-auto flex items-center gap-4">
+            <form onSubmit={handleLoginSubmit} autoComplete={rememberMe ? 'on' : 'off'} className="flex flex-wrap items-center gap-2 justify-center">
+              <input type="email" name="login-email" autoComplete={rememberMe ? 'username' : 'one-time-code'} placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="w-40 px-3 py-2 rounded-lg bg-surf-card border border-white/10 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-surf-primary/60" required />
+              <div className="relative group w-40">
+                <input type="password" placeholder="Mật khẩu" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-surf-card border border-white/10 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-surf-primary/60" required autoComplete={rememberMe ? 'current-password' : 'new-password'} />
               </div>
-
-              {/* Register */}
-              <div
-                className={`auth-slide ${mode === 'register' ? 'auth-slide-active' : 'auth-slide-right'}`}
+              
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="submit" disabled={loading} className="px-5 py-2 rounded-lg font-bold text-sm text-white bg-surf-primary hover:bg-surf-secondary transition-colors disabled:opacity-50">
+                ĐĂNG NHẬP
+              </motion.button>
+              
+              <div className="flex items-center gap-2 border-l border-white/20 pl-2 ml-1">
+                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} type="button" onClick={handleGoogleSignIn} disabled={loading} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Google"><GoogleIcon /></motion.button>
+                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} type="button" onClick={handleFacebookSignIn} disabled={loading} className="p-2 rounded-lg bg-[#1877F2]/80 hover:bg-[#1877F2] transition-colors" title="Facebook"><FacebookIcon /></motion.button>
+              </div>
+            </form>
+            {mode === 'login' && error && <div className="absolute right-6 top-full mt-2 bg-red-500/20 text-red-200 text-xs px-3 py-1 rounded border border-red-500/30">{error}</div>}
+            
+            <div className="relative" ref={registerDropdownRef}>
+              <motion.button 
+                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                type="button" 
+                onClick={() => { setMode('register'); setShowRegisterDropdown(!showRegisterDropdown); }} 
+                className="px-5 py-2 rounded-lg font-bold text-sm text-white border border-white/20 hover:bg-white/10 transition-colors"
               >
+                ĐĂNG KÝ
+              </motion.button>
+
+              {/* Dropdown Register Box with Animation */}
+              <div 
+                className={`absolute top-full right-0 mt-4 bg-surf-card/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] w-[90vw] max-w-sm origin-top-right transition-all duration-500 ${showRegisterDropdown ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 -translate-y-4 pointer-events-none'}`}
+              >
+                <h2 className="text-xl font-bold mb-6 text-center text-white font-['Cal_Sans',sans-serif] tracking-wide">ĐĂNG KÝ TÀI KHOẢN</h2>
                 {!showOtp ? (
-                  <>
-                    <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3">
+                  <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                          Tên hiển thị
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Nguyễn Văn A"
-                          value={regName}
-                          onChange={(e) => setRegName(e.target.value)}
-                          className={INPUT}
-                        />
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">Tên hiển thị</label>
+                        <input type="text" placeholder="Nguyễn Văn A" value={regName} onChange={(e) => setRegName(e.target.value)} className={INPUT} />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                          Email
-                        </label>
-                        <input
-                          type="email"
-                          autoComplete="email"
-                          placeholder="you@example.com"
-                          value={regEmail}
-                          onChange={(e) => setRegEmail(e.target.value)}
-                          className={INPUT}
-                          required
-                        />
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">Email</label>
+                        <input type="email" autoComplete="email" placeholder="you@example.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} className={INPUT} required />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                          Mật khẩu
-                        </label>
-                        <PasswordInput
-                          value={regPassword}
-                          onChange={setRegPassword}
-                          placeholder="Ít nhất 6 ký tự"
-                          autoComplete="new-password"
-                        />
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">Mật khẩu</label>
+                        <PasswordInput value={regPassword} onChange={setRegPassword} placeholder="Ít nhất 6 ký tự" autoComplete="new-password" />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                          Nhập lại mật khẩu
-                        </label>
-                        <PasswordInput
-                          value={regConfirmPassword}
-                          onChange={setRegConfirmPassword}
-                          placeholder="Xác nhận mật khẩu"
-                          autoComplete="new-password"
-                        />
+                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">Nhập lại mật khẩu</label>
+                        <PasswordInput value={regConfirmPassword} onChange={setRegConfirmPassword} placeholder="Xác nhận mật khẩu" autoComplete="new-password" />
+                      </div>
+                      
+                      <button type="submit" disabled={loading} className={`mt-2 ${BTN_PRIMARY}`}>
+                        {loading ? 'Đang xử lý...' : 'THAM GIA NGAY'}
+                      </button>
+                  </form>
+                ) : (
+                   <form onSubmit={handleVerifyOtpSubmit} className="flex flex-col gap-4 py-4">
+                      <div className="text-center mb-2">
+                        <h3 className="text-white text-lg font-semibold">Xác thực Email</h3>
+                        <p className="text-white/60 text-sm mt-1">Mã xác nhận 6 số đã được gửi tới <br/><strong>{regEmail}</strong>.</p>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-white/50 mb-1.5 ml-1">
-                          Số điện thoại <span className="text-white/30">(tuỳ chọn)</span>
-                        </label>
-                        <div className="flex gap-2">
-                          <select
-                            value={regPhoneCountry}
-                            onChange={(e) => setRegPhoneCountry(e.target.value)}
-                            className="w-28 px-2 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] text-white/80 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 text-sm"
-                          >
-                            {PHONE_COUNTRIES.map(({ iso, code }) => (
-                              <option key={iso} value={iso} className="bg-slate-800 text-white">
-                                {iso} ({code})
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="tel"
-                            placeholder="Số điện thoại"
-                            value={regPhone}
-                            onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
-                            className={`${INPUT} flex-1`}
-                          />
-                        </div>
+                        <input type="text" placeholder="Nhập mã 6 số" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className={`${INPUT} text-center tracking-[0.5em] font-mono text-xl py-4`} required maxLength={6} />
                       </div>
-                      <button type="submit" disabled={loading} className={`${BTN_PRIMARY} mt-1`}>
-                        {loading ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                            Đang xử lý...
-                          </span>
-                        ) : (
-                          'Tiếp tục'
-                        )}
+                      <button type="submit" disabled={loading || otpCode.length < 6} className={`${BTN_PRIMARY} mt-2`}>
+                        {loading ? 'Đang xác thực...' : 'Xác nhận mã OTP'}
+                      </button>
+                      <button type="button" disabled={loading} onClick={() => setShowOtp(false)} className="text-white/50 text-sm hover:text-white transition-colors">
+                        Quay lại chỉnh sửa
                       </button>
                     </form>
-
-                    <div className="flex items-center gap-3 my-4">
-                      <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                      <span className="text-xs text-white/30 uppercase tracking-widest">hoặc</span>
-                      <span className="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleGoogleSignIn}
-                      disabled={loading}
-                      className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-white/[0.07] border border-white/[0.12] hover:bg-white/[0.12] transition-all duration-200 disabled:opacity-50 text-white/80 font-medium"
-                    >
-                      <GoogleIcon /> Đăng ký với Google
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleFacebookSignIn}
-                      disabled={loading}
-                      className="w-full flex items-center justify-center gap-2.5 py-3 mt-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] transition-all duration-200 disabled:opacity-50 text-white font-medium"
-                    >
-                      <FacebookIcon /> Đăng ký với Facebook
-                    </button>
-                  </>
-                ) : (
-                  <form onSubmit={handleVerifyOtpSubmit} className="flex flex-col gap-4 py-4">
-                    <div className="text-center mb-2">
-                      <h3 className="text-white text-lg font-semibold">Xác thực Email</h3>
-                      <p className="text-white/60 text-sm mt-1">Mã xác nhận 6 số đã được gửi tới <strong>{regEmail}</strong>.</p>
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Nhập mã 6 số"
-                        value={otpCode}
-                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        className={`${INPUT} text-center tracking-[0.5em] font-mono text-xl py-4`}
-                        required
-                        maxLength={6}
-                      />
-                    </div>
-                    <button type="submit" disabled={loading || otpCode.length < 6} className={`${BTN_PRIMARY} mt-2`}>
-                      {loading ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                          </svg>
-                          Đang xác thực...
-                        </span>
-                      ) : (
-                        'Xác nhận mã OTP'
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => setShowOtp(false)}
-                      className="text-white/50 text-sm hover:text-white transition-colors"
-                    >
-                      Quay lại chỉnh sửa thông tin
-                    </button>
-                  </form>
                 )}
-
                 {mode === 'register' && <ErrorBanner message={error} />}
               </div>
             </div>
           </div>
         </div>
+      </motion.header>
+
+      {/* HERO & REGISTER FORM */}
+      <section className="relative min-h-[95vh] pt-32 pb-20 flex flex-col lg:flex-row items-center justify-center gap-12 px-6 lg:px-20">
+        {/* Images */}
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1.5 }}
+          className="absolute inset-0 z-0"
+        >
+          <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80" alt="Concert Social" className="w-full h-full object-cover opacity-50 filter brightness-50" />
+          <div className="absolute inset-0 bg-gradient-to-r from-surf-dark via-surf-dark/80 to-transparent w-[80%]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-surf-dark via-transparent to-transparent h-full" />
+          <ParticleBackground />
+        </motion.div>
+
+        {/* Center: Copy */}
+        <motion.div 
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+          className="relative z-10 w-full max-w-4xl text-center flex flex-col items-center"
+        >
+          <motion.div variants={fadeUp} className="inline-flex items-center gap-3 bg-surf-card border border-white/10 rounded-full px-4 py-2 mb-8">
+            <div className="w-2.5 h-2.5 rounded-full bg-surf-primary animate-pulse" />
+            <span className="text-xs font-bold uppercase tracking-wider">MẠNG XÃ HỘI THẾ HỆ MỚI</span>
+          </motion.div>
+          
+          <motion.h1 className="text-[clamp(40px,7vw,80px)] font-extrabold tracking-[-0.03em] leading-[0.95] mb-6 font-['Cal_Sans',sans-serif]">
+            <TypewriterText text="WE DON'T JUST CONNECT PEOPLE." delayStart={0.2} /><br/>
+            <TypewriterText text="WE BUILD " delayStart={1.2} />
+            <TypewriterText text="COMMUNITIES." className="text-surf-primary" delayStart={1.5} />
+          </motion.h1>
+          
+          <motion.p variants={fadeUp} className="text-xl text-white/60 max-w-[600px] mx-auto mb-10 leading-relaxed font-light font-poppins">
+            Một nền tảng được thiết kế cho sự kết nối chân thực. Nơi hàng triệu người gặp gỡ, chia sẻ khoảnh khắc và xây dựng những kỷ niệm khó quên.
+          </motion.p>
+
+          <motion.div variants={fadeUp} className="flex items-center gap-4 mb-10">
+            <div className="flex -space-x-3">
+              <img src="https://i.pravatar.cc/100?img=11" className="w-10 h-10 rounded-full border-2 border-surf-dark object-cover" alt="User"/>
+              <img src="https://i.pravatar.cc/100?img=12" className="w-10 h-10 rounded-full border-2 border-surf-dark object-cover" alt="User"/>
+              <img src="https://i.pravatar.cc/100?img=13" className="w-10 h-10 rounded-full border-2 border-surf-dark object-cover" alt="User"/>
+              <img src="https://i.pravatar.cc/100?img=14" className="w-10 h-10 rounded-full border-2 border-surf-dark object-cover" alt="User"/>
+            </div>
+            <div>
+              <div className="flex text-surf-primary text-sm">★★★★★</div>
+              <p className="text-xs text-white/60 font-semibold mt-1 uppercase tracking-wide">TRUSTED BY 10M+ USERS</p>
+            </div>
+          </motion.div>
+        </motion.div>
+
+      </section>
+
+      {/* TRUST BAR / FEATURES */}
+      <motion.section 
+        variants={staggerContainer}
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-100px" }}
+        className="py-12 border-y border-white/5 bg-surf-dark relative z-10" id="features"
+      >
+        <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 md:divide-x divide-white/5">
+          <motion.div variants={fadeUp} className="px-4 group relative cursor-default">
+            <svg className="w-10 h-10 text-gray-500 group-hover:text-surf-primary transition-colors duration-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <h3 className="font-bold text-lg mb-1">E2E SECURITY</h3>
+            <p className="text-sm text-white/50">Mã hóa tin nhắn 100%</p>
+          </motion.div>
+          <motion.div variants={fadeUp} className="px-4 group relative cursor-default">
+            <svg className="w-10 h-10 text-gray-500 group-hover:text-surf-primary transition-colors duration-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            <h3 className="font-bold text-lg mb-1">REAL-TIME</h3>
+            <p className="text-sm text-white/50">Độ trễ thấp nhất</p>
+          </motion.div>
+          <motion.div variants={fadeUp} className="px-4 group relative cursor-default">
+            <svg className="w-10 h-10 text-gray-500 group-hover:text-surf-primary transition-colors duration-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <h3 className="font-bold text-lg mb-1">4K MEDIA</h3>
+            <p className="text-sm text-white/50">Chất lượng hình ảnh sắc nét</p>
+          </motion.div>
+          <motion.div variants={fadeUp} className="px-4 group relative cursor-default">
+            <svg className="w-10 h-10 text-gray-500 group-hover:text-surf-primary transition-colors duration-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <h3 className="font-bold text-lg mb-1">GLOBAL</h3>
+            <p className="text-sm text-white/50">Mạng lưới kết nối toàn cầu</p>
+          </motion.div>
+        </div>
+      </motion.section>
+
+      {/* SERVICES GRID */}
+
+
+      {/* MOMENTS (Horizontal Scroll) */}
+      <section className="py-24 relative z-10 pl-6 lg:pl-20 overflow-hidden" id="portfolio">
+        <motion.h2 
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-4xl font-extrabold mb-12 font-['Cal_Sans',sans-serif]"
+        >
+          TRENDING MOMENTS
+        </motion.h2>
+        <motion.div 
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true }}
+          className="flex gap-6 overflow-x-auto snap-x snap-mandatory pb-8" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {[
+            { img: 'https://images.unsplash.com/photo-1528605248644-14dd04022da1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80', name: 'SUMMER FEST 2026', author: '@alex_music' },
+            { img: 'https://images.unsplash.com/photo-1491438590914-bc09fcaaf77a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80', name: 'FRIENDS REUNION', author: '@sarah.smile' },
+            { img: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80', name: 'TOKYO VLOG', author: '@traveler_k' },
+          ].map((item, i) => (
+            <motion.div 
+              variants={fadeUp}
+              key={i} className="flex-none w-[85vw] md:w-[400px] h-[500px] rounded-[3rem] snap-start relative overflow-hidden group cursor-pointer"
+            >
+              <img src={item.img} className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" alt="Moment"/>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent z-10 transition-opacity duration-500 group-hover:opacity-80" />
+              
+              <div className="absolute top-6 right-6 z-30 bg-surf-primary text-white text-xs font-bold uppercase tracking-wider py-1.5 px-3 rounded-full flex items-center gap-1 shadow-lg shadow-surf-primary/30">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" /></svg>
+                24.5K
+              </div>
+
+              <div className="absolute bottom-0 inset-x-0 h-40 z-30 flex flex-col justify-end p-8 transform transition-transform duration-500 group-hover:-translate-y-2">
+                <h3 className="font-extrabold text-2xl tracking-wide font-['Cal_Sans',sans-serif]">{item.name}</h3>
+                <p className="text-white/60 text-sm font-semibold mt-1">Shared by {item.author}</p>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+      </section>
+
+      {/* VIDEO BACKGROUND FEATURE */}
+      <section className="relative py-40 flex items-center justify-center overflow-hidden border-y border-white/5">
+        <video 
+          autoPlay 
+          loop 
+          muted 
+          playsInline 
+          className="absolute inset-0 w-full h-full object-cover z-0 filter brightness-100"
+        >
+          <source src="/videos/dog.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-black/20 z-0"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-surf-dark via-transparent to-surf-dark opacity-50 z-0"></div>
+        
+        <motion.div 
+          className="relative z-10 max-w-4xl mx-auto px-6 text-center drop-shadow-lg"
+        >
+          <span className="text-surf-primary font-bold tracking-widest uppercase text-sm mb-4 block drop-shadow-md">
+            <TypewriterText text="CHIA SẺ KHOẢNH KHẮC" delayStart={0.1} />
+          </span>
+          <h2 className="text-5xl lg:text-7xl font-extrabold mb-6 font-['Cal_Sans',sans-serif] leading-tight text-white drop-shadow-2xl">
+            <TypewriterText text="TƯƠNG TÁC THẬT," delayStart={0.6} /> <br/>
+            <TypewriterText text="KẾT NỐI SÂU." delayStart={1.1} />
+          </h2>
+          <p className="text-xl text-white/90 leading-relaxed max-w-2xl mx-auto font-medium drop-shadow-lg">
+            <TypewriterText text="Mọi khoảnh khắc của bạn đều đáng được trân trọng. Cùng bạn bè tạo nên những kỷ niệm đáng nhớ và lan toả niềm vui không giới hạn mỗi ngày." delayStart={1.5} />
+          </p>
+        </motion.div>
+      </section>
+
+      
+
+      {/* DEEP DIVE FEATURES (Zig-zag) */}
+      <section className="py-32 relative z-10 max-w-[1280px] mx-auto px-6 overflow-hidden">
+        <div className="flex flex-col gap-32">
+          {/* Feature 1 */}
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <motion.div variants={staggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} className="order-2 lg:order-1">
+              <motion.div variants={fadeUp} className="w-12 h-12 rounded-2xl bg-surf-primary/20 flex items-center justify-center text-surf-primary mb-6">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              </motion.div>
+              <motion.h2 variants={fadeUp} className="text-4xl lg:text-5xl font-extrabold mb-6 font-['Cal_Sans',sans-serif]">Mã hoá E2E tuyệt đối.</motion.h2>
+              <motion.p variants={fadeUp} className="text-white/60 text-lg leading-relaxed mb-8">Tin nhắn, cuộc gọi video và dữ liệu cá nhân của bạn được bảo vệ bằng giao thức mã hoá End-to-End tiên tiến nhất. Ngay cả chúng tôi cũng không thể đọc được tin nhắn của bạn.</motion.p>
+              <motion.ul variants={staggerContainer} className="flex flex-col gap-4">
+                {['Mã hoá AES-256', 'Tự hủy tin nhắn', 'Khóa bảo mật phần cứng'].map((item, i) => (
+                  <motion.li variants={fadeUp} key={i} className="flex items-center gap-3">
+                    <svg className="w-5 h-5 text-surf-primary" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    <span className="text-white/80 font-medium">{item}</span>
+                  </motion.li>
+                ))}
+              </motion.ul>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, x: 50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="order-1 lg:order-2 relative">
+              <div className="absolute inset-0 bg-surf-primary/20 blur-[100px] rounded-full"></div>
+              <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" alt="Security" className="relative z-10 rounded-3xl border border-white/10 shadow-2xl" />
+            </motion.div>
+          </div>
+
+          {/* Feature 2 */}
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <motion.div initial={{ opacity: 0, x: -50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="relative">
+              <div className="absolute inset-0 bg-surf-secondary/20 blur-[100px] rounded-full"></div>
+              <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" alt="Communities" className="relative z-10 rounded-3xl border border-white/10 shadow-2xl" />
+            </motion.div>
+            <motion.div variants={staggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }}>
+              <motion.div variants={fadeUp} className="w-12 h-12 rounded-2xl bg-surf-secondary/20 flex items-center justify-center text-surf-secondary mb-6">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+              </motion.div>
+              <motion.h2 variants={fadeUp} className="text-4xl lg:text-5xl font-extrabold mb-6 font-['Cal_Sans',sans-serif]">Cộng đồng không giới hạn.</motion.h2>
+              <motion.p variants={fadeUp} className="text-white/60 text-lg leading-relaxed mb-8">Không gian riêng tư cho các hội nhóm, trường học, hay câu lạc bộ. Tạo các kênh chat theo chủ đề, chia sẻ file dung lượng lớn và gọi thoại trực tiếp mà không cần ứng dụng thứ ba.</motion.p>
+              <motion.ul variants={staggerContainer} className="flex flex-col gap-4">
+                {['Tổ chức theo Kênh (Channels)', 'Không giới hạn thành viên', 'Chia sẻ file 4GB+'].map((item, i) => (
+                  <motion.li variants={fadeUp} key={i} className="flex items-center gap-3">
+                    <svg className="w-5 h-5 text-surf-secondary" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    <span className="text-white/80 font-medium">{item}</span>
+                  </motion.li>
+                ))}
+              </motion.ul>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* MESSAGING & STREAM EXPERIENCE */}
+      <section className="py-32 relative z-10 max-w-[1280px] mx-auto px-6 overflow-hidden border-y border-white/5 bg-[#0f172a]">
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <motion.div className="order-2 lg:order-1">
+            <span className="text-surf-primary font-bold tracking-widest uppercase text-sm mb-4 block">
+              <TypewriterText text="TRẢI NGHIỆM ĐỈNH CAO" delayStart={0.1} />
+            </span>
+            <h2 className="text-4xl lg:text-5xl font-extrabold mb-6 font-['Cal_Sans',sans-serif] leading-tight text-white">
+              <TypewriterText text="TỰ TIN THỂ HIỆN" delayStart={0.6} /><br/>
+              <TypewriterText text="BẢN SẮC RIÊNG." delayStart={1.1} />
+            </h2>
+            <p className="text-white/80 text-lg leading-relaxed mb-8 font-medium">
+              <TypewriterText text="Trải nghiệm nhắn tin thời gian thực cực mượt, livestream 4K không độ trễ và hệ thống tương tác đa chiều. Đã đến lúc bạn bước ra thế giới và tỏa sáng theo cách riêng của mình." delayStart={1.5} />
+            </p>
+            <motion.ul variants={staggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} className="flex flex-col gap-5">
+              {['Nhắn tin & Gọi điện 4K', 'Tương tác Livestream trực tiếp', 'Hiệu ứng AR & Bộ lọc làm đẹp'].map((item, i) => (
+                <motion.li variants={fadeUp} key={i} className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-surf-primary/20 flex items-center justify-center text-surf-primary shrink-0">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  </div>
+                  <span className="text-white/90 font-semibold text-lg">{item}</span>
+                </motion.li>
+              ))}
+            </motion.ul>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="order-1 lg:order-2 relative">
+            <div className="absolute inset-0 bg-surf-primary/20 blur-[100px] rounded-full"></div>
+            <div className="relative z-10 rounded-[40px] overflow-hidden border border-white/10 shadow-[0_0_50px_rgba(14,165,233,0.3)] aspect-[4/5] lg:aspect-square">
+              <video 
+                autoPlay 
+                loop 
+                muted 
+                playsInline 
+                className="absolute inset-0 w-full h-full object-cover"
+              >
+                <source src="/videos/man.mp4" type="video/mp4" />
+              </video>
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent opacity-80"></div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* CREATOR ECOSYSTEM */}
+      <section className="py-32 relative z-10 max-w-[1280px] mx-auto px-6 text-center">
+        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-16 max-w-3xl mx-auto">
+          <h2 className="text-4xl lg:text-5xl font-extrabold mb-6 font-['Cal_Sans',sans-serif]">DÀNH CHO <span className="text-transparent bg-clip-text bg-gradient-to-r from-surf-primary to-purple-500">CREATORS</span>.</h2>
+          <p className="text-xl text-white/60 leading-relaxed">Bộ công cụ mạnh mẽ giúp bạn kiếm tiền từ chính đam mê của mình.</p>
+        </motion.div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            { title: 'Analytics', desc: 'Theo dõi lượt xem, tương tác và doanh thu theo thời gian thực với biểu đồ trực quan.', img: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80' },
+            { title: 'Monetization', desc: 'Nhận donate từ fan, tạo nội dung độc quyền có thu phí (Subscriptions).', img: 'https://images.unsplash.com/photo-1553729459-efe14ef6055d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80' },
+            { title: 'Brand Deals', desc: 'Kết nối trực tiếp với các nhãn hàng thông qua Creator Marketplace.', img: 'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80' }
+          ].map((item, i) => (
+            <motion.div 
+              key={i}
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: i * 0.1 }}
+              whileHover={{ y: -10 }}
+              className="bg-surf-card rounded-3xl overflow-hidden border border-white/10 group cursor-pointer shadow-xl"
+            >
+              <div className="h-48 overflow-hidden relative">
+                 <div className="absolute inset-0 bg-surf-dark/20 group-hover:bg-transparent transition-colors z-10" />
+                 <img src={item.img} alt={item.title} className="w-full h-full object-cover transform transition-transform duration-700 group-hover:scale-110" />
+              </div>
+              <div className="p-8 text-left">
+                <h3 className="text-2xl font-bold mb-3">{item.title}</h3>
+                <p className="text-white/60">{item.desc}</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* FAQ SECTION */}
+      <section className="py-24 relative z-10 bg-surf-dark border-t border-white/5">
+        <div className="max-w-3xl mx-auto px-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-16">
+            <h2 className="text-4xl lg:text-5xl font-extrabold mb-6 font-['Cal_Sans',sans-serif]">CÂU HỎI THƯỜNG GẶP</h2>
+          </motion.div>
+          
+          <motion.div variants={staggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+            <motion.div variants={fadeUp}><FAQItem question="Surf có miễn phí không?" answer="Có, Surf hoàn toàn miễn phí cho người dùng cơ bản. Bạn có thể nhắn tin, gọi video, và tham gia cộng đồng mà không mất bất kỳ chi phí nào. Chúng tôi chỉ thu phí một phần nhỏ từ các giao dịch của Creator." /></motion.div>
+            <motion.div variants={fadeUp}><FAQItem question="Dữ liệu của tôi có bị bán cho bên thứ ba không?" answer="Tuyệt đối KHÔNG. Quyền riêng tư của bạn là ưu tiên số một. Mọi tin nhắn đều được mã hoá E2E và chúng tôi không bán dữ liệu người dùng cho các công ty quảng cáo." /></motion.div>
+            <motion.div variants={fadeUp}><FAQItem question="Có giới hạn dung lượng khi gửi file không?" answer="Với Surf, bạn có thể gửi file lên đến 4GB mỗi lần. Đối với gói Creator Pro, con số này lên tới 10GB." /></motion.div>
+            <motion.div variants={fadeUp}><FAQItem question="Làm sao để trở thành Creator?" answer="Rất đơn giản! Sau khi đăng ký tài khoản, bạn chỉ cần vào phần Cài Đặt > Chuyển sang tài khoản Creator. Chỉ với 1 click, toàn bộ bảng điều khiển Analytics và Kiếm tiền sẽ được mở khóa." /></motion.div>
+          </motion.div>
+        </div>
+      </section>
+
+{/* FINAL CTA */}
+      <FollowCursorCTA />
+
+      {/* FLOATING STATUS INDICATOR */}
+      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-surf-card/90 backdrop-blur-md border border-white/10 py-2.5 px-4 rounded-full shadow-2xl">
+        <div className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse-green" />
+        <span className="text-[10px] font-bold uppercase tracking-wider">NETWORK IS ONLINE</span>
       </div>
     </div>
   );
