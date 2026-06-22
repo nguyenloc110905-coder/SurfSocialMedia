@@ -460,7 +460,7 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
  *       200: { description: Danh sách nhạc }
  *       400: { description: Thiếu query q }
  */
-// ── GET /music/search — Tìm nhạc qua Deezer API ────────────────────────────
+// ── GET /music/search — Tìm nhạc qua iTunes API ────────────────────────────
 router.get('/music/search', requireAuth, async (req: AuthRequest, res) => {
   try {
     const q = (req.query.q as string)?.trim();
@@ -469,7 +469,7 @@ router.get('/music/search', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
-    const url = `https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=15`;
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=music&limit=15`;
     const response = await fetch(url);
     if (!response.ok) {
       res.json({ tracks: [] });
@@ -477,23 +477,23 @@ router.get('/music/search', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const data = await response.json() as {
-      data?: Array<{
-        id: number;
-        title: string;
-        artist: { name: string };
-        preview: string;
-        album: { cover_medium: string };
+      results?: Array<{
+        trackId: number;
+        trackName: string;
+        artistName: string;
+        previewUrl: string;
+        artworkUrl100: string;
       }>;
     };
 
-    const tracks = (data.data ?? [])
-      .filter((t) => t.preview) // chỉ lấy bài có preview 30s
+    const tracks = (data.results ?? [])
+      .filter((t) => t.previewUrl) // chỉ lấy bài có preview 30s
       .map((t) => ({
-        id: String(t.id),
-        title: t.title,
-        artist: t.artist.name,
-        preview: t.preview,
-        cover: t.album.cover_medium,
+        id: String(t.trackId),
+        title: t.trackName,
+        artist: t.artistName,
+        preview: t.previewUrl,
+        cover: t.artworkUrl100,
       }));
 
     res.json({ tracks });

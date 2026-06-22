@@ -1,4 +1,8 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
+
+// Fix ENETUNREACH IPv6 issue on local development networks
+dns.setDefaultResultOrder('ipv4first');
 
 let _transporter: nodemailer.Transporter | null = null;
 
