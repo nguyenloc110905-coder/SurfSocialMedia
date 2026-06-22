@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# Không cho bot quét các trang nội bộ của user
+Disallow: /feed/
+Disallow: /messages/
+Disallow: /settings/
+Disallow: /onboarding/
+
+Sitemap: https://surf.vn/sitemap.xml

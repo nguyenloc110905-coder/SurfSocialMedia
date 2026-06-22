@@ -62,6 +62,18 @@ function ThemeInit() {
   return null;
 }
 
+function DynamicTitle() {
+  const user = useAuthStore((s) => s.user);
+  useEffect(() => {
+    if (user && user.displayName) {
+      document.title = `Surf - ${user.displayName}`;
+    } else {
+      document.title = 'Surf - Social';
+    }
+  }, [user]);
+  return null;
+}
+
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
   usePresence();
@@ -114,6 +126,7 @@ export default function App() {
   return (
     <GlobalCallProvider>
       <ThemeInit />
+      <DynamicTitle />
       <Routes>
         <Route path="/" element={<HomeOrRedirect />} />
         <Route path="/login" element={<AuthPage />} />
