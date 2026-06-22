@@ -182,6 +182,20 @@ type SandboxPaymentResult = {
   orderId?: string;
   paymentId?: string;
 };
+type MarketplaceSellerRequirement = {
+  key: string;
+  label: string;
+  met: boolean;
+};
+type MarketplaceSellerEligibility = {
+  eligible: boolean;
+  bypassed: boolean;
+  isAdmin: boolean;
+  accountCreatedAt: string | null;
+  accountAgeEligibleAt: string | null;
+  legacyCutoffAt: string;
+  requirements: MarketplaceSellerRequirement[];
+};
 
 const SURF_BOOST_SANDBOX_PAYMENT_CHANNEL = 'surf-boost-sandbox-payment';
 const SURF_BOOST_SANDBOX_PAYMENT_RESULT_TYPE = 'surf-boost-sandbox-payment';
@@ -216,6 +230,8 @@ const MY_LISTING_FILTERS: { key: MyListingsFilter; label: string }[] = [
   { key: 'all', label: 'Tất cả' },
   { key: 'pending', label: 'Chờ duyệt' },
   { key: 'active', label: 'Hoạt động' },
+  { key: 'boosted', label: 'Được quảng bá' },
+  { key: 'boosting', label: 'Đang quảng bá' },
   { key: 'error', label: 'Spam/Lỗi' },
 ];
 const AI_INFRASTRUCTURE_MODERATION_FLAGS = new Set([
@@ -782,6 +798,10 @@ export default function MarketPage() {
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const isRouteSelectedListing = Boolean(routeListingId && selectedListing?.id === routeListingId);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSellerEligibilityModalOpen, setIsSellerEligibilityModalOpen] = useState(false);
+  const [sellerEligibility, setSellerEligibility] = useState<MarketplaceSellerEligibility | null>(null);
+  const [sellerEligibilityLoading, setSellerEligibilityLoading] = useState(false);
+  const [sellerEligibilityError, setSellerEligibilityError] = useState('');
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'my' | 'saved'>('all');
   const [sellerSection, setSellerSection] = useState<SellerSection>('listings');
@@ -1684,6 +1704,30 @@ export default function MarketPage() {
     setIsCreateLocationFocused(false);
   };
 
+  const openCreateListing = async () => {
+    if (sellerEligibilityLoading) return;
+    setSellerEligibilityLoading(true);
+    setSellerEligibilityError('');
+    setIsSellerEligibilityModalOpen(true);
+    try {
+      const eligibility = await api.get<MarketplaceSellerEligibility>(
+        '/api/marketplace/seller-eligibility'
+      );
+      setSellerEligibility(eligibility);
+      if (eligibility.eligible) {
+        setIsSellerEligibilityModalOpen(false);
+        setIsCreateModalOpen(true);
+      }
+    } catch (err) {
+      setSellerEligibility(null);
+      setSellerEligibilityError(
+        (err as Error).message || 'Không thể kiểm tra điều kiện đăng bán.'
+      );
+    } finally {
+      setSellerEligibilityLoading(false);
+    }
+  };
+
   const closeCreateListingModal = () => {
     setIsCreateMapOpen(false);
     setIsPaymentModalOpen(false);
@@ -1719,6 +1763,11 @@ export default function MarketPage() {
   };
 
   const submitCreateListing = async (withBoost: boolean, boostPaymentId?: string) => {
+    if (newListing.mediaUrls.length === 0) {
+      setCreateImageError('Tin đăng cần có ít nhất 1 ảnh sản phẩm.');
+      setCreateStep('listing');
+      return;
+    }
     if (!matchesLocationSuggestion(newListing.location.trim(), selectedCreateLocation)) {
       setCreateLocationError('Vui lòng chọn một địa chỉ hợp lệ trong danh sách gợi ý.');
       setIsCreateLocationFocused(true);
@@ -1757,7 +1806,7 @@ export default function MarketPage() {
       setActiveTab('my');
       resetCreateListingFlow();
     } catch (err) {
-      alert('Lỗi khi tạo tin đăng');
+      window.alert((err as Error).message || 'Lỗi khi tạo tin đăng');
     } finally {
       setCreateSubmitting(false);
     }
@@ -1766,6 +1815,10 @@ export default function MarketPage() {
   const handleCreateListing = async (e: React.FormEvent) => {
     e.preventDefault();
     if (createImageUploading || createSubmitting) return;
+    if (createStep === 'listing' && newListing.mediaUrls.length === 0) {
+      setCreateImageError('Tin đăng cần có ít nhất 1 ảnh sản phẩm.');
+      return;
+    }
     if (newListing.boostEnabled && createStep === 'listing') {
       if (!matchesLocationSuggestion(newListing.location.trim(), selectedCreateLocation)) {
         setCreateLocationError('Vui lòng chọn một địa chỉ hợp lệ trong danh sách gợi ý.');
@@ -2090,9 +2143,13 @@ export default function MarketPage() {
       ? 'Spam/Lỗi'
       : myListingsFilter === 'pending'
         ? 'Bài đang chờ kiểm duyệt'
-      : myListingsFilter === 'active'
-        ? 'Bài niêm yết hoạt động'
-        : 'Tất cả bài niêm yết';
+        : myListingsFilter === 'active'
+          ? 'Bài niêm yết hoạt động'
+          : myListingsFilter === 'boosted'
+            ? 'Bài đã được quảng bá'
+            : myListingsFilter === 'boosting'
+              ? 'Bài đang được quảng bá'
+              : 'Tất cả bài niêm yết';
   const myListingViews = myListingsSummary.views;
   const myListingSaves = myListingsSummary.saves;
   const myActiveBoostCount = myListingsSummary.activeBoosts;
@@ -2411,7 +2468,7 @@ export default function MarketPage() {
 
           <button
             type="button"
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => void openCreateListing()}
             className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 transition hover:bg-surf-secondary hover:text-white active:scale-95"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2449,7 +2506,7 @@ export default function MarketPage() {
             <div>
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(true)}
+                onClick={() => void openCreateListing()}
                 className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-surf-primary px-3 py-2 text-xs font-black text-white transition hover:bg-surf-secondary"
               >
                 <span>+</span>
@@ -2632,7 +2689,7 @@ export default function MarketPage() {
                     <div className="rounded-2xl border border-white/[0.08] bg-[#151a22] p-4">
                       <div className="mb-3 flex items-center justify-between">
                         <h3 className="text-sm font-black text-white">Bài niêm yết của bạn</h3>
-                        <button type="button" onClick={() => setIsCreateModalOpen(true)} className="rounded-lg bg-surf-primary px-3 py-1.5 text-xs font-black text-white">
+                        <button type="button" onClick={() => void openCreateListing()} className="rounded-lg bg-surf-primary px-3 py-1.5 text-xs font-black text-white">
                           Tạo bài mới
                         </button>
                       </div>
@@ -2833,7 +2890,7 @@ export default function MarketPage() {
                       <div className="rounded-lg border border-dashed border-white/[0.12] bg-[#202327] p-10 text-center">
                         <p className="text-base font-black text-white">Không có bài niêm yết trong mục {myListingFilterLabel.toLowerCase()}</p>
                         <p className="mt-1 text-sm font-medium text-slate-500">Đổi bộ lọc hoặc tạo bài mới để tiếp tục bán trên Surf Market.</p>
-                        <button type="button" onClick={() => setIsCreateModalOpen(true)} className="mt-4 rounded-lg bg-[#1877f2] px-4 py-2 text-sm font-black text-white">Tạo bài niêm yết mới</button>
+                        <button type="button" onClick={() => void openCreateListing()} className="mt-4 rounded-lg bg-[#1877f2] px-4 py-2 text-sm font-black text-white">Tạo bài niêm yết mới</button>
                       </div>
                     )}
                   </div>
@@ -3240,6 +3297,97 @@ export default function MarketPage() {
           </div>
         </main>
       </div>
+
+      {isSellerEligibilityModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-4 py-8 text-white backdrop-blur-sm">
+          <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/[0.1] bg-[#18191a] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.16em] text-surf-secondary">Surf Market</div>
+                <h2 className="mt-1 text-xl font-black">Điều kiện đăng bán</h2>
+                <p className="mt-1 text-xs font-medium leading-relaxed text-slate-400">
+                  Hệ thống kiểm tra tài khoản trước khi mở form tạo sản phẩm.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSellerEligibilityModalOpen(false)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-lg text-slate-300 transition hover:bg-white/[0.14] hover:text-white"
+                aria-label="Đóng"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] overflow-y-auto px-5 py-4">
+              {sellerEligibilityLoading && (
+                <div className="rounded-xl border border-surf-primary/20 bg-surf-primary/10 px-4 py-5 text-center text-sm font-bold text-surf-secondary">
+                  Đang kiểm tra điều kiện tài khoản...
+                </div>
+              )}
+
+              {!sellerEligibilityLoading && sellerEligibilityError && (
+                <div className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-200">
+                  {sellerEligibilityError}
+                </div>
+              )}
+
+              {!sellerEligibilityLoading && sellerEligibility && (
+                <>
+                  <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3">
+                    <div className="text-sm font-black text-red-200">Tài khoản chưa đủ điều kiện đăng bán</div>
+                    <div className="mt-1 text-xs font-medium text-red-200/75">
+                      Ngày tạo: {sellerEligibility.accountCreatedAt ? new Date(sellerEligibility.accountCreatedAt).toLocaleDateString('vi-VN') : 'Không xác định'} · Đủ 4 tháng: {sellerEligibility.accountAgeEligibleAt ? new Date(sellerEligibility.accountAgeEligibleAt).toLocaleDateString('vi-VN') : 'Không xác định'} · Mốc đời đầu: {new Date(sellerEligibility.legacyCutoffAt).toLocaleDateString('vi-VN')}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {sellerEligibility.requirements.map((requirement) => (
+                      <div
+                        key={requirement.key}
+                        className={`flex items-start gap-3 rounded-xl border px-3 py-3 ${
+                          requirement.met
+                            ? 'border-emerald-400/15 bg-emerald-500/[0.07]'
+                            : 'border-red-400/15 bg-red-500/[0.07]'
+                        }`}
+                      >
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black ${requirement.met ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
+                          {requirement.met ? '✓' : '×'}
+                        </span>
+                        <span className={`pt-0.5 text-sm font-semibold leading-relaxed ${requirement.met ? 'text-slate-300' : 'text-red-200'}`}>
+                          {requirement.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-xs font-medium leading-relaxed text-slate-400">
+                    Khi tạo tin, sản phẩm còn phải có ít nhất 1 ảnh thật, địa chỉ hợp lệ và không trùng tiêu đề tin đã đăng trong 30 ngày gần đây.
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-white/[0.08] px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setIsSellerEligibilityModalOpen(false)}
+                className="rounded-lg bg-white/[0.08] px-4 py-2 text-sm font-black text-slate-200 transition hover:bg-white/[0.14]"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={() => void openCreateListing()}
+                disabled={sellerEligibilityLoading}
+                className="rounded-lg bg-surf-primary px-4 py-2 text-sm font-black text-white transition hover:bg-surf-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {sellerEligibilityLoading ? 'Đang kiểm tra...' : 'Kiểm tra lại'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Listing Modal */}
       {isCreateModalOpen && (
@@ -4458,7 +4606,7 @@ export default function MarketPage() {
                   ))}
                   <button
                     type="button"
-                    onClick={() => { handleCloseDetail(); setIsCreateModalOpen(true); }}
+                    onClick={() => { handleCloseDetail(); void openCreateListing(); }}
                     className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-surf-primary px-3 py-2.5 text-xs font-black text-white transition hover:bg-surf-secondary"
                   >
                     + Tạo bài niêm yết mới

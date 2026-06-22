@@ -94,7 +94,9 @@ const MARKETPLACE_SAVED_CACHE_TTL_SECONDS = 30;
 const MARKETPLACE_IMPRESSION_DEDUPE_SECONDS = 30 * 60;
 const MARKETPLACE_VIEW_DEDUPE_SECONDS = 10 * 60;
 const MARKETPLACE_CLICK_DEDUPE_SECONDS = 10 * 60;
-const MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_DAYS = 180;
+const MARKETPLACE_SELLER_LEGACY_CUTOFF_ISO =
+  process.env.MARKETPLACE_SELLER_LEGACY_CUTOFF_ISO ?? '2026-03-21T08:20:48.000Z';
+const MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_MONTHS = 4;
 const MARKETPLACE_SELLER_MIN_FRIENDS = 3;
 const MARKETPLACE_SELLER_MIN_FOLLOWERS = 2;
 const MARKETPLACE_SELLER_DAILY_LISTING_LIMIT = 10;
@@ -164,6 +166,22 @@ interface BoostMetrics {
   clicks: number;
   saves: number;
   spent: number;
+}
+
+interface MarketplaceSellerRequirement {
+  key: string;
+  label: string;
+  met: boolean;
+}
+
+interface MarketplaceSellerEligibilityResult {
+  eligible: boolean;
+  bypassed: boolean;
+  isAdmin: boolean;
+  accountCreatedAt: string | null;
+  accountAgeEligibleAt: string | null;
+  legacyCutoffAt: string;
+  requirements: MarketplaceSellerRequirement[];
 }
 
 interface ListingData {
@@ -247,6 +265,8 @@ type MarketplaceMyResponse = MarketplaceListResponse & {
     pending: number;
     rejected: number;
     sold: number;
+    boosted: number;
+    boosting: number;
   };
   summary?: {
     views: number;
@@ -446,7 +466,7 @@ function normalizeMediaUrls(input: unknown) {
     : [];
 }
 
-async function deleteMarketplaceImages(mediaUrls: string[]) {
+async function deleteMarketplaceImages(_mediaUrls: string[]) {
   // Cloudinary has been removed. Images are now handled by Firebase Storage.
   return;
 }
@@ -517,7 +537,7 @@ function isTruthyFlag(value: unknown): boolean {
   return false;
 }
 
-function getSellerProfileAgeMs(user: Record<string, unknown>, authCreationTime?: string) {
+function getSellerAccountCreatedAtMs(user: Record<string, unknown>, authCreationTime?: string) {
   return (
     getTimeValue(authCreationTime) ||
     getTimeValue(user.createdAt) ||
@@ -526,18 +546,34 @@ function getSellerProfileAgeMs(user: Record<string, unknown>, authCreationTime?:
   );
 }
 
+function addUtcCalendarMonths(timestampMs: number, months: number): number {
+  const source = new Date(timestampMs);
+  const targetMonthIndex = source.getUTCMonth() + months;
+  const targetYear = source.getUTCFullYear() + Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const lastTargetDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return Date.UTC(
+    targetYear,
+    targetMonth,
+    Math.min(source.getUTCDate(), lastTargetDay),
+    source.getUTCHours(),
+    source.getUTCMinutes(),
+    source.getUTCSeconds(),
+    source.getUTCMilliseconds()
+  );
+}
+
 async function getFollowerCount(db: Firestore, uid: string): Promise<number> {
   const snap = await db.collection('follows').where('followingIds', 'array-contains', uid).get();
   return snap.size;
 }
 
-async function assertMarketplaceSellerEligibility(
+async function getMarketplaceSellerEligibility(
   db: Firestore,
   uid: string,
   user: Record<string, unknown>,
-  titleNormalized: string,
-  mediaUrls: string[]
-): Promise<void> {
+  listingInput?: { titleNormalized: string; mediaUrls: string[] }
+): Promise<MarketplaceSellerEligibilityResult> {
   const [authUser, friendDoc, followerCount, sellerListingsSnap, isAdmin] = await Promise.all([
     getAuth()
       .getUser(uid)
@@ -547,13 +583,10 @@ async function assertMarketplaceSellerEligibility(
     db
       .collection('marketplace')
       .where('sellerId', '==', uid)
-      .orderBy('createdAt', 'desc')
-      .limit(200)
+      .select('status', 'titleNormalized', 'createdAt')
       .get(),
     isMarketplaceAdmin(db, uid),
   ]);
-
-  if (isAdmin || process.env.MARKETPLACE_SKIP_SELLER_ELIGIBILITY === 'true') return;
 
   const friendIds =
     friendDoc.exists && Array.isArray(friendDoc.data()?.friendIds)
@@ -562,8 +595,23 @@ async function assertMarketplaceSellerEligibility(
   const displayName = typeof user.displayName === 'string' ? user.displayName.trim() : '';
   const photoURL = typeof user.photoURL === 'string' ? user.photoURL.trim() : '';
   const emailVerified = authUser?.emailVerified === true || user.emailVerified === true;
-  const createdAtMs = getSellerProfileAgeMs(user, authUser?.metadata.creationTime);
-  const accountAgeDays = createdAtMs > 0 ? Math.floor((Date.now() - createdAtMs) / DAY_MS) : 0;
+  const createdAtMs = getSellerAccountCreatedAtMs(user, authUser?.metadata.creationTime);
+  const configuredCutoffMs = Date.parse(MARKETPLACE_SELLER_LEGACY_CUTOFF_ISO);
+  const legacyCutoffMs = Number.isFinite(configuredCutoffMs)
+    ? configuredCutoffMs
+    : Date.parse('2026-03-21T08:20:48.000Z');
+  const legacyCutoffLabel = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'UTC',
+  }).format(new Date(legacyCutoffMs));
+  const accountAgeEligibleMs =
+    createdAtMs > 0
+      ? addUtcCalendarMonths(createdAtMs, MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_MONTHS)
+      : 0;
+  const accountAgeEligibleLabel = accountAgeEligibleMs
+    ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC' }).format(new Date(accountAgeEligibleMs))
+    : 'không xác định';
+  const isLegacyAccount = createdAtMs > 0 && createdAtMs <= legacyCutoffMs;
+  const meetsMinimumAccountAge = accountAgeEligibleMs > 0 && Date.now() >= accountAgeEligibleMs;
   const riskFlags = Array.isArray(user.riskFlags) ? user.riskFlags : [];
   const trustStatus =
     typeof user.trustStatus === 'string' ? user.trustStatus.trim().toLowerCase() : '';
@@ -581,7 +629,7 @@ async function assertMarketplaceSellerEligibility(
   const hasRecentDuplicate = sellerListings.some(
     (listing) =>
       listing.status !== 'deleted' &&
-      listing.titleNormalized === titleNormalized &&
+      listing.titleNormalized === listingInput?.titleNormalized &&
       nowMs - getTimeValue(listing.createdAt) < duplicateLookbackMs
   );
   const isRestricted =
@@ -597,44 +645,106 @@ async function assertMarketplaceSellerEligibility(
       ['spam', 'scam', 'fraud', 'clone', 'marketplace_abuse'].includes(String(flag).toLowerCase())
     );
 
-  const failures: string[] = [];
-  if (accountAgeDays < MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_DAYS) {
-    failures.push(
-      `Tài khoản cần hoạt động tối thiểu ${MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_DAYS} ngày để đăng bán.`
-    );
-  }
-  if (!emailVerified) failures.push('Email tài khoản cần được xác minh.');
-  if (displayName.length < 3) failures.push('Hồ sơ cần có tên hiển thị rõ ràng.');
-  if (!photoURL) failures.push('Hồ sơ cần có ảnh đại diện thật.');
-  if (
-    friendIds.length < MARKETPLACE_SELLER_MIN_FRIENDS &&
-    followerCount < MARKETPLACE_SELLER_MIN_FOLLOWERS
-  ) {
-    failures.push(
-      `Cần ít nhất ${MARKETPLACE_SELLER_MIN_FRIENDS} bạn bè hoặc ${MARKETPLACE_SELLER_MIN_FOLLOWERS} người theo dõi để giảm rủi ro tài khoản clone.`
-    );
-  }
-  if (isRestricted) failures.push('Tài khoản đang bị giới hạn an toàn nên không thể đăng bán.');
-  if (mediaUrls.length === 0) failures.push('Tin đăng cần có ít nhất 1 ảnh sản phẩm thật.');
-  if (recentListingCount >= MARKETPLACE_SELLER_DAILY_LISTING_LIMIT) {
-    failures.push(
-      `Bạn chỉ có thể đăng tối đa ${MARKETPLACE_SELLER_DAILY_LISTING_LIMIT} tin mỗi ngày.`
-    );
-  }
-  if (openListingCount >= MARKETPLACE_SELLER_MAX_OPEN_LISTINGS) {
-    failures.push(`Bạn đang có quá nhiều tin đang mở. Vui lòng bán/xóa bớt trước khi đăng thêm.`);
-  }
-  if (hasRecentDuplicate) {
-    failures.push(
-      `Bạn đã đăng một tin có tiêu đề tương tự trong ${MARKETPLACE_SELLER_DUPLICATE_LOOKBACK_DAYS} ngày gần đây.`
+  const requirements: MarketplaceSellerRequirement[] = [
+    {
+      key: 'account_age',
+      label: isLegacyAccount
+        ? `Tài khoản thuộc nhóm đời đầu (tạo trước hoặc đúng ${legacyCutoffLabel}).`
+        : `Tài khoản cần hoạt động đủ ${MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_MONTHS} tháng (đủ điều kiện từ ${accountAgeEligibleLabel}) hoặc thuộc nhóm đời đầu trước ${legacyCutoffLabel}.`,
+      met: isLegacyAccount || meetsMinimumAccountAge,
+    },
+    {
+      key: 'verified_email',
+      label: emailVerified
+        ? 'Email tài khoản đã được xác minh.'
+        : 'Email tài khoản chưa được xác minh.',
+      met: emailVerified,
+    },
+    {
+      key: 'display_name',
+      label: 'Hồ sơ có tên hiển thị từ 3 ký tự.',
+      met: displayName.length >= 3,
+    },
+    {
+      key: 'profile_photo',
+      label: photoURL ? 'Hồ sơ đã có ảnh đại diện.' : 'Hồ sơ chưa có ảnh đại diện.',
+      met: Boolean(photoURL),
+    },
+    {
+      key: 'social_connections',
+      label: `Có ít nhất ${MARKETPLACE_SELLER_MIN_FRIENDS} bạn bè hoặc ${MARKETPLACE_SELLER_MIN_FOLLOWERS} người theo dõi (hiện có ${friendIds.length} bạn, ${followerCount} người theo dõi).`,
+      met:
+        friendIds.length >= MARKETPLACE_SELLER_MIN_FRIENDS ||
+        followerCount >= MARKETPLACE_SELLER_MIN_FOLLOWERS,
+    },
+    { key: 'safety_status', label: 'Tài khoản không bị giới hạn an toàn.', met: !isRestricted },
+    {
+      key: 'daily_limit',
+      label: `Chưa vượt ${MARKETPLACE_SELLER_DAILY_LISTING_LIMIT} tin trong 24 giờ (hiện có ${recentListingCount}).`,
+      met: recentListingCount < MARKETPLACE_SELLER_DAILY_LISTING_LIMIT,
+    },
+    {
+      key: 'open_limit',
+      label: `Có dưới ${MARKETPLACE_SELLER_MAX_OPEN_LISTINGS} tin đang mở (hiện có ${openListingCount}).`,
+      met: openListingCount < MARKETPLACE_SELLER_MAX_OPEN_LISTINGS,
+    },
+  ];
+
+  if (listingInput) {
+    requirements.push(
+      {
+        key: 'product_image',
+        label: 'Tin đăng có ít nhất 1 ảnh sản phẩm thật.',
+        met: listingInput.mediaUrls.length > 0,
+      },
+      {
+        key: 'duplicate_title',
+        label: `Không trùng tiêu đề tin đã đăng trong ${MARKETPLACE_SELLER_DUPLICATE_LOOKBACK_DAYS} ngày gần đây.`,
+        met: !hasRecentDuplicate,
+      }
     );
   }
 
-  if (failures.length > 0) {
-    const error = new Error(`Chưa đủ điều kiện đăng bán: ${failures.join(' ')}`);
-    error.name = 'MarketplaceSellerEligibilityError';
-    throw error;
-  }
+  const bypassed =
+    isAdmin ||
+    (process.env.NODE_ENV !== 'production' &&
+      process.env.MARKETPLACE_SKIP_SELLER_ELIGIBILITY === 'true');
+  return {
+    eligible: bypassed || requirements.every((requirement) => requirement.met),
+    bypassed,
+    isAdmin,
+    accountCreatedAt: createdAtMs > 0 ? new Date(createdAtMs).toISOString() : null,
+    accountAgeEligibleAt:
+      accountAgeEligibleMs > 0 ? new Date(accountAgeEligibleMs).toISOString() : null,
+    legacyCutoffAt: new Date(legacyCutoffMs).toISOString(),
+    requirements,
+  };
+}
+
+async function assertMarketplaceSellerEligibility(
+  db: Firestore,
+  uid: string,
+  user: Record<string, unknown>,
+  titleNormalized: string,
+  mediaUrls: string[]
+): Promise<void> {
+  const eligibility = await getMarketplaceSellerEligibility(db, uid, user, {
+    titleNormalized,
+    mediaUrls,
+  });
+  if (eligibility.eligible) return;
+
+  const failures = eligibility.requirements
+    .filter((requirement) => !requirement.met)
+    .map((requirement) => requirement.label);
+  const error = new Error(`Chưa đủ điều kiện đăng bán: ${failures.join(' ')}`) as Error & {
+    statusCode: number;
+    eligibility: MarketplaceSellerEligibilityResult;
+  };
+  error.name = 'MarketplaceSellerEligibilityError';
+  error.statusCode = 403;
+  error.eligibility = eligibility;
+  throw error;
 }
 
 function normalizeBoostPlan(input: unknown): BoostPlan | null {
@@ -1239,6 +1349,14 @@ function isMarketplacePendingReviewListing(listing: ListingData) {
   return listing.status === 'pending' && !isMarketplaceSpamOrErrorListing(listing);
 }
 
+function hasMarketplaceBoostPromotion(listing: ListingData) {
+  return Boolean(
+    listing.boostEnabled &&
+    listing.boostStatus &&
+    !['none', 'cancelled', 'rejected'].includes(listing.boostStatus)
+  );
+}
+
 function matchesMyListingsFilter(item: ListingItem, selectedFilter: string) {
   if (item.status === 'deleted') return false;
   if (selectedFilter === 'all') return !isMarketplaceSpamOrErrorListing(item);
@@ -1246,6 +1364,8 @@ function matchesMyListingsFilter(item: ListingItem, selectedFilter: string) {
   if (selectedFilter === 'error') return isMarketplaceSpamOrErrorListing(item);
   if (selectedFilter === 'sold') return item.status === 'sold';
   if (selectedFilter === 'rejected') return item.status === 'rejected';
+  if (selectedFilter === 'boosted') return hasMarketplaceBoostPromotion(item);
+  if (selectedFilter === 'boosting') return isBoostActive(item);
   return item.status === 'active';
 }
 
@@ -1976,14 +2096,33 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       enqueueMarketplaceAiModeration(docRef.id, listing);
     }
   } catch (e) {
-    res
-      .status((e as Error & { statusCode?: number }).statusCode ?? 500)
-      .json({ error: (e as Error).message });
+    const error = e as Error & {
+      statusCode?: number;
+      eligibility?: MarketplaceSellerEligibilityResult;
+    };
+    const statusCode = error.statusCode ?? 500;
+    if (statusCode >= 500) console.error('Marketplace listing creation failed:', error);
+    res.status(statusCode).json({
+      error: error.message,
+      ...(error.eligibility ? { eligibility: error.eligibility } : {}),
+    });
   }
 });
 
 router.get('/categories', requireAuth, async (_req: AuthRequest, res) => {
   res.json({ items: MARKETPLACE_CATEGORIES });
+});
+
+router.get('/seller-eligibility', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const db = getDb();
+    const userDoc = await db.collection('users').doc(req.uid!).get();
+    const eligibility = await getMarketplaceSellerEligibility(db, req.uid!, userDoc.data() ?? {});
+    res.json(eligibility);
+  } catch (e) {
+    console.error('Marketplace seller eligibility check failed:', e);
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 // ── GET /api/marketplace/my — Tin của tôi ────────────────────────────────────
@@ -1997,6 +2136,7 @@ router.get('/my', requireAuth, async (req: AuthRequest, res) => {
     const cursorId = typeof cursor === 'string' ? cursor : '';
     const userCacheVersion = await getMarketplaceCacheVersion(`user:${req.uid}`);
     const cacheKey = getMarketplaceCacheKey('my', {
+      schema: 2,
       v: userCacheVersion,
       uid: req.uid,
       cursor: cursorId,
@@ -2056,6 +2196,8 @@ router.get('/my', requireAuth, async (req: AuthRequest, res) => {
       pending: pendingReviewItems.length,
       rejected: ownerItems.filter((item) => item.status === 'rejected').length,
       sold: ownerItems.filter((item) => item.status === 'sold').length,
+      boosted: ownerItems.filter(hasMarketplaceBoostPromotion).length,
+      boosting: ownerItems.filter(isBoostActive).length,
     };
     const summary = ownerItems.reduce(
       (acc, item) => ({
@@ -2067,22 +2209,7 @@ router.get('/my', requireAuth, async (req: AuthRequest, res) => {
       }),
       { views: 0, saves: 0, activeBoosts: 0, boostImpressions: 0, boostSpent: 0 }
     );
-    const allItems =
-      selectedFilter === 'all'
-        ? normalItems
-        : selectedFilter === 'pending'
-          ? pendingReviewItems
-          : selectedFilter === 'error'
-            ? spamOrErrorItems
-            : ownerItems.filter(
-                (item) =>
-                  item.status ===
-                  (selectedFilter === 'sold'
-                    ? 'sold'
-                    : selectedFilter === 'rejected'
-                      ? 'rejected'
-                      : 'active')
-              );
+    const allItems = ownerItems.filter((item) => matchesMyListingsFilter(item, selectedFilter));
     const cursorIndex = cursorId ? allItems.findIndex((item) => item.id === cursorId) : -1;
     const startIndex = cursorIndex >= 0 ? cursorIndex + 1 : 0;
     const endIndex = startIndex + pageSize;
