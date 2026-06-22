@@ -47,7 +47,11 @@ function normalizePostTextStyle(input: unknown): { font?: string; color?: string
   if (!input || typeof input !== 'object') return null;
   const style = input as { font?: unknown; color?: unknown };
   const normalized: { font?: string; color?: string } = {};
-  if (typeof style.font === 'string' && POST_TEXT_FONTS.has(style.font) && style.font !== 'system') {
+  if (
+    typeof style.font === 'string' &&
+    POST_TEXT_FONTS.has(style.font) &&
+    style.font !== 'system'
+  ) {
     normalized.font = style.font;
   }
   if (typeof style.color === 'string' && POST_TEXT_COLORS.has(style.color)) {
@@ -390,7 +394,7 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
     const isMatch = (text: string) => {
       if (!text) return false;
       const normalized = normalizePost(text);
-      return searchTerms.every(term => normalized.includes(term));
+      return searchTerms.every((term) => normalized.includes(term));
     };
 
     const snap = await getDb().collection('posts').orderBy('createdAt', 'desc').limit(500).get();
@@ -417,14 +421,17 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
 
     if (type === 'videos') {
       posts = posts.filter((p) => p.hasVideo === true);
-      
-      const videosSnap = await getDb().collection('videos').orderBy('createdAt', 'desc').limit(500).get();
+
+      const videosSnap = await getDb()
+        .collection('videos')
+        .orderBy('createdAt', 'desc')
+        .limit(500)
+        .get();
       const mappedVideos = videosSnap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me')
-        .filter((v: any) => 
-          isMatch(v.description || v.title || '') ||
-          isMatch(v.authorDisplayName || '')
+        .filter(
+          (v: any) => isMatch(v.description || v.title || '') || isMatch(v.authorDisplayName || '')
         )
         .map((v: any) => ({
           id: v.id,
@@ -439,16 +446,18 @@ router.get('/search', requireAuth, async (req: AuthRequest, res) => {
           likedBy: v.likedBy || [],
           privacy: v.privacy,
           hasVideo: true,
-          _source: 'clip'
+          _source: 'clip',
         }));
-        
+
       posts = [...posts, ...mappedVideos].sort((a, b) => {
-        const timeA = typeof a.createdAt === 'object' && a.createdAt !== null 
-          ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000 
-          : new Date(a.createdAt as string).getTime() || 0;
-        const timeB = typeof b.createdAt === 'object' && b.createdAt !== null 
-          ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000 
-          : new Date(b.createdAt as string).getTime() || 0;
+        const timeA =
+          typeof a.createdAt === 'object' && a.createdAt !== null
+            ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000
+            : new Date(a.createdAt as string).getTime() || 0;
+        const timeB =
+          typeof b.createdAt === 'object' && b.createdAt !== null
+            ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000
+            : new Date(b.createdAt as string).getTime() || 0;
         return timeB - timeA;
       });
     } else {
@@ -843,11 +852,14 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
 
     if (aiModeration.violation) {
       // 1. Gỡ bỏ bài viết
-      await db.collection('posts').doc(req.params.id).update({
-        deleted: true,
-        deletedAt: new Date(),
-        deletedReason: `AI_MODERATION: ${aiModeration.reason}`,
-      });
+      await db
+        .collection('posts')
+        .doc(req.params.id)
+        .update({
+          deleted: true,
+          deletedAt: new Date(),
+          deletedReason: `AI_MODERATION: ${aiModeration.reason}`,
+        });
 
       // Cập nhật trạng thái báo cáo
       await reportRef.update({
@@ -856,7 +868,7 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
           violation: true,
           reason: aiModeration.reason,
           moderatedAt: new Date(),
-        }
+        },
       });
 
       // 2. Cảnh báo qua thông báo đến tác giả
@@ -875,10 +887,12 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
             createdAt: new Date(),
           };
           await authorNotifRef.set(authorNotifData);
-          getIo().to(`user:${postData.authorId}`).emit('notification:new', {
-            ...authorNotifData,
-            createdAt: new Date().toISOString(),
-          });
+          getIo()
+            .to(`user:${postData.authorId}`)
+            .emit('notification:new', {
+              ...authorNotifData,
+              createdAt: new Date().toISOString(),
+            });
         } catch (warn) {
           console.warn('⚠️ Lỗi gửi thông báo cảnh báo gỡ bài viết cho tác giả:', warn);
         }
@@ -900,10 +914,12 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
           createdAt: new Date(),
         };
         await reporterNotifRef.set(reporterNotifData);
-        getIo().to(`user:${req.uid}`).emit('notification:new', {
-          ...reporterNotifData,
-          createdAt: new Date().toISOString(),
-        });
+        getIo()
+          .to(`user:${req.uid}`)
+          .emit('notification:new', {
+            ...reporterNotifData,
+            createdAt: new Date().toISOString(),
+          });
       } catch (warn) {
         console.warn('⚠️ Lỗi gửi thông báo kết quả cho người báo cáo:', warn);
       }
@@ -919,7 +935,7 @@ router.post('/:id/report', requireAuth, async (req: AuthRequest, res) => {
         violation: false,
         reason: aiModeration.reason,
         moderatedAt: new Date(),
-      }
+      },
     });
 
     res.status(201).json({ success: true, action: 'kept', reason: aiModeration.reason });
@@ -1184,7 +1200,7 @@ router.post('/:id/like', requireAuth, async (req: AuthRequest, res) => {
           const unreadCount = await getUnreadNotificationCount(data.authorId as string);
           emitNotificationNew(data.authorId as string, toApiNotification(notification));
           emitNotificationUnreadCount(data.authorId as string, unreadCount);
-          
+
           // Gửi Push Notification (FCM)
           sendPushToUser(data.authorId as string, {
             title: 'Lượt thích mới',
@@ -1242,7 +1258,11 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
     const usersRef = db.collection('users');
 
     const originalDoc = await postsRef.doc(req.params.id).get();
-    if (!originalDoc.exists || originalDoc.data()?.deleted === true || originalDoc.data()?.archived === true) {
+    if (
+      !originalDoc.exists ||
+      originalDoc.data()?.deleted === true ||
+      originalDoc.data()?.archived === true
+    ) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
@@ -1287,7 +1307,9 @@ router.post('/:id/share', requireAuth, async (req: AuthRequest, res) => {
       } catch {
         // ignore log error
       }
-      res.status(422).json({ error: `Caption vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      res.status(422).json({
+        error: `Caption vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}`,
+      });
       return;
     }
 

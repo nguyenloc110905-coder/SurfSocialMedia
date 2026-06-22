@@ -45,10 +45,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const uid = req.uid!;
     const limit = Math.min(parseIntSafe(req.query.limit, 30), 100);
     // All inline notifications are stored with recipientId (comments, posts, reactions, mentions)
-    const snap = await getDb()
-      .collection('notifications')
-      .where('recipientId', '==', uid)
-      .get();
+    const snap = await getDb().collection('notifications').where('recipientId', '==', uid).get();
     const notifications = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as RawNotif[])
       .sort((a, b) => {
         const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
@@ -154,10 +151,7 @@ router.patch('/:id/read', requireAuth, async (req: AuthRequest, res) => {
 router.patch('/read-all', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
-    const snap = await getDb()
-      .collection('notifications')
-      .where('recipientId', '==', uid)
-      .get();
+    const snap = await getDb().collection('notifications').where('recipientId', '==', uid).get();
     const db = getDb();
     const batch = db.batch();
     let updated = 0;

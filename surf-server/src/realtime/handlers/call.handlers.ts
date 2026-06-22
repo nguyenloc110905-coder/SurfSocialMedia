@@ -10,10 +10,7 @@ import {
   getUnreadNotificationCount,
   toApiNotification,
 } from '../../services/notifications.js';
-import {
-  emitMessageNewToTargets,
-  emitMessageUnreadCount,
-} from '../emitters/message.emitter.js';
+import { emitMessageNewToTargets, emitMessageUnreadCount } from '../emitters/message.emitter.js';
 import {
   emitNotificationNew,
   emitNotificationUnreadCount,
@@ -251,10 +248,7 @@ const emitGroupCallStartLog = async (session: GroupCallSession) => {
   });
 };
 
-const emitGroupCallEndedLog = async (
-  session: GroupCallSession,
-  durationSeconds?: number
-) => {
+const emitGroupCallEndedLog = async (session: GroupCallSession, durationSeconds?: number) => {
   const result = await createCallLogMessage({
     conversationId: session.conversationId,
     actorId: session.fromUserId,
@@ -281,10 +275,7 @@ const emitGroupCallEndedLog = async (
   });
 };
 
-const finalizeGroupCallSession = async (
-  callId: string,
-  reason: 'ended' | 'timeout'
-) => {
+const finalizeGroupCallSession = async (callId: string, reason: 'ended' | 'timeout') => {
   const session = groupCallSessions.get(callId);
   if (!session) {
     groupCallCleanupTimers.delete(callId);
@@ -339,11 +330,7 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
     io.to(userRoom(payload.toUserId)).emit('call:declined', payload);
 
     const outcome =
-      payload.reason === 'busy'
-        ? 'busy'
-        : payload.reason === 'media_error'
-          ? 'failed'
-          : 'declined';
+      payload.reason === 'busy' ? 'busy' : payload.reason === 'media_error' ? 'failed' : 'declined';
 
     await emitCallLog(payload, outcome);
     callSessions.delete(payload.callId);
@@ -357,11 +344,7 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
       ? Math.max(1, Math.round((Date.now() - session.acceptedAt) / 1000))
       : undefined;
     const outcome =
-      payload.reason === 'missed'
-        ? 'missed'
-        : session?.acceptedAt
-          ? 'completed'
-          : 'ended';
+      payload.reason === 'missed' ? 'missed' : session?.acceptedAt ? 'completed' : 'ended';
 
     await emitCallLog(payload, outcome, durationSeconds);
     callSessions.delete(payload.callId);
@@ -503,22 +486,19 @@ export const registerCallHandlers = (io: Server, socket: Socket) => {
     scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
   });
 
-  socket.on(
-    'call:group-participant-leave',
-    async (payload: GroupCallParticipantLeavePayload) => {
-      const session = groupCallSessions.get(payload.callId);
-      if (!session || session.conversationId !== payload.conversationId) return;
-      if (!session.roomName || !session.startLogCreated || session.endLogCreated) return;
+  socket.on('call:group-participant-leave', async (payload: GroupCallParticipantLeavePayload) => {
+    const session = groupCallSessions.get(payload.callId);
+    if (!session || session.conversationId !== payload.conversationId) return;
+    if (!session.roomName || !session.startLogCreated || session.endLogCreated) return;
 
-      session.activeParticipantUserIds.delete(payload.userId);
+    session.activeParticipantUserIds.delete(payload.userId);
 
-      if (session.activeParticipantUserIds.size > 0) {
-        groupCallSessions.set(payload.callId, session);
-        scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
-        return;
-      }
-
-      await finalizeGroupCallSession(payload.callId, 'ended');
+    if (session.activeParticipantUserIds.size > 0) {
+      groupCallSessions.set(payload.callId, session);
+      scheduleGroupCallSessionCleanup(payload.callId, GROUP_CALL_ACTIVE_TTL_MS);
+      return;
     }
-  );
+
+    await finalizeGroupCallSession(payload.callId, 'ended');
+  });
 };

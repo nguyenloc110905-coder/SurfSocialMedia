@@ -18,7 +18,7 @@ const FAKE_COMMENTS = [
   'Nghe vô lý nhưng lại rất thuyết phục 🤔',
   'Ủng hộ bạn 1 tim ❤️',
   'Hay quá, lưu lại học hỏi thôi.',
-  'Bác nói chí phải!'
+  'Bác nói chí phải!',
 ];
 
 async function fixInteractions() {
@@ -28,8 +28,11 @@ async function fixInteractions() {
   // 1. Lấy 20 users mẫu để làm tác giả comment & like
   const seedUserIds = Array.from({ length: 20 }, (_, i) => `seed_user_${i}`);
   const usersSnap = await db.collection('users').where('uid', 'in', seedUserIds.slice(0, 10)).get();
-  const usersSnap2 = await db.collection('users').where('uid', 'in', seedUserIds.slice(10, 20)).get();
-  const allSeedUsers = [...usersSnap.docs, ...usersSnap2.docs].map(d => d.data());
+  const usersSnap2 = await db
+    .collection('users')
+    .where('uid', 'in', seedUserIds.slice(10, 20))
+    .get();
+  const allSeedUsers = [...usersSnap.docs, ...usersSnap2.docs].map((d) => d.data());
 
   // 2. Lấy 100 bài viết mẫu
   const [snap1, snap2] = await Promise.all([
@@ -51,17 +54,17 @@ async function fixInteractions() {
     const shuffledUsers = [...allSeedUsers].sort(() => 0.5 - Math.random());
     const realLikeCount = randomInt(5, 20);
     const likers = shuffledUsers.slice(0, realLikeCount);
-    
-    const likedBy = likers.map(u => u.uid);
+
+    const likedBy = likers.map((u) => u.uid);
     const reactions: Record<string, string> = {};
-    likers.forEach(u => {
+    likers.forEach((u) => {
       reactions[u.uid] = '❤️'; // Hoặc random cảm xúc khác
     });
 
     // ---- 2. Fix COMMENTS ----
     const realCommentCount = randomInt(3, 8);
     const commenters = [...allSeedUsers].sort(() => 0.5 - Math.random()).slice(0, realCommentCount);
-    
+
     for (const commenter of commenters) {
       const commentRef = db.collection('comments').doc();
       const commentObj = {
@@ -74,9 +77,9 @@ async function fixInteractions() {
         updatedAt: new Date(),
         likeCount: 0,
         likedBy: [],
-        deleted: false
+        deleted: false,
       };
-      
+
       batchArray[batchArray.length - 1].set(commentRef, commentObj);
       opCount++;
       if (opCount >= 400) {
@@ -90,7 +93,7 @@ async function fixInteractions() {
       likeCount: realLikeCount,
       likedBy: likedBy,
       reactions: reactions,
-      replyCount: realCommentCount
+      replyCount: realCommentCount,
     });
     opCount++;
     if (opCount >= 400) {

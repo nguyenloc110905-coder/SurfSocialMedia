@@ -302,12 +302,7 @@ router.get('/:id/media', requireAuth, async (req: AuthRequest, res) => {
     const limit = Math.min(parseIntSafe(req.query.limit, 20), 50);
     const cursor = parseCursorSafe(req.query.cursor);
 
-    const result = await listMediaForConversation(
-      uid,
-      req.params.id,
-      limit,
-      cursor
-    );
+    const result = await listMediaForConversation(uid, req.params.id, limit, cursor);
     if (!result.ok) {
       if (result.reason === 'not_found') {
         res.status(404).json({ error: 'Conversation not found' });
@@ -323,7 +318,6 @@ router.get('/:id/media', requireAuth, async (req: AuthRequest, res) => {
     res.status(500).json({ error: (e as Error).message });
   }
 });
-
 
 /**
  * @swagger
@@ -626,8 +620,8 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
       const senderDoc = await getDb().collection('users').doc(senderId).get();
       const senderName = senderDoc.exists ? senderDoc.data()?.displayName || 'Ai đó' : 'Ai đó';
       const mutedSet = new Set(mutedBy || []);
-      
-      result.recipientIds.forEach(uid => {
+
+      result.recipientIds.forEach((uid) => {
         if (!mutedSet.has(uid)) {
           sendPushToUser(uid, {
             title: 'Tin nhắn mới',
@@ -698,8 +692,8 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     const senderDoc = await getDb().collection('users').doc(senderId).get();
     const senderName = senderDoc.exists ? senderDoc.data()?.displayName || 'Ai đó' : 'Ai đó';
     const mutedSet = new Set(mutedBy || []);
-    
-    result.recipientIds.forEach(uid => {
+
+    result.recipientIds.forEach((uid) => {
       if (!mutedSet.has(uid)) {
         sendPushToUser(uid, {
           title: 'Tin nhắn mới',
@@ -787,9 +781,15 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const snap = await conversationRepository.getById(req.params.id);
-    if (!snap) { res.status(404).json({ error: 'Conversation not found' }); return; }
+    if (!snap) {
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
     const memberIds = await conversationRepository.getMemberIds(req.params.id);
-    if (!memberIds.includes(uid)) { res.status(403).json({ error: 'Forbidden' }); return; }
+    if (!memberIds.includes(uid)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
     await conversationRepository.hideForUser(req.params.id, uid);
     res.json({ success: true });
   } catch (e) {
@@ -813,7 +813,10 @@ router.patch('/:id/mute', requireAuth, async (req: AuthRequest, res) => {
       : false;
     const expiresAt = muted ? parseMuteExpiresAt(req.body?.expiresAt) : null;
     const memberIds = await conversationRepository.getMemberIds(req.params.id);
-    if (!memberIds.includes(uid)) { res.status(403).json({ error: 'Forbidden' }); return; }
+    if (!memberIds.includes(uid)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
     const settings = await conversationRepository.setMutedForUser(req.params.id, uid, {
       muted,
       muteMessages,

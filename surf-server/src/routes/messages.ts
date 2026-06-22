@@ -269,7 +269,9 @@ router.post('/:id/forward', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(result.item);
-    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(result.conversationId);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(
+      result.conversationId
+    );
     const mutedBy = Object.entries(muteSettingsByUser)
       .filter(([, settings]) => settings.muteMessages)
       .map(([userId]) => userId);

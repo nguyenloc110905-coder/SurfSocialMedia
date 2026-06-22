@@ -1,5 +1,9 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { buildDmConversationId, ConservationDoc, type MarketplaceConversationContext } from '../types/conversation.js';
+import {
+  buildDmConversationId,
+  ConservationDoc,
+  type MarketplaceConversationContext,
+} from '../types/conversation.js';
 import { getDb } from '../config/firebase-admin.js';
 import { getRedis } from '../config/redis.js';
 
@@ -46,7 +50,8 @@ const mapMarketplaceContext = (value: unknown): MarketplaceConversationContext |
     sellerDisplayName:
       cleanDisplayText(typeof data.sellerDisplayName === 'string' ? data.sellerDisplayName : '') ||
       'Người bán',
-    sellerPhotoURL: typeof data.sellerPhotoURL === 'string' && data.sellerPhotoURL ? data.sellerPhotoURL : null,
+    sellerPhotoURL:
+      typeof data.sellerPhotoURL === 'string' && data.sellerPhotoURL ? data.sellerPhotoURL : null,
   };
 };
 
@@ -103,18 +108,12 @@ const readMuteSettingsForUser = (
       : {};
   const raw = settingsByUser[userId];
   const settings =
-    raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? (raw as Record<string, unknown>)
-      : null;
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
 
-  const expiresAt = settings ? toDate(settings.expiresAt) ?? null : null;
+  const expiresAt = settings ? (toDate(settings.expiresAt) ?? null) : null;
   const expired = Boolean(expiresAt && expiresAt.getTime() <= Date.now());
-  const muteMessages = settings
-    ? settings.muteMessages !== false && !expired
-    : legacyMuted;
-  const muteCalls = settings
-    ? settings.muteCalls !== false && !expired
-    : legacyMuted;
+  const muteMessages = settings ? settings.muteMessages !== false && !expired : legacyMuted;
+  const muteCalls = settings ? settings.muteCalls !== false && !expired : legacyMuted;
 
   return {
     muted: (muteMessages || muteCalls) && !expired,
@@ -277,10 +276,7 @@ export const conversationRepository = {
     sellerId: string,
     limit = 50
   ): Promise<ConversationListDetail[]> {
-    const snap = await col()
-      .where('marketplaceListingId', '==', listingId)
-      .limit(limit)
-      .get();
+    const snap = await col().where('marketplaceListingId', '==', listingId).limit(limit).get();
 
     return snap.docs
       .map((doc) => {
@@ -313,7 +309,7 @@ export const conversationRepository = {
   async sumUnreadByUser(userId: string): Promise<number> {
     const redis = getRedis();
     const cacheKey = `unreadCount:${userId}`;
-    
+
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return parseInt(cached, 10) || 0;
@@ -324,20 +320,22 @@ export const conversationRepository = {
       const data = (doc.data() ?? {}) as Record<string, unknown>;
       return sum + getUnreadCountForUser(data, userId);
     }, 0);
-    
+
     if (redis) {
       await redis.set(cacheKey, total.toString(), { EX: 3600 }); // cache for 1 hour
     }
-    
+
     return total;
   },
 
   async markReadByUser(conversationId: string, userId: string): Promise<void> {
-    await col().doc(conversationId).update({
-      [`unreadCountByUser.${userId}`]: 0,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    
+    await col()
+      .doc(conversationId)
+      .update({
+        [`unreadCountByUser.${userId}`]: 0,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
     const redis = getRedis();
     if (redis) {
       await redis.del(`unreadCount:${userId}`);
@@ -380,18 +378,20 @@ export const conversationRepository = {
       updates[`unreadCountByUser.${uid}`] = 0;
     }
     await col().doc(conversationId).update(updates);
-    
+
     const redis = getRedis();
     if (redis) {
-      await Promise.all(newMemberIds.map(uid => redis.del(`unreadCount:${uid}`)));
+      await Promise.all(newMemberIds.map((uid) => redis.del(`unreadCount:${uid}`)));
     }
   },
 
   async hideForUser(conversationId: string, userId: string): Promise<void> {
-    await col().doc(conversationId).update({
-      hiddenFor: FieldValue.arrayUnion(userId),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    await col()
+      .doc(conversationId)
+      .update({
+        hiddenFor: FieldValue.arrayUnion(userId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
   },
 
   async setMutedForUser(
@@ -419,18 +419,20 @@ export const conversationRepository = {
           expiresAt: null,
         };
 
-    await col().doc(conversationId).update({
-      mutedBy: normalized.muted ? FieldValue.arrayUnion(userId) : FieldValue.arrayRemove(userId),
-      [`muteSettingsByUser.${userId}`]: normalized.muted
-        ? {
-            muteMessages: normalized.muteMessages,
-            muteCalls: normalized.muteCalls,
-            expiresAt: normalized.expiresAt,
-            updatedAt: FieldValue.serverTimestamp(),
-          }
-        : FieldValue.delete(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    await col()
+      .doc(conversationId)
+      .update({
+        mutedBy: normalized.muted ? FieldValue.arrayUnion(userId) : FieldValue.arrayRemove(userId),
+        [`muteSettingsByUser.${userId}`]: normalized.muted
+          ? {
+              muteMessages: normalized.muteMessages,
+              muteCalls: normalized.muteCalls,
+              expiresAt: normalized.expiresAt,
+              updatedAt: FieldValue.serverTimestamp(),
+            }
+          : FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
 
     return normalized;
   },

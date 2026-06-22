@@ -34,14 +34,14 @@ async function clearCollection(collectionPath: string) {
 async function run() {
   try {
     console.log('Bắt đầu xóa dữ liệu cũ...');
-    
+
     // Xóa các collection chứa ảnh/video Cloudinary
     await clearCollection('posts');
     await clearCollection('videos');
     await clearCollection('moments');
     await clearCollection('comments');
     await clearCollection('notifications');
-    
+
     // Nếu muốn xóa luôn user thì mở comment dòng dưới:
     // await clearCollection('users');
 

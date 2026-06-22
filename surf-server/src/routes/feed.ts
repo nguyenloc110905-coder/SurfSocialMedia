@@ -55,21 +55,21 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
         getDb().collection('groups').where('memberIds', 'array-contains', uid).get(),
       ]);
       groupsSnap = gSnap;
-      
+
       if (cachedFriends) friendIds = JSON.parse(cachedFriends);
       if (cachedFollows) followingIds = JSON.parse(cachedFollows);
-      
+
       if (!cachedFriends || !cachedFollows) {
         const [friendDoc, followDoc] = await Promise.all([
           !cachedFriends ? getDb().collection('friends').doc(uid).get() : Promise.resolve(null),
           !cachedFollows ? getDb().collection('follows').doc(uid).get() : Promise.resolve(null),
         ]);
-        
+
         if (!cachedFriends && friendDoc) {
           friendIds = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
           await redis.set(`friends:${uid}`, JSON.stringify(friendIds), { EX: 300 }); // 5 minutes cache
         }
-        
+
         if (!cachedFollows && followDoc) {
           followingIds = followDoc.exists ? (followDoc.data()?.followingIds ?? []) : [];
           await redis.set(`follows:${uid}`, JSON.stringify(followingIds), { EX: 300 }); // 5 minutes cache
@@ -90,7 +90,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const groupDetails = new Map(
       groupsSnap.docs.map((d) => {
         const data = d.data() as { name?: string; coverImageUrl?: string | null };
-        return [d.id, { name: data.name ?? 'Nhóm', coverImageUrl: data.coverImageUrl ?? null }] as const;
+        return [
+          d.id,
+          { name: data.name ?? 'Nhóm', coverImageUrl: data.coverImageUrl ?? null },
+        ] as const;
       })
     );
 
@@ -99,16 +102,13 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const isNewUser = friendIds.length === 0 && followingIds.length === 0;
 
     // Tăng limit để lấy pool đủ lớn cho thuật toán ranking
-    let q = postsRef
-      .where('parentId', '==', null)
-      .orderBy('createdAt', 'desc')
-      .limit(200);
+    const q = postsRef.where('parentId', '==', null).orderBy('createdAt', 'desc').limit(200);
 
     const snap = await q.get();
 
     // Lấy danh sách bài đã đọc từ Redis để giảm điểm (ít xuất hiện lại)
     // ĐÃ TẠM TẮT để không làm hỏng logic Pagination (lastId)
-    let seenPosts = new Set<string>();
+    const seenPosts = new Set<string>();
 
     type PostDoc = {
       id: string;
@@ -181,8 +181,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     });
 
     let posts = [...personalizedPosts, ...discoverPosts];
-    
-    type FsTs = { toMillis?: () => number, _seconds?: number, seconds?: number };
+
+    type FsTs = { toMillis?: () => number; _seconds?: number; seconds?: number };
     const toMs = (val: unknown): number => {
       if (!val) return Date.now();
       if (typeof (val as FsTs).toMillis === 'function') return (val as FsTs).toMillis!();
@@ -194,29 +194,29 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     };
 
     // Tính điểm (Scoring) cho từng bài
-    posts = posts.map(p => {
+    posts = posts.map((p) => {
       const likes = (p.likeCount as number) || 0;
       const replies = (p.replyCount as number) || 0;
       const ageHours = (Date.now() - toMs(p.createdAt)) / (1000 * 60 * 60);
-      
-      let score = (likes * 2) + (replies * 3) + 100 - (ageHours * 1.5);
-      
+
+      let score = likes * 2 + replies * 3 + 100 - ageHours * 1.5;
+
       // Ưu tiên bài cá nhân hóa (bạn bè, follow) hơn khám phá
       if (!p._discover) score += 20;
       if (p.authorId === uid) score += 1500;
-      
+
       // Phạt nặng nếu đã đọc rồi (để rơi xuống đáy) - TẠM TẮT DO LỖI PAGINATION
       // if (p.authorId !== uid && seenPosts.has(p.id)) score -= 1000;
 
       // Yếu tố ngẫu nhiên nhỏ dựa trên ID để làm mới feed nhưng vẫn CỐ ĐỊNH (deterministic)
       // Dùng mã ASCII của ký tự cuối trong ID để tạo độ lệch 0-5 điểm
       const charCode = p.id.charCodeAt(p.id.length - 1) || 0;
-      score += (charCode % 5);
+      score += charCode % 5;
 
       return { ...p, _score: score };
     });
 
-    // Sắp xếp theo điểm giảm dần. 
+    // Sắp xếp theo điểm giảm dần.
     // Quan trọng: Thêm tiêu chí phụ (id) để đảm bảo thuật toán sắp xếp (sort) luôn cố định
     posts.sort((a, b) => {
       const diff = (b._score as number) - (a._score as number);
@@ -227,16 +227,16 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     // Pagination dựa trên vị trí của lastId trong mảng đã sort
     let startIndex = 0;
     if (lastId) {
-      const idx = posts.findIndex(p => p.id === lastId);
+      const idx = posts.findIndex((p) => p.id === lastId);
       if (idx !== -1) startIndex = idx + 1;
     }
-    
+
     const hasMore = startIndex + limitNum < posts.length;
     posts = posts.slice(startIndex, startIndex + limitNum);
 
     // Lưu các bài đã trả về vào danh sách seen trong Redis
     if (redis && posts.length > 0) {
-      posts.forEach(p => seenPosts.add(p.id));
+      posts.forEach((p) => seenPosts.add(p.id));
       const seenArr = Array.from(seenPosts).slice(-1000); // Giữ tối đa 1000 bài gần nhất
       redis.set(`seen_posts:${uid}`, JSON.stringify(seenArr), { EX: 86400 * 3 }).catch(() => {});
     }

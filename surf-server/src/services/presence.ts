@@ -1,12 +1,12 @@
 import { getRedis } from '../config/redis.js';
 import { getDb } from '../config/firebase-admin.js';
 
-const TTL = 90;                     // presence TTL (seconds)
+const TTL = 90; // presence TTL (seconds)
 const LAST_SEEN_TTL = 0; // 0 means lastSeen is persisted without Redis expiry
 
 // In-memory fallback (no Redis)
 const memSockets = new Map<string, Set<string>>(); // userId -> socketIds
-const memLastSeen = new Map<string, number>();     // userId -> Unix ms timestamp
+const memLastSeen = new Map<string, number>(); // userId -> Unix ms timestamp
 
 // Global map: socketId -> userId (for disconnect lookup)
 const socketToUser = new Map<string, string>();
@@ -22,7 +22,12 @@ function normalizeLastSeenValue(value: unknown): number | null {
     return Number.isFinite(time) ? time : null;
   }
   if (value && typeof value === 'object') {
-    const timestamp = value as { toMillis?: () => number; toDate?: () => Date; seconds?: number; _seconds?: number };
+    const timestamp = value as {
+      toMillis?: () => number;
+      toDate?: () => Date;
+      seconds?: number;
+      _seconds?: number;
+    };
     if (typeof timestamp.toMillis === 'function') {
       const millis = timestamp.toMillis();
       return Number.isFinite(millis) ? millis : null;
@@ -159,16 +164,14 @@ export const getLastSeen = async (userId: string): Promise<number | null> => {
     }
     return persisted;
   }
-  return memLastSeen.get(userId) ?? await readFirestoreLastSeen(userId);
+  return memLastSeen.get(userId) ?? (await readFirestoreLastSeen(userId));
 };
 
 export const getOnlineFromList = async (userIds: string[]): Promise<string[]> => {
   if (userIds.length === 0) return [];
   const redis = getRedis();
   if (redis) {
-    const results = await Promise.all(
-      userIds.map((uid) => redis.exists(`presence:${uid}`))
-    );
+    const results = await Promise.all(userIds.map((uid) => redis.exists(`presence:${uid}`)));
     return userIds.filter((_, i) => results[i] === 1);
   }
   return userIds.filter((uid) => memSockets.has(uid));

@@ -84,7 +84,9 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const user = await getAuth().getUser(req.uid!);
 
     const now = new Date();
-    const normalizedPrivacy = ['public', 'friends', 'only-me'].includes(privacy) ? privacy : 'public';
+    const normalizedPrivacy = ['public', 'friends', 'only-me'].includes(privacy)
+      ? privacy
+      : 'public';
     const normalizedEditOptions = {
       contentFit: editOptions?.contentFit === 'contain' ? 'contain' : 'cover',
       mutedOriginal: editOptions?.mutedOriginal === true,
@@ -93,10 +95,16 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       ? textOverlays
           .map((overlay) => ({
             id: String(overlay.id ?? Date.now()),
-            text: String(overlay.text ?? '').trim().slice(0, 90),
-            color: /^#[0-9A-Fa-f]{6}$/.test(String(overlay.color ?? '')) ? String(overlay.color) : '#ffffff',
+            text: String(overlay.text ?? '')
+              .trim()
+              .slice(0, 90),
+            color: /^#[0-9A-Fa-f]{6}$/.test(String(overlay.color ?? ''))
+              ? String(overlay.color)
+              : '#ffffff',
             fontSize: Math.min(40, Math.max(20, Number(overlay.fontSize) || 28)),
-            placement: ['top', 'center', 'bottom'].includes(String(overlay.placement)) ? String(overlay.placement) : 'center',
+            placement: ['top', 'center', 'bottom'].includes(String(overlay.placement))
+              ? String(overlay.placement)
+              : 'center',
           }))
           .filter((overlay) => overlay.text)
           .slice(0, 3)
@@ -119,7 +127,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       duration: duration ?? null,
       tags: normalizedTags,
       privacy: normalizedPrivacy,
-      location: typeof location === 'string' && location.trim() ? location.trim().slice(0, 120) : null,
+      location:
+        typeof location === 'string' && location.trim() ? location.trim().slice(0, 120) : null,
       allowComments: allowComments !== false,
       aiGenerated: aiGenerated === true,
       editOptions: normalizedEditOptions,
@@ -160,36 +169,33 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     const tag = typeof req.query.tag === 'string' ? req.query.tag.trim() : '';
     const db = getDb();
     let videos: any[] = [];
-    
+
     if (tag) {
-      const snap = await db.collection('videos')
-        .where('tags', 'array-contains', tag)
-        .get();
-        
+      const snap = await db.collection('videos').where('tags', 'array-contains', tag).get();
+
       videos = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me')
         .sort((a: any, b: any) => {
-          const timeA = typeof a.createdAt === 'object' && a.createdAt !== null 
-            ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000 
-            : new Date(a.createdAt as string).getTime() || 0;
-          const timeB = typeof b.createdAt === 'object' && b.createdAt !== null 
-            ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000 
-            : new Date(b.createdAt as string).getTime() || 0;
+          const timeA =
+            typeof a.createdAt === 'object' && a.createdAt !== null
+              ? ((a.createdAt as any)._seconds || (a.createdAt as any).seconds || 0) * 1000
+              : new Date(a.createdAt as string).getTime() || 0;
+          const timeB =
+            typeof b.createdAt === 'object' && b.createdAt !== null
+              ? ((b.createdAt as any)._seconds || (b.createdAt as any).seconds || 0) * 1000
+              : new Date(b.createdAt as string).getTime() || 0;
           return timeB - timeA;
         })
         .slice(0, 50);
     } else {
-      const snap = await db.collection('videos')
-        .orderBy('createdAt', 'desc')
-        .limit(50)
-        .get();
-        
+      const snap = await db.collection('videos').orderBy('createdAt', 'desc').limit(50).get();
+
       videos = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((v: any) => !v.deletedAt && v.privacy !== 'only-me');
     }
-    
+
     res.json({ videos });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -219,10 +225,12 @@ router.get('/foryou', requireAuth, async (req: AuthRequest, res) => {
     const db = getDb();
     const limit = Math.min(Number(req.query.limit) || 10, 20);
     const page = Math.max(Number(req.query.page) || 1, 1);
-    
+
     // Fetch user's watch history (interested tags)
     const userDoc = await db.collection('users').doc(req.uid!).get();
-    const interestedTags: Record<string, number> = userDoc.exists ? (userDoc.data()?.interestedTags || {}) : {};
+    const interestedTags: Record<string, number> = userDoc.exists
+      ? userDoc.data()?.interestedTags || {}
+      : {};
 
     type FsTs = { toMillis(): number };
     const toMs = (val: unknown): number => {
@@ -234,8 +242,8 @@ router.get('/foryou', requireAuth, async (req: AuthRequest, res) => {
 
     // Fetch pool of recent videos (say 200) to score
     // In a real app this would use a recommendation engine or vector DB
-    let videosQ = db.collection('videos').orderBy('createdAt', 'desc').limit(200);
-    let postsQ = db.collection('posts').orderBy('createdAt', 'desc').limit(200);
+    const videosQ = db.collection('videos').orderBy('createdAt', 'desc').limit(200);
+    const postsQ = db.collection('posts').orderBy('createdAt', 'desc').limit(200);
 
     const [videoSnap, postsSnap] = await Promise.all([videosQ.get(), postsQ.get()]);
 
@@ -309,12 +317,12 @@ router.get('/foryou', requireAuth, async (req: AuthRequest, res) => {
     }
 
     // Scoring algorithm
-    const scoredVideos = all.map(video => {
+    const scoredVideos = all.map((video) => {
       // 1. Base engagement score
       const likes = video.likeCount || 0;
       const comments = video.commentCount || 0;
       const views = video.viewCount || 0;
-      let score = (likes * 5) + (comments * 3) + (views * 0.5);
+      let score = likes * 5 + comments * 3 + views * 0.5;
 
       // 2. Personalization score based on tags
       let tagBonus = 0;
@@ -324,11 +332,11 @@ router.get('/foryou', requireAuth, async (req: AuthRequest, res) => {
           tagBonus += interestedTags[tag] * 2; // +2 for each time user watched this tag
         }
       }
-      
+
       // 3. Recency penalty (newer is better)
       const ageMs = Date.now() - toMs(video.createdAt);
       const ageHours = ageMs / (1000 * 60 * 60);
-      const recencyMultiplier = Math.max(0.1, 1 - (ageHours / 168)); // linear decay over 7 days
+      const recencyMultiplier = Math.max(0.1, 1 - ageHours / 168); // linear decay over 7 days
 
       score = (score + tagBonus + 10) * recencyMultiplier; // +10 base score to ensure new videos still surface
 
@@ -347,12 +355,12 @@ router.get('/foryou', requireAuth, async (req: AuthRequest, res) => {
     const hasMore = startIndex + limit < scoredVideos.length;
 
     res.json({
-      videos: items.map(v => {
+      videos: items.map((v) => {
         const { _score, ...rest } = v;
         return rest;
       }),
       hasMore,
-      nextPage: hasMore ? page + 1 : null
+      nextPage: hasMore ? page + 1 : null,
     });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -608,14 +616,16 @@ router.post('/:id/view', requireAuth, async (req: AuthRequest, res) => {
       if (userDoc.exists) {
         const userData = userDoc.data()!;
         let interestedTags: Record<string, number> = userData.interestedTags || {};
-        
+
         // Decay older scores occasionally to prefer recent interests (simplified)
         for (const tag of tags) {
           interestedTags[tag] = (interestedTags[tag] || 0) + 1;
         }
 
         // Keep only top 50 tags to avoid huge document size
-        const sortedTags = Object.entries(interestedTags).sort((a, b) => b[1] - a[1]).slice(0, 50);
+        const sortedTags = Object.entries(interestedTags)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 50);
         interestedTags = Object.fromEntries(sortedTags);
 
         await userRef.update({ interestedTags });
@@ -728,7 +738,8 @@ router.get('/:id', requireAuth, async (req, res) => {
         res.status(404).json({ error: 'Video not found' });
         return;
       }
-      const isVideoUrl = (u: string) => u.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u);
+      const isVideoUrl = (u: string) =>
+        u.includes('/video/upload/') || /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u);
       const videoUrl = (data?.mediaUrls ?? []).find(isVideoUrl);
       if (!videoUrl) {
         res.status(404).json({ error: 'Video not found' });
@@ -774,11 +785,12 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.get('/:id/comments', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
-    const snap = await db.collection('comments')
+    const snap = await db
+      .collection('comments')
       .where('postId', '==', req.params.id)
       .orderBy('createdAt', 'asc')
       .get();
-    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const comments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     res.json({ comments });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -803,7 +815,9 @@ router.post('/:id/comments', requireAuth, async (req: AuthRequest, res) => {
 
     const moderation = await moderateText(content.trim());
     if (!moderation.allowed) {
-      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      res.status(422).json({
+        error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}`,
+      });
       return;
     }
 
@@ -825,7 +839,10 @@ router.post('/:id/comments', requireAuth, async (req: AuthRequest, res) => {
     if (parentId) commentData.parentId = parentId;
 
     await commentRef.set(commentData);
-    await db.collection('videos').doc(req.params.id).update({ commentCount: FieldValue.increment(1) });
+    await db
+      .collection('videos')
+      .doc(req.params.id)
+      .update({ commentCount: FieldValue.increment(1) });
 
     const responseData = { id: commentRef.id, ...commentData };
     emitCommentNew(req.params.id, responseData);

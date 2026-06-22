@@ -20,8 +20,7 @@ const mapConversationMemberDoc = (
   conversationId: (data.conversationId as string) ?? id.split('__')[0] ?? '',
   userId: (data.userId as string) ?? id.split('__')[1] ?? '',
   joinedAt: toDate(data.joinedAt),
-  lastReadMessageId:
-    typeof data.lastReadMessageId === 'string' ? data.lastReadMessageId : null,
+  lastReadMessageId: typeof data.lastReadMessageId === 'string' ? data.lastReadMessageId : null,
   lastReadMessageCreatedAt: toDate(data.lastReadMessageCreatedAt),
   lastReadAt: toDate(data.lastReadAt),
 });

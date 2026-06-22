@@ -2,7 +2,12 @@ import { Router } from 'express';
 import { randomInt } from 'crypto';
 import { logger } from '../config/logger.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { sendLoginNotification, sendWelcomeEmail, sendOtpEmail, sendRegisterOtpEmail } from '../services/email.js';
+import {
+  sendLoginNotification,
+  sendWelcomeEmail,
+  sendOtpEmail,
+  sendRegisterOtpEmail,
+} from '../services/email.js';
 import { getAuth } from '../config/firebase-admin.js';
 import { setOtp, verifyAndConsumeOtp } from '../utils/otp-store.js';
 
@@ -57,7 +62,9 @@ router.post('/notify-login', requireAuth, async (req: AuthRequest, res) => {
     const name = fbUser.displayName ?? fbUser.email.split('@')[0];
     // Gửi email bất đồng bộ, không chặn response
     sendLoginNotification(fbUser.email, name).catch((err) =>
-      logger.error('❌ Gửi email login thất bại:', { stack: err instanceof Error ? err.stack : String(err) })
+      logger.error('❌ Gửi email login thất bại:', {
+        stack: err instanceof Error ? err.stack : String(err),
+      })
     );
     res.json({ sent: true });
   } catch (e) {
@@ -92,7 +99,9 @@ router.post('/notify-register', requireAuth, async (req: AuthRequest, res) => {
     }
     const name = fbUser.displayName ?? fbUser.email.split('@')[0];
     sendWelcomeEmail(fbUser.email, name).catch((err) =>
-      logger.error('❌ Gửi email welcome thất bại:', { stack: err instanceof Error ? err.stack : String(err) })
+      logger.error('❌ Gửi email welcome thất bại:', {
+        stack: err instanceof Error ? err.stack : String(err),
+      })
     );
     res.json({ sent: true });
   } catch (e) {
@@ -314,8 +323,12 @@ router.post('/register/send-otp', async (req, res) => {
     }
 
     const code = randomInt(100000, 1000000).toString();
-    const payload = { email: String(email), password: String(password), displayName: String(displayName) };
-    
+    const payload = {
+      email: String(email),
+      password: String(password),
+      displayName: String(displayName),
+    };
+
     // Lưu OTP bằng email thay vì uid
     setOtp(email, 'register', code, payload);
 
@@ -323,7 +336,9 @@ router.post('/register/send-otp', async (req, res) => {
 
     res.json({ sent: true });
   } catch (e) {
-    logger.error('❌ register send-otp error:', { stack: e instanceof Error ? e.stack : String(e) });
+    logger.error('❌ register send-otp error:', {
+      stack: e instanceof Error ? e.stack : String(e),
+    });
     res.status(500).json({ error: (e as Error).message });
   }
 });
@@ -368,7 +383,7 @@ router.post('/register/verify', async (req, res) => {
       email: payload.email,
       password: payload.password,
       displayName: payload.displayName,
-      emailVerified: true
+      emailVerified: true,
     });
 
     // Tạo custom token

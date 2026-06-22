@@ -1,10 +1,6 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getDb } from '../config/firebase-admin.js';
-import type {
-  CreateGroupInput,
-  GroupDoc,
-  GroupJoinRequestDoc,
-} from '../types/group.js';
+import type { CreateGroupInput, GroupDoc, GroupJoinRequestDoc } from '../types/group.js';
 
 const groupsCol = () => getDb().collection('groups');
 const joinRequestsCol = () => getDb().collection('group_join_requests');
@@ -145,11 +141,15 @@ export const groupRepository = {
       });
   },
 
-  async updateJoinRequestStatus(groupId: string, userId: string, status: GroupJoinRequestDoc['status']): Promise<void> {
+  async updateJoinRequestStatus(
+    groupId: string,
+    userId: string,
+    status: GroupJoinRequestDoc['status']
+  ): Promise<void> {
     const requestId = `${groupId}__${userId}`;
     await joinRequestsCol().doc(requestId).update({
       status,
-      updatedAt: FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp(),
     });
   },
 
@@ -158,7 +158,9 @@ export const groupRepository = {
       .where('groupId', '==', groupId)
       .where('status', '==', 'pending')
       .get();
-    return snap.docs.map((doc) => mapJoinRequestDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>));
+    return snap.docs.map((doc) =>
+      mapJoinRequestDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>)
+    );
   },
 
   async promoteToAdmin(groupId: string, userId: string): Promise<void> {

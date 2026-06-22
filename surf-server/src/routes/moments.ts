@@ -127,10 +127,7 @@ router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
 
     // Lấy tất cả moments chưa hết hạn
     const now = new Date();
-    const snap = await momentsRef
-      .where('expiresAt', '>', now)
-      .orderBy('expiresAt', 'asc')
-      .get();
+    const snap = await momentsRef.where('expiresAt', '>', now).orderBy('expiresAt', 'asc').get();
 
     // Nhóm theo userId
     const groupMap = new Map<
@@ -181,8 +178,12 @@ router.get('/feed', requireAuth, async (req: AuthRequest, res) => {
     // Sắp xếp moments trong mỗi group theo createdAt mới nhất
     for (const g of groups) {
       g.moments.sort((a, b) => {
-        const aT = (a.createdAt as { toMillis?: () => number })?.toMillis?.() ?? new Date(a.createdAt as string).getTime();
-        const bT = (b.createdAt as { toMillis?: () => number })?.toMillis?.() ?? new Date(b.createdAt as string).getTime();
+        const aT =
+          (a.createdAt as { toMillis?: () => number })?.toMillis?.() ??
+          new Date(a.createdAt as string).getTime();
+        const bT =
+          (b.createdAt as { toMillis?: () => number })?.toMillis?.() ??
+          new Date(b.createdAt as string).getTime();
         return bT - aT;
       });
     }
@@ -476,7 +477,7 @@ router.get('/music/search', requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       results?: Array<{
         trackId: number;
         trackName: string;

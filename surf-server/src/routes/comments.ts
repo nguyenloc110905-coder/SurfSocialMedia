@@ -54,18 +54,16 @@ router.get('/:postId', requireAuth, async (req, res) => {
     const db = getDb();
     const commentsRef = db.collection('comments');
 
-    const snap = await commentsRef
-      .where('postId', '==', req.params.postId)
-      .limit(500)
-      .get();
+    const snap = await commentsRef.where('postId', '==', req.params.postId).limit(500).get();
 
     type CommentDoc = { id: string; createdAt?: { seconds?: number; _seconds?: number } };
-    const comments = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as CommentDoc[])
-      .sort((a, b) => {
+    const comments = (snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as CommentDoc[]).sort(
+      (a, b) => {
         const aT = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
         const bT = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
         return aT - bT;
-      });
+      }
+    );
 
     res.json({ comments, nextCursor: null, total: comments.length });
   } catch (e) {
@@ -81,14 +79,19 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const commentsRef = db.collection('comments');
     const postsRef = db.collection('posts');
     const usersRef = db.collection('users');
-    
-    const { content = '', parentId, mentions = [], mediaUrl } = req.body as {
+
+    const {
+      content = '',
+      parentId,
+      mentions = [],
+      mediaUrl,
+    } = req.body as {
       content?: string;
       parentId?: string;
       mentions?: { uid: string; displayName: string }[];
       mediaUrl?: string;
     };
-    
+
     if (!content.trim() && !mediaUrl) {
       res.status(400).json({ error: 'Comment content or media is required' });
       return;
@@ -98,7 +101,9 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     if (content.trim()) {
       const moderation = await moderateText(content.trim());
       if (!moderation.allowed) {
-        res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+        res.status(422).json({
+          error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}`,
+        });
         return;
       }
     }
@@ -129,7 +134,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         return;
       }
     }
-    
+
     // Get user info
     const userDoc = await usersRef.doc(req.uid!).get();
     const user = userDoc.data();
@@ -149,7 +154,7 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
       likedBy: [],
     };
     if (parentId) commentData.parentId = parentId;
-    
+
     console.log(`📝 Creating comment for post ${req.params.postId} by ${req.uid}`);
 
     await commentRef.set(commentData);
@@ -176,8 +181,8 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
     const contentDoc = isVideo ? videoDoc! : postDoc;
     const postAuthorId = contentDoc.data()?.authorId as string | undefined;
     const postSnippet = isVideo
-      ? (contentDoc.data()?.title as string ?? '').substring(0, 100)
-      : (contentDoc.data()?.content as string ?? '').substring(0, 100);
+      ? ((contentDoc.data()?.title as string) ?? '').substring(0, 100)
+      : ((contentDoc.data()?.content as string) ?? '').substring(0, 100);
     const plainContent = content.trim().replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
     // Notify post author about new top-level comment (skip own post, skip replies — handled below)
     if (!parentId && postAuthorId && postAuthorId !== req.uid) {
@@ -196,10 +201,12 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      getIo().to(`user:${postAuthorId}`).emit('notification:new', {
-        ...notifData,
-        createdAt: new Date().toISOString(),
-      });
+      getIo()
+        .to(`user:${postAuthorId}`)
+        .emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
     }
 
     // Notify parent comment author when someone replies (skip self, skip if same as post author — already notified)
@@ -221,10 +228,12 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           createdAt: new Date(),
         };
         notifRef.set(notifData).catch(() => {});
-        getIo().to(`user:${parentAuthorId}`).emit('notification:new', {
-          ...notifData,
-          createdAt: new Date().toISOString(),
-        });
+        getIo()
+          .to(`user:${parentAuthorId}`)
+          .emit('notification:new', {
+            ...notifData,
+            createdAt: new Date().toISOString(),
+          });
       }
       // Also notify post author about the reply if they're not the parent author (already above)
       if (postAuthorId && postAuthorId !== req.uid && postAuthorId !== parentAuthorId) {
@@ -242,10 +251,12 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
           createdAt: new Date(),
         };
         notifRef.set(notifData).catch(() => {});
-        getIo().to(`user:${postAuthorId}`).emit('notification:new', {
-          ...notifData,
-          createdAt: new Date().toISOString(),
-        });
+        getIo()
+          .to(`user:${postAuthorId}`)
+          .emit('notification:new', {
+            ...notifData,
+            createdAt: new Date().toISOString(),
+          });
       }
     }
 
@@ -268,10 +279,12 @@ router.post('/:postId', requireAuth, async (req: AuthRequest, res) => {
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      getIo().to(`user:${mention.uid}`).emit('notification:new', {
-        ...notifData,
-        createdAt: new Date().toISOString(),
-      });
+      getIo()
+        .to(`user:${mention.uid}`)
+        .emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
     }
 
     res.status(201).json(responseData);
@@ -339,7 +352,9 @@ router.patch('/:postId/:commentId', requireAuth, async (req: AuthRequest, res) =
     // Kiểm duyệt nội dung chỉnh sửa
     const moderation = await moderateText(content.trim());
     if (!moderation.allowed) {
-      res.status(422).json({ error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}` });
+      res.status(422).json({
+        error: `Bình luận vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}`,
+      });
       return;
     }
 
@@ -545,10 +560,12 @@ router.post('/:postId/:commentId/react', requireAuth, async (req: AuthRequest, r
         createdAt: new Date(),
       };
       notifRef.set(notifData).catch(() => {});
-      getIo().to(`user:${commentAuthorId}`).emit('notification:new', {
-        ...notifData,
-        createdAt: new Date().toISOString(),
-      });
+      getIo()
+        .to(`user:${commentAuthorId}`)
+        .emit('notification:new', {
+          ...notifData,
+          createdAt: new Date().toISOString(),
+        });
     }
 
     res.json({
@@ -586,14 +603,19 @@ router.get('/:postId/:commentId/reactions', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const commentDoc = await db.collection('comments').doc(req.params.commentId).get();
-    if (!commentDoc.exists) { res.status(404).json({ error: 'Comment not found' }); return; }
+    if (!commentDoc.exists) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
     const reactions: Record<string, string> = commentDoc.data()?.reactions ?? {};
     const uids = Object.keys(reactions);
-    if (uids.length === 0) { res.json([]); return; }
-    const usersDocs = uids.length > 0 
-      ? await db.getAll(...uids.map((id) => db.collection('users').doc(id))) 
-      : [];
-    const usersMap = new Map(usersDocs.filter(d => d.exists).map((d) => [d.id, d.data()]));
+    if (uids.length === 0) {
+      res.json([]);
+      return;
+    }
+    const usersDocs =
+      uids.length > 0 ? await db.getAll(...uids.map((id) => db.collection('users').doc(id))) : [];
+    const usersMap = new Map(usersDocs.filter((d) => d.exists).map((d) => [d.id, d.data()]));
     const result = uids.map((uid) => ({
       uid,
       displayName: usersMap.get(uid)?.displayName ?? 'User',
@@ -661,24 +683,31 @@ router.post('/:postId/:commentId/report', requireAuth, async (req: AuthRequest, 
     (async () => {
       try {
         const postDoc = await db.collection('posts').doc(req.params.postId).get();
-        const postText = postDoc.exists ? (postDoc.data()?.content || '') : '';
+        const postText = postDoc.exists ? postDoc.data()?.content || '' : '';
         const commentText = commentDoc.data()?.content || '';
 
-        const aiResult = await moderateReportedComment(commentText, postText, reason || 'Nội dung không phù hợp');
-        
+        const aiResult = await moderateReportedComment(
+          commentText,
+          postText,
+          reason || 'Nội dung không phù hợp'
+        );
+
         await reportRef.update({
           status: aiResult.violation ? 'resolved_removed' : 'resolved_kept',
           aiReason: aiResult.reason,
-          resolvedAt: new Date()
+          resolvedAt: new Date(),
         });
 
         if (aiResult.violation) {
           // Xóa bình luận
           await commentsRef.doc(req.params.commentId).delete();
           if (postDoc.exists) {
-            await db.collection('posts').doc(req.params.postId).update({
-              replyCount: FieldValue.increment(-1),
-            });
+            await db
+              .collection('posts')
+              .doc(req.params.postId)
+              .update({
+                replyCount: FieldValue.increment(-1),
+              });
           }
 
           // Gửi thông báo cho người báo cáo
@@ -696,10 +725,12 @@ router.post('/:postId/:commentId/report', requireAuth, async (req: AuthRequest, 
             createdAt: new Date(),
           };
           await notifRef.set(notifData);
-          getIo().to(`user:${req.uid}`).emit('notification:new', {
-            ...notifData,
-            createdAt: new Date().toISOString(),
-          });
+          getIo()
+            .to(`user:${req.uid}`)
+            .emit('notification:new', {
+              ...notifData,
+              createdAt: new Date().toISOString(),
+            });
         }
       } catch (err) {
         logger.error('Error during AI comment moderation:', err);

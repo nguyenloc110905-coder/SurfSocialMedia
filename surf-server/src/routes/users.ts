@@ -52,7 +52,8 @@ function normalizeRecentSearches(input: unknown): string[] {
       typeof item === 'string'
         ? item
         : item && typeof item === 'object'
-          ? ((item as { query?: unknown; name?: unknown }).query ?? (item as { query?: unknown; name?: unknown }).name)
+          ? ((item as { query?: unknown; name?: unknown }).query ??
+            (item as { query?: unknown; name?: unknown }).name)
           : null;
     if (typeof value !== 'string') continue;
     const trimmed = value.trim();
@@ -253,7 +254,7 @@ router.put('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
     const userRef = db.collection('users').doc(req.uid!);
 
     await userRef.update({
-      fcmTokens: FieldValue.arrayUnion(fcmToken)
+      fcmTokens: FieldValue.arrayUnion(fcmToken),
     });
 
     res.json({ success: true });
@@ -275,28 +276,32 @@ router.put('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
 router.get('/me/reports', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
-    
+
     // Báo cáo bài viết (dùng reporterId)
-    const postReportsSnap = await db.collection('reports')
+    const postReportsSnap = await db
+      .collection('reports')
       .where('reporterId', '==', req.uid!)
       .get();
-      
+
     // Báo cáo bình luận (dùng reportedBy)
-    const commentReportsSnap = await db.collection('reports')
+    const commentReportsSnap = await db
+      .collection('reports')
       .where('reportedBy', '==', req.uid!)
       .get();
-    
+
     const allDocs = [...postReportsSnap.docs, ...commentReportsSnap.docs];
-    
-    const reports = allDocs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        resolvedAt: data.resolvedAt?.toDate?.()?.toISOString()
-      };
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const reports = allDocs
+      .map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+          resolvedAt: data.resolvedAt?.toDate?.()?.toISOString(),
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     res.json({ reports });
   } catch (e) {
@@ -320,19 +325,21 @@ router.post('/me/sessions/heartbeat', requireAuth, async (req: AuthRequest, res)
       return;
     }
     const { init, userAgent } = req.body;
-    
+
     const db = getDb();
     const sessionsRef = db.collection('users').doc(req.uid!).collection('sessions');
     const docRef = sessionsRef.doc(deviceId);
-    
+
     const doc = await docRef.get();
-    
+
     // Nếu không phải init và doc không tồn tại (đã bị xóa do vượt quá giới hạn)
     if (!init && !doc.exists) {
-      res.status(401).json({ error: 'Session limit exceeded or revoked', code: 'SESSION_LIMIT_EXCEEDED' });
+      res
+        .status(401)
+        .json({ error: 'Session limit exceeded or revoked', code: 'SESSION_LIMIT_EXCEEDED' });
       return;
     }
-    
+
     if (!doc.exists) {
       await docRef.set({
         id: deviceId,
@@ -363,7 +370,7 @@ router.post('/me/sessions/heartbeat', requireAuth, async (req: AuthRequest, res)
       }
       await batch.commit();
     }
-    
+
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -381,8 +388,13 @@ router.post('/me/sessions/heartbeat', requireAuth, async (req: AuthRequest, res)
 router.get('/me/sessions', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
-    const snap = await db.collection('users').doc(req.uid!).collection('sessions').orderBy('lastActive', 'desc').get();
-    const sessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snap = await db
+      .collection('users')
+      .doc(req.uid!)
+      .collection('sessions')
+      .orderBy('lastActive', 'desc')
+      .get();
+    const sessions = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json({ sessions });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -400,7 +412,12 @@ router.get('/me/sessions', requireAuth, async (req: AuthRequest, res) => {
 router.delete('/me/sessions/:deviceId', requireAuth, async (req: AuthRequest, res) => {
   try {
     const db = getDb();
-    await db.collection('users').doc(req.uid!).collection('sessions').doc(req.params.deviceId).delete();
+    await db
+      .collection('users')
+      .doc(req.uid!)
+      .collection('sessions')
+      .doc(req.params.deviceId)
+      .delete();
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -556,25 +573,27 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
           if (photoURL !== undefined) updateObj.authorPhotoURL = photoURL;
 
           const updateDocs = async (collectionName: string) => {
-             const snap = await db.collection(collectionName).where('authorId', '==', req.uid).get();
-             let count = 0;
-             const promises = [];
-             for (const d of snap.docs) {
-               promises.push(d.ref.update(updateObj));
-               count++;
-               if (promises.length >= 100) {
-                 await Promise.all(promises);
-                 promises.length = 0;
-               }
-             }
-             if (promises.length > 0) await Promise.all(promises);
-             return count;
+            const snap = await db.collection(collectionName).where('authorId', '==', req.uid).get();
+            let count = 0;
+            const promises = [];
+            for (const d of snap.docs) {
+              promises.push(d.ref.update(updateObj));
+              count++;
+              if (promises.length >= 100) {
+                await Promise.all(promises);
+                promises.length = 0;
+              }
+            }
+            if (promises.length > 0) await Promise.all(promises);
+            return count;
           };
 
           const pCount = await updateDocs('posts');
           const cCount = await updateDocs('comments');
           const vCount = await updateDocs('videos');
-          console.log(`[ProfileSync] Updated profile for user ${req.uid} in ${pCount} posts, ${cCount} comments, ${vCount} videos.`);
+          console.log(
+            `[ProfileSync] Updated profile for user ${req.uid} in ${pCount} posts, ${cCount} comments, ${vCount} videos.`
+          );
         } catch (err) {
           console.error('[ProfileSync] Failed to sync profile updates:', err);
         }
@@ -654,10 +673,7 @@ router.post('/find-by-phones', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const db = getDb();
-    const friendSnap = await db
-      .collection('friends')
-      .where('userId', '==', uid)
-      .get();
+    const friendSnap = await db.collection('friends').where('userId', '==', uid).get();
     const friendIds = new Set(friendSnap.docs.map((d) => d.data().friendId as string));
 
     const seen = new Set<string>();
@@ -696,10 +712,13 @@ router.put('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
     await getDb()
       .collection('users')
       .doc(req.uid!)
-      .set({ 
-        fcmTokens: FieldValue.arrayUnion(fcmToken),
-        updatedAt: new Date()
-      }, { merge: true });
+      .set(
+        {
+          fcmTokens: FieldValue.arrayUnion(fcmToken),
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -717,10 +736,13 @@ router.delete('/me/fcm-token', requireAuth, async (req: AuthRequest, res) => {
     await getDb()
       .collection('users')
       .doc(req.uid!)
-      .set({ 
-        fcmTokens: FieldValue.arrayRemove(fcmToken),
-        updatedAt: new Date()
-      }, { merge: true });
+      .set(
+        {
+          fcmTokens: FieldValue.arrayRemove(fcmToken),
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -1096,7 +1118,7 @@ router.post(
       try {
         const viewerDoc = await getDb().collection('users').doc(viewerUid).get();
         const viewerName = viewerDoc.data()?.displayName || 'Ai đó';
-        
+
         const notification = await createNotification({
           userId: targetUid,
           type: 'system',
@@ -1109,7 +1131,7 @@ router.post(
           const unreadCount = await getUnreadNotificationCount(targetUid);
           emitNotificationNew(targetUid, toApiNotification(notification));
           emitNotificationUnreadCount(targetUid, unreadCount);
-          
+
           sendPushToUser(targetUid, {
             title: 'Người theo dõi mới',
             body: `${viewerName} đã bắt đầu theo dõi bạn.`,
@@ -1226,10 +1248,14 @@ router.get('/:uid/posts', requireAuth, async (req: AuthRequest, res) => {
       const aPinned = !!(a as Record<string, unknown>).pinnedAt;
       const bPinned = !!(b as Record<string, unknown>).pinnedAt;
       if (aPinned !== bPinned) return aPinned ? -1 : 1;
-      const aTime = (a.createdAt as { _seconds?: number; seconds?: number })?._seconds
-        ?? (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
-      const bTime = (b.createdAt as { _seconds?: number; seconds?: number })?._seconds
-        ?? (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ?? 0;
+      const aTime =
+        (a.createdAt as { _seconds?: number; seconds?: number })?._seconds ??
+        (a.createdAt as { _seconds?: number; seconds?: number })?.seconds ??
+        0;
+      const bTime =
+        (b.createdAt as { _seconds?: number; seconds?: number })?._seconds ??
+        (b.createdAt as { _seconds?: number; seconds?: number })?.seconds ??
+        0;
       return bTime - aTime;
     });
 
@@ -1273,9 +1299,10 @@ router.get('/:uid/friends', requireAuth, async (req: AuthRequest, res) => {
       res.json({ friends: [] });
       return;
     }
-    const friendDocs = friendIds.length > 0
-      ? await getDb().getAll(...friendIds.map((id) => getDb().collection('users').doc(id)))
-      : [];
+    const friendDocs =
+      friendIds.length > 0
+        ? await getDb().getAll(...friendIds.map((id) => getDb().collection('users').doc(id)))
+        : [];
     const friends = friendDocs
       .filter((d) => d.exists)
       .map((d) => ({

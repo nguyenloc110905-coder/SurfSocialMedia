@@ -29,7 +29,10 @@ export interface MarketplaceModerationResult {
   provider: AiModerationProvider;
 }
 
-function parseMarketplaceModeration(raw: string, provider: AiModerationProvider): MarketplaceModerationResult | null {
+function parseMarketplaceModeration(
+  raw: string,
+  provider: AiModerationProvider
+): MarketplaceModerationResult | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
   const parsed = JSON.parse(match[0]) as {
@@ -39,16 +42,21 @@ function parseMarketplaceModeration(raw: string, provider: AiModerationProvider)
     flags?: unknown;
   };
   const decision =
-    parsed.decision === 'approved' || parsed.decision === 'rejected' || parsed.decision === 'needs_review'
+    parsed.decision === 'approved' ||
+    parsed.decision === 'rejected' ||
+    parsed.decision === 'needs_review'
       ? parsed.decision
       : null;
   if (!decision) return null;
   const result: MarketplaceModerationResult = {
     decision,
-    flags: Array.isArray(parsed.flags) ? parsed.flags.filter((flag): flag is string => typeof flag === 'string') : [],
+    flags: Array.isArray(parsed.flags)
+      ? parsed.flags.filter((flag): flag is string => typeof flag === 'string')
+      : [],
     provider,
   };
-  if (typeof parsed.reason === 'string' && parsed.reason.trim()) result.reason = parsed.reason.trim();
+  if (typeof parsed.reason === 'string' && parsed.reason.trim())
+    result.reason = parsed.reason.trim();
   if (typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)) {
     result.confidence = Math.min(1, Math.max(0, parsed.confidence));
   }
@@ -76,7 +84,13 @@ function getOpenAiModel() {
 }
 
 function getPreferredAiModerationProvider(): AiModerationProvider {
-  const configured = (process.env.MARKETPLACE_AI_PROVIDER ?? process.env.AI_MODERATION_PROVIDER ?? '').trim().toLowerCase();
+  const configured = (
+    process.env.MARKETPLACE_AI_PROVIDER ??
+    process.env.AI_MODERATION_PROVIDER ??
+    ''
+  )
+    .trim()
+    .toLowerCase();
   if (configured === 'openai' || configured === 'gemini') return configured;
   return getOpenAiApiKey() ? 'openai' : 'gemini';
 }
@@ -119,7 +133,8 @@ function getMarketplaceGeminiFailure(err: unknown): MarketplaceModerationResult 
   if (/API_KEY_INVALID|API key not valid|INVALID_ARGUMENT/i.test(text)) {
     return {
       decision: 'needs_review',
-      reason: 'GEMINI_API_KEY không hợp lệ hoặc đã bị thu hồi. Hãy tạo/copy lại key từ Google AI Studio.',
+      reason:
+        'GEMINI_API_KEY không hợp lệ hoặc đã bị thu hồi. Hãy tạo/copy lại key từ Google AI Studio.',
       flags: ['invalid_gemini_key'],
       provider: 'gemini',
     };
@@ -161,7 +176,8 @@ function getMarketplaceOpenAiFailure(err: unknown): MarketplaceModerationResult 
   if (/invalid_api_key|Incorrect API key|401/i.test(text)) {
     return {
       decision: 'needs_review',
-      reason: 'OPENAI_API_KEY không hợp lệ hoặc đã bị thu hồi. Hãy tạo key mới trong OpenAI dashboard.',
+      reason:
+        'OPENAI_API_KEY không hợp lệ hoặc đã bị thu hồi. Hãy tạo key mới trong OpenAI dashboard.',
       flags: ['invalid_openai_key'],
       provider: 'openai',
     };
@@ -198,8 +214,13 @@ function getMarketplaceOpenAiFailure(err: unknown): MarketplaceModerationResult 
   };
 }
 
-function getMarketplaceProviderFailure(provider: AiModerationProvider, err: unknown): MarketplaceModerationResult {
-  return provider === 'openai' ? getMarketplaceOpenAiFailure(err) : getMarketplaceGeminiFailure(err);
+function getMarketplaceProviderFailure(
+  provider: AiModerationProvider,
+  err: unknown
+): MarketplaceModerationResult {
+  return provider === 'openai'
+    ? getMarketplaceOpenAiFailure(err)
+    : getMarketplaceGeminiFailure(err);
 }
 
 async function callGemini(prompt: string): Promise<string> {
@@ -210,12 +231,14 @@ async function callGemini(prompt: string): Promise<string> {
   return response.text ?? '';
 }
 
-async function callGeminiWithImage(prompt: string, base64: string, mimeType: string): Promise<string> {
+async function callGeminiWithImage(
+  prompt: string,
+  base64: string,
+  mimeType: string
+): Promise<string> {
   const response = await getGeminiClient().models.generateContent({
     model: getGeminiModel(),
-    contents: [
-      { parts: [{ inlineData: { data: base64, mimeType } }, { text: prompt }] },
-    ],
+    contents: [{ parts: [{ inlineData: { data: base64, mimeType } }, { text: prompt }] }],
   });
   return response.text ?? '';
 }
@@ -232,12 +255,19 @@ async function callOpenAi(prompt: string): Promise<string> {
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'Bạn là hệ thống kiểm duyệt an toàn. Chỉ trả về JSON hợp lệ, không thêm giải thích.' },
+        {
+          role: 'system',
+          content:
+            'Bạn là hệ thống kiểm duyệt an toàn. Chỉ trả về JSON hợp lệ, không thêm giải thích.',
+        },
         { role: 'user', content: prompt },
       ],
     }),
   });
-  const data = await response.json() as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
+  const data = (await response.json()) as {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  };
   if (!response.ok) {
     throw new Error(data.error?.message || `OpenAI request failed: ${response.status}`);
   }
@@ -256,7 +286,11 @@ async function callOpenAiWithImage(prompt: string, imageUrl: string): Promise<st
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'Bạn là hệ thống kiểm duyệt hình ảnh. Chỉ trả về JSON hợp lệ, không thêm giải thích.' },
+        {
+          role: 'system',
+          content:
+            'Bạn là hệ thống kiểm duyệt hình ảnh. Chỉ trả về JSON hợp lệ, không thêm giải thích.',
+        },
         {
           role: 'user',
           content: [
@@ -267,7 +301,10 @@ async function callOpenAiWithImage(prompt: string, imageUrl: string): Promise<st
       ],
     }),
   });
-  const data = await response.json() as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
+  const data = (await response.json()) as {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  };
   if (!response.ok) {
     throw new Error(data.error?.message || `OpenAI image request failed: ${response.status}`);
   }
@@ -277,7 +314,6 @@ async function callOpenAiWithImage(prompt: string, imageUrl: string): Promise<st
 async function callAi(prompt: string, provider: AiModerationProvider): Promise<string> {
   return provider === 'openai' ? callOpenAi(prompt) : callGemini(prompt);
 }
-
 
 /**
  * Kiểm duyệt nội dung văn bản (caption, content).
@@ -416,13 +452,13 @@ Trả lời theo đúng định dạng JSON sau, không thêm gì khác:
  */
 export async function moderatePost(
   content: string,
-  mediaUrls: string[],
+  mediaUrls: string[]
 ): Promise<ModerationResult> {
   const textResult = await moderateText(content);
   if (!textResult.allowed) return textResult;
 
   const imageUrls = mediaUrls.filter(
-    (u) => !u.includes('/video/upload/') && !/\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u),
+    (u) => !u.includes('/video/upload/') && !/\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(u)
   );
 
   for (const url of imageUrls) {
@@ -434,7 +470,7 @@ export async function moderatePost(
 }
 
 export async function moderateMarketplaceListing(
-  input: MarketplaceModerationInput,
+  input: MarketplaceModerationInput
 ): Promise<MarketplaceModerationResult> {
   const provider = getPreferredAiModerationProvider();
   if (!hasProviderKey(provider)) {
@@ -489,7 +525,9 @@ Trả lời đúng JSON, không thêm nội dung ngoài JSON:
     if (textResult.decision !== 'approved') return textResult;
 
     const imageUrls = input.mediaUrls
-      .filter((url) => !url.includes('/video/upload/') && !/\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url))
+      .filter(
+        (url) => !url.includes('/video/upload/') && !/\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url)
+      )
       .slice(0, getMarketplaceImageModerationLimit());
 
     for (const imageUrl of imageUrls) {
@@ -563,7 +601,7 @@ Trả lời duy nhất bằng JSON có định dạng sau:
     const raw = (await callGemini(prompt)).trim();
     console.log(`[Moderation] Report Comment result: ${raw}`);
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return { violation: false, reason: "Không thể phân tích phản hồi từ AI" };
+    if (!match) return { violation: false, reason: 'Không thể phân tích phản hồi từ AI' };
     const parsed = JSON.parse(match[0]);
     return {
       violation: parsed.violation === true,
@@ -571,7 +609,7 @@ Trả lời duy nhất bằng JSON có định dạng sau:
     };
   } catch (err) {
     console.error('[Moderation] Report Comment check error:', err);
-    return { violation: false, reason: "Lỗi hệ thống AI" };
+    return { violation: false, reason: 'Lỗi hệ thống AI' };
   }
 }
 
@@ -598,7 +636,7 @@ Trả lời duy nhất bằng JSON có định dạng sau:
     const raw = (await callGemini(prompt)).trim();
     console.log(`[Moderation] Report Post result: ${raw}`);
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return { violation: false, reason: "Không thể phân tích phản hồi từ AI" };
+    if (!match) return { violation: false, reason: 'Không thể phân tích phản hồi từ AI' };
     const parsed = JSON.parse(match[0]);
     return {
       violation: parsed.violation === true,
@@ -606,7 +644,6 @@ Trả lời duy nhất bằng JSON có định dạng sau:
     };
   } catch (err) {
     console.error('[Moderation] Report Post check error:', err);
-    return { violation: false, reason: "Lỗi hệ thống AI" };
+    return { violation: false, reason: 'Lỗi hệ thống AI' };
   }
 }
-

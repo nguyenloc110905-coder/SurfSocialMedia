@@ -23,18 +23,30 @@ function getOpenAIApiKey() {
 }
 
 function getOpenAIChatModel() {
-  return (process.env.OPENAI_CHAT_MODEL ?? process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_CHAT_MODEL).trim() || DEFAULT_OPENAI_CHAT_MODEL;
+  return (
+    (
+      process.env.OPENAI_CHAT_MODEL ??
+      process.env.OPENAI_MODEL ??
+      DEFAULT_OPENAI_CHAT_MODEL
+    ).trim() || DEFAULT_OPENAI_CHAT_MODEL
+  );
 }
 
 function normalizeMessage(raw: unknown): AiChatMessage | null {
   if (!raw || typeof raw !== 'object') return null;
   const item = raw as Record<string, unknown>;
-  const role = item.role === 'user' ? 'user' : item.role === 'model' || item.role === 'assistant' ? 'model' : null;
-  const text = typeof item.text === 'string'
-    ? item.text
-    : typeof item.content === 'string'
-      ? item.content
-      : '';
+  const role =
+    item.role === 'user'
+      ? 'user'
+      : item.role === 'model' || item.role === 'assistant'
+        ? 'model'
+        : null;
+  const text =
+    typeof item.text === 'string'
+      ? item.text
+      : typeof item.content === 'string'
+        ? item.content
+        : '';
   const trimmed = text.trim();
   if (!role || !trimmed) return null;
   return { role, text: trimmed.slice(0, MAX_MESSAGE_LENGTH) };
@@ -76,7 +88,11 @@ async function callOpenAIChat(messages: OpenAIChatMessage[]) {
   }
 
   if (!response.ok) {
-    const message = payload?.error?.message || payload?.message || rawText || `OpenAI request failed (${response.status})`;
+    const message =
+      payload?.error?.message ||
+      payload?.message ||
+      rawText ||
+      `OpenAI request failed (${response.status})`;
     throw new Error(message);
   }
 
@@ -128,7 +144,12 @@ router.get('/history', async (req: Request, res: Response): Promise<void> => {
     return;
   }
   try {
-    const doc = await getDb().collection('users').doc(uid).collection('ai_history').doc('chat').get();
+    const doc = await getDb()
+      .collection('users')
+      .doc(uid)
+      .collection('ai_history')
+      .doc('chat')
+      .get();
     res.json({ messages: normalizeHistory(doc.data()?.messages, MAX_HISTORY_MESSAGES) });
   } catch (error) {
     console.error('[AI Chat] Failed to fetch history:', error);
@@ -225,7 +246,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           const name = userData.displayName || 'Người dùng';
           const email = userData.email || '';
           const bio = userData.bio || userData.about || '';
-          
+
           userContext = `\n\n--- THÔNG TIN NGƯỜI DÙNG HIỆN TẠI ---\n- Tên/Nickname: ${name}\n`;
           if (email) userContext += `- Email: ${email}\n`;
           if (bio) userContext += `- Tiểu sử/Giới thiệu bản thân: ${bio}\n`;
@@ -238,15 +259,18 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
     const normalizedHistory = normalizeHistory(history);
     const formattedHistory = normalizedHistory.map((h) => ({
-      role: h.role === 'model' ? 'assistant' as const : 'user' as const,
+      role: h.role === 'model' ? ('assistant' as const) : ('user' as const),
       content: h.text,
     }));
 
     const responseText = await callOpenAIChat([
-        { role: 'system', content: `Bạn là Surf AI, trợ lý AI thân thiện dành riêng cho mạng xã hội Surf. Hãy trả lời người dùng một cách ngắn gọn, súc tích và hữu ích.${userContext}` },
-        ...formattedHistory,
-        { role: 'user', content: prompt }
-      ]);
+      {
+        role: 'system',
+        content: `Bạn là Surf AI, trợ lý AI thân thiện dành riêng cho mạng xã hội Surf. Hãy trả lời người dùng một cách ngắn gọn, súc tích và hữu ích.${userContext}`,
+      },
+      ...formattedHistory,
+      { role: 'user', content: prompt },
+    ]);
     res.json({ text: responseText });
 
     // Save history to Firestore in background
@@ -254,20 +278,18 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       const newMessages = [
         ...normalizedHistory,
         { role: 'user', text: prompt },
-        { role: 'model', text: responseText }
+        { role: 'model', text: responseText },
       ];
       // Keep only last 100 messages to prevent document size from getting too large
       const trimmedMessages = newMessages.slice(-MAX_HISTORY_MESSAGES);
 
-      await getDb()
-        .collection('users')
-        .doc(uid)
-        .collection('ai_history')
-        .doc('chat')
-        .set({
+      await getDb().collection('users').doc(uid).collection('ai_history').doc('chat').set(
+        {
           messages: trimmedMessages,
-          updatedAt: new Date()
-        }, { merge: true });
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
     } catch (saveErr) {
       console.error('[AI Chat] Failed to save history:', saveErr);
     }

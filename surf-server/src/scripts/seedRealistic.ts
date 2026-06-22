@@ -2,11 +2,26 @@ import { getDb } from '../config/firebase-admin.js';
 
 // Danh sách tên người dùng VN ngẫu nhiên
 const VN_NAMES = [
-  'Nguyễn Tấn Khang', 'Trần Hà My', 'Lê Hải Đăng', 'Phạm Quỳnh Anh',
-  'Hoàng Tuấn Kiệt', 'Vũ Mai Phương', 'Đặng Thành Công', 'Bùi Ngọc Yến',
-  'Đỗ Minh Trí', 'Hồ Bích Ngọc', 'Ngô Quốc Bảo', 'Dương Thúy Quỳnh',
-  'Lý Cẩm Tú', 'Đào Duy Anh', 'Đoàn Thanh Trúc', 'Vương Trọng Nghĩa',
-  'Trịnh Phương Linh', 'Đinh Tiến Đạt', 'Lâm Tường Vy', 'Phan Thế Hiển'
+  'Nguyễn Tấn Khang',
+  'Trần Hà My',
+  'Lê Hải Đăng',
+  'Phạm Quỳnh Anh',
+  'Hoàng Tuấn Kiệt',
+  'Vũ Mai Phương',
+  'Đặng Thành Công',
+  'Bùi Ngọc Yến',
+  'Đỗ Minh Trí',
+  'Hồ Bích Ngọc',
+  'Ngô Quốc Bảo',
+  'Dương Thúy Quỳnh',
+  'Lý Cẩm Tú',
+  'Đào Duy Anh',
+  'Đoàn Thanh Trúc',
+  'Vương Trọng Nghĩa',
+  'Trịnh Phương Linh',
+  'Đinh Tiến Đạt',
+  'Lâm Tường Vy',
+  'Phan Thế Hiển',
 ];
 
 // Các chủ đề game và đời sống
@@ -34,7 +49,7 @@ const POST_TEMPLATES = [
   'Dạo này ghiền nghe nhạc lofi chill chill lúc code, anh em có playlist nào hay share mình với 🎵',
   'Sáng thức dậy thấy trời xanh mây trắng, tự nhiên thấy yêu đời ngang ☀️',
   'Nuôi con mèo mập này tốn cơm quá, suốt ngày chỉ biết ngủ và đòi ăn 🐈',
-  'Chạy bộ 5km xong thở không nổi. Quyết tâm giảm cân từ hôm nay! 🏃‍♂️💪'
+  'Chạy bộ 5km xong thở không nổi. Quyết tâm giảm cân từ hôm nay! 🏃‍♂️💪',
 ];
 
 // Danh sách link ảnh từ Unsplash (chủ đề game, phong cảnh, đồ ăn, mèo, máy tính)
@@ -52,15 +67,40 @@ const IMAGE_URLS = [
   'https://images.unsplash.com/photo-1506744626753-eda814117714?q=80&w=800&auto=format&fit=crop', // Nature landscape
   'https://images.unsplash.com/photo-1449844908441-8829872d2607?q=80&w=800&auto=format&fit=crop', // City rain
   'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=800&auto=format&fit=crop', // Code
-  'https://images.unsplash.com/photo-1511376868136-742c0de8c9a8?q=80&w=800&auto=format&fit=crop'  // Cafe
+  'https://images.unsplash.com/photo-1511376868136-742c0de8c9a8?q=80&w=800&auto=format&fit=crop', // Cafe
 ];
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randomItem = <T>(arr: T[]): T => arr[randomInt(0, arr.length - 1)];
 
-const VN_CITIES = ['Hà Nội', 'Hồ Chí Minh', 'Đà Nẵng', 'Cần Thơ', 'Hải Phòng', 'Huế', 'Nha Trang', 'Đà Lạt'];
-const JOBS = ['Software Engineer tại FPT Software', 'UI/UX Designer tại VNG', 'Sinh viên tại Đại học Bách Khoa', 'Marketing Executive tại Shopee', 'Freelancer', 'Sinh viên tại RMIT', 'Data Analyst tại Momo', 'Game Developer tại VTC'];
-const EDUCATIONS = ['Đại học Bách Khoa Hà Nội', 'Đại học Bách Khoa TP.HCM', 'RMIT University', 'Đại học FPT', 'Đại học Tôn Đức Thắng', 'Đại học Khoa học Tự nhiên'];
+const VN_CITIES = [
+  'Hà Nội',
+  'Hồ Chí Minh',
+  'Đà Nẵng',
+  'Cần Thơ',
+  'Hải Phòng',
+  'Huế',
+  'Nha Trang',
+  'Đà Lạt',
+];
+const JOBS = [
+  'Software Engineer tại FPT Software',
+  'UI/UX Designer tại VNG',
+  'Sinh viên tại Đại học Bách Khoa',
+  'Marketing Executive tại Shopee',
+  'Freelancer',
+  'Sinh viên tại RMIT',
+  'Data Analyst tại Momo',
+  'Game Developer tại VTC',
+];
+const EDUCATIONS = [
+  'Đại học Bách Khoa Hà Nội',
+  'Đại học Bách Khoa TP.HCM',
+  'RMIT University',
+  'Đại học FPT',
+  'Đại học Tôn Đức Thắng',
+  'Đại học Khoa học Tự nhiên',
+];
 const REL_STATUS = ['Độc thân', 'Đang hẹn hò', 'Đã kết hôn', 'Phức tạp'];
 const BIOS = [
   'Thích chơi game và code dạo. 🚀',
@@ -70,7 +110,7 @@ const BIOS = [
   'Đang trong giai đoạn trầm cảm vì chạy deadline. 🥲',
   'Sống chậm lại, nghĩ khác đi và yêu thương nhiều hơn. ❤️',
   'Gamer part-time, dev full-time. 🎮',
-  'Hãy sống như thể hôm nay là ngày cuối cùng! 🌟'
+  'Hãy sống như thể hôm nay là ngày cuối cùng! 🌟',
 ];
 
 async function seedData() {
@@ -87,7 +127,7 @@ async function seedData() {
     const name = VN_NAMES[i];
     const photoURL = `https://i.pravatar.cc/150?u=${userId}`;
     const coverImageUrl = `https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=800&auto=format&fit=crop&sig=${i}`;
-    
+
     // Random sinh nhật từ 1990 đến 2005
     const birthYear = randomInt(1990, 2005);
     const birthMonth = randomInt(1, 12);
@@ -111,7 +151,7 @@ async function seedData() {
       birthday: birthday,
       website: 'https://github.com/nguyenloc110905-coder',
       createdAt: new Date(Date.now() - randomInt(1, 100) * 86400000),
-      notificationPrefs: {}
+      notificationPrefs: {},
     };
     users.push(userObj);
     // Sử dụng merge để không ghi đè mất các trường khác nếu có

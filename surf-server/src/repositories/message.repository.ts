@@ -209,9 +209,7 @@ export const messageRepository = {
     let exhausted = false;
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      let query = messagesCol(input.conversationId)
-        .orderBy('createdAt', 'desc')
-        .limit(scanLimit);
+      let query = messagesCol(input.conversationId).orderBy('createdAt', 'desc').limit(scanLimit);
 
       if (cursorDate) {
         query = query.startAfter(cursorDate);
@@ -263,11 +261,13 @@ export const messageRepository = {
 
     const hasMore =
       collected.length > targetLimit ||
-      (!exhausted && Boolean(cursorDate) && (normalizedSearchText || collected.length >= targetLimit));
+      (!exhausted &&
+        Boolean(cursorDate) &&
+        (normalizedSearchText || collected.length >= targetLimit));
     const page = hasMore ? collected.slice(0, targetLimit) : collected;
     const ascending = [...page].reverse();
     const nextCursor = hasMore
-      ? ascending[0]?.createdAt.toISOString() ?? cursorDate?.toISOString() ?? null
+      ? (ascending[0]?.createdAt.toISOString() ?? cursorDate?.toISOString() ?? null)
       : null;
 
     return {
@@ -314,7 +314,7 @@ export const messageRepository = {
 
     const redis = getRedis();
     if (redis) {
-      await Promise.all(recipientIds.map(uid => redis.del(`unreadCount:${uid}`)));
+      await Promise.all(recipientIds.map((uid) => redis.del(`unreadCount:${uid}`)));
     }
 
     const snap = await messageRef.get();
@@ -333,7 +333,11 @@ export const messageRepository = {
     const conversationRef = conversationsCol().doc(conversationId);
     const messageRef = messagesCol(conversationId).doc();
 
-    const previewMap: Record<string, string> = { image: '📷 Hình ảnh', file: '📎 Tệp đính kèm', audio: '🎤 Tin nhắn thoại' };
+    const previewMap: Record<string, string> = {
+      image: '📷 Hình ảnh',
+      file: '📎 Tệp đính kèm',
+      audio: '🎤 Tin nhắn thoại',
+    };
     const preview = text ? buildMessagePreview(text) : (previewMap[type] ?? '📎 Tệp');
 
     const batch = getDb().batch();
@@ -368,7 +372,7 @@ export const messageRepository = {
 
     const redis = getRedis();
     if (redis) {
-      await Promise.all(recipientIds.map(uid => redis.del(`unreadCount:${uid}`)));
+      await Promise.all(recipientIds.map((uid) => redis.del(`unreadCount:${uid}`)));
     }
 
     const snap = await messageRef.get();
@@ -411,7 +415,7 @@ export const messageRepository = {
 
     const redis = getRedis();
     if (redis) {
-      await Promise.all(input.recipientIds.map(uid => redis.del(`unreadCount:${uid}`)));
+      await Promise.all(input.recipientIds.map((uid) => redis.del(`unreadCount:${uid}`)));
     }
 
     const snap = await messageRef.get();
@@ -504,9 +508,11 @@ export const messageRepository = {
   },
 
   async hideForSelf(conversationId: string, messageId: string, userId: string): Promise<void> {
-    await messagesCol(conversationId).doc(messageId).update({
-      hiddenFor: FieldValue.arrayUnion(userId),
-    });
+    await messagesCol(conversationId)
+      .doc(messageId)
+      .update({
+        hiddenFor: FieldValue.arrayUnion(userId),
+      });
   },
 
   async editTextMessage(

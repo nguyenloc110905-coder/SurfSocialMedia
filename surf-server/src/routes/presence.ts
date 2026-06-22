@@ -28,9 +28,7 @@ router.get('/friends', requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.uid!;
     const friendDoc = await getDb().collection('friends').doc(uid).get();
-    const friendIds: string[] = friendDoc.exists
-      ? (friendDoc.data()?.friendIds ?? [])
-      : [];
+    const friendIds: string[] = friendDoc.exists ? (friendDoc.data()?.friendIds ?? []) : [];
     const { online, lastSeen } = await getPresenceFromList(friendIds);
     res.json({ online, lastSeen, friendIds });
   } catch {

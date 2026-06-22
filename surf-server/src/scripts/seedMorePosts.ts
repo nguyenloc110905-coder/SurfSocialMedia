@@ -21,7 +21,7 @@ const POST_TEMPLATES = [
   'Dạo này ghiền nghe nhạc lofi chill chill lúc code, anh em có playlist nào hay share mình với 🎵',
   'Sáng thức dậy thấy trời xanh mây trắng, tự nhiên thấy yêu đời ngang ☀️',
   'Nuôi con mèo mập này tốn cơm quá, suốt ngày chỉ biết ngủ và đòi ăn 🐈',
-  'Chạy bộ 5km xong thở không nổi. Quyết tâm giảm cân từ hôm nay! 🏃‍♂️💪'
+  'Chạy bộ 5km xong thở không nổi. Quyết tâm giảm cân từ hôm nay! 🏃‍♂️💪',
 ];
 
 const IMAGE_URLS = [
@@ -38,15 +38,25 @@ const IMAGE_URLS = [
   'https://images.unsplash.com/photo-1506744626753-eda814117714?q=80&w=800&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1449844908441-8829872d2607?q=80&w=800&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=800&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1511376868136-742c0de8c9a8?q=80&w=800&auto=format&fit=crop'
+  'https://images.unsplash.com/photo-1511376868136-742c0de8c9a8?q=80&w=800&auto=format&fit=crop',
 ];
 
 const FAKE_COMMENTS = [
-  'Đỉnh quá chủ thớt ơi! 🤩', 'Chuẩn luôn, không thể đồng ý hơn!', 'Cho xin thêm thông tin với ạ.',
-  'Bài viết rất hay, cảm ơn bạn đã chia sẻ.', 'Ui cái này mình cũng bị y chang 🥲', 'Tuyệt vời! 🔥',
-  'Thực sự đọc xong thấy mở mang tầm mắt.', 'Haha, cười đau cả ruột 🤣', 'Mình đã thử và thành công, thanks nhé!',
-  'Đỉnh của chóp luôn 💯', 'Có link không bạn ơi?', 'Nghe vô lý nhưng lại rất thuyết phục 🤔',
-  'Ủng hộ bạn 1 tim ❤️', 'Hay quá, lưu lại học hỏi thôi.', 'Bác nói chí phải!'
+  'Đỉnh quá chủ thớt ơi! 🤩',
+  'Chuẩn luôn, không thể đồng ý hơn!',
+  'Cho xin thêm thông tin với ạ.',
+  'Bài viết rất hay, cảm ơn bạn đã chia sẻ.',
+  'Ui cái này mình cũng bị y chang 🥲',
+  'Tuyệt vời! 🔥',
+  'Thực sự đọc xong thấy mở mang tầm mắt.',
+  'Haha, cười đau cả ruột 🤣',
+  'Mình đã thử và thành công, thanks nhé!',
+  'Đỉnh của chóp luôn 💯',
+  'Có link không bạn ơi?',
+  'Nghe vô lý nhưng lại rất thuyết phục 🤔',
+  'Ủng hộ bạn 1 tim ❤️',
+  'Hay quá, lưu lại học hỏi thôi.',
+  'Bác nói chí phải!',
 ];
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -62,7 +72,7 @@ async function seedMorePosts() {
     db.collection('users').where('uid', 'in', seedUserIds.slice(0, 10)).get(),
     db.collection('users').where('uid', 'in', seedUserIds.slice(10, 20)).get(),
   ]);
-  const allSeedUsers = [...usersSnap1.docs, ...usersSnap2.docs].map(d => d.data());
+  const allSeedUsers = [...usersSnap1.docs, ...usersSnap2.docs].map((d) => d.data());
 
   if (allSeedUsers.length === 0) {
     console.error('Không tìm thấy users mẫu! Bạn cần chạy seedRealistic.ts trước.');
@@ -75,11 +85,11 @@ async function seedMorePosts() {
   for (let i = 0; i < 100; i++) {
     const postRef = db.collection('posts').doc();
     const author = randomItem(allSeedUsers);
-    
+
     // Tỉ lệ có ảnh là 60%
     const hasImage = Math.random() > 0.4;
     const mediaUrls = hasImage ? [randomItem(IMAGE_URLS)] : [];
-    
+
     // Mix nội dung text
     let content = randomItem(POST_TEMPLATES);
     if (Math.random() > 0.5) content += ` (Phần ${randomInt(1, 99)})`;
@@ -91,16 +101,16 @@ async function seedMorePosts() {
     const shuffledUsers = [...allSeedUsers].sort(() => 0.5 - Math.random());
     const realLikeCount = randomInt(5, 20);
     const likers = shuffledUsers.slice(0, realLikeCount);
-    const likedBy = likers.map(u => u.uid);
+    const likedBy = likers.map((u) => u.uid);
     const reactions: Record<string, string> = {};
-    likers.forEach(u => {
+    likers.forEach((u) => {
       reactions[u.uid] = '❤️';
     });
 
     // Tương tác thật: Comments
     const realCommentCount = randomInt(3, 8);
     const commenters = [...allSeedUsers].sort(() => 0.5 - Math.random()).slice(0, realCommentCount);
-    
+
     for (const commenter of commenters) {
       const commentRef = db.collection('comments').doc();
       const commentObj = {
@@ -113,9 +123,9 @@ async function seedMorePosts() {
         updatedAt: new Date(),
         likeCount: 0,
         likedBy: [],
-        deleted: false
+        deleted: false,
       };
-      
+
       batchArray[batchArray.length - 1].set(commentRef, commentObj);
       opCount++;
       if (opCount >= 400) {
@@ -139,7 +149,7 @@ async function seedMorePosts() {
       replyCount: realCommentCount,
       hasVideo: false,
       deleted: false,
-      parentId: null // Rất quan trọng để hiện lên feed!
+      parentId: null, // Rất quan trọng để hiện lên feed!
     };
 
     batchArray[batchArray.length - 1].set(postRef, postObj);
@@ -153,7 +163,7 @@ async function seedMorePosts() {
   for (const b of batchArray) {
     await b.commit();
   }
-  
+
   console.log('✅ Đã tạo thành công 100 bài viết mới với tương tác THẬT (Comments/Likes)!');
 }
 

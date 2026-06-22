@@ -125,8 +125,8 @@ export const getGroupDetails = async (viewerId: string, groupId: string) => {
     ok: true,
     item: {
       ...toApiGroup(group),
-      membershipStatus
-    }
+      membershipStatus,
+    },
   };
 };
 
@@ -142,7 +142,7 @@ export const getGroupMembers = async (groupId: string, viewerId: string) => {
   for (let i = 0; i < group.memberIds.length; i += 10) {
     chunks.push(group.memberIds.slice(i, i + 10));
   }
-  
+
   const members: any[] = [];
   const roleOf = (uid: string): 'admin' | 'moderator' | 'member' => {
     if (group.adminIds.includes(uid)) return 'admin';
@@ -152,22 +152,26 @@ export const getGroupMembers = async (groupId: string, viewerId: string) => {
   const rolePriority = { admin: 0, moderator: 1, member: 2 } as const;
 
   for (const chunk of chunks) {
-     const snaps = await getDb().collection('users').where('__name__', 'in', chunk).get();
-     snaps.docs.forEach(doc => {
-        const role = roleOf(doc.id);
-        members.push({
-          id: doc.id,
-          ...doc.data(),
-          role,
-          isOwner: group.ownerId === doc.id,
-        });
-     });
+    const snaps = await getDb().collection('users').where('__name__', 'in', chunk).get();
+    snaps.docs.forEach((doc) => {
+      const role = roleOf(doc.id);
+      members.push({
+        id: doc.id,
+        ...doc.data(),
+        role,
+        isOwner: group.ownerId === doc.id,
+      });
+    });
   }
 
   // Sort: owner first, then admin, moderator, member; within same role by displayName
   members.sort((a, b) => {
     if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
-    if (a.role !== b.role) return rolePriority[a.role as keyof typeof rolePriority] - rolePriority[b.role as keyof typeof rolePriority];
+    if (a.role !== b.role)
+      return (
+        rolePriority[a.role as keyof typeof rolePriority] -
+        rolePriority[b.role as keyof typeof rolePriority]
+      );
     return String(a.displayName ?? '').localeCompare(String(b.displayName ?? ''));
   });
 
@@ -181,29 +185,38 @@ export const getGroupPendingRequests = async (groupId: string, viewerId: string)
   const reqs = await groupRepository.listPendingJoinRequestsByGroup(groupId);
   if (reqs.length === 0) return { ok: true, requests: [] };
 
-  const userIds = reqs.map(r => r.userId);
+  const userIds = reqs.map((r) => r.userId);
   const chunks = [];
   for (let i = 0; i < userIds.length; i += 10) {
-     chunks.push(userIds.slice(i, i + 10));
+    chunks.push(userIds.slice(i, i + 10));
   }
   const usersMap = new Map();
   for (const chunk of chunks) {
-     const snaps = await getDb().collection('users').where('__name__', 'in', chunk).get();
-     snaps.docs.forEach(doc => usersMap.set(doc.id, { id: doc.id, ...doc.data() }));
+    const snaps = await getDb().collection('users').where('__name__', 'in', chunk).get();
+    snaps.docs.forEach((doc) => usersMap.set(doc.id, { id: doc.id, ...doc.data() }));
   }
 
-  const requests = reqs.map(r => ({
-     ...r,
-     user: usersMap.get(r.userId)
+  const requests = reqs.map((r) => ({
+    ...r,
+    user: usersMap.get(r.userId),
   }));
   return { ok: true, requests };
 };
 
-export const handleJoinRequest = async (groupId: string, adminId: string, targetUserId: string, action: 'approve' | 'reject') => {
+export const handleJoinRequest = async (
+  groupId: string,
+  adminId: string,
+  targetUserId: string,
+  action: 'approve' | 'reject'
+) => {
   const group = await groupRepository.getById(groupId);
   if (!group || !group.adminIds.includes(adminId)) return { ok: false, reason: 'unauthorized' };
 
-  await groupRepository.updateJoinRequestStatus(groupId, targetUserId, action === 'approve' ? 'approved' : 'rejected');
+  await groupRepository.updateJoinRequestStatus(
+    groupId,
+    targetUserId,
+    action === 'approve' ? 'approved' : 'rejected'
+  );
 
   if (action === 'approve') {
     await groupRepository.addMember(groupId, targetUserId);

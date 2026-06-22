@@ -8,7 +8,7 @@ async function boostSeedData() {
 
   // Tìm tất cả bài viết của các user mẫu (seed_user_0 đến seed_user_19)
   const seedUserIds = Array.from({ length: 20 }, (_, i) => `seed_user_${i}`);
-  
+
   // Do giới hạn in của 'in' là 10, ta query thành 2 batch
   const batch1Ids = seedUserIds.slice(0, 10);
   const batch2Ids = seedUserIds.slice(10, 20);
@@ -36,7 +36,7 @@ async function boostSeedData() {
       replyCount: fakeReplyCount,
       createdAt: recentDate,
       updatedAt: recentDate,
-      parentId: null
+      parentId: null,
     });
 
     opCount++;
@@ -50,7 +50,9 @@ async function boostSeedData() {
     await b.commit();
   }
 
-  console.log('✅ Đã buff điểm thuật toán thành công! Các bài viết mẫu giờ sẽ ưu tiên hiển thị ở mục Khám phá.');
+  console.log(
+    '✅ Đã buff điểm thuật toán thành công! Các bài viết mẫu giờ sẽ ưu tiên hiển thị ở mục Khám phá.'
+  );
 }
 
 boostSeedData().catch(console.error);

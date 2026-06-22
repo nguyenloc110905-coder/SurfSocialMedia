@@ -1,8 +1,23 @@
 import { Router } from 'express';
 import { AuthRequest, requireAuth } from '../middleware/auth.js';
 import { getDb } from '../config/firebase-admin.js';
-import { createNotification, getUnreadNotificationCount, toApiNotification } from '../services/notifications.js';
-import { createGroup, joinGroup, listDiscoverGroups, listUserGroups, toApiGroup, getGroupDetails, getGroupMembers, getGroupPendingRequests, handleJoinRequest, updateMemberRoleOrRemove } from '../services/groups.js';
+import {
+  createNotification,
+  getUnreadNotificationCount,
+  toApiNotification,
+} from '../services/notifications.js';
+import {
+  createGroup,
+  joinGroup,
+  listDiscoverGroups,
+  listUserGroups,
+  toApiGroup,
+  getGroupDetails,
+  getGroupMembers,
+  getGroupPendingRequests,
+  handleJoinRequest,
+  updateMemberRoleOrRemove,
+} from '../services/groups.js';
 import { moderatePost } from '../services/aiModeration.js';
 import {
   emitNotificationNew,
@@ -29,7 +44,11 @@ function normalizePostTextStyle(input: unknown): { font?: string; color?: string
   if (!input || typeof input !== 'object') return null;
   const style = input as { font?: unknown; color?: unknown };
   const normalized: { font?: string; color?: string } = {};
-  if (typeof style.font === 'string' && POST_TEXT_FONTS.has(style.font) && style.font !== 'system') {
+  if (
+    typeof style.font === 'string' &&
+    POST_TEXT_FONTS.has(style.font) &&
+    style.font !== 'system'
+  ) {
     normalized.font = style.font;
   }
   if (typeof style.color === 'string' && POST_TEXT_COLORS.has(style.color)) {
@@ -244,10 +263,10 @@ router.put('/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const groupId = req.params.id;
     const { coverImageUrl } = req.body;
-    
+
     const result = await getGroupDetails(req.uid!, groupId);
     if (!result.ok) return res.status(404).json({ error: result.reason });
-    
+
     // Check if user is admin
     const isAdmin = result.item?.adminIds?.includes(req.uid!);
     if (!isAdmin) return res.status(403).json({ error: 'Chỉ quản trị viên mới được sửa nhóm' });
@@ -291,7 +310,8 @@ router.get('/:id/requests', requireAuth, async (req: AuthRequest, res) => {
 router.post('/:id/requests/:userId', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { action } = req.body; // 'approve' | 'reject'
-    if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+    if (!['approve', 'reject'].includes(action))
+      return res.status(400).json({ error: 'Invalid action' });
 
     const result = await handleJoinRequest(req.params.id, req.uid!, req.params.userId, action);
     if (!result.ok) {
@@ -300,24 +320,24 @@ router.post('/:id/requests/:userId', requireAuth, async (req: AuthRequest, res) 
     }
 
     if (action === 'approve') {
-       const groupResult = await getGroupDetails(req.uid!, req.params.id);
-       if (groupResult.ok) {
-         const actorDoc = await getDb().collection('users').doc(req.uid!).get();
-         const actorName = actorDoc.data()?.displayName ?? 'Admin';
-         const notification = await createNotification({
-           userId: req.params.userId,
-           type: 'system',
-           actorId: req.uid!,
-           entityType: 'group',
-           entityId: req.params.id,
-           message: `Yêu cầu tham gia nhóm ${groupResult.item?.name} của bạn đã được phê duyệt bởi ${actorName}.`
-         });
-         if (notification) {
-           const unreadCount = await getUnreadNotificationCount(req.params.userId);
-           emitNotificationNew(req.params.userId, toApiNotification(notification));
-           emitNotificationUnreadCount(req.params.userId, unreadCount);
-         }
-       }
+      const groupResult = await getGroupDetails(req.uid!, req.params.id);
+      if (groupResult.ok) {
+        const actorDoc = await getDb().collection('users').doc(req.uid!).get();
+        const actorName = actorDoc.data()?.displayName ?? 'Admin';
+        const notification = await createNotification({
+          userId: req.params.userId,
+          type: 'system',
+          actorId: req.uid!,
+          entityType: 'group',
+          entityId: req.params.id,
+          message: `Yêu cầu tham gia nhóm ${groupResult.item?.name} của bạn đã được phê duyệt bởi ${actorName}.`,
+        });
+        if (notification) {
+          const unreadCount = await getUnreadNotificationCount(req.params.userId);
+          emitNotificationNew(req.params.userId, toApiNotification(notification));
+          emitNotificationUnreadCount(req.params.userId, unreadCount);
+        }
+      }
     }
     res.json({ success: true });
   } catch (e) {
@@ -332,10 +352,16 @@ router.put('/:id/members/:userId', requireAuth, async (req: AuthRequest, res) =>
       return res.status(400).json({ error: 'Invalid action' });
     }
 
-    const result = await updateMemberRoleOrRemove(req.params.id, req.uid!, req.params.userId, action);
+    const result = await updateMemberRoleOrRemove(
+      req.params.id,
+      req.uid!,
+      req.params.userId,
+      action
+    );
     if (!result.ok) {
       if (result.reason === 'unauthorized') return res.status(403).json({ error: 'Unauthorized' });
-      if (result.reason === 'cannot_remove_owner_admin') return res.status(400).json({ error: 'Bạn không thể hạ quyền người tạo nhóm' });
+      if (result.reason === 'cannot_remove_owner_admin')
+        return res.status(400).json({ error: 'Bạn không thể hạ quyền người tạo nhóm' });
       return res.status(404).json({ error: 'Not found / action failed' });
     }
     res.json({ success: true });
@@ -346,10 +372,16 @@ router.put('/:id/members/:userId', requireAuth, async (req: AuthRequest, res) =>
 
 router.delete('/:id/members/:userId', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const result = await updateMemberRoleOrRemove(req.params.id, req.uid!, req.params.userId, 'remove');
+    const result = await updateMemberRoleOrRemove(
+      req.params.id,
+      req.uid!,
+      req.params.userId,
+      'remove'
+    );
     if (!result.ok) {
       if (result.reason === 'unauthorized') return res.status(403).json({ error: 'Unauthorized' });
-      if (result.reason === 'cannot_remove_owner_admin') return res.status(400).json({ error: 'Bạn không thể xoá người tạo nhóm' });
+      if (result.reason === 'cannot_remove_owner_admin')
+        return res.status(400).json({ error: 'Bạn không thể xoá người tạo nhóm' });
       return res.status(404).json({ error: 'Not found / action failed' });
     }
     res.json({ success: true });
@@ -483,7 +515,9 @@ router.post('/:id/posts', requireAuth, async (req: AuthRequest, res) => {
           groupId,
           createdAt: new Date(),
         });
-      } catch { /* ignore log errors */ }
+      } catch {
+        /* ignore log errors */
+      }
       return res.status(422).json({
         error: `Bài đăng vi phạm tiêu chuẩn cộng đồng: ${moderation.reason ?? 'Nội dung không phù hợp'}`,
       });
@@ -582,9 +616,7 @@ router.get('/:id/posts', requireAuth, async (req: AuthRequest, res) => {
     const groupId = req.params.id;
     const limitN = Math.min(parseIntSafe(req.query.limit, 20), 50);
     const cursorParam =
-      typeof req.query.cursor === 'string' && req.query.cursor
-        ? Number(req.query.cursor)
-        : null;
+      typeof req.query.cursor === 'string' && req.query.cursor ? Number(req.query.cursor) : null;
 
     const result = await getGroupDetails(req.uid!, groupId);
     if (!result.ok) return res.status(404).json({ error: result.reason });

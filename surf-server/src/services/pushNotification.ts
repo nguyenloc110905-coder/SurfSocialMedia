@@ -40,7 +40,7 @@ export async function sendPushToUser(userId: string, payload: PushNotificationPa
   try {
     const db = getDb();
     const userDoc = await db.collection('users').doc(userId).get();
-    
+
     if (!userDoc.exists) return;
 
     const userData = userDoc.data();

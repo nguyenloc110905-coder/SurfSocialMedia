@@ -223,10 +223,7 @@ export async function sendOtpEmail(
 }
 
 /** Gửi mã OTP xác nhận đăng ký tài khoản */
-export async function sendRegisterOtpEmail(
-  to: string,
-  code: string
-) {
+export async function sendRegisterOtpEmail(to: string, code: string) {
   const from = `"Surf Social" <${process.env.SMTP_EMAIL}>`;
   const year = new Date().getFullYear();
 
@@ -260,4 +257,3 @@ export async function sendRegisterOtpEmail(
     `,
   });
 }
-

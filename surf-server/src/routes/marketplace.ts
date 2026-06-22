@@ -150,12 +150,7 @@ type BoostStatus =
   | 'cancelled'
   | 'rejected';
 type BoostPaymentMode = 'sandbox' | 'live';
-type BoostPaymentStatus =
-  | 'none'
-  | 'sandbox_authorized'
-  | 'sandbox_voided'
-  | 'paid'
-  | 'refunded';
+type BoostPaymentStatus = 'none' | 'sandbox_authorized' | 'sandbox_voided' | 'paid' | 'refunded';
 type BoostSandboxPaymentProvider = (typeof BOOST_SANDBOX_PAYMENT_PROVIDERS)[number];
 
 interface BoostPlan {
@@ -515,12 +510,20 @@ function sortListingsByCreatedAt(items: ListingItem[]): ListingItem[] {
 function isTruthyFlag(value: unknown): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value > 0;
-  if (typeof value === 'string') return ['true', '1', 'yes', 'banned', 'suspended', 'blocked'].includes(value.trim().toLowerCase());
+  if (typeof value === 'string')
+    return ['true', '1', 'yes', 'banned', 'suspended', 'blocked'].includes(
+      value.trim().toLowerCase()
+    );
   return false;
 }
 
 function getSellerProfileAgeMs(user: Record<string, unknown>, authCreationTime?: string) {
-  return getTimeValue(authCreationTime) || getTimeValue(user.createdAt) || getTimeValue(user.joinedAt) || getTimeValue(user.created_at);
+  return (
+    getTimeValue(authCreationTime) ||
+    getTimeValue(user.createdAt) ||
+    getTimeValue(user.joinedAt) ||
+    getTimeValue(user.created_at)
+  );
 }
 
 async function getFollowerCount(db: Firestore, uid: string): Promise<number> {
@@ -535,38 +538,46 @@ async function assertMarketplaceSellerEligibility(
   titleNormalized: string,
   mediaUrls: string[]
 ): Promise<void> {
-  const [authUser, friendDoc, followerCount, sellerListingsSnap, isAdmin] =
-    await Promise.all([
-      getAuth().getUser(uid).catch(() => null),
-      db.collection('friends').doc(uid).get(),
-      getFollowerCount(db, uid),
-      db
-        .collection('marketplace')
-        .where('sellerId', '==', uid)
-        .orderBy('createdAt', 'desc')
-        .limit(200)
-        .get(),
-      isMarketplaceAdmin(db, uid),
-    ]);
+  const [authUser, friendDoc, followerCount, sellerListingsSnap, isAdmin] = await Promise.all([
+    getAuth()
+      .getUser(uid)
+      .catch(() => null),
+    db.collection('friends').doc(uid).get(),
+    getFollowerCount(db, uid),
+    db
+      .collection('marketplace')
+      .where('sellerId', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .limit(200)
+      .get(),
+    isMarketplaceAdmin(db, uid),
+  ]);
 
   if (isAdmin || process.env.MARKETPLACE_SKIP_SELLER_ELIGIBILITY === 'true') return;
 
-  const friendIds = friendDoc.exists && Array.isArray(friendDoc.data()?.friendIds)
-    ? (friendDoc.data()?.friendIds as string[])
-    : [];
+  const friendIds =
+    friendDoc.exists && Array.isArray(friendDoc.data()?.friendIds)
+      ? (friendDoc.data()?.friendIds as string[])
+      : [];
   const displayName = typeof user.displayName === 'string' ? user.displayName.trim() : '';
   const photoURL = typeof user.photoURL === 'string' ? user.photoURL.trim() : '';
   const emailVerified = authUser?.emailVerified === true || user.emailVerified === true;
   const createdAtMs = getSellerProfileAgeMs(user, authUser?.metadata.creationTime);
   const accountAgeDays = createdAtMs > 0 ? Math.floor((Date.now() - createdAtMs) / DAY_MS) : 0;
   const riskFlags = Array.isArray(user.riskFlags) ? user.riskFlags : [];
-  const trustStatus = typeof user.trustStatus === 'string' ? user.trustStatus.trim().toLowerCase() : '';
-  const safetyStatus = typeof user.safetyStatus === 'string' ? user.safetyStatus.trim().toLowerCase() : '';
+  const trustStatus =
+    typeof user.trustStatus === 'string' ? user.trustStatus.trim().toLowerCase() : '';
+  const safetyStatus =
+    typeof user.safetyStatus === 'string' ? user.safetyStatus.trim().toLowerCase() : '';
   const nowMs = Date.now();
   const duplicateLookbackMs = MARKETPLACE_SELLER_DUPLICATE_LOOKBACK_DAYS * DAY_MS;
   const sellerListings = sellerListingsSnap.docs.map((doc) => doc.data() as Partial<ListingData>);
-  const recentListingCount = sellerListings.filter((listing) => nowMs - getTimeValue(listing.createdAt) < DAY_MS).length;
-  const openListingCount = sellerListings.filter((listing) => listing.status === 'pending' || listing.status === 'active').length;
+  const recentListingCount = sellerListings.filter(
+    (listing) => nowMs - getTimeValue(listing.createdAt) < DAY_MS
+  ).length;
+  const openListingCount = sellerListings.filter(
+    (listing) => listing.status === 'pending' || listing.status === 'active'
+  ).length;
   const hasRecentDuplicate = sellerListings.some(
     (listing) =>
       listing.status !== 'deleted' &&
@@ -582,28 +593,41 @@ async function assertMarketplaceSellerEligibility(
     isTruthyFlag(user.marketplaceRestricted) ||
     ['restricted', 'blocked', 'banned', 'suspended'].includes(trustStatus) ||
     ['restricted', 'blocked', 'banned', 'suspended'].includes(safetyStatus) ||
-    riskFlags.some((flag) => ['spam', 'scam', 'fraud', 'clone', 'marketplace_abuse'].includes(String(flag).toLowerCase()));
+    riskFlags.some((flag) =>
+      ['spam', 'scam', 'fraud', 'clone', 'marketplace_abuse'].includes(String(flag).toLowerCase())
+    );
 
   const failures: string[] = [];
   if (accountAgeDays < MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_DAYS) {
-    failures.push(`Tài khoản cần hoạt động tối thiểu ${MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_DAYS} ngày để đăng bán.`);
+    failures.push(
+      `Tài khoản cần hoạt động tối thiểu ${MARKETPLACE_SELLER_MIN_ACCOUNT_AGE_DAYS} ngày để đăng bán.`
+    );
   }
   if (!emailVerified) failures.push('Email tài khoản cần được xác minh.');
   if (displayName.length < 3) failures.push('Hồ sơ cần có tên hiển thị rõ ràng.');
   if (!photoURL) failures.push('Hồ sơ cần có ảnh đại diện thật.');
-  if (friendIds.length < MARKETPLACE_SELLER_MIN_FRIENDS && followerCount < MARKETPLACE_SELLER_MIN_FOLLOWERS) {
-    failures.push(`Cần ít nhất ${MARKETPLACE_SELLER_MIN_FRIENDS} bạn bè hoặc ${MARKETPLACE_SELLER_MIN_FOLLOWERS} người theo dõi để giảm rủi ro tài khoản clone.`);
+  if (
+    friendIds.length < MARKETPLACE_SELLER_MIN_FRIENDS &&
+    followerCount < MARKETPLACE_SELLER_MIN_FOLLOWERS
+  ) {
+    failures.push(
+      `Cần ít nhất ${MARKETPLACE_SELLER_MIN_FRIENDS} bạn bè hoặc ${MARKETPLACE_SELLER_MIN_FOLLOWERS} người theo dõi để giảm rủi ro tài khoản clone.`
+    );
   }
   if (isRestricted) failures.push('Tài khoản đang bị giới hạn an toàn nên không thể đăng bán.');
   if (mediaUrls.length === 0) failures.push('Tin đăng cần có ít nhất 1 ảnh sản phẩm thật.');
   if (recentListingCount >= MARKETPLACE_SELLER_DAILY_LISTING_LIMIT) {
-    failures.push(`Bạn chỉ có thể đăng tối đa ${MARKETPLACE_SELLER_DAILY_LISTING_LIMIT} tin mỗi ngày.`);
+    failures.push(
+      `Bạn chỉ có thể đăng tối đa ${MARKETPLACE_SELLER_DAILY_LISTING_LIMIT} tin mỗi ngày.`
+    );
   }
   if (openListingCount >= MARKETPLACE_SELLER_MAX_OPEN_LISTINGS) {
     failures.push(`Bạn đang có quá nhiều tin đang mở. Vui lòng bán/xóa bớt trước khi đăng thêm.`);
   }
   if (hasRecentDuplicate) {
-    failures.push(`Bạn đã đăng một tin có tiêu đề tương tự trong ${MARKETPLACE_SELLER_DUPLICATE_LOOKBACK_DAYS} ngày gần đây.`);
+    failures.push(
+      `Bạn đã đăng một tin có tiêu đề tương tự trong ${MARKETPLACE_SELLER_DUPLICATE_LOOKBACK_DAYS} ngày gần đây.`
+    );
   }
 
   if (failures.length > 0) {
@@ -633,7 +657,9 @@ function normalizeBoostPlan(input: unknown): BoostPlan | null {
 }
 
 function normalizeBoostSandboxPaymentProvider(input: unknown): BoostSandboxPaymentProvider {
-  const provider = String(input ?? '').trim().toLowerCase();
+  const provider = String(input ?? '')
+    .trim()
+    .toLowerCase();
   return BOOST_SANDBOX_PAYMENT_PROVIDERS.includes(provider as BoostSandboxPaymentProvider)
     ? (provider as BoostSandboxPaymentProvider)
     : 'zalopay';
@@ -665,7 +691,8 @@ function getServerPublicUrl(req: AuthRequest) {
 function getClientReturnUrl(req: AuthRequest, input: unknown) {
   const candidate = typeof input === 'string' ? input.trim() : '';
   if (/^https?:\/\//i.test(candidate)) return candidate;
-  const configured = process.env.CLIENT_PUBLIC_URL?.trim() || process.env.FRONTEND_URL?.split(',')[0]?.trim();
+  const configured =
+    process.env.CLIENT_PUBLIC_URL?.trim() || process.env.FRONTEND_URL?.split(',')[0]?.trim();
   const base = (configured || req.get('origin') || 'http://localhost:5173').replace(/\/+$/, '');
   return `${base}/sandbox/boost-payment-return`;
 }
@@ -689,10 +716,7 @@ function toGatewayPayload(value: Record<string, unknown>) {
   );
 }
 
-async function markBoostPaymentSession(
-  orderId: string,
-  patch: Partial<BoostPaymentSessionData>
-) {
+async function markBoostPaymentSession(orderId: string, patch: Partial<BoostPaymentSessionData>) {
   const db = getDb();
   const snap = await db
     .collection(BOOST_PAYMENT_SESSIONS_COLLECTION)
@@ -726,17 +750,23 @@ async function assertPaidBoostPaymentSession(
 ) {
   const id = typeof paymentId === 'string' ? paymentId.trim() : '';
   if (!id) {
-    throw createBoostPaymentError('Vui lòng hoàn tất thanh toán sandbox chính chủ trước khi bật quảng bá.');
+    throw createBoostPaymentError(
+      'Vui lòng hoàn tất thanh toán sandbox chính chủ trước khi bật quảng bá.'
+    );
   }
   const session = await getBoostPaymentSession(id);
   if (!session || session.userId !== uid) {
     throw createBoostPaymentError('Không tìm thấy giao dịch thanh toán sandbox hợp lệ.');
   }
   if (session.provider !== provider) {
-    throw createBoostPaymentError('Cổng thanh toán đã chọn không khớp với giao dịch đã thanh toán.');
+    throw createBoostPaymentError(
+      'Cổng thanh toán đã chọn không khớp với giao dịch đã thanh toán.'
+    );
   }
   if (session.status !== 'paid') {
-    throw createBoostPaymentError('Giao dịch sandbox chưa được cổng thanh toán xác nhận thành công.');
+    throw createBoostPaymentError(
+      'Giao dịch sandbox chưa được cổng thanh toán xác nhận thành công.'
+    );
   }
   if (session.consumed) {
     throw createBoostPaymentError('Giao dịch sandbox này đã được dùng cho một chiến dịch khác.');
@@ -747,7 +777,11 @@ async function assertPaidBoostPaymentSession(
   return { id, session };
 }
 
-function redirectPaymentResult(res: Response, session: BoostPaymentSessionData & { id: string }, status: string) {
+function redirectPaymentResult(
+  res: Response,
+  session: BoostPaymentSessionData & { id: string },
+  status: string
+) {
   const url = new URL(session.clientReturnUrl);
   url.searchParams.set('paymentId', session.id);
   url.searchParams.set('orderId', session.orderId);
@@ -779,7 +813,12 @@ function verifyVnpayQuery(query: Record<string, unknown>, secret: string) {
   return secureHash.toLowerCase() === hmacHex('sha512', secret, signData).toLowerCase();
 }
 
-async function createVnpayPaymentUrl(req: AuthRequest, orderId: string, amount: number, title: string) {
+async function createVnpayPaymentUrl(
+  req: AuthRequest,
+  orderId: string,
+  amount: number,
+  title: string
+) {
   const tmnCode = getRequiredEnv('VNPAY_TMN_CODE');
   const hashSecret = getRequiredEnv('VNPAY_HASH_SECRET');
   const paymentUrl = process.env.VNPAY_PAYMENT_URL?.trim() || VNPAY_SANDBOX_PAYMENT_URL;
@@ -801,7 +840,12 @@ async function createVnpayPaymentUrl(req: AuthRequest, orderId: string, amount: 
   return `${paymentUrl}?${query}`;
 }
 
-async function createMomoPaymentUrl(req: AuthRequest, orderId: string, amount: number, title: string) {
+async function createMomoPaymentUrl(
+  req: AuthRequest,
+  orderId: string,
+  amount: number,
+  title: string
+) {
   const partnerCode = getRequiredEnv('MOMO_PARTNER_CODE');
   const accessKey = getRequiredEnv('MOMO_ACCESS_KEY');
   const secretKey = getRequiredEnv('MOMO_SECRET_KEY');
@@ -835,7 +879,11 @@ async function createMomoPaymentUrl(req: AuthRequest, orderId: string, amount: n
     headers: { 'Content-Type': 'application/json; charset=UTF-8' },
     body: JSON.stringify(body),
   });
-  const data = (await response.json()) as { payUrl?: string; resultCode?: number; message?: string };
+  const data = (await response.json()) as {
+    payUrl?: string;
+    resultCode?: number;
+    message?: string;
+  };
   if (!response.ok || !data.payUrl) {
     throw new Error(data.message || 'MoMo sandbox không trả về payUrl.');
   }
@@ -857,7 +905,13 @@ function verifyMomoResultPayload(payload: Record<string, unknown>) {
   return signature.toLowerCase() === hmacHex('sha256', secretKey, rawSignature).toLowerCase();
 }
 
-async function createZaloPayPaymentUrl(req: AuthRequest, orderId: string, amount: number, title: string, uid: string) {
+async function createZaloPayPaymentUrl(
+  req: AuthRequest,
+  orderId: string,
+  amount: number,
+  title: string,
+  uid: string
+) {
   const appId = getRequiredEnv('ZALOPAY_APP_ID');
   const key1 = getRequiredEnv('ZALOPAY_KEY1');
   const endpoint = process.env.ZALOPAY_CREATE_ORDER_URL?.trim() || ZALOPAY_SANDBOX_CREATE_URL;
@@ -866,7 +920,9 @@ async function createZaloPayPaymentUrl(req: AuthRequest, orderId: string, amount
   const embedData = JSON.stringify({
     redirecturl: `${getServerPublicUrl(req)}/payment/marketplace/boost-payments/zalopay/return`,
   });
-  const item = JSON.stringify([{ itemid: orderId, itemname: 'Surf Boost', itemprice: Math.round(amount), itemquantity: 1 }]);
+  const item = JSON.stringify([
+    { itemid: orderId, itemname: 'Surf Boost', itemprice: Math.round(amount), itemquantity: 1 },
+  ]);
   const description = `Surf Boost ${title}`.slice(0, 100);
   const macInput = `${appId}|${appTransId}|${uid}|${Math.round(amount)}|${appTime}|${embedData}|${item}`;
   const form = new URLSearchParams({
@@ -886,7 +942,11 @@ async function createZaloPayPaymentUrl(req: AuthRequest, orderId: string, amount
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
   });
-  const data = (await response.json()) as { orderurl?: string; returncode?: number; returnmessage?: string };
+  const data = (await response.json()) as {
+    orderurl?: string;
+    returncode?: number;
+    returnmessage?: string;
+  };
   if (!response.ok || !data.orderurl || data.returncode !== 1) {
     throw new Error(data.returnmessage || 'ZaloPay sandbox không trả về orderurl.');
   }
@@ -920,10 +980,7 @@ function getBoostTotals(plan: BoostPlan) {
 
 async function activateBoostIfEligible(listingId: string, listing: ListingData) {
   if (!listing.boostEnabled || !listing.boostPlan || listing.status !== 'active') return;
-  if (
-    listing.boostPaymentStatus !== 'sandbox_authorized' &&
-    listing.boostPaymentStatus !== 'paid'
-  )
+  if (listing.boostPaymentStatus !== 'sandbox_authorized' && listing.boostPaymentStatus !== 'paid')
     return;
 
   const db = getDb();
@@ -1543,7 +1600,9 @@ router.post('/boost-payments', requireAuth, async (req: AuthRequest, res) => {
       paymentUrl,
     });
   } catch (e) {
-    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+    res
+      .status((e as Error & { statusCode?: number }).statusCode ?? 500)
+      .json({ error: (e as Error).message });
   }
 });
 
@@ -1565,7 +1624,9 @@ router.get('/boost-payments/:paymentId/status', requireAuth, async (req: AuthReq
       gatewayResponseCode: session.gatewayResponseCode ?? null,
     });
   } catch (e) {
-    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+    res
+      .status((e as Error & { statusCode?: number }).statusCode ?? 500)
+      .json({ error: (e as Error).message });
   }
 });
 
@@ -1915,7 +1976,9 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       enqueueMarketplaceAiModeration(docRef.id, listing);
     }
   } catch (e) {
-    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+    res
+      .status((e as Error & { statusCode?: number }).statusCode ?? 500)
+      .json({ error: (e as Error).message });
   }
 });
 
@@ -1998,8 +2061,7 @@ router.get('/my', requireAuth, async (req: AuthRequest, res) => {
       (acc, item) => ({
         views: acc.views + (item.viewCount ?? 0),
         saves: acc.saves + (item.savedBy?.length ?? 0),
-        activeBoosts:
-          acc.activeBoosts + (isBoostActive(item) ? 1 : 0),
+        activeBoosts: acc.activeBoosts + (isBoostActive(item) ? 1 : 0),
         boostImpressions: acc.boostImpressions + (item.boostMetrics?.impressions ?? 0),
         boostSpent: acc.boostSpent + (item.boostMetrics?.spent ?? 0),
       }),
@@ -2656,7 +2718,9 @@ router.patch('/:id/boost/pause', requireAuth, async (req: AuthRequest, res) => {
     const updated = await ref.get();
     res.json({ id: updated.id, ...updated.data() });
   } catch (e) {
-    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+    res
+      .status((e as Error & { statusCode?: number }).statusCode ?? 500)
+      .json({ error: (e as Error).message });
   }
 });
 
@@ -2699,7 +2763,9 @@ router.patch('/:id/boost/resume', requireAuth, async (req: AuthRequest, res) => 
     const updated = await ref.get();
     res.json({ id: updated.id, ...updated.data() });
   } catch (e) {
-    res.status((e as Error & { statusCode?: number }).statusCode ?? 500).json({ error: (e as Error).message });
+    res
+      .status((e as Error & { statusCode?: number }).statusCode ?? 500)
+      .json({ error: (e as Error).message });
   }
 });
 
@@ -2864,15 +2930,16 @@ router.post('/:id/contact', requireAuth, async (req: AuthRequest, res) => {
     }
 
     const payload = toRealtimeMessagePayload(messageResult.item);
-    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(conversationResult.item.id);
+    const muteSettingsByUser = await conversationRepository.getMuteSettingsByUser(
+      conversationResult.item.id
+    );
     const mutedBy = Object.entries(muteSettingsByUser)
       .filter(([, settings]) => settings.muteMessages)
       .map(([userId]) => userId);
-    emitMessageNewToTargets(
-      [req.uid!, ...messageResult.recipientIds],
-      conversationResult.item.id,
-      { ...payload, mutedBy }
-    );
+    emitMessageNewToTargets([req.uid!, ...messageResult.recipientIds], conversationResult.item.id, {
+      ...payload,
+      mutedBy,
+    });
     const recipientCounts = await Promise.all(
       messageResult.recipientIds.map(async (uid) => ({
         uid,
@@ -2946,7 +3013,8 @@ router.patch('/:id', requireAuth, async (req: AuthRequest, res) => {
     if (brand !== undefined) update.brand = String(brand).trim();
     if (productType !== undefined) update.productType = String(productType).trim();
     if (material !== undefined) update.material = String(material).trim();
-    if (availability !== undefined) update.availability = availability === 'single_item' ? 'single_item' : 'in_stock';
+    if (availability !== undefined)
+      update.availability = availability === 'single_item' ? 'single_item' : 'in_stock';
     if (tags !== undefined) {
       update.tags = Array.isArray(tags)
         ? tags

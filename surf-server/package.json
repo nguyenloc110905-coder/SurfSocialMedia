@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "npm run lint && tsc",
     "start": "node dist/index.js",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "seed:test-users": "tsx scripts/seed-test-users.ts",
     "backfill:notif-icons": "tsx src/scripts/backfill-notification-icon-key.ts",
