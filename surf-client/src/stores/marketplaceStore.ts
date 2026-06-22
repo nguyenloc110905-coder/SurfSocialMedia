@@ -14,7 +14,13 @@ export type Category =
   | 'other';
 export type Condition = 'new' | 'like_new' | 'good' | 'fair';
 export type ListingStatus = 'pending' | 'active' | 'rejected' | 'sold' | 'deleted';
-export type MyListingsFilter = 'all' | 'pending' | 'active' | 'error';
+export type MyListingsFilter =
+  | 'all'
+  | 'pending'
+  | 'active'
+  | 'boosted'
+  | 'boosting'
+  | 'error';
 export type MarketplaceModerationMode = 'auto' | 'manual';
 export type MarketplaceModerationDecision = 'approved' | 'rejected' | 'needs_review';
 export type ListingAvailability = 'in_stock' | 'single_item';
@@ -179,6 +185,8 @@ export interface MyListingsCounts {
   pending: number;
   rejected: number;
   sold: number;
+  boosted: number;
+  boosting: number;
 }
 
 export interface MyListingsSummary {
@@ -219,6 +227,33 @@ function isMyListingSpamOrError(listing: Listing) {
   );
 }
 
+function getTimestampMs(value: unknown): number {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return new Date(value).getTime() || 0;
+  if (typeof value === 'object') {
+    const timestamp = value as { _seconds?: number; seconds?: number };
+    const seconds = timestamp._seconds ?? timestamp.seconds;
+    return typeof seconds === 'number' ? seconds * 1000 : 0;
+  }
+  return 0;
+}
+
+function hasBoostPromotion(listing: Listing): boolean {
+  return Boolean(
+    listing.boostEnabled &&
+      listing.boostStatus &&
+      !['none', 'cancelled', 'rejected'].includes(listing.boostStatus)
+  );
+}
+
+function isBoostingListing(listing: Listing): boolean {
+  if (!listing.boostEnabled || listing.boostStatus !== 'active') return false;
+  const deadline = getTimestampMs(listing.boostEndsAt);
+  return !deadline || deadline > Date.now();
+}
+
 function setSavedBy(
   listing: Listing,
   id: string,
@@ -242,6 +277,8 @@ function replaceListingById(listings: Listing[], updated: Listing): Listing[] {
 function matchesMyListingsFilter(listing: Listing, filter: MyListingsFilter): boolean {
   if (filter === 'active') return listing.status === 'active';
   if (filter === 'pending') return listing.status === 'pending' && !isMyListingSpamOrError(listing);
+  if (filter === 'boosted') return hasBoostPromotion(listing);
+  if (filter === 'boosting') return isBoostingListing(listing);
   if (filter === 'error') return isMyListingSpamOrError(listing);
   return listing.status !== 'deleted' && !isMyListingSpamOrError(listing);
 }
@@ -333,7 +370,16 @@ export const useMarketplaceStore = create<MarketplaceState>()(
   myListingsLoadingMore: false,
   myListingsNextCursor: null,
   myListingsFilter: 'all',
-  myListingsCounts: { all: 0, error: 0, active: 0, pending: 0, rejected: 0, sold: 0 },
+  myListingsCounts: {
+    all: 0,
+    error: 0,
+    active: 0,
+    pending: 0,
+    rejected: 0,
+    sold: 0,
+    boosted: 0,
+    boosting: 0,
+  },
   myListingsSummary: { views: 0, saves: 0, activeBoosts: 0, boostImpressions: 0, boostSpent: 0 },
   savedListings: [],
   savedLoading: false,
@@ -509,6 +555,8 @@ export const useMarketplaceStore = create<MarketplaceState>()(
           s.myListingsCounts.pending + (listing.status === 'pending' && !isSpamOrError ? 1 : 0),
         rejected: s.myListingsCounts.rejected + (listing.status === 'rejected' ? 1 : 0),
         sold: s.myListingsCounts.sold + (listing.status === 'sold' ? 1 : 0),
+        boosted: s.myListingsCounts.boosted + (hasBoostPromotion(listing) ? 1 : 0),
+        boosting: s.myListingsCounts.boosting + (isBoostingListing(listing) ? 1 : 0),
       },
     }));
     return listing;
